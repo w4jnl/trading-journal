@@ -1,0 +1,60 @@
+# Binaries
+/trading-journal
+/cmd/server/server
+*.exe
+*.test
+*.out
+
+# Build artifacts
+/dist/
+/bin/
+
+# Go
+/vendor/
+go.work
+go.work.sum
+
+# SQLite database files
+/data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+
+# Import workflow — never commit user trade data or processed/failed files
+/imports/inbox/*
+/imports/processed/*
+/imports/failed/*
+!/imports/inbox/.gitkeep
+!/imports/processed/.gitkeep
+!/imports/failed/.gitkeep
+
+# Local config / secrets
+config.yaml
+config.local.yaml
+.env
+.env.*
+!.env.example
+
+# Tailwind / node (if a CSS build step is used locally)
+/node_modules/
+/web/static/css/*.map
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~
+
+# Logs
+*.log
+/logs/
+
+# Coverage
+coverage.out
+coverage.html
+
+exportData

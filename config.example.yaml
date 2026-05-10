@@ -1,0 +1,11 @@
+server:
+  port: 8080
+
+database:
+  path: "./data/trading.db"
+
+imports:
+  root: "./imports"
+
+# Trading timezone — used for day boundaries on calendar/dashboard. Storage is always UTC.
+timezone: "America/Chicago"
