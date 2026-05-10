@@ -12,3 +12,8 @@ INSERT INTO daily_stats (
 
 -- name: ListDailyStatsForAccount :many
 SELECT * FROM daily_stats WHERE account_id = ? ORDER BY stat_date;
+
+-- name: ListDailyStatsForRange :many
+SELECT * FROM daily_stats
+WHERE stat_date >= ? AND stat_date < ?
+ORDER BY stat_date, account_id;

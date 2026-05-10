@@ -89,6 +89,7 @@ func run() error {
 	mux.HandleFunc("GET /journal", h.JournalPage)
 	mux.HandleFunc("GET /journal/{date}", h.JournalPage)
 	mux.HandleFunc("POST /journal/{date}", h.JournalSave)
+	mux.HandleFunc("GET /calendar", h.CalendarPage)
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {

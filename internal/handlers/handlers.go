@@ -152,6 +152,24 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return string(r[:n]) + "…"
 		},
+		// cellClass picks a calendar-cell color class based on net P&L magnitude.
+		// Threshold is rough: $100 / $-100 separates "regular day" from "big day".
+		"cellClass": func(netPnl float64, hasData bool) string {
+			if !hasData {
+				return ""
+			}
+			switch {
+			case netPnl >= 100:
+				return "has-pnl-pos-strong"
+			case netPnl > 0:
+				return "has-pnl-pos"
+			case netPnl <= -100:
+				return "has-pnl-neg-strong"
+			case netPnl < 0:
+				return "has-pnl-neg"
+			}
+			return ""
+		},
 	}
 }
 

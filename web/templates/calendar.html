@@ -1,0 +1,95 @@
+{{define "title"}}Calendar — {{.MonthLabel}} — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  .calendar { width: 100%; border-collapse: separate; border-spacing: 4px; }
+  .calendar th { padding: 6px 0; font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; }
+  .calendar td { background: white; border-radius: 6px; padding: 8px; vertical-align: top; height: 80px; width: 14.28%; box-shadow: 0 1px 2px rgba(0,0,0,.05); position: relative; }
+  .calendar td.out-of-month { background: transparent; box-shadow: none; }
+  .calendar td.has-pnl-pos { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); }
+  .calendar td.has-pnl-pos-strong { background: linear-gradient(135deg, #86efac 0%, #4ade80 100%); }
+  .calendar td.has-pnl-neg { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); }
+  .calendar td.has-pnl-neg-strong { background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%); }
+  .day-num { font-size: 13px; color: #64748b; }
+  .day-num.in-month { color: #0f172a; font-weight: 500; }
+  .day-pnl { font-size: 14px; font-weight: 600; margin-top: 4px; }
+  .day-pnl.pos { color: #15803d; }
+  .day-pnl.neg { color: #b91c1c; }
+  .day-meta { font-size: 11px; color: #475569; margin-top: 2px; }
+  .day-link { position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 8px; }
+  .nav-row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+  .nav-row a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .summary-card { background: white; border-radius: 6px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .summary-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .summary-card .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
+  .pnl-pos { color: #15803d; }
+  .pnl-neg { color: #b91c1c; }
+</style>
+
+<div class="nav-row">
+  <h1 style="margin: 0; flex: 1;">{{.MonthLabel}}</h1>
+  <a href="/calendar?month={{.PrevMonth}}{{if .AccountID}}&account_id={{.AccountID}}{{end}}">‹ Prev</a>
+  <a href="/calendar{{if .AccountID}}?account_id={{.AccountID}}{{end}}">This month</a>
+  <a href="/calendar?month={{.NextMonth}}{{if .AccountID}}&account_id={{.AccountID}}{{end}}">Next ›</a>
+  <form method="get" action="/calendar" style="display: flex; gap: 8px; align-items: center;">
+    <input type="hidden" name="month" value="{{.MonthQS}}">
+    <select name="account_id" onchange="this.form.submit()">
+      <option value="">All accounts</option>
+      {{range .Accounts}}
+        <option value="{{.ID}}" {{if eq $.AccountID .ID}}selected{{end}}>{{.Name}}{{if .Firm}} ({{derefStr .Firm}}){{end}}</option>
+      {{end}}
+    </select>
+  </form>
+</div>
+
+<div class="summary-grid">
+  <div class="summary-card">
+    <div class="label">Net P&amp;L</div>
+    <div class="value {{if gt .MonthNet 0.0}}pnl-pos{{else if lt .MonthNet 0.0}}pnl-neg{{end}}">{{printf "%.2f" .MonthNet}}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Gross P&amp;L</div>
+    <div class="value">{{printf "%.2f" .MonthGross}}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Commission</div>
+    <div class="value">{{printf "%.2f" .MonthComm}}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Trades</div>
+    <div class="value">{{.Trades}}</div>
+  </div>
+  <div class="summary-card">
+    <div class="label">Win days / Loss days</div>
+    <div class="value"><span class="pnl-pos">{{.WinDays}}</span> / <span class="pnl-neg">{{.LossDays}}</span></div>
+  </div>
+</div>
+
+<table class="calendar">
+  <thead>
+    <tr>
+      <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Weeks}}
+    <tr>
+      {{range .}}
+        <td class="{{if not .InMonth}}out-of-month{{else}}{{cellClass .NetPnl .HasData}}{{end}}">
+          {{if and .InMonth .HasData}}
+            <a class="day-link" href="/trades?from={{.Date.Format "2006-01-02"}}&to={{.Date.Format "2006-01-02"}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}">
+              <div class="day-num in-month">{{.Date.Day}}</div>
+              <div class="day-pnl {{if gt .NetPnl 0.0}}pos{{else if lt .NetPnl 0.0}}neg{{end}}">{{printf "%.0f" .NetPnl}}</div>
+              <div class="day-meta">{{.Trades}} trades · {{.Wins}}W/{{.Losses}}L</div>
+            </a>
+          {{else}}
+            <div class="day-num {{if .InMonth}}in-month{{end}}">{{.Date.Day}}</div>
+          {{end}}
+        </td>
+      {{end}}
+    </tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

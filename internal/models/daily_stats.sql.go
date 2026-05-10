@@ -96,3 +96,49 @@ func (q *Queries) ListDailyStatsForAccount(ctx context.Context, accountID int64)
 	}
 	return items, nil
 }
+
+const listDailyStatsForRange = `-- name: ListDailyStatsForRange :many
+SELECT id, account_id, stat_date, trades_count, wins, losses, gross_pnl, net_pnl, commission, largest_win, largest_loss FROM daily_stats
+WHERE stat_date >= ? AND stat_date < ?
+ORDER BY stat_date, account_id
+`
+
+type ListDailyStatsForRangeParams struct {
+	StatDate   time.Time `json:"stat_date"`
+	StatDate_2 time.Time `json:"stat_date_2"`
+}
+
+func (q *Queries) ListDailyStatsForRange(ctx context.Context, arg ListDailyStatsForRangeParams) ([]DailyStat, error) {
+	rows, err := q.db.QueryContext(ctx, listDailyStatsForRange, arg.StatDate, arg.StatDate_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DailyStat
+	for rows.Next() {
+		var i DailyStat
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.StatDate,
+			&i.TradesCount,
+			&i.Wins,
+			&i.Losses,
+			&i.GrossPnl,
+			&i.NetPnl,
+			&i.Commission,
+			&i.LargestWin,
+			&i.LargestLoss,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
