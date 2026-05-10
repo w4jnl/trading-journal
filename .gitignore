@@ -27,6 +27,7 @@ go.work.sum
 /imports/inbox/*
 /imports/processed/*
 /imports/failed/*
+/imports/uploads/*
 !/imports/inbox/.gitkeep
 !/imports/processed/.gitkeep
 !/imports/failed/.gitkeep

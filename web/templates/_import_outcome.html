@@ -1,0 +1,18 @@
+{{define "import_outcome"}}
+{{if .ErrorMessage}}
+<div class="panel error">
+  <strong>Failed:</strong> {{.ErrorMessage}}
+  <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
+</div>
+{{else}}
+<div class="panel success">
+  <strong>Imported {{.Format}}</strong> —
+  {{.FillsParsed}} fills parsed,
+  {{.ExecsInserted}} new execs,
+  {{.AccountsCreated}} new accounts,
+  {{.InstrumentsStubbed}} new instrument stubs,
+  {{.TradesCreated}} trades materialized.
+  <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
+</div>
+{{end}}
+{{end}}

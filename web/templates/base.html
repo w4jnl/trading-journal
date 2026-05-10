@@ -1,4 +1,4 @@
-<!doctype html>
+{{define "base.html"}}<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
@@ -6,10 +6,33 @@
   <title>{{block "title" .}}Trading Journal{{end}}</title>
   <link rel="stylesheet" href="/static/css/app.css">
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <style>
+    body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #f1f5f9; color: #0f172a; }
+    nav { background: #0f172a; color: white; padding: 12px 20px; display: flex; gap: 18px; align-items: center; }
+    nav a { color: white; text-decoration: none; opacity: 0.8; }
+    nav a:hover { opacity: 1; }
+    nav a.brand { font-weight: 600; opacity: 1; }
+    main { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
+    h1 { margin-top: 0; }
+    table { width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+    th { background: #f8fafc; font-weight: 600; }
+    .panel { background: white; border-radius: 6px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); margin-bottom: 24px; }
+    .panel.success { border-left: 4px solid #16a34a; }
+    .panel.error { border-left: 4px solid #dc2626; }
+    .muted { color: #64748b; font-size: 12px; }
+    button { background: #0f172a; color: white; border: 0; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 14px; }
+    button:hover { background: #1e293b; }
+    input[type=file] { font-size: 14px; }
+    code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
+    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+    .pill.success { background: #dcfce7; color: #166534; }
+    .pill.error { background: #fee2e2; color: #991b1b; }
+  </style>
 </head>
-<body class="bg-slate-50 text-slate-900">
-  <nav class="bg-slate-900 text-white px-4 py-3 flex gap-4">
-    <a href="/" class="font-semibold">Trading Journal</a>
+<body>
+  <nav>
+    <a href="/" class="brand">Trading Journal</a>
     <a href="/trades">Trades</a>
     <a href="/calendar">Calendar</a>
     <a href="/journal">Journal</a>
@@ -17,8 +40,9 @@
     <a href="/import">Import</a>
     <a href="/accounts">Accounts</a>
   </nav>
-  <main class="container mx-auto p-4">
+  <main>
     {{block "content" .}}{{end}}
   </main>
 </body>
 </html>
+{{end}}

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/jaro/trading-journal/internal/models"
@@ -321,7 +322,7 @@ func (s *ImportService) moveToProcessed(srcPath string) (string, error) {
 		return "", err
 	}
 	dest := filepath.Join(s.ProcessedDir, timestampPrefixed(filepath.Base(srcPath)))
-	if err := os.Rename(srcPath, dest); err != nil {
+	if err := moveFile(srcPath, dest); err != nil {
 		return "", err
 	}
 	return dest, nil
@@ -338,7 +339,7 @@ func (s *ImportService) moveToFailed(srcPath, errMsg string) (string, error) {
 	}
 	base := timestampPrefixed(filepath.Base(srcPath))
 	dest := filepath.Join(s.FailedDir, base)
-	if err := os.Rename(srcPath, dest); err != nil {
+	if err := moveFile(srcPath, dest); err != nil {
 		return "", err
 	}
 	sidecar := dest + ".error.txt"
@@ -346,6 +347,43 @@ func (s *ImportService) moveToFailed(srcPath, errMsg string) (string, error) {
 		return dest, fmt.Errorf("write sidecar: %w", err)
 	}
 	return dest, nil
+}
+
+// moveFile renames src → dst, falling back to copy + remove when src and dst
+// are on different filesystems. macOS in particular places os.MkdirTemp("", …)
+// on /private/var which is a different volume from project directories under
+// /Volumes/data, so a naïve os.Rename fails with EXDEV.
+func moveFile(src, dst string) error {
+	if err := os.Rename(src, dst); err == nil {
+		return nil
+	} else if !isCrossDevice(err) {
+		return err
+	}
+	// Cross-device: copy + remove.
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		_ = os.Remove(dst)
+		return err
+	}
+	if err := out.Close(); err != nil {
+		_ = os.Remove(dst)
+		return err
+	}
+	return os.Remove(src)
+}
+
+func isCrossDevice(err error) bool {
+	// syscall.EXDEV on Unix; LinkError wraps it. errors.Is unwraps cleanly.
+	return errors.Is(err, syscall.EXDEV)
 }
 
 func timestampPrefixed(base string) string {

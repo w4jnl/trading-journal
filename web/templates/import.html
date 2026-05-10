@@ -1,0 +1,48 @@
+{{define "title"}}Import — Trading Journal{{end}}
+
+{{define "content"}}
+<h1>Import CSV</h1>
+
+<div class="panel">
+  <p>Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row — no need to pick.</p>
+  <form hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
+    <input type="file" name="file" accept=".csv" required>
+    <button type="submit">Import</button>
+    <span id="busy" class="muted htmx-indicator" style="margin-left:12px;">working…</span>
+  </form>
+  <div id="outcome" style="margin-top:16px;"></div>
+</div>
+
+<h2>Recent imports</h2>
+<table>
+  <thead>
+    <tr>
+      <th>When (UTC)</th>
+      <th>Source</th>
+      <th>Status</th>
+      <th>Execs</th>
+      <th>Trades</th>
+      <th>File</th>
+      <th>Message</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Recent}}
+    <tr>
+      <td>{{.SyncedAt.UTC.Format "2006-01-02 15:04:05"}}</td>
+      <td><code>{{.SyncType}}</code></td>
+      <td>
+        {{if eq .Status "success"}}<span class="pill success">success</span>
+        {{else}}<span class="pill error">{{.Status}}</span>{{end}}
+      </td>
+      <td>{{.ExecsAdded}}</td>
+      <td>{{.TradesAdded}}</td>
+      <td><span class="muted">{{derefStr .SourceFile}}</span></td>
+      <td><span class="muted">{{derefStr .Message}}</span></td>
+    </tr>
+  {{else}}
+    <tr><td colspan="7" class="muted">No imports yet.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}
