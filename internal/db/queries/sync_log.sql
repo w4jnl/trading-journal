@@ -8,3 +8,8 @@ RETURNING *;
 
 -- name: ListSyncLogRecent :many
 SELECT * FROM sync_log ORDER BY synced_at DESC LIMIT ?;
+
+-- name: ListLastSyncByType :many
+SELECT * FROM sync_log s1
+WHERE id = (SELECT MAX(id) FROM sync_log WHERE sync_type = s1.sync_type)
+ORDER BY synced_at DESC;

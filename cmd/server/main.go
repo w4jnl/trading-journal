@@ -90,6 +90,7 @@ func run() error {
 	mux.HandleFunc("GET /journal/{date}", h.JournalPage)
 	mux.HandleFunc("POST /journal/{date}", h.JournalSave)
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
+	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
@@ -97,9 +98,9 @@ func run() error {
 	}
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
 
-	// Placeholder root → redirect to /import for now (other pages land later).
+	// Root redirects to the dashboard.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/import", http.StatusFound)
+		http.Redirect(w, r, "/dashboard", http.StatusFound)
 	})
 
 	srv := &http.Server{

@@ -1,0 +1,108 @@
+{{define "title"}}Dashboard — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  .dash-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; margin-bottom: 24px; }
+  @media (max-width: 800px) { .dash-grid { grid-template-columns: 1fr; } }
+  .stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+  .stat-card { background: white; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .stat-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat-card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .stat-card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .pnl-pos { color: #15803d; }
+  .pnl-neg { color: #b91c1c; }
+  .stale-banner { background: #fef3c7; border-left: 4px solid #d97706; padding: 10px 14px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
+  .empty { background: white; padding: 24px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.05); color: #64748b; text-align: center; }
+  .recent-trades { width: 100%; }
+  .recent-trades th, .recent-trades td { font-size: 13px; }
+  .last-sync { background: white; padding: 12px 16px; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .last-sync h3 { margin: 0 0 8px 0; font-size: 14px; }
+  .last-sync .row { padding: 6px 0; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
+  .last-sync .row:last-child { border-bottom: 0; }
+  .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .pill.success { background: #dcfce7; color: #166534; }
+  .pill.error { background: #fee2e2; color: #991b1b; }
+</style>
+
+<h1>Dashboard · {{.DateLabel}}</h1>
+
+{{if .IsStale}}
+<div class="stale-banner">No trades today yet. Showing the most recent day with activity.</div>
+{{end}}
+
+{{with .Stats}}
+{{if .HasTrades}}
+<div class="stat-grid" style="margin-bottom: 24px;">
+  <div class="stat-card">
+    <div class="label">Net P&amp;L</div>
+    <div class="value {{if gt .NetPnl 0.0}}pnl-pos{{else if lt .NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" .NetPnl}}</div>
+    <div class="sub">Gross {{printf "%.2f" .GrossPnl}} · comm {{printf "%.2f" .Commission}}</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Trades</div>
+    <div class="value">{{.Trades}}</div>
+    <div class="sub"><span class="pnl-pos">{{.Wins}}W</span> / <span class="pnl-neg">{{.Losses}}L</span> · {{printf "%.0f%%" (mul .WinRate 100.0)}} win rate</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Best / Worst</div>
+    <div class="value"><span class="pnl-pos">{{printf "%.2f" .BestNetPnl}}</span></div>
+    <div class="sub"><span class="pnl-neg">{{printf "%.2f" .WorstNetPnl}}</span> worst</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Direction split</div>
+    <div class="value">{{.Longs}}L / {{.Shorts}}S</div>
+    <div class="sub">{{if eq .Trades 0}}—{{else}}{{printf "%.0f%%" (mul (div (i64ToFloat .Longs) (i64ToFloat .Trades)) 100.0)}} long{{end}}</div>
+  </div>
+</div>
+{{else}}
+<div class="empty">No closed trades yet. Drop a CSV at <a href="/import">/import</a> or into <code>imports/inbox/</code>.</div>
+{{end}}
+{{end}}
+
+<div class="dash-grid">
+  <section>
+    <h2 style="margin-top: 0;">Recent trades</h2>
+    {{if .RecentTrades}}
+    <table class="recent-trades">
+      <thead>
+        <tr><th>Exit</th><th>Account</th><th>Symbol</th><th>Dir</th><th>Net P&amp;L</th></tr>
+      </thead>
+      <tbody>
+        {{range .RecentTrades}}
+        <tr>
+          <td>{{if .ExitTime}}{{.ExitTime.UTC.Format "2006-01-02 15:04"}}{{end}}</td>
+          <td>{{.AccountName}}</td>
+          <td>{{.Symbol}}</td>
+          <td>{{if eq .Direction "long"}}<span class="dir-long">long</span>{{else}}<span class="dir-short">short</span>{{end}}</td>
+          <td>{{pnlClass .NetPnl}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+    <p style="margin-top: 8px;"><a href="/trades">All trades →</a></p>
+    {{else}}
+    <div class="empty">No trades yet.</div>
+    {{end}}
+  </section>
+
+  <aside>
+    <div class="last-sync">
+      <h3>Last imports</h3>
+      {{range .LastSyncs}}
+      <div class="row">
+        <code>{{.SyncType}}</code>
+        {{if eq .Status "success"}}<span class="pill success">success</span>{{else}}<span class="pill error">{{.Status}}</span>{{end}}
+        <div class="muted" style="font-size: 11px; margin-top: 2px;">{{.SyncedAt.UTC.Format "2006-01-02 15:04 UTC"}} · {{.ExecsAdded}} execs · {{.TradesAdded}} trades</div>
+      </div>
+      {{else}}
+      <div class="muted" style="font-size: 13px;">No imports yet.</div>
+      {{end}}
+    </div>
+  </aside>
+</div>
+
+<style>
+  .dir-long { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+  .dir-short { background: #fce7f3; color: #9d174d; padding: 2px 8px; border-radius: 999px; font-size: 11px; }
+</style>
+{{end}}

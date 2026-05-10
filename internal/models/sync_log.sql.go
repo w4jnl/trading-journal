@@ -53,6 +53,45 @@ func (q *Queries) CreateSyncLog(ctx context.Context, arg CreateSyncLogParams) (S
 	return i, err
 }
 
+const listLastSyncByType = `-- name: ListLastSyncByType :many
+SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at FROM sync_log s1
+WHERE id = (SELECT MAX(id) FROM sync_log WHERE sync_type = s1.sync_type)
+ORDER BY synced_at DESC
+`
+
+func (q *Queries) ListLastSyncByType(ctx context.Context) ([]SyncLog, error) {
+	rows, err := q.db.QueryContext(ctx, listLastSyncByType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SyncLog
+	for rows.Next() {
+		var i SyncLog
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.SyncType,
+			&i.Status,
+			&i.SourceFile,
+			&i.TradesAdded,
+			&i.ExecsAdded,
+			&i.Message,
+			&i.SyncedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listSyncLogRecent = `-- name: ListSyncLogRecent :many
 SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at FROM sync_log ORDER BY synced_at DESC LIMIT ?
 `
