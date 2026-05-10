@@ -11,6 +11,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log/slog"
+	"math"
 	"net/http"
 	"time"
 
@@ -170,9 +171,10 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return ""
 		},
-		"mul":         func(a, b float64) float64 { return a * b },
-		"div":         func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
-		"i64ToFloat":  func(i int64) float64 { return float64(i) },
+		"mul":        func(a, b float64) float64 { return a * b },
+		"div":        func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
+		"i64ToFloat": func(i int64) float64 { return float64(i) },
+		"isInf":      func(f float64) bool { return math.IsInf(f, 0) },
 	}
 }
 

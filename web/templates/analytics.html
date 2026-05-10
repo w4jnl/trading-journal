@@ -1,0 +1,121 @@
+{{define "title"}}Analytics — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  .head-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .head-card { background: white; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .head-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .head-card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
+  .head-card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .pnl-pos { color: #15803d; }
+  .pnl-neg { color: #b91c1c; }
+  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
+  .breakdown-grid h3 { margin-top: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; }
+  .filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px; padding: 12px 16px; background: white; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .filter-row label { display: flex; flex-direction: column; font-size: 12px; color: #475569; }
+  .filter-row select, .filter-row input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+</style>
+
+<h1>Analytics</h1>
+
+<form method="get" action="/analytics" class="filter-row">
+  <label>Account
+    <select name="account_id">
+      <option value="">All</option>
+      {{range .Accounts}}
+        <option value="{{.ID}}" {{if eq $.AccountID .ID}}selected{{end}}>{{.Name}}{{if .Firm}} ({{derefStr .Firm}}){{end}}</option>
+      {{end}}
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="from" value="{{.From}}">
+  </label>
+  <label>To
+    <input type="date" name="to" value="{{.To}}">
+  </label>
+  <button type="submit">Apply</button>
+  <a href="/analytics" style="margin-left: 4px; font-size: 13px; color: #475569; text-decoration: none;">Clear</a>
+  <span class="muted" style="margin-left: auto;">{{.TradeCount}} closed trades in selection.</span>
+</form>
+
+{{with .Headline}}
+{{if .Trades}}
+<div class="head-grid">
+  <div class="head-card">
+    <div class="label">Net P&amp;L</div>
+    <div class="value {{if gt .NetPnl 0.0}}pnl-pos{{else if lt .NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" .NetPnl}}</div>
+    <div class="sub">Gross {{printf "%.2f" .GrossPnl}} · comm {{printf "%.2f" .Commission}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Trades · Win rate</div>
+    <div class="value">{{.Trades}}</div>
+    <div class="sub"><span class="pnl-pos">{{.Wins}}W</span> / <span class="pnl-neg">{{.Losses}}L</span> · {{printf "%.0f%%" (mul .WinRate 100.0)}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Profit factor</div>
+    <div class="value">{{if isInf .ProfitFactor}}∞{{else}}{{printf "%.2f" .ProfitFactor}}{{end}}</div>
+    <div class="sub">total wins / total losses</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Expectancy</div>
+    <div class="value {{if gt .Expectancy 0.0}}pnl-pos{{else if lt .Expectancy 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Expectancy}}</div>
+    <div class="sub">avg edge per trade</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Avg win / Avg loss</div>
+    <div class="value"><span class="pnl-pos">{{printf "%.2f" .AvgWin}}</span></div>
+    <div class="sub"><span class="pnl-neg">{{printf "%.2f" .AvgLoss}}</span></div>
+  </div>
+  <div class="head-card">
+    <div class="label">Largest win / loss</div>
+    <div class="value"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></div>
+    <div class="sub"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></div>
+  </div>
+</div>
+{{else}}
+<div class="panel" style="text-align: center; color: #64748b;">No trades match the current filter.</div>
+{{end}}
+{{end}}
+
+<div class="breakdown-grid">
+  <section>
+    <h3>By symbol</h3>
+    {{template "bucket_table" .BySymbol}}
+  </section>
+  <section>
+    <h3>By direction</h3>
+    {{template "bucket_table" .ByDirection}}
+  </section>
+  <section>
+    <h3>By day of week (entry)</h3>
+    {{template "bucket_table" .ByDOW}}
+  </section>
+  <section>
+    <h3>By hour of day (entry)</h3>
+    {{template "bucket_table" .ByHour}}
+  </section>
+</div>
+{{end}}
+
+{{define "bucket_table"}}
+<table>
+  <thead>
+    <tr><th>Group</th><th>Trades</th><th>W/L</th><th>Net P&amp;L</th><th>Best</th><th>Worst</th></tr>
+  </thead>
+  <tbody>
+    {{range .}}
+    <tr>
+      <td><code>{{.Key}}</code></td>
+      <td>{{.Trades}}</td>
+      <td><span class="pnl-pos">{{.Wins}}</span>/<span class="pnl-neg">{{.Losses}}</span></td>
+      <td class="{{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</td>
+      <td class="pnl-pos">{{printf "%.2f" .Best}}</td>
+      <td class="pnl-neg">{{printf "%.2f" .Worst}}</td>
+    </tr>
+    {{else}}
+    <tr><td colspan="6" class="muted">no data</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}
