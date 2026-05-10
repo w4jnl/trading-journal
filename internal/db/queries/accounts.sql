@@ -14,3 +14,9 @@ SELECT * FROM accounts ORDER BY name;
 
 -- name: GetAccountByID :one
 SELECT * FROM accounts WHERE id = ?;
+
+-- name: UpdateAccount :one
+UPDATE accounts
+SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
+WHERE id = ?
+RETURNING *;

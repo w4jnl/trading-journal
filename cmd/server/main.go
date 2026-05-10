@@ -84,6 +84,8 @@ func run() error {
 	mux.HandleFunc("POST /import/upload", h.ImportUpload)
 	mux.HandleFunc("GET /trades", h.TradesPage)
 	mux.HandleFunc("GET /trades/{id}", h.TradeDetail)
+	mux.HandleFunc("GET /accounts", h.AccountsPage)
+	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {

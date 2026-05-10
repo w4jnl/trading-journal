@@ -25,6 +25,33 @@ func (q *Queries) GetCommissionRate(ctx context.Context, arg GetCommissionRatePa
 	return i, err
 }
 
+const listDistinctSymbolsForAccount = `-- name: ListDistinctSymbolsForAccount :many
+SELECT DISTINCT symbol FROM executions WHERE account_id = ? ORDER BY symbol
+`
+
+func (q *Queries) ListDistinctSymbolsForAccount(ctx context.Context, accountID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctSymbolsForAccount, accountID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var symbol string
+		if err := rows.Scan(&symbol); err != nil {
+			return nil, err
+		}
+		items = append(items, symbol)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExecutionsForAccountSymbol = `-- name: ListExecutionsForAccountSymbol :many
 SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions
 WHERE account_id = ? AND symbol = ?

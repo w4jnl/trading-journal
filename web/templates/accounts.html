@@ -1,0 +1,36 @@
+{{define "title"}}Accounts — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  table.accounts input, table.accounts select { padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+  table.accounts td { vertical-align: middle; }
+</style>
+
+<h1>Accounts</h1>
+
+<div class="panel" style="background:#fef3c7; border-left: 4px solid #d97706;">
+  Accounts are auto-created from CSV imports. Set <strong>firm</strong> (drives commission lookup) and <strong>type</strong> to clear the <code>setup</code> flag. Changing the firm refreshes commissions on existing trades.
+</div>
+
+<table class="accounts">
+  <thead>
+    <tr>
+      <th>Source / Ref</th>
+      <th>Name</th>
+      <th>Firm</th>
+      <th>Type</th>
+      <th>Curr</th>
+      <th>Active</th>
+      <th>Status</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Accounts}}
+      {{template "account_row" (dict "Account" . "FirmOptions" $.FirmOptions "TypeOptions" $.TypeOptions)}}
+    {{else}}
+      <tr><td colspan="8" class="muted">No accounts yet — drop a CSV to /import.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+{{end}}

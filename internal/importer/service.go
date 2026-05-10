@@ -414,6 +414,40 @@ func (s *ImportService) logger() *slog.Logger {
 	return slog.Default()
 }
 
+// RebuildTradesForAccount re-runs the position builder for every (account_id,
+// symbol) pair the account has executions for. Called from the accounts UI
+// when the user changes firm — commissions need to refresh on existing trades.
+func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID int64) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	q := s.Queries.WithTx(tx)
+
+	symbols, err := q.ListDistinctSymbolsForAccount(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("list symbols: %w", err)
+	}
+	if len(symbols) == 0 {
+		return nil
+	}
+
+	tz := s.Timezone
+	if tz == nil {
+		tz = time.UTC
+	}
+	builder := &positions.Builder{Queries: q, Timezone: tz}
+	keys := make([]positions.Key, 0, len(symbols))
+	for _, sym := range symbols {
+		keys = append(keys, positions.Key{AccountID: accountID, Symbol: sym})
+	}
+	if _, err := builder.Rebuild(ctx, keys); err != nil {
+		return fmt.Errorf("rebuild: %w", err)
+	}
+	return tx.Commit()
+}
+
 func (o Outcome) errorOrSummary() string {
 	if o.ErrorMessage != "" {
 		return o.ErrorMessage

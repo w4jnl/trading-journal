@@ -30,11 +30,20 @@ type Handlers struct {
 	Logger     *slog.Logger
 }
 
-// renderPage parses templates/base.html + templates/<page> together and
-// executes the result. Re-parsing on every request is cheap with embed.FS
-// and keeps the template wiring trivial; we can cache later if it ever shows up.
+// renderPage parses base.html + the named page + every _*.html partial in the
+// templates dir, and executes the base. Bundling the partials means a page
+// can reference any sibling partial via {{template "name" .}} without the
+// caller listing it explicitly.
 func (h *Handlers) renderPage(w http.ResponseWriter, page string, data any) {
-	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, "templates/base.html", "templates/"+page)
+	files := []string{"templates/base.html", "templates/" + page}
+	partials, err := fs.Glob(h.Templates, "templates/_*.html")
+	if err != nil {
+		h.serverError(w, fmt.Errorf("glob partials: %w", err))
+		return
+	}
+	files = append(files, partials...)
+
+	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse %s: %w", page, err))
 		return
@@ -92,6 +101,22 @@ func (h *Handlers) funcMap() template.FuncMap {
 				cls = "pnl-neg"
 			}
 			return template.HTML(fmt.Sprintf(`<span class="%s">%.2f</span>`, cls, *p))
+		},
+		// dict builds an ad-hoc map from key/value pairs. Useful for passing
+		// multi-field data into a sub-template via {{template "x" (dict ...)}}.
+		"dict": func(pairs ...any) (map[string]any, error) {
+			if len(pairs)%2 != 0 {
+				return nil, fmt.Errorf("dict: odd number of arguments")
+			}
+			out := make(map[string]any, len(pairs)/2)
+			for i := 0; i < len(pairs); i += 2 {
+				k, ok := pairs[i].(string)
+				if !ok {
+					return nil, fmt.Errorf("dict: key %d not a string", i/2)
+				}
+				out[k] = pairs[i+1]
+			}
+			return out, nil
 		},
 	}
 }

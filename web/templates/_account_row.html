@@ -1,0 +1,30 @@
+{{define "account_row"}}
+{{$a := .Account}}
+<tr id="account-{{$a.ID}}">
+  <form hx-post="/accounts/{{$a.ID}}" hx-target="#account-{{$a.ID}}" hx-swap="outerHTML" style="display: contents;">
+    <td>
+      <code class="muted">{{$a.AccountRef}}</code><br>
+      <span class="muted" style="font-size:11px;">{{$a.ImportSource}}</span>
+    </td>
+    <td><input type="text" name="name" value="{{$a.Name}}" required style="width: 100%;"></td>
+    <td>
+      <select name="firm">
+        {{range $.FirmOptions}}
+          <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+        {{end}}
+      </select>
+    </td>
+    <td>
+      <select name="type">
+        {{range $.TypeOptions}}
+          <option value="{{.}}" {{if and $a.Type (eq . (derefStr $a.Type))}}selected{{end}}{{if and (not $a.Type) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+        {{end}}
+      </select>
+    </td>
+    <td><input type="text" name="currency" value="{{$a.Currency}}" style="width: 60px;"></td>
+    <td><input type="checkbox" name="active" {{if eq $a.Active 1}}checked{{end}}></td>
+    <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+    <td><button type="submit">Save</button></td>
+  </form>
+</tr>
+{{end}}
