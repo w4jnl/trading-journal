@@ -11,3 +11,6 @@ RETURNING *;
 
 -- name: ListAccounts :many
 SELECT * FROM accounts ORDER BY name;
+
+-- name: GetAccountByID :one
+SELECT * FROM accounts WHERE id = ?;

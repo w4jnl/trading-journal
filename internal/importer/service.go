@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jaro/trading-journal/internal/models"
+	"github.com/jaro/trading-journal/internal/positions"
 )
 
 // ImportService ingests CSV exports into the database.
@@ -33,20 +34,22 @@ type ImportService struct {
 	Queries      *models.Queries
 	ProcessedDir string
 	FailedDir    string
+	Timezone     *time.Location // used by the position builder for daily_stats date bucketing
 	Logger       *slog.Logger
 }
 
 // Outcome summarizes what an ImportFile call did.
 type Outcome struct {
-	SourcePath         string  // original path that was passed in (no longer exists after move)
-	Format             Format  // detected format; FormatUnknown means dispatch failed
-	FillsParsed        int     // rows successfully parsed (for TopstepX, only Filled rows)
-	ExecsInserted      int     // affected-row count from INSERT
-	AccountsCreated    int     // new accounts auto-created during this import
-	InstrumentsStubbed int     // unknown symbol roots auto-created with needs_setup=1
-	SyncLogID          int64   // id of the sync_log row written
-	DestinationPath    string  // post-move location of the file
-	ErrorMessage       string  // empty on success
+	SourcePath         string // original path that was passed in (no longer exists after move)
+	Format             Format // detected format; FormatUnknown means dispatch failed
+	FillsParsed        int    // rows successfully parsed (for TopstepX, only Filled rows)
+	ExecsInserted      int    // affected-row count from INSERT
+	AccountsCreated    int    // new accounts auto-created during this import
+	InstrumentsStubbed int    // unknown symbol roots auto-created with needs_setup=1
+	TradesCreated      int    // closed trades materialized by the position builder
+	SyncLogID          int64  // id of the sync_log row written
+	DestinationPath    string // post-move location of the file
+	ErrorMessage       string // empty on success
 }
 
 // ImportFile reads, parses, ingests, and relocates a single CSV file.
@@ -117,6 +120,8 @@ func DetectFormat(content []byte) Format {
 }
 
 // ingest runs all DB writes for one import inside a single transaction.
+// After inserting executions, it invokes the position builder to rebuild
+// trades and daily_stats for any (account, symbol) pair that got new fills.
 func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format, out *Outcome) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -127,6 +132,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 
 	accounts := map[string]int64{}
 	instruments := map[string]bool{}
+	rebuildKeys := map[positions.Key]bool{}
 
 	for _, f := range fills {
 		if _, seen := instruments[f.SymbolRoot]; !seen {
@@ -173,6 +179,26 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			return fmt.Errorf("insert execution %s/%s: %w", f.AccountRef, f.BrokerExecID, err)
 		}
 		out.ExecsInserted += int(n)
+		if n > 0 {
+			rebuildKeys[positions.Key{AccountID: accountID, Symbol: f.Symbol}] = true
+		}
+	}
+
+	if len(rebuildKeys) > 0 {
+		tz := s.Timezone
+		if tz == nil {
+			tz = time.UTC
+		}
+		builder := &positions.Builder{Queries: q, Timezone: tz}
+		keys := make([]positions.Key, 0, len(rebuildKeys))
+		for k := range rebuildKeys {
+			keys = append(keys, k)
+		}
+		res, err := builder.Rebuild(ctx, keys)
+		if err != nil {
+			return fmt.Errorf("position builder: %w", err)
+		}
+		out.TradesCreated = res.TradesCreated
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -333,7 +359,7 @@ func (s *ImportService) writeSyncLog(ctx context.Context, out Outcome, status, m
 		SyncType:    string(out.Format),
 		Status:      status,
 		SourceFile:  &source,
-		TradesAdded: 0,
+		TradesAdded: int64(out.TradesCreated),
 		ExecsAdded:  int64(out.ExecsInserted),
 		Message:     strPtrOrNil(message),
 	})

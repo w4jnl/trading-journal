@@ -4,9 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"io"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/jaro/trading-journal/internal/db"
 	"github.com/jaro/trading-journal/internal/models"
@@ -29,11 +31,13 @@ func setupTestService(t *testing.T) (*ImportService, *sql.DB, string, string, st
 	processed := filepath.Join(tmp, "processed")
 	failed := filepath.Join(tmp, "failed")
 
+	loc, _ := time.LoadLocation("America/Chicago")
 	svc := &ImportService{
 		DB:           conn,
 		Queries:      models.New(conn),
 		ProcessedDir: processed,
 		FailedDir:    failed,
+		Timezone:     loc,
 	}
 	return svc, conn, tmp, processed, failed
 }
@@ -106,6 +110,35 @@ func TestImportFile_MotiveWaveFixture(t *testing.T) {
 	if !firm.Valid || firm.String != "amp" {
 		t.Errorf("AMP account firm = %v, want 'amp'", firm)
 	}
+
+	// The position builder must have produced at least some closed trades.
+	if out.TradesCreated == 0 {
+		t.Error("TradesCreated = 0, expected the builder to materialize closed trades from real fills")
+	}
+
+	// Spot-check the first APEX-100001-28 ES trade. From the raw CSV the first
+	// two fills for that account/symbol are sell 1 @ 7253 then buy 1 @ 7252.25
+	// — a short held for ~23 minutes that closed +0.75 points.
+	apexFirst := firstTradeForAccount(t, conn, "APEX-100001-28", "ESM6")
+	if apexFirst.Direction != "short" {
+		t.Errorf("APEX-100001-28 ES first trade direction = %q, want short", apexFirst.Direction)
+	}
+	if apexFirst.EntryPrice != 7253 {
+		t.Errorf("entry_price = %v, want 7253", apexFirst.EntryPrice)
+	}
+	if apexFirst.ExitPrice == nil || *apexFirst.ExitPrice != 7252.25 {
+		t.Errorf("exit_price = %v, want 7252.25", apexFirst.ExitPrice)
+	}
+	wantGross := 0.75 * 50.0 // 0.75 ES points × $50 multiplier × 1 contract
+	if apexFirst.GrossPnl == nil || !approxEq(*apexFirst.GrossPnl, wantGross) {
+		t.Errorf("gross_pnl = %v, want %v", apexFirst.GrossPnl, wantGross)
+	}
+	if apexFirst.Commission == nil || !approxEq(*apexFirst.Commission, 1.99) {
+		t.Errorf("commission = %v, want 1.99 (apex ES rate)", apexFirst.Commission)
+	}
+	if apexFirst.NetPnl == nil || !approxEq(*apexFirst.NetPnl, wantGross-1.99) {
+		t.Errorf("net_pnl = %v, want %v", apexFirst.NetPnl, wantGross-1.99)
+	}
 }
 
 func TestImportFile_TopstepXFixture(t *testing.T) {
@@ -148,6 +181,10 @@ func TestImportFile_TopstepXFixture(t *testing.T) {
 	}
 	if !firm.Valid || firm.String != "topstep" {
 		t.Errorf("TopstepX account firm = %v, want 'topstep'", firm)
+	}
+
+	if out.TradesCreated == 0 {
+		t.Error("TradesCreated = 0, expected the builder to materialize closed trades")
 	}
 }
 
@@ -200,6 +237,33 @@ func TestImportFile_BadFormatGoesToFailed(t *testing.T) {
 	if _, err := os.Stat(sidecar); err != nil {
 		t.Errorf("sidecar missing: %v", err)
 	}
+}
+
+func firstTradeForAccount(t *testing.T, conn *sql.DB, accountRef, symbol string) models.Trade {
+	t.Helper()
+	row := conn.QueryRow(`
+		SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
+		       t.entry_price, t.exit_price, t.entry_time, t.exit_time,
+		       t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at
+		FROM trades t
+		JOIN accounts a ON a.id = t.account_id
+		WHERE a.account_ref = ? AND t.symbol = ?
+		ORDER BY t.entry_time, t.id
+		LIMIT 1
+	`, accountRef, symbol)
+	var tr models.Trade
+	if err := row.Scan(
+		&tr.ID, &tr.AccountID, &tr.Symbol, &tr.SymbolRoot, &tr.Direction, &tr.Qty,
+		&tr.EntryPrice, &tr.ExitPrice, &tr.EntryTime, &tr.ExitTime,
+		&tr.GrossPnl, &tr.Commission, &tr.NetPnl, &tr.Status, &tr.Tags, &tr.Setup, &tr.CreatedAt,
+	); err != nil {
+		t.Fatalf("first trade %s/%s: %v", accountRef, symbol, err)
+	}
+	return tr
+}
+
+func approxEq(a, b float64) bool {
+	return math.Abs(a-b) < 1e-6
 }
 
 func assertExecCount(t *testing.T, conn *sql.DB, want int) {

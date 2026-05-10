@@ -50,7 +50,7 @@ func (q *Queries) InsertExecution(ctx context.Context, arg InsertExecutionParams
 }
 
 const listExecutionsByAccount = `-- name: ListExecutionsByAccount :many
-SELECT id, account_id, trade_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions WHERE account_id = ? ORDER BY exec_time, id
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions WHERE account_id = ? ORDER BY exec_time, id
 `
 
 func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) ([]Execution, error) {
@@ -65,7 +65,6 @@ func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) 
 		if err := rows.Scan(
 			&i.ID,
 			&i.AccountID,
-			&i.TradeID,
 			&i.BrokerExecID,
 			&i.Symbol,
 			&i.SymbolRoot,

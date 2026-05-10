@@ -44,7 +44,6 @@ type DailyStat struct {
 type Execution struct {
 	ID           int64     `json:"id"`
 	AccountID    int64     `json:"account_id"`
-	TradeID      *int64    `json:"trade_id"`
 	BrokerExecID string    `json:"broker_exec_id"`
 	Symbol       string    `json:"symbol"`
 	SymbolRoot   string    `json:"symbol_root"`
@@ -113,4 +112,11 @@ type Trade struct {
 	Tags       *string    `json:"tags"`
 	Setup      *string    `json:"setup"`
 	CreatedAt  time.Time  `json:"created_at"`
+}
+
+type TradeExecution struct {
+	TradeID     int64   `json:"trade_id"`
+	ExecutionID int64   `json:"execution_id"`
+	Role        string  `json:"role"`
+	QtyUsed     float64 `json:"qty_used"`
 }
