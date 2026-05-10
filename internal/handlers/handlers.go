@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"fmt"
 	"html/template"
 	"io/fs"
@@ -21,6 +22,7 @@ import (
 // concrete values; tests can swap any field.
 type Handlers struct {
 	Templates  fs.FS // embedded template tree; pages live at templates/<name>
+	DB         *sql.DB // raw connection for hand-written dynamic queries
 	ImportSvc  *importer.ImportService
 	Queries    *models.Queries
 	UploadsDir string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
@@ -69,8 +71,27 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return *s
 		},
+		"deref": func(p *float64) float64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
 		"localtime": func(t time.Time, layout string) string {
 			return t.In(loc).Format(layout)
+		},
+		// pnlClass renders a *float64 with a color span based on sign.
+		// Nil values render as a plain em-dash; the position builder writes
+		// NULL for trades whose instrument has no tick spec configured yet.
+		"pnlClass": func(p *float64) template.HTML {
+			if p == nil {
+				return template.HTML("—")
+			}
+			cls := "pnl-pos"
+			if *p < 0 {
+				cls = "pnl-neg"
+			}
+			return template.HTML(fmt.Sprintf(`<span class="%s">%.2f</span>`, cls, *p))
 		},
 	}
 }

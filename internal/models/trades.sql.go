@@ -92,6 +92,62 @@ func (q *Queries) DeleteTradesForAccountSymbol(ctx context.Context, arg DeleteTr
 	return err
 }
 
+const getTradeByID = `-- name: GetTradeByID :one
+SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, a.name AS account_name, a.firm AS account_firm
+FROM trades t
+JOIN accounts a ON a.id = t.account_id
+WHERE t.id = ?
+`
+
+type GetTradeByIDRow struct {
+	ID          int64      `json:"id"`
+	AccountID   int64      `json:"account_id"`
+	Symbol      string     `json:"symbol"`
+	SymbolRoot  string     `json:"symbol_root"`
+	Direction   string     `json:"direction"`
+	Qty         float64    `json:"qty"`
+	EntryPrice  float64    `json:"entry_price"`
+	ExitPrice   *float64   `json:"exit_price"`
+	EntryTime   time.Time  `json:"entry_time"`
+	ExitTime    *time.Time `json:"exit_time"`
+	GrossPnl    *float64   `json:"gross_pnl"`
+	Commission  *float64   `json:"commission"`
+	NetPnl      *float64   `json:"net_pnl"`
+	Status      string     `json:"status"`
+	Tags        *string    `json:"tags"`
+	Setup       *string    `json:"setup"`
+	CreatedAt   time.Time  `json:"created_at"`
+	AccountName string     `json:"account_name"`
+	AccountFirm *string    `json:"account_firm"`
+}
+
+func (q *Queries) GetTradeByID(ctx context.Context, id int64) (GetTradeByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getTradeByID, id)
+	var i GetTradeByIDRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Direction,
+		&i.Qty,
+		&i.EntryPrice,
+		&i.ExitPrice,
+		&i.EntryTime,
+		&i.ExitTime,
+		&i.GrossPnl,
+		&i.Commission,
+		&i.NetPnl,
+		&i.Status,
+		&i.Tags,
+		&i.Setup,
+		&i.CreatedAt,
+		&i.AccountName,
+		&i.AccountFirm,
+	)
+	return i, err
+}
+
 const linkTradeExecution = `-- name: LinkTradeExecution :exec
 INSERT INTO trade_executions (trade_id, execution_id, role, qty_used)
 VALUES (?, ?, ?, ?)
@@ -114,12 +170,39 @@ func (q *Queries) LinkTradeExecution(ctx context.Context, arg LinkTradeExecution
 	return err
 }
 
+const listDistinctSymbolRoots = `-- name: ListDistinctSymbolRoots :many
+SELECT DISTINCT symbol_root FROM trades ORDER BY symbol_root
+`
+
+func (q *Queries) ListDistinctSymbolRoots(ctx context.Context) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctSymbolRoots)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var symbol_root string
+		if err := rows.Scan(&symbol_root); err != nil {
+			return nil, err
+		}
+		items = append(items, symbol_root)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExecutionsForTrade = `-- name: ListExecutionsForTrade :many
 SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, te.role, te.qty_used
 FROM executions e
 JOIN trade_executions te ON te.execution_id = e.id
 WHERE te.trade_id = ?
-ORDER BY te.role DESC, e.exec_time, e.id
+ORDER BY te.role ASC, e.exec_time, e.id
 `
 
 type ListExecutionsForTradeRow struct {

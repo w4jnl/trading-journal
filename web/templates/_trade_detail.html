@@ -1,0 +1,55 @@
+{{define "trade_detail"}}
+{{with .Trade}}
+<h2>
+  {{.Symbol}} <span class="muted" style="font-size:14px;">({{.SymbolRoot}})</span>
+  {{if eq .Direction "long"}}<span class="dir-long">long</span>{{else}}<span class="dir-short">short</span>{{end}}
+</h2>
+<div class="muted" style="margin-bottom:12px;">
+  {{.AccountName}}
+  {{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
+  · entered {{.EntryTime.UTC.Format "2006-01-02 15:04:05"}} UTC
+  {{if .ExitTime}} · exited {{.ExitTime.UTC.Format "2006-01-02 15:04:05"}} UTC{{end}}
+</div>
+
+<table style="margin-bottom:16px;">
+  <tr>
+    <th>Qty</th><td>{{.Qty}}</td>
+    <th>Entry (avg)</th><td>{{.EntryPrice}}</td>
+    <th>Exit (avg)</th><td>{{if .ExitPrice}}{{deref .ExitPrice}}{{else}}—{{end}}</td>
+  </tr>
+  <tr>
+    <th>Gross P&amp;L</th><td>{{pnlClass .GrossPnl}}</td>
+    <th>Commission</th><td>{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+    <th>Net P&amp;L</th><td>{{pnlClass .NetPnl}}</td>
+  </tr>
+</table>
+{{end}}
+
+<h3>Executions ({{len .Executions}})</h3>
+<table>
+  <thead>
+    <tr>
+      <th>Time (UTC)</th>
+      <th>Role</th>
+      <th>Side</th>
+      <th>Price</th>
+      <th>Qty</th>
+      <th>Qty used by trade</th>
+      <th>Broker exec id</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Executions}}
+    <tr>
+      <td>{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
+      <td><code>{{.Role}}</code></td>
+      <td>{{.Side}}</td>
+      <td>{{.Price}}</td>
+      <td>{{.Qty}}</td>
+      <td>{{.QtyUsed}}</td>
+      <td><span class="muted">{{.BrokerExecID}}</span></td>
+    </tr>
+  {{end}}
+  </tbody>
+</table>
+{{end}}

@@ -1,0 +1,117 @@
+{{define "title"}}Trades — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  .filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px; }
+  .filter-row label { display: flex; flex-direction: column; font-size: 12px; color: #475569; }
+  .filter-row select, .filter-row input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; min-width: 120px; }
+  .pnl-pos { color: #15803d; font-weight: 600; }
+  .pnl-neg { color: #b91c1c; font-weight: 600; }
+  .dir-long { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .dir-short { background: #fce7f3; color: #9d174d; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
+  .trade-row { cursor: pointer; }
+  .trade-row:hover { background: #f1f5f9; }
+  .pager { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
+  .pager a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
+  .pager a.disabled { color: #94a3b8; pointer-events: none; }
+  /* Modal */
+  #modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: none; align-items: center; justify-content: center; z-index: 100; }
+  #modal-backdrop.show { display: flex; }
+  .modal { background: white; border-radius: 8px; max-width: 800px; width: 90%; max-height: 85vh; overflow: auto; padding: 20px; }
+  .modal h2 { margin-top: 0; }
+  .close-btn { float: right; background: none; color: #475569; padding: 4px 8px; }
+</style>
+
+<h1>Trades</h1>
+
+<form method="get" action="/trades" class="filter-row panel">
+  <label>Account
+    <select name="account_id">
+      <option value="">All</option>
+      {{$selAcc := index .Filters "AccountID"}}
+      {{range .Accounts}}
+        <option value="{{.ID}}" {{if eq (printf "%d" .ID) $selAcc}}selected{{end}}>{{.Name}}{{if .Firm}} ({{derefStr .Firm}}){{end}}</option>
+      {{end}}
+    </select>
+  </label>
+  <label>Symbol
+    <select name="symbol_root">
+      <option value="">All</option>
+      {{$selSym := index .Filters "SymbolRoot"}}
+      {{range .SymbolRoots}}
+        <option value="{{.}}" {{if eq . $selSym}}selected{{end}}>{{.}}</option>
+      {{end}}
+    </select>
+  </label>
+  <label>Direction
+    <select name="direction">
+      <option value="">Any</option>
+      {{$selDir := index .Filters "Direction"}}
+      <option value="long" {{if eq "long" $selDir}}selected{{end}}>Long</option>
+      <option value="short" {{if eq "short" $selDir}}selected{{end}}>Short</option>
+    </select>
+  </label>
+  <label>From
+    <input type="date" name="from" value="{{index .Filters "From"}}">
+  </label>
+  <label>To
+    <input type="date" name="to" value="{{index .Filters "To"}}">
+  </label>
+  <button type="submit">Apply</button>
+  <a href="/trades" style="margin-left:4px; font-size:13px; color:#475569; text-decoration:none;">Clear</a>
+</form>
+
+<div class="muted" style="margin-bottom:8px;">{{.Total}} closed trades.</div>
+
+<table>
+  <thead>
+    <tr>
+      <th>Entry (UTC)</th>
+      <th>Account</th>
+      <th>Symbol</th>
+      <th>Dir</th>
+      <th>Qty</th>
+      <th>Entry</th>
+      <th>Exit</th>
+      <th>Gross P&amp;L</th>
+      <th>Comm</th>
+      <th>Net P&amp;L</th>
+    </tr>
+  </thead>
+  <tbody>
+  {{range .Trades}}
+    <tr class="trade-row"
+        hx-get="/trades/{{.ID}}"
+        hx-target="#modal-content"
+        hx-swap="innerHTML"
+        onclick="document.getElementById('modal-backdrop').classList.add('show')">
+      <td>{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
+      <td>{{.AccountName}}</td>
+      <td>{{.Symbol}} <span class="muted">({{.SymbolRoot}})</span></td>
+      <td>{{if eq .Direction "long"}}<span class="dir-long">long</span>{{else}}<span class="dir-short">short</span>{{end}}</td>
+      <td>{{.Qty}}</td>
+      <td>{{.EntryPrice}}</td>
+      <td>{{if .ExitPrice}}{{deref .ExitPrice}}{{else}}—{{end}}</td>
+      <td>{{pnlClass .GrossPnl}}</td>
+      <td>{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+      <td>{{pnlClass .NetPnl}}</td>
+    </tr>
+  {{else}}
+    <tr><td colspan="10" class="muted">No trades match the current filters.</td></tr>
+  {{end}}
+  </tbody>
+</table>
+
+<div class="pager">
+  <a href="{{.PrevPage}}" class="{{if not .PrevPage}}disabled{{end}}">‹ Prev</a>
+  <span class="muted">Page {{.Page}} of {{.Pages}}</span>
+  <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
+</div>
+
+<div id="modal-backdrop" onclick="if (event.target === this) this.classList.remove('show')">
+  <div class="modal">
+    <button class="close-btn" onclick="document.getElementById('modal-backdrop').classList.remove('show')">close</button>
+    <div id="modal-content">loading…</div>
+  </div>
+</div>
+{{end}}

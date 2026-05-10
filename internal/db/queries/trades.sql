@@ -30,4 +30,20 @@ SELECT e.*, te.role, te.qty_used
 FROM executions e
 JOIN trade_executions te ON te.execution_id = e.id
 WHERE te.trade_id = ?
-ORDER BY te.role DESC, e.exec_time, e.id;
+ORDER BY te.role ASC, e.exec_time, e.id;
+
+-- name: GetTradeByID :one
+SELECT t.*, a.name AS account_name, a.firm AS account_firm
+FROM trades t
+JOIN accounts a ON a.id = t.account_id
+WHERE t.id = ?;
+
+-- name: ListDistinctSymbolRoots :many
+SELECT DISTINCT symbol_root FROM trades ORDER BY symbol_root;
+
+-- ListTradesFiltered + CountTradesFiltered are intentionally NOT defined here.
+-- Their dynamic WHERE clauses (account, symbol, direction, date range) are
+-- built in Go and run via *sql.DB — see internal/handlers/trades.go. sqlc's
+-- sqlc.narg pattern produces broken positional indexing for SQLite (each narg
+-- becomes ?N which doesn't line up with the 1-based variadic args), so we
+-- skip sqlc for these two queries.

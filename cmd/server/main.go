@@ -68,6 +68,7 @@ func run() error {
 
 	h := &handlers.Handlers{
 		Templates:  web.TemplatesFS,
+		DB:         conn,
 		ImportSvc:  importSvc,
 		Queries:    queries,
 		UploadsDir: uploads,
@@ -81,6 +82,8 @@ func run() error {
 	})
 	mux.HandleFunc("GET /import", h.ImportPage)
 	mux.HandleFunc("POST /import/upload", h.ImportUpload)
+	mux.HandleFunc("GET /trades", h.TradesPage)
+	mux.HandleFunc("GET /trades/{id}", h.TradeDetail)
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
