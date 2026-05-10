@@ -1,0 +1,99 @@
+{{define "title"}}Journal — {{.Date}} — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  .journal-grid { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
+  @media (max-width: 800px) { .journal-grid { grid-template-columns: 1fr; } }
+  .journal-header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 16px; }
+  .journal-header h1 { margin: 0; }
+  .journal-nav a { color: #1e40af; text-decoration: none; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+  .journal-nav input[type=date] { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+  .mood-row { display: flex; gap: 4px; margin: 12px 0; }
+  .mood-row label { cursor: pointer; padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 18px; }
+  .mood-row input[type=radio] { display: none; }
+  .mood-row input[type=radio]:checked + span { background: #fef3c7; border-color: #d97706; outline: 2px solid #d97706; outline-offset: -1px; }
+  textarea { width: 100%; min-height: 280px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 14px; resize: vertical; }
+  .markdown-preview { background: white; border-radius: 6px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); margin-top: 16px; }
+  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
+  .markdown-preview pre { background: #f1f5f9; padding: 10px; border-radius: 4px; overflow-x: auto; }
+  .markdown-preview code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; }
+  .markdown-preview blockquote { border-left: 3px solid #cbd5e1; padding-left: 12px; color: #475569; }
+  .recent-list { list-style: none; padding: 0; margin: 0; }
+  .recent-list li { padding: 8px 0; border-bottom: 1px solid #e2e8f0; }
+  .recent-list a { color: #0f172a; text-decoration: none; }
+  .recent-list a:hover { color: #1e40af; }
+  .recent-list .preview { color: #64748b; font-size: 12px; display: block; margin-top: 2px; }
+  .flash { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
+  .flash.saved { background: #dcfce7; color: #166534; }
+  .flash.deleted { background: #fef3c7; color: #92400e; }
+  .flash.empty { background: #e2e8f0; color: #475569; }
+</style>
+
+<div class="journal-header">
+  <h1>Journal · {{.DateNice}}</h1>
+</div>
+
+<div class="journal-nav" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
+  <a href="/journal/{{.PrevDay}}">‹ Prev</a>
+  <a href="/journal/{{.Today}}">Today</a>
+  <a href="/journal/{{.NextDay}}">Next ›</a>
+  <form method="get" action="/journal/" onsubmit="this.action='/journal/'+this.date.value;" style="display: inline; margin-left: 12px;">
+    <input type="date" name="date" value="{{.Date}}" onchange="this.form.submit()">
+  </form>
+</div>
+
+{{if .Flash}}
+<div class="flash {{.Flash}}">
+  {{if eq .Flash "saved"}}Entry saved.
+  {{else if eq .Flash "deleted"}}Entry deleted (body was empty).
+  {{else if eq .Flash "empty"}}Nothing to save — body was empty.
+  {{end}}
+</div>
+{{end}}
+
+<div class="journal-grid">
+  <section>
+    <form method="post" action="/journal/{{.Date}}">
+      <div class="mood-row">
+        <span class="muted" style="margin-right: 8px; align-self: center;">Mood:</span>
+        {{range $m := mkRange 1 5}}
+        <label>
+          <input type="radio" name="mood" value="{{$m}}" {{if eq $.Mood $m}}checked{{end}}>
+          <span>{{moodEmoji $m}}</span>
+        </label>
+        {{end}}
+        <label>
+          <input type="radio" name="mood" value="" {{if eq $.Mood 0}}checked{{end}}>
+          <span style="font-size: 13px;">none</span>
+        </label>
+      </div>
+
+      <textarea name="body" placeholder="What happened today? Markdown supported: headings, lists, **bold**, code, blockquotes.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
+
+      <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+        <button type="submit">Save</button>
+        <span class="muted">Empty body deletes the entry.</span>
+      </div>
+    </form>
+
+    {{if .Rendered}}
+    <h3 style="margin-top: 24px;">Preview</h3>
+    <div class="markdown-preview">{{.Rendered}}</div>
+    {{end}}
+  </section>
+
+  <aside>
+    <h3 style="margin-top: 0;">Recent</h3>
+    <ul class="recent-list">
+      {{range .Recent}}
+        <li>
+          <a href="/journal/{{.EntryDate.Format "2006-01-02"}}">{{.EntryDate.Format "Mon, 2 Jan"}}</a>
+          <span class="preview">{{snippet .Body 80}}</span>
+        </li>
+      {{else}}
+        <li class="muted">No journal entries yet.</li>
+      {{end}}
+    </ul>
+  </aside>
+</div>
+{{end}}

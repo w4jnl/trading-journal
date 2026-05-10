@@ -118,6 +118,40 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return out, nil
 		},
+		// mkRange returns []int64{from, from+1, …, to} for use in {{range}}.
+		"mkRange": func(from, to int64) []int64 {
+			if to < from {
+				return nil
+			}
+			out := make([]int64, 0, to-from+1)
+			for i := from; i <= to; i++ {
+				out = append(out, i)
+			}
+			return out
+		},
+		"moodEmoji": func(mood int64) string {
+			switch mood {
+			case 1:
+				return "😞"
+			case 2:
+				return "😕"
+			case 3:
+				return "😐"
+			case 4:
+				return "🙂"
+			case 5:
+				return "😀"
+			}
+			return ""
+		},
+		// snippet truncates s to at most n runes, appending "…" if cut.
+		"snippet": func(s string, n int) string {
+			r := []rune(s)
+			if len(r) <= n {
+				return s
+			}
+			return string(r[:n]) + "…"
+		},
 	}
 }
 
