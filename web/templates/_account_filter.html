@@ -68,7 +68,7 @@ inline script so the user sees feedback before submitting.
     display: flex !important;
     flex-direction: row !important;
     align-items: center;
-    gap: 8px;
+    gap: 4px;
     padding: 4px 6px;
     cursor: pointer;
     font-size: 13px;
@@ -79,13 +79,17 @@ inline script so the user sees feedback before submitting.
     color: #0f172a;
   }
   .filter-picker .filter-panel label:hover { background: #f1f5f9; }
-  /* Fixed-width checkbox slot so long account names don't bump the box out of line. */
+  /* min-width: 0 overrides the parent page's `.filter-row input { min-width:
+     120px }` (meant for the date/symbol inputs alongside the picker), which
+     otherwise forces every checkbox slot to 120px and leaves a giant gap
+     before the label text. */
   .filter-picker .filter-panel input[type=checkbox] {
     margin: 0;
     cursor: pointer;
-    flex: 0 0 14px;
+    flex: 0 0 auto;
     width: 14px;
     height: 14px;
+    min-width: 0;
   }
   .filter-picker .filter-panel label .filter-text {
     overflow: hidden;

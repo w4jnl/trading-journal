@@ -75,78 +75,85 @@
   </form>
 </details>
 
-<form id="accounts-form" method="post" action="/accounts/save">
-  <table class="accounts">
-    <thead>
-      <tr>
-        <th>Source / Ref</th>
-        <th>Name</th>
-        <th>Firm</th>
-        <th>Type</th>
-        <th>Curr</th>
-        <th>Active</th>
-        <th>Status</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Accounts}}
-        {{$a := .}}
-        <tr data-account-id="{{$a.ID}}">
-          <td>
-            <code class="muted">{{$a.AccountRef}}</code><br>
-            <span class="muted" style="font-size:11px;">{{$a.ImportSource}}</span>
-            <details class="reassign">
-              <summary>Move trades…</summary>
-              <form method="post" action="/accounts/{{$a.ID}}/reassign">
-                <label>To account
-                  <select name="to" required>
-                    <option value="">— pick —</option>
-                    {{range $.Accounts}}
-                      {{if ne .ID $a.ID}}
-                        <option value="{{.ID}}">{{.Name}} · <code>{{.AccountRef}}</code></option>
-                      {{end}}
-                    {{end}}
-                  </select>
-                </label>
-                <button type="submit"
-                        onclick="return confirm('Move all trades from {{$a.Name}} to the selected account?\\n\\nThe source account stays in place (empty). You can delete it later if needed.');">
-                  Move
-                </button>
-              </form>
-            </details>
-          </td>
-          <td><input type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
-          <td>
-            <select name="accounts.{{$a.ID}}.firm">
-              {{range $.FirmOptions}}
-                <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
-              {{end}}
-            </select>
-          </td>
-          <td>
-            <select name="accounts.{{$a.ID}}.type">
-              <option value="" {{if not $a.Type}}selected{{end}}>—</option>
-              {{range $.TypeOptions}}
-                <option value="{{.Value}}" {{if and $a.Type (eq .Value (derefStr $a.Type))}}selected{{end}}>{{.Label}}</option>
-              {{end}}
-            </select>
-          </td>
-          <td><input type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 60px;"></td>
-          <td><input type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
-          <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
-        </tr>
-      {{else}}
-        <tr><td colspan="7" class="muted">No accounts yet — drop a CSV to /import.</td></tr>
-      {{end}}
-    </tbody>
-  </table>
+<!--
+  The bulk-save form sits OUTSIDE the table. Inputs in each row use the
+  HTML5 `form` attribute to associate themselves with it without being
+  nested DOM-descendants. This lets the per-row Reassign forms live inside
+  the table cells without triggering the "no nested <form>" rule that
+  silently breaks Save in every browser.
+-->
+<form id="accounts-form" method="post" action="/accounts/save"></form>
 
-  <div id="save-bar" class="save-bar">
-    <span class="muted"><strong id="dirty-count">0</strong> row(s) changed.</span>
-    <button type="submit">Save changes</button>
-    <button type="button" id="reset-btn">Discard</button>
-  </div>
-</form>
+<table class="accounts">
+  <thead>
+    <tr>
+      <th>Source / Ref</th>
+      <th>Name</th>
+      <th>Firm</th>
+      <th>Type</th>
+      <th>Curr</th>
+      <th>Active</th>
+      <th>Status</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{range .Accounts}}
+      {{$a := .}}
+      <tr data-account-id="{{$a.ID}}">
+        <td>
+          <code class="muted">{{$a.AccountRef}}</code><br>
+          <span class="muted" style="font-size:11px;">{{$a.ImportSource}}</span>
+          <details class="reassign">
+            <summary>Move trades…</summary>
+            <form method="post" action="/accounts/{{$a.ID}}/reassign">
+              <label>To account
+                <select name="to" required>
+                  <option value="">— pick —</option>
+                  {{range $.Accounts}}
+                    {{if ne .ID $a.ID}}
+                      <option value="{{.ID}}">{{.Name}} · <code>{{.AccountRef}}</code></option>
+                    {{end}}
+                  {{end}}
+                </select>
+              </label>
+              <button type="submit"
+                      onclick="return confirm('Move all trades from {{$a.Name}} to the selected account?\\n\\nThe source account stays in place (empty). You can delete it later if needed.');">
+                Move
+              </button>
+            </form>
+          </details>
+        </td>
+        <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
+        <td>
+          <select form="accounts-form" name="accounts.{{$a.ID}}.firm">
+            {{range $.FirmOptions}}
+              <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+            {{end}}
+          </select>
+        </td>
+        <td>
+          <select form="accounts-form" name="accounts.{{$a.ID}}.type">
+            <option value="" {{if not $a.Type}}selected{{end}}>—</option>
+            {{range $.TypeOptions}}
+              <option value="{{.Value}}" {{if and $a.Type (eq .Value (derefStr $a.Type))}}selected{{end}}>{{.Label}}</option>
+            {{end}}
+          </select>
+        </td>
+        <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 60px;"></td>
+        <td><input form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
+        <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="7" class="muted">No accounts yet — drop a CSV to /import.</td></tr>
+    {{end}}
+  </tbody>
+</table>
+
+<div id="save-bar" class="save-bar">
+  <span class="muted"><strong id="dirty-count">0</strong> row(s) changed.</span>
+  <button form="accounts-form" type="submit">Save changes</button>
+  <button type="button" id="reset-btn">Discard</button>
+</div>
 
 <script>
   // Dirty-detection: snapshot every input's initial value on load. On any
@@ -155,7 +162,12 @@
   (function () {
     const form = document.getElementById('accounts-form');
     if (!form) return;
-    const inputs = Array.from(form.querySelectorAll('input, select'));
+    // Use form.elements (not querySelectorAll) so inputs associated with the
+    // form via the HTML5 `form="accounts-form"` attribute are included, even
+    // though they live outside the (empty) <form> element itself.
+    const inputs = Array.from(form.elements).filter(
+      (el) => el.tagName === 'INPUT' || el.tagName === 'SELECT'
+    );
     const snapshot = new Map();
     const getVal = (el) => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
     const setVal = (el, v) => {
@@ -177,7 +189,7 @@
           if (tr) dirtyRows.add(tr);
         }
       });
-      form.querySelectorAll('tr.row-dirty').forEach((tr) => {
+      document.querySelectorAll('table.accounts tr.row-dirty').forEach((tr) => {
         if (!dirtyRows.has(tr)) tr.classList.remove('row-dirty');
       });
       dirtyRows.forEach((tr) => tr.classList.add('row-dirty'));
@@ -185,8 +197,13 @@
       dirtyCount.textContent = dirtyRows.size;
     };
 
-    form.addEventListener('input', refresh);
-    form.addEventListener('change', refresh);
+    // Listen on each input directly — events from inputs associated to the
+    // form via the `form` attribute do NOT bubble to the <form> element,
+    // since bubbling follows the DOM tree (table cells), not form ownership.
+    inputs.forEach((el) => {
+      el.addEventListener('input', refresh);
+      el.addEventListener('change', refresh);
+    });
     document.getElementById('reset-btn').addEventListener('click', () => {
       inputs.forEach((el) => setVal(el, snapshot.get(el)));
       refresh();
