@@ -4,64 +4,127 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>{{block "title" .}}Trading Journal{{end}}</title>
+  {{/*
+    Pre-paint theme script: must run *before* the stylesheet is fetched so the
+    correct CSS variable set is in scope on first paint. Otherwise a flash of
+    light-themed content appears for dark-mode users on slow stylesheet loads.
+  */}}
+  <script>
+    (function () {
+      try {
+        /* URL ?theme=dark|light overrides for shareable preview links. */
+        var url = new URL(window.location.href);
+        var fromUrl = url.searchParams.get('theme');
+        var stored = localStorage.getItem('theme');
+        var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        var theme = fromUrl || stored || (prefersDark ? 'dark' : 'light');
+        document.documentElement.setAttribute('data-theme', theme);
+        if (fromUrl) { localStorage.setItem('theme', fromUrl); }
+      } catch (e) { /* localStorage blocked — leave default */ }
+    })();
+  </script>
+  <link rel="preload" href="/static/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/static/fonts/JetBrainsMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
-  <style>
-    body { font-family: -apple-system, system-ui, sans-serif; margin: 0; background: #f1f5f9; color: #0f172a; }
-    nav { background: #0f172a; color: white; padding: 12px 20px; display: flex; gap: 18px; align-items: center; }
-    nav a { color: white; text-decoration: none; opacity: 0.8; }
-    nav a:hover { opacity: 1; }
-    nav a.brand { font-weight: 600; opacity: 1; }
-    main { max-width: 1100px; margin: 0 auto; padding: 24px 20px; }
-    h1 { margin-top: 0; }
-    table { width: 100%; border-collapse: collapse; background: white; border-radius: 6px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
-    th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
-    th { background: #f8fafc; font-weight: 600; }
-    .panel { background: white; border-radius: 6px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); margin-bottom: 24px; }
-    .panel.success { border-left: 4px solid #16a34a; }
-    .panel.error { border-left: 4px solid #dc2626; }
-    .muted { color: #64748b; font-size: 12px; }
-    button { background: #0f172a; color: white; border: 0; padding: 8px 14px; border-radius: 4px; cursor: pointer; font-size: 14px; }
-    button:hover { background: #1e293b; }
-    input[type=file] { font-size: 14px; }
-    code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 13px; }
-    .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
-    .pill.success { background: #dcfce7; color: #166534; }
-    .pill.error { background: #fee2e2; color: #991b1b; }
-    /* Back button (shown when a cross-page deep link sets ?back=…). */
-    .back-button { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
-                   background: #0f172a; color: white; border-radius: 4px;
-                   text-decoration: none; font-size: 13px; margin-bottom: 12px; }
-    .back-button:hover { background: #1e293b; }
-    .back-button .hint { background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px;
-                         font-size: 10px; font-family: ui-monospace, SFMono-Regular, monospace; }
-    /* Active nav menu item — bottom underline. */
-    nav a.active { opacity: 1; border-bottom: 2px solid #38bdf8; padding-bottom: 2px; }
-    /* Sketch-style icons. Color comes from the parent's `color`; SVG strokes inherit via currentColor. */
-    .icon { display: inline-block; vertical-align: -3px; }
-    .icon-journal.icon-empty   { color: #cbd5e1; }
-    .icon-journal.icon-good    { color: #16a34a; }
-    .icon-journal.icon-bad     { color: #dc2626; }
-    .icon-journal.icon-neutral { color: #64748b; }
-    /* Slight wobble on hover for the "hand-drawn" feel without overdoing it. */
-    .icon-journal { transition: transform 120ms ease-out; }
-    a:hover > .icon-journal,
-    .trade-row:hover .icon-journal { transform: rotate(-2deg) translateY(-0.5px); }
-  </style>
 </head>
 <body>
-  <nav>
-    <a href="/" class="brand">Trading Journal</a>
-    <a href="/trades"    class="{{if eq .NavActive "trades"}}active{{end}}">Trades</a>
-    <a href="/calendar"  class="{{if eq .NavActive "calendar"}}active{{end}}">Calendar</a>
-    <a href="/journal"   class="{{if eq .NavActive "journal"}}active{{end}}">Journal</a>
-    <a href="/analytics" class="{{if eq .NavActive "analytics"}}active{{end}}">Analytics</a>
-    <a href="/import"    class="{{if eq .NavActive "import"}}active{{end}}">Import</a>
-    <a href="/accounts"  class="{{if eq .NavActive "accounts"}}active{{end}}">Accounts</a>
-  </nav>
-  <main>
-    {{block "content" .}}{{end}}
-  </main>
+  {{/* CSS-only mobile drawer: a hidden checkbox toggles the sidebar via :checked. */}}
+  <input type="checkbox" id="nav-open" class="nav-toggle-input" aria-hidden="true">
+  <div class="app-shell">
+    <label for="nav-open" class="nav-toggle" aria-label="Toggle navigation">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <line x1="3" y1="6"  x2="21" y2="6"/>
+        <line x1="3" y1="12" x2="21" y2="12"/>
+        <line x1="3" y1="18" x2="21" y2="18"/>
+      </svg>
+    </label>
+    <label for="nav-open" class="nav-backdrop" aria-hidden="true"></label>
+
+    <aside class="sidebar">
+      <a href="/" class="sidebar-brand">
+        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 12 L9 4 L21 4 L15 12 L21 20 L9 20 Z"/>
+        </svg>
+        <span>Trading Journal</span>
+      </a>
+
+      <a href="/dashboard" class="sidebar-link {{if eq .NavActive "dashboard"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="9" rx="1.2"/><rect x="14" y="3" width="7" height="5" rx="1.2"/><rect x="14" y="12" width="7" height="9" rx="1.2"/><rect x="3" y="16" width="7" height="5" rx="1.2"/></svg>
+        Dashboard
+      </a>
+      <a href="/trades" class="sidebar-link {{if eq .NavActive "trades"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 17 L9 11 L13 14 L21 6"/><polyline points="15 6 21 6 21 12"/></svg>
+        Trades
+      </a>
+      <a href="/calendar" class="sidebar-link {{if eq .NavActive "calendar"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="1.5"/><line x1="3" y1="10" x2="21" y2="10"/><line x1="8" y1="3" x2="8" y2="7"/><line x1="16" y1="3" x2="16" y2="7"/></svg>
+        Calendar
+      </a>
+      <a href="/journal" class="sidebar-link {{if eq .NavActive "journal"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3 L18 3 L18 21 L6 21 Z"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="12" y1="8" x2="16" y2="8"/><line x1="12" y1="12" x2="16" y2="12"/></svg>
+        Journal
+      </a>
+      <a href="/analytics" class="sidebar-link {{if eq .NavActive "analytics"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="12" width="3" height="8"/><rect x="11" y="7" width="3" height="13"/><rect x="16" y="14" width="3" height="6"/></svg>
+        Analytics
+      </a>
+
+      <div class="sidebar-section">Data</div>
+      <a href="/import" class="sidebar-link {{if eq .NavActive "import"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4 L12 16"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/></svg>
+        Import
+      </a>
+      <a href="/accounts" class="sidebar-link {{if eq .NavActive "accounts"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.2"/><path d="M3 20 C 3 16 6 14 9 14 C 12 14 15 16 15 20"/><path d="M16 5 L19 5 L19 21 L21 21"/></svg>
+        Accounts
+      </a>
+
+      <div class="sidebar-footer">
+        <button type="button" id="cmdk-open" class="sidebar-link" style="background:transparent;border:0;width:100%;text-align:left;cursor:pointer;font:inherit;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><line x1="15.5" y1="15.5" x2="20" y2="20"/></svg>
+          Search
+          <kbd>⌘K</kbd>
+        </button>
+        <button type="button" id="theme-toggle" class="sidebar-link" aria-label="Toggle theme" style="background:transparent;border:0;width:100%;text-align:left;cursor:pointer;font:inherit;">
+          <svg class="nav-icon theme-icon-light" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="4"/><line x1="12" y1="2" x2="12" y2="5"/><line x1="12" y1="19" x2="12" y2="22"/><line x1="4.93" y1="4.93" x2="7.05" y2="7.05"/><line x1="16.95" y1="16.95" x2="19.07" y2="19.07"/><line x1="2" y1="12" x2="5" y2="12"/><line x1="19" y1="12" x2="22" y2="12"/><line x1="4.93" y1="19.07" x2="7.05" y2="16.95"/><line x1="16.95" y1="7.05" x2="19.07" y2="4.93"/></svg>
+          <svg class="nav-icon theme-icon-dark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 13 A 9 9 0 0 1 11 3 A 7 7 0 1 0 21 13 Z"/></svg>
+          <span class="theme-label">Theme</span>
+        </button>
+      </div>
+    </aside>
+
+    <main class="app-main">
+      <div class="app-content">
+        {{block "content" .}}{{end}}
+      </div>
+    </main>
+  </div>
+
+  {{template "command_palette" .}}
+
+  <style>
+    /* Show only the icon that matches the active theme. */
+    .theme-icon-light, .theme-icon-dark { display: none; }
+    [data-theme="light"] .theme-icon-dark { display: inline-block; }
+    [data-theme="dark"]  .theme-icon-light { display: inline-block; }
+    html:not([data-theme="dark"]) .theme-icon-dark { display: inline-block; }
+  </style>
+  <script>
+    /* Theme toggle: flip data-theme attribute + persist. */
+    (function () {
+      var btn = document.getElementById('theme-toggle');
+      if (!btn) return;
+      btn.addEventListener('click', function () {
+        var cur = document.documentElement.getAttribute('data-theme') || 'light';
+        var next = cur === 'dark' ? 'light' : 'dark';
+        document.documentElement.setAttribute('data-theme', next);
+        try { localStorage.setItem('theme', next); } catch (e) { /* ignore */ }
+        /* Notify chart code (analytics) so it can re-init with new colors. */
+        window.dispatchEvent(new CustomEvent('themechange', { detail: next }));
+      });
+    })();
+  </script>
 </body>
 </html>
 {{end}}

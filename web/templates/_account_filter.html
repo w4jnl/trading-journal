@@ -1,8 +1,7 @@
 {{/*
 Collapsible "filter by account and/or type" picker. Uses <details>/<summary>
 so it acts like a dropdown without any JS framework — click opens, click
-checkboxes to multi-select (no Cmd/Ctrl trickery that conflicts with macOS
-right-click), click outside or summary again to close.
+checkboxes to multi-select, click outside or summary again to close.
 
 Expects:
   .Accounts          []models.Account
@@ -42,47 +41,68 @@ inline script so the user sees feedback before submitting.
 </details>
 <style>
   .filter-picker { position: relative; display: inline-block; }
-  .filter-picker > summary { cursor: pointer; padding: 6px 12px; border: 1px solid #cbd5e1;
-                             border-radius: 4px; background: white; list-style: none;
-                             display: inline-flex; align-items: center; gap: 8px;
-                             font-size: 13px; user-select: none; min-width: 200px; }
+  .filter-picker > summary {
+    cursor: pointer;
+    padding: 0 12px;
+    height: 32px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--bg-elev);
+    color: var(--fg);
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    user-select: none;
+    min-width: 200px;
+    transition: border-color var(--t-fast);
+  }
+  .filter-picker > summary:hover { border-color: var(--border-strong); }
   .filter-picker > summary::-webkit-details-marker { display: none; }
   .filter-picker > summary::marker { content: ''; }
-  .filter-picker[open] > summary { border-color: #475569; }
-  .filter-label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .filter-count { font-weight: 500; flex: 1; }
-  .filter-caret { color: #64748b; transition: transform 120ms; }
+  .filter-picker[open] > summary { border-color: var(--accent); box-shadow: var(--focus-ring); }
+  .filter-label { color: var(--fg-muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  .filter-count { font-weight: 500; flex: 1; color: var(--fg); }
+  .filter-caret { color: var(--fg-muted); transition: transform 120ms; }
   .filter-picker[open] .filter-caret { transform: rotate(180deg); }
-  .filter-panel { position: absolute; top: calc(100% + 4px); left: 0; min-width: 280px;
-                  max-height: 400px; overflow-y: auto; background: white;
-                  border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px;
-                  box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 100; }
+  .filter-panel {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    min-width: 280px;
+    max-height: 400px;
+    overflow-y: auto;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    padding: 8px;
+    box-shadow: var(--shadow-2);
+    z-index: 100;
+  }
   .filter-panel fieldset { border: 0; padding: 0; margin: 0 0 10px 0; }
   .filter-panel fieldset:last-child { margin-bottom: 0; }
-  .filter-panel legend { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
-                         color: #94a3b8; font-weight: 600; padding: 0 0 4px 0; }
-  /* High specificity (.filter-picker .filter-panel label = 3 classes) so we
-     reliably beat the parent page's `.filter-row label { flex-direction:
-     column }` rule meant for the date inputs alongside the picker. */
+  .filter-panel legend { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-subtle); font-weight: 600; padding: 0 0 4px 0; }
+  /* High specificity so we reliably beat the parent page's `.filter-row label
+     { flex-direction: column }` rule meant for the date inputs alongside. */
   .filter-picker .filter-panel label {
     display: flex !important;
     flex-direction: row !important;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     padding: 4px 6px;
     cursor: pointer;
     font-size: 13px;
-    border-radius: 3px;
+    border-radius: var(--r-sm);
     white-space: nowrap;
     text-transform: none;
     letter-spacing: normal;
-    color: #0f172a;
+    color: var(--fg);
+    font-weight: normal;
   }
-  .filter-picker .filter-panel label:hover { background: #f1f5f9; }
+  .filter-picker .filter-panel label:hover { background: var(--bg-hover); }
   /* min-width: 0 overrides the parent page's `.filter-row input { min-width:
-     120px }` (meant for the date/symbol inputs alongside the picker), which
-     otherwise forces every checkbox slot to 120px and leaves a giant gap
-     before the label text. */
+     120px }` which otherwise forces every checkbox slot to be 120px wide. */
   .filter-picker .filter-panel input[type=checkbox] {
     margin: 0;
     cursor: pointer;
@@ -97,7 +117,7 @@ inline script so the user sees feedback before submitting.
     min-width: 0;
     flex: 1;
   }
-  .muted-inline { color: #94a3b8; font-size: 11px; }
+  .muted-inline { color: var(--fg-subtle); font-size: 11px; }
 </style>
 <script>
   // Live-update the picker's summary count as the user toggles checkboxes.

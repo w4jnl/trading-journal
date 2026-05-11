@@ -1,37 +1,16 @@
 {{define "title"}}Journal — {{.WeekLabel}} — Trading Journal{{end}}
 
 {{define "content"}}
-<style>
-  .journal-header { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
-  .journal-header h1 { margin: 0; flex-shrink: 0; }
-  .journal-nav a { color: #1e40af; text-decoration: none; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
-  textarea { width: 100%; min-height: 280px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 4px;
-             font-family: ui-monospace, SFMono-Regular, monospace; font-size: 14px; resize: vertical;
-             box-sizing: border-box; }
-  .markdown-preview { background: white; border-radius: 6px; padding: 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); margin-top: 16px; }
-  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
-  .markdown-preview pre { background: #f1f5f9; padding: 10px; border-radius: 4px; overflow-x: auto; }
-  .markdown-preview code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; }
-  .markdown-preview blockquote { border-left: 3px solid #cbd5e1; padding-left: 12px; color: #475569; }
-  .flash { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
-  .flash.saved { background: #dcfce7; color: #166534; }
-  .flash.deleted { background: #fef3c7; color: #92400e; }
-  .flash.empty { background: #e2e8f0; color: #475569; }
-</style>
-
 {{template "back_button" .}}
 
-<div class="journal-header">
-  <h1>{{.WeekLabel}}</h1>
-  <span class="muted" style="font-size: 14px;">{{.RangeLabel}}</span>
-</div>
+<h1>{{.WeekLabel}} <span class="muted" style="font-weight:400; font-size: 14px;">{{.RangeLabel}}</span></h1>
 
-<div class="journal-nav" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
-  <a href="/journal/week/{{.PrevWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}">‹ Prev week</a>
-  <a href="/journal/week/{{.NextWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}">Next week ›</a>
+<div class="row-sm" style="margin-bottom: 16px;">
+  <a href="/journal/week/{{.PrevWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">‹ Prev week</a>
+  <a href="/journal/week/{{.NextWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">Next week ›</a>
   <input type="week" value="{{.WeekID}}"
          onchange="if (this.value) window.location.href='/journal/week/'+this.value+'{{if .BackHref}}?back={{.BackHref}}{{end}}'"
-         style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; margin-left: 12px;">
+         style="margin-left: 8px;">
 </div>
 
 {{if .Flash}}
@@ -45,21 +24,28 @@
 
 <form method="post" action="/journal/week/{{.WeekID}}">
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
-  <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
-    <span class="muted" style="margin-right: 4px;">Tag:</span>
+  <div class="row-sm" style="margin-bottom: 12px;">
+    <span class="label" style="margin-right: 4px;">Tag</span>
     {{template "tag_picker" (dict "Tag" $.Tag)}}
   </div>
 
-  <textarea name="body" placeholder="What happened this week? Themes, recurring mistakes, plan adjustments. Markdown supported.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
+  <textarea name="body" class="textarea-mono" style="min-height: 280px;" placeholder="What happened this week? Themes, recurring mistakes, plan adjustments. Markdown supported.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
 
-  <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
-    <button type="submit">Save</button>
+  <div class="row" style="margin-top: 12px;">
+    <button type="submit" class="btn btn--primary">Save</button>
     <span class="muted">Empty body deletes the entry.</span>
   </div>
 </form>
 
 {{if .Rendered}}
 <h3 style="margin-top: 24px;">Preview</h3>
-<div class="markdown-preview">{{.Rendered}}</div>
+<div class="card markdown-preview">{{.Rendered}}</div>
 {{end}}
+
+<style>
+  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
+  .markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
+  .markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
+  .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
+</style>
 {{end}}

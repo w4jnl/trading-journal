@@ -1,17 +1,17 @@
 {{define "import_outcome"}}
 {{if .ErrorMessage}}
-<div class="panel error">
+<div class="card card--neg">
   <strong>Failed:</strong> {{.ErrorMessage}}
   <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
 </div>
 {{else}}
-<div class="panel success">
+<div class="card card--pos">
   <strong>Imported {{.Format}}</strong> —
-  {{.FillsParsed}} fills parsed,
-  {{.ExecsInserted}} new execs,
-  {{.AccountsCreated}} new accounts,
-  {{.InstrumentsStubbed}} new instrument stubs,
-  {{.TradesCreated}} trades materialized.
+  <span class="num">{{.FillsParsed}}</span> fills parsed,
+  <span class="num">{{.ExecsInserted}}</span> new execs,
+  <span class="num">{{.AccountsCreated}}</span> new accounts,
+  <span class="num">{{.InstrumentsStubbed}}</span> new instrument stubs,
+  <span class="num">{{.TradesCreated}}</span> trades materialized.
   <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
 </div>
 {{end}}

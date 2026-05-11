@@ -1,126 +1,133 @@
 {{define "trade_detail"}}
 {{with .Trade}}
 <h2>
-  {{.Symbol}} <span class="muted" style="font-size:14px;">({{.SymbolRoot}})</span>
-  {{if eq .Direction "long"}}<span class="dir-long">long</span>{{else}}<span class="dir-short">short</span>{{end}}
+  <span class="num">{{.Symbol}}</span> <span class="muted" style="font-size:14px;">({{.SymbolRoot}})</span>
+  {{if eq .Direction "long"}}<span class="pill dir-long">long</span>{{else}}<span class="pill dir-short">short</span>{{end}}
 </h2>
 <div class="muted" style="margin-bottom:12px;">
   {{.AccountName}}
   {{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
-  · entered {{.EntryTime.UTC.Format "2006-01-02 15:04:05"}} UTC
-  {{if .ExitTime}} · exited {{.ExitTime.UTC.Format "2006-01-02 15:04:05"}} UTC{{end}}
+  · entered <span class="num">{{.EntryTime.UTC.Format "2006-01-02 15:04:05"}}</span> UTC
+  {{if .ExitTime}} · exited <span class="num">{{.ExitTime.UTC.Format "2006-01-02 15:04:05"}}</span> UTC{{end}}
 </div>
 
-<table style="margin-bottom:16px;">
-  <tr>
-    <th>Qty</th><td>{{.Qty}}</td>
-    <th>Entry (avg)</th><td>{{printf "%.2f" .EntryPrice}}</td>
-    <th>Exit (avg)</th><td>{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
-  </tr>
-  <tr>
-    <th>Gross P&amp;L</th><td>{{pnlClass .GrossPnl}}</td>
-    <th>Commission</th><td>{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
-    <th>Net P&amp;L</th><td>{{pnlClass .NetPnl}}</td>
-  </tr>
-</table>
+<div class="grid-auto" style="--min: 140px; margin-bottom: 16px;">
+  <div class="card card--compact">
+    <div class="label">Qty</div>
+    <div class="value num">{{.Qty}}</div>
+  </div>
+  <div class="card card--compact">
+    <div class="label">Entry (avg)</div>
+    <div class="value num">{{printf "%.2f" .EntryPrice}}</div>
+  </div>
+  <div class="card card--compact">
+    <div class="label">Exit (avg)</div>
+    <div class="value num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</div>
+  </div>
+  <div class="card card--compact">
+    <div class="label">Gross P&amp;L</div>
+    <div class="value num">{{pnlClass .GrossPnl}}</div>
+  </div>
+  <div class="card card--compact">
+    <div class="label">Commission</div>
+    <div class="value num">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</div>
+  </div>
+  <div class="card card--compact">
+    <div class="label">Net P&amp;L</div>
+    <div class="value num">{{pnlClass .NetPnl}}</div>
+  </div>
+</div>
 {{end}}
 
 <section style="margin-bottom: 16px;">
   <h3 style="margin-bottom: 8px;">Journal</h3>
-  {{if eq $.Flash "saved"}}<div class="flash saved" style="background:#dcfce7;color:#166534;padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:8px;">Saved.</div>{{end}}
-  {{if eq $.Flash "deleted"}}<div class="flash deleted" style="background:#fef3c7;color:#92400e;padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:8px;">Entry deleted (body was empty).</div>{{end}}
-  {{if eq $.Flash "empty"}}<div class="flash empty" style="background:#e2e8f0;color:#475569;padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:8px;">Nothing to save — body was empty.</div>{{end}}
+  {{if eq $.Flash "saved"}}<div class="flash saved">Saved.</div>{{end}}
+  {{if eq $.Flash "deleted"}}<div class="flash deleted">Entry deleted (body was empty).</div>{{end}}
+  {{if eq $.Flash "empty"}}<div class="flash empty">Nothing to save — body was empty.</div>{{end}}
 
   <form hx-post="/trades/{{$.TradeID}}/journal"
         hx-target="#modal-content"
         hx-swap="innerHTML"
         hx-encoding="application/x-www-form-urlencoded">
     {{template "tag_picker" (dict "Tag" $.JournalTag)}}
-    <textarea name="body" rows="6" placeholder="What did you see, do, feel about this trade? Markdown supported."
-              style="width: 100%; box-sizing: border-box; min-height: 140px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">{{$.JournalBody}}</textarea>
-    <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
-      <button type="submit">Save</button>
-      <span class="muted" style="font-size:12px;">Empty body deletes the entry.</span>
+    <textarea name="body" class="textarea-mono" rows="6" placeholder="What did you see, do, feel about this trade? Markdown supported." style="min-height: 140px;">{{$.JournalBody}}</textarea>
+    <div class="row" style="margin-top: 8px;">
+      <button type="submit" class="btn btn--primary">Save</button>
+      <span class="muted">Empty body deletes the entry.</span>
     </div>
   </form>
 
-  {{/* A save (or delete) just happened — flag it so the modal close path
-       reloads the underlying /trades page and the journal pictogram in the
-       row updates without manual refresh. */}}
   {{if or (eq $.Flash "saved") (eq $.Flash "deleted")}}
   <script>window.__journalChanged = true;</script>
   {{end}}
 
   {{if $.JournalRendered}}
-  <div class="markdown-preview" style="background:#f8fafc; padding:12px; border-radius:4px; margin-top:12px;">
+  <div class="card card--compact" style="margin-top:12px;">
     {{$.JournalRendered}}
   </div>
   {{end}}
 </section>
 
-<h3>Executions ({{len .Executions}})</h3>
-<table>
-  <thead>
-    <tr>
-      <th>Time (UTC)</th>
-      <th>Role</th>
-      <th>Side</th>
-      <th>Price</th>
-      <th>Qty</th>
-      <th>Qty used by trade</th>
-      <th>Broker exec id</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Executions}}
-    <tr>
-      <td>{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
-      <td><code>{{.Role}}</code></td>
-      <td>{{.Side}}</td>
-      <td>{{printf "%.2f" .Price}}</td>
-      <td>{{.Qty}}</td>
-      <td>{{.QtyUsed}}</td>
-      <td><span class="muted">{{.BrokerExecID}}</span></td>
-    </tr>
-  {{end}}
-  </tbody>
-</table>
+<h3>Executions (<span class="num">{{len .Executions}}</span>)</h3>
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Time (UTC)</th>
+        <th>Role</th>
+        <th>Side</th>
+        <th class="tabular">Price</th>
+        <th class="tabular">Qty</th>
+        <th class="tabular">Qty used</th>
+        <th>Broker exec id</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Executions}}
+      <tr>
+        <td class="num muted">{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
+        <td><code>{{.Role}}</code></td>
+        <td>{{.Side}}</td>
+        <td class="tabular num">{{printf "%.2f" .Price}}</td>
+        <td class="tabular num">{{.Qty}}</td>
+        <td class="tabular num">{{.QtyUsed}}</td>
+        <td><span class="muted num">{{.BrokerExecID}}</span></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}
 
-{{/* Reusable tag picker — used by trade-detail and the day-journal form.
-     Uses sketch-style SVG icons (defined in _icons.html) instead of emoji so the
-     chips render consistently across platforms and inherit color from the chip's
-     selected state. */}}
+{{/* Reusable tag picker — used by trade-detail and the day-journal form. */}}
 {{define "tag_picker"}}
-<div class="tag-picker" style="display:flex; gap:6px; margin-bottom:8px;">
-  <label class="chip {{if eq .Tag "good"}}chip-good chip-on{{end}}">
-    <input type="radio" name="tag" value="good" {{if eq .Tag "good"}}checked{{end}} style="display:none;">
+<div class="tag-picker">
+  <label class="chip tag-good {{if eq .Tag "good"}}chip-on{{end}}">
+    <input type="radio" name="tag" value="good" {{if eq .Tag "good"}}checked{{end}}>
     {{template "thumb_up"}}<span>good</span>
   </label>
-  <label class="chip {{if eq .Tag "neutral"}}chip-neutral chip-on{{end}}">
-    <input type="radio" name="tag" value="neutral" {{if eq .Tag "neutral"}}checked{{end}} style="display:none;">
+  <label class="chip tag-neutral {{if eq .Tag "neutral"}}chip-on{{end}}">
+    <input type="radio" name="tag" value="neutral" {{if eq .Tag "neutral"}}checked{{end}}>
     {{template "neutral_dot"}}<span>neutral</span>
   </label>
-  <label class="chip {{if eq .Tag "bad"}}chip-bad chip-on{{end}}">
-    <input type="radio" name="tag" value="bad" {{if eq .Tag "bad"}}checked{{end}} style="display:none;">
+  <label class="chip tag-bad {{if eq .Tag "bad"}}chip-on{{end}}">
+    <input type="radio" name="tag" value="bad" {{if eq .Tag "bad"}}checked{{end}}>
     {{template "thumb_down"}}<span>bad</span>
   </label>
-  <label class="chip chip-none {{if eq .Tag ""}}chip-on{{end}}">
-    <input type="radio" name="tag" value="" {{if eq .Tag ""}}checked{{end}} style="display:none;">
+  <label class="chip tag-none {{if eq .Tag ""}}chip-on{{end}}">
+    <input type="radio" name="tag" value="" {{if eq .Tag ""}}checked{{end}}>
     <span>none</span>
   </label>
 </div>
 <style>
-  .chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
-          padding: 4px 10px; border: 1.5px solid #cbd5e1; border-radius: 999px;
-          font-size: 13px; color: #475569; user-select: none; transition: all 120ms ease-out; }
-  .chip:hover { border-color: #94a3b8; }
-  .chip .icon { width: 14px; height: 14px; }
-  /* Live highlight on click via :has(:checked). Server-rendered chip-on stays
-     as a fallback for the initial paint (and older browsers that miss :has). */
-  .chip:has(input[value="good"]:checked),    .chip-on.chip-good    { background: #f0fdf4; border-color: #16a34a; color: #166534; }
-  .chip:has(input[value="neutral"]:checked), .chip-on.chip-neutral { background: #f1f5f9; border-color: #475569; color: #1e293b; }
-  .chip:has(input[value="bad"]:checked),     .chip-on.chip-bad     { background: #fef2f2; border-color: #dc2626; color: #991b1b; }
-  .chip:has(input[value=""]:checked),        .chip-on.chip-none    { background: #f8fafc; }
+  .tag-picker { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+  .tag-picker .chip input[type=radio] { display: none; }
+  .tag-picker .chip .icon { width: 14px; height: 14px; }
+  /* :has(:checked) picks up live selection. Server-rendered .chip-on is the
+     fallback for the initial paint (and older browsers without :has). */
+  .tag-picker .chip:has(input[value="good"]:checked),    .tag-picker .chip-on.tag-good    { background: var(--pos-soft); border-color: var(--pos); color: var(--pos); }
+  .tag-picker .chip:has(input[value="neutral"]:checked), .tag-picker .chip-on.tag-neutral { background: var(--bg-sunken); border-color: var(--fg-muted); color: var(--fg); }
+  .tag-picker .chip:has(input[value="bad"]:checked),     .tag-picker .chip-on.tag-bad     { background: var(--neg-soft); border-color: var(--neg); color: var(--neg); }
+  .tag-picker .chip:has(input[value=""]:checked),        .tag-picker .chip-on.tag-none    { background: var(--bg-sunken); }
 </style>
 {{end}}

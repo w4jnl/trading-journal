@@ -1,39 +1,6 @@
 {{define "title"}}Accounts — Trading Journal{{end}}
 
 {{define "content"}}
-<style>
-  table.accounts input, table.accounts select { padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
-  table.accounts td { vertical-align: middle; }
-  .save-bar { position: sticky; bottom: 0; background: white; padding: 12px 16px;
-              border-top: 1px solid #e2e8f0; display: none; align-items: center;
-              gap: 12px; box-shadow: 0 -2px 8px rgba(0,0,0,0.05); margin-top: 16px; }
-  .save-bar.dirty { display: flex; }
-  .save-bar .muted { font-size: 13px; }
-  .row-dirty input, .row-dirty select { border-color: #d97706; }
-  .flash { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
-  .flash.saved { background: #dcfce7; color: #166534; }
-  .flash.created { background: #dbeafe; color: #1e40af; }
-  .flash.moved { background: #dcfce7; color: #166534; }
-  .flash.error { background: #fee2e2; color: #991b1b; }
-  /* New / Reassign disclosure panels. */
-  details.new-acc, details.reassign { background: white; border-radius: 6px;
-    box-shadow: 0 1px 2px rgba(0,0,0,.05); padding: 8px 12px; margin-bottom: 12px; }
-  details.new-acc[open], details.reassign[open] { padding: 12px 16px; }
-  details.new-acc > summary, details.reassign > summary { cursor: pointer; user-select: none;
-    font-size: 13px; color: #1e40af; list-style: none; }
-  details.new-acc > summary::-webkit-details-marker,
-  details.reassign > summary::-webkit-details-marker { display: none; }
-  details.new-acc form, details.reassign form { display: flex; flex-wrap: wrap; gap: 12px;
-    align-items: end; margin-top: 8px; }
-  details.new-acc label, details.reassign label { display: flex; flex-direction: column;
-    font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
-  details.new-acc input, details.new-acc select,
-  details.reassign select { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px;
-    font-size: 13px; min-width: 140px; }
-  details.reassign { margin: 4px 0 0 0; padding: 4px 8px; }
-  details.reassign > summary { font-size: 12px; }
-</style>
-
 {{template "back_button" .}}
 
 <h1>Accounts</h1>
@@ -42,129 +9,162 @@
 {{if eq .Flash "created"}}<div class="flash created">Account created.</div>{{end}}
 {{if eq .Flash "createfail"}}<div class="flash error">Could not create account: {{.FlashErr}}</div>{{end}}
 {{if eq .Flash "reassignsame"}}<div class="flash error">Source and target are the same account.</div>{{end}}
-{{if .MovedCount}}<div class="flash moved">Moved {{.MovedCount}} trades.</div>{{end}}
+{{if .MovedCount}}<div class="flash moved">Moved <span class="num">{{.MovedCount}}</span> trades.</div>{{end}}
 
-<div class="panel" style="background:#fef3c7; border-left: 4px solid #d97706;">
+<div class="card card--warn" style="margin-bottom: 16px;">
   Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades.
 </div>
 
-<!-- Manual account creation. Useful before an import lands, or to set up a
-     fresh broker account ahead of its first CSV. -->
-<details class="new-acc">
-  <summary>+ New account</summary>
-  <form method="post" action="/accounts/new">
-    <label>Name <input type="text" name="name" required placeholder="e.g. Apex Eval 28"></label>
-    <label>Account ref <input type="text" name="account_ref" placeholder="e.g. APEX-100001-28 (defaults to name)"></label>
-    <label>Firm
-      <select name="firm">
-        {{range $.FirmOptions}}
-          <option value="{{.}}">{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
-        {{end}}
-      </select>
-    </label>
-    <label>Type
-      <select name="type">
-        <option value="">—</option>
-        {{range $.TypeOptions}}
-          <option value="{{.Value}}">{{.Label}}</option>
-        {{end}}
-      </select>
-    </label>
-    <label>Currency <input type="text" name="currency" value="USD" style="width: 70px;"></label>
-    <button type="submit">Create</button>
+<details class="disclose">
+  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ New account</summary>
+  <form method="post" action="/accounts/new" class="card" style="margin-top: 8px;">
+    <div class="row">
+      <label class="field"><span class="field-label">Name</span><input type="text" name="name" required placeholder="e.g. Apex Eval 28"></label>
+      <label class="field"><span class="field-label">Account ref</span><input type="text" name="account_ref" placeholder="defaults to name"></label>
+      <label class="field"><span class="field-label">Firm</span>
+        <select name="firm">
+          {{range $.FirmOptions}}
+            <option value="{{.}}">{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Type</span>
+        <select name="type">
+          <option value="">—</option>
+          {{range $.TypeOptions}}
+            <option value="{{.Value}}">{{.Label}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Currency</span><input type="text" name="currency" value="USD" style="width: 80px;"></label>
+      <button type="submit" class="btn btn--primary">Create</button>
+    </div>
   </form>
 </details>
 
 <!--
-  The bulk-save form sits OUTSIDE the table. Inputs in each row use the
-  HTML5 `form` attribute to associate themselves with it without being
-  nested DOM-descendants. This lets the per-row Reassign forms live inside
-  the table cells without triggering the "no nested <form>" rule that
-  silently breaks Save in every browser.
+  Bulk-save form sits OUTSIDE the table. Inputs in each row reference it
+  via the HTML5 `form="accounts-form"` attribute so the per-row reassign
+  forms can live inside <td> cells without violating "no nested forms".
 -->
 <form id="accounts-form" method="post" action="/accounts/save"></form>
 
-<table class="accounts">
-  <thead>
-    <tr>
-      <th>Source / Ref</th>
-      <th>Name</th>
-      <th>Firm</th>
-      <th>Type</th>
-      <th>Curr</th>
-      <th>Active</th>
-      <th>Status</th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range .Accounts}}
-      {{$a := .}}
-      <tr data-account-id="{{$a.ID}}">
-        <td>
-          <code class="muted">{{$a.AccountRef}}</code><br>
-          <span class="muted" style="font-size:11px;">{{$a.ImportSource}}</span>
-          <details class="reassign">
-            <summary>Move trades…</summary>
-            <form method="post" action="/accounts/{{$a.ID}}/reassign">
-              <label>To account
-                <select name="to" required>
-                  <option value="">— pick —</option>
-                  {{range $.Accounts}}
-                    {{if ne .ID $a.ID}}
-                      <option value="{{.ID}}">{{.Name}} · <code>{{.AccountRef}}</code></option>
-                    {{end}}
-                  {{end}}
-                </select>
-              </label>
-              <button type="submit"
-                      onclick="return confirm('Move all trades from {{$a.Name}} to the selected account?\\n\\nThe source account stays in place (empty). You can delete it later if needed.');">
-                Move
-              </button>
-            </form>
-          </details>
-        </td>
-        <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
-        <td>
-          <select form="accounts-form" name="accounts.{{$a.ID}}.firm">
-            {{range $.FirmOptions}}
-              <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
-            {{end}}
-          </select>
-        </td>
-        <td>
-          <select form="accounts-form" name="accounts.{{$a.ID}}.type">
-            <option value="" {{if not $a.Type}}selected{{end}}>—</option>
-            {{range $.TypeOptions}}
-              <option value="{{.Value}}" {{if and $a.Type (eq .Value (derefStr $a.Type))}}selected{{end}}>{{.Label}}</option>
-            {{end}}
-          </select>
-        </td>
-        <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 60px;"></td>
-        <td><input form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
-        <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+<div class="table-scroll" style="margin-top: 16px;">
+  <table class="accounts">
+    <thead>
+      <tr>
+        <th>Source / Ref</th>
+        <th>Name</th>
+        <th>Firm</th>
+        <th>Type</th>
+        <th>Curr</th>
+        <th>Active</th>
+        <th>Status</th>
       </tr>
-    {{else}}
-      <tr><td colspan="7" class="muted">No accounts yet — drop a CSV to /import.</td></tr>
-    {{end}}
-  </tbody>
-</table>
-
-<div id="save-bar" class="save-bar">
-  <span class="muted"><strong id="dirty-count">0</strong> row(s) changed.</span>
-  <button form="accounts-form" type="submit">Save changes</button>
-  <button type="button" id="reset-btn">Discard</button>
+    </thead>
+    <tbody>
+      {{range .Accounts}}
+        {{$a := .}}
+        <tr data-account-id="{{$a.ID}}">
+          <td>
+            <code class="num">{{$a.AccountRef}}</code><br>
+            <span class="subtle">{{$a.ImportSource}}</span>
+            <details class="reassign">
+              <summary>Move trades…</summary>
+              <form method="post" action="/accounts/{{$a.ID}}/reassign" class="row" style="margin-top: 8px;">
+                <label class="field">
+                  <span class="field-label">To account</span>
+                  <select name="to" required>
+                    <option value="">— pick —</option>
+                    {{range $.Accounts}}
+                      {{if ne .ID $a.ID}}
+                        <option value="{{.ID}}">{{.Name}} · {{.AccountRef}}</option>
+                      {{end}}
+                    {{end}}
+                  </select>
+                </label>
+                <button type="submit" class="btn btn--danger btn--sm"
+                        onclick="return confirm('Move all trades from {{$a.Name}} to the selected account?\\n\\nThe source account stays in place (empty). You can delete it later if needed.');">
+                  Move
+                </button>
+              </form>
+            </details>
+          </td>
+          <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
+          <td>
+            <select form="accounts-form" name="accounts.{{$a.ID}}.firm">
+              {{range $.FirmOptions}}
+                <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+              {{end}}
+            </select>
+          </td>
+          <td>
+            <select form="accounts-form" name="accounts.{{$a.ID}}.type">
+              <option value="" {{if not $a.Type}}selected{{end}}>—</option>
+              {{range $.TypeOptions}}
+                <option value="{{.Value}}" {{if and $a.Type (eq .Value (derefStr $a.Type))}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </td>
+          <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;"></td>
+          <td style="text-align: center;"><input form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
+          <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="7" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
 </div>
 
+<div id="save-bar" class="save-bar">
+  <span class="muted"><strong id="dirty-count" class="num">0</strong> row(s) changed.</span>
+  <div class="row-sm" style="margin-left: auto;">
+    <button type="button" id="reset-btn" class="btn btn--ghost btn--sm">Discard</button>
+    <button form="accounts-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
+  </div>
+</div>
+
+<style>
+  /* Dense inputs in the table; smaller than the page-default 32px to keep rows compact. */
+  table.accounts input, table.accounts select { height: 28px; padding: 4px 8px; font-size: 12px; }
+  table.accounts input[type=checkbox] { height: auto; width: 16px; }
+  table.accounts td { vertical-align: middle; font-size: 13px; }
+
+  /* Sticky bottom save bar, only visible when dirty. */
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-elev);
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    display: none;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .save-bar.dirty { display: flex; }
+
+  /* Dirty row marker — soft amber left edge instead of orange input borders. */
+  tr.row-dirty td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
+  /* Reassign disclosure inside cell */
+  details.reassign { margin-top: 6px; }
+  details.reassign > summary { cursor: pointer; user-select: none; font-size: 11px; color: var(--accent); list-style: none; }
+  details.reassign > summary::-webkit-details-marker { display: none; }
+  details.reassign[open] > summary { color: var(--fg-muted); }
+
+  /* "+ New account" disclosure */
+  details.disclose > summary { list-style: none; }
+  details.disclose > summary::-webkit-details-marker { display: none; }
+</style>
+
 <script>
-  // Dirty-detection: snapshot every input's initial value on load. On any
-  // change, mark its row .row-dirty and reveal the sticky save bar. Reset
-  // button restores the snapshot.
   (function () {
     const form = document.getElementById('accounts-form');
     if (!form) return;
-    // Use form.elements (not querySelectorAll) so inputs associated with the
-    // form via the HTML5 `form="accounts-form"` attribute are included, even
-    // though they live outside the (empty) <form> element itself.
     const inputs = Array.from(form.elements).filter(
       (el) => el.tagName === 'INPUT' || el.tagName === 'SELECT'
     );
@@ -197,9 +197,6 @@
       dirtyCount.textContent = dirtyRows.size;
     };
 
-    // Listen on each input directly — events from inputs associated to the
-    // form via the `form` attribute do NOT bubble to the <form> element,
-    // since bubbling follows the DOM tree (table cells), not form ownership.
     inputs.forEach((el) => {
       el.addEventListener('input', refresh);
       el.addEventListener('change', refresh);

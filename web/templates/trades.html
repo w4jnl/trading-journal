@@ -1,28 +1,11 @@
 {{define "title"}}Trades — Trading Journal{{end}}
 
 {{define "content"}}
-<style>
-  .filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px; }
-  .filter-row label { display: flex; flex-direction: column; font-size: 12px; color: #475569; }
-  .filter-row select, .filter-row input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; min-width: 120px; }
-  .pnl-pos { color: #15803d; font-weight: 600; }
-  .pnl-neg { color: #b91c1c; font-weight: 600; }
-  .dir-long { background: #dbeafe; color: #1e40af; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
-  .dir-short { background: #fce7f3; color: #9d174d; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
-  .trade-row { cursor: pointer; }
-  .trade-row:hover { background: #f1f5f9; }
-  /* Journal icon styling is centralized in base.html via .icon-journal.icon-{empty,good,bad,neutral}. */
-  .pager { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
-  .pager a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
-  .pager a.disabled { color: #94a3b8; pointer-events: none; }
-  /* Modal styling lives in _trade_modal.html (shared with /analytics). */
-</style>
-
 {{template "back_button" .}}
 
 <h1>Trades</h1>
 
-<form method="get" action="/trades" class="filter-row panel">
+<form method="get" action="/trades" class="filter-row">
   {{template "account_filter" .}}
   <label>Symbol
     <select name="symbol_root">
@@ -47,58 +30,60 @@
   <label>To
     <input type="date" name="to" value="{{index .Filters "To"}}">
   </label>
-  <button type="submit">Apply</button>
-  <a href="/trades" style="margin-left:4px; font-size:13px; color:#475569; text-decoration:none;">Clear</a>
+  <button type="submit" class="btn btn--primary">Apply</button>
+  <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 
-<div class="muted" style="margin-bottom:8px;">{{.Total}} closed trades.</div>
+<div class="muted" style="margin-bottom:8px;"><span class="num">{{.Total}}</span> closed trades.</div>
 
-<table>
-  <thead>
-    <tr>
-      <th></th>
-      <th>Entry (UTC)</th>
-      <th>Account</th>
-      <th>Symbol</th>
-      <th>Dir</th>
-      <th>Qty</th>
-      <th>Entry</th>
-      <th>Exit</th>
-      <th>Gross P&amp;L</th>
-      <th>Comm</th>
-      <th>Net P&amp;L</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Trades}}
-    <tr class="trade-row"
-        hx-get="/trades/{{.ID}}"
-        hx-target="#modal-content"
-        hx-swap="innerHTML"
-        onclick="document.getElementById('modal-backdrop').classList.add('show')">
-      <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
-        {{template "journal_icon" (journalState .HasJournal .JournalTag)}}
-      </td>
-      <td>{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
-      <td>{{.AccountName}}</td>
-      <td>{{.Symbol}} <span class="muted">({{.SymbolRoot}})</span></td>
-      <td>{{if eq .Direction "long"}}<span class="dir-long">long</span>{{else}}<span class="dir-short">short</span>{{end}}</td>
-      <td>{{.Qty}}</td>
-      <td>{{printf "%.2f" .EntryPrice}}</td>
-      <td>{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
-      <td>{{pnlClass .GrossPnl}}</td>
-      <td>{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
-      <td>{{pnlClass .NetPnl}}</td>
-    </tr>
-  {{else}}
-    <tr><td colspan="11" class="muted">No trades match the current filters.</td></tr>
-  {{end}}
-  </tbody>
-</table>
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th></th>
+        <th>Entry (UTC)</th>
+        <th>Account</th>
+        <th>Symbol</th>
+        <th>Dir</th>
+        <th class="tabular">Qty</th>
+        <th class="tabular">Entry</th>
+        <th class="tabular">Exit</th>
+        <th class="tabular">Gross P&amp;L</th>
+        <th class="tabular">Comm</th>
+        <th class="tabular">Net P&amp;L</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Trades}}
+      <tr class="trade-row"
+          hx-get="/trades/{{.ID}}"
+          hx-target="#modal-content"
+          hx-swap="innerHTML"
+          onclick="document.getElementById('modal-backdrop').classList.add('show')">
+        <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
+          {{template "journal_icon" (journalState .HasJournal .JournalTag)}}
+        </td>
+        <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
+        <td>{{.AccountName}}</td>
+        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+        <td>{{if eq .Direction "long"}}<span class="pill dir-long">long</span>{{else}}<span class="pill dir-short">short</span>{{end}}</td>
+        <td class="tabular num">{{.Qty}}</td>
+        <td class="tabular num">{{printf "%.2f" .EntryPrice}}</td>
+        <td class="tabular num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
+        <td class="tabular num">{{pnlClass .GrossPnl}}</td>
+        <td class="tabular num muted">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+        <td class="tabular num">{{pnlClass .NetPnl}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="11" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
 
 <div class="pager">
   <a href="{{.PrevPage}}" class="{{if not .PrevPage}}disabled{{end}}">‹ Prev</a>
-  <span class="muted">Page {{.Page}} of {{.Pages}}</span>
+  <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
   <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
 
@@ -123,9 +108,6 @@
       setTimeout(() => location.reload(), 30);
     }
   }
-  // Esc closes the modal when it's open. Mirrors the click-outside-to-close
-  // behavior so the textarea-inside-modal scenario stays consistent — Esc
-  // discards in-progress edits the same way clicking the backdrop does.
   document.addEventListener('keydown', (e) => {
     if (e.key !== 'Escape') return;
     if (document.getElementById('modal-backdrop').classList.contains('show')) {
@@ -133,9 +115,6 @@
       closeTradeModal();
     }
   });
-  // Cross-page deep link: /trades?modal=N opens the modal for that trade
-  // on page load. Used by /analytics to jump straight to the biggest
-  // win/loss trade.
   (function () {
     const modalID = new URLSearchParams(location.search).get('modal');
     if (!modalID) return;

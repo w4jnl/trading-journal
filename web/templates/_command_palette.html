@@ -1,0 +1,138 @@
+{{/*
+⌘K command palette. Modal overlay with autofocus input, static item list,
+substring-filter, arrow-key + Enter + Esc navigation.
+
+Static catalog only in v1: navigation entries, theme toggle, "new journal
+entry today". No server-side search.
+*/}}
+{{define "command_palette"}}
+<div id="cmdk-backdrop" role="dialog" aria-modal="true" aria-label="Command palette">
+  <div class="cmdk" role="combobox" aria-expanded="true" aria-controls="cmdk-list">
+    <input id="cmdk-input" class="cmdk-input no-style" type="text" placeholder="Type a command or page..." autocomplete="off" spellcheck="false">
+    <ul id="cmdk-list" class="cmdk-list" role="listbox" aria-label="Commands">
+      {{/* Items rendered by JS so we can filter and assign aria-selected. */}}
+    </ul>
+  </div>
+</div>
+<script>
+  (function () {
+    var backdrop = document.getElementById('cmdk-backdrop');
+    var input    = document.getElementById('cmdk-input');
+    var list     = document.getElementById('cmdk-list');
+    var openBtn  = document.getElementById('cmdk-open');
+    if (!backdrop || !input || !list) return;
+
+    /* ISO date for "today" link. The server's notion of "today" may differ
+       (configured tz) but the journal route accepts the client date and the
+       handler does a server-side TZ resolve, so this is correct enough. */
+    function today() {
+      var d = new Date();
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var day = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + day;
+    }
+
+    var items = [
+      { kind: 'Go to', label: 'Dashboard',  href: '/dashboard'  },
+      { kind: 'Go to', label: 'Trades',     href: '/trades'     },
+      { kind: 'Go to', label: 'Calendar',   href: '/calendar'   },
+      { kind: 'Go to', label: 'Journal',    href: '/journal'    },
+      { kind: 'Go to', label: 'Analytics',  href: '/analytics'  },
+      { kind: 'Go to', label: 'Import',     href: '/import'     },
+      { kind: 'Go to', label: 'Accounts',   href: '/accounts'   },
+      { kind: 'Action', label: 'New journal entry for today', action: function () { window.location.href = '/journal/' + today(); } },
+      { kind: 'Action', label: 'Toggle theme', action: function () { document.getElementById('theme-toggle').click(); } },
+    ];
+
+    var sel = 0;
+    var filtered = items.slice();
+
+    function render() {
+      if (!filtered.length) {
+        list.innerHTML = '<li class="cmdk-empty">No commands match.</li>';
+        return;
+      }
+      list.innerHTML = filtered.map(function (it, i) {
+        return '<li class="cmdk-item" role="option" data-index="' + i + '" aria-selected="' + (i === sel) + '">' +
+               '<span>' + escapeHtml(it.label) + '</span>' +
+               '<span class="cmdk-kind">' + escapeHtml(it.kind) + '</span>' +
+               '</li>';
+      }).join('');
+    }
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+      });
+    }
+
+    function filter() {
+      var q = input.value.trim().toLowerCase();
+      filtered = !q ? items.slice() : items.filter(function (it) {
+        return it.label.toLowerCase().indexOf(q) !== -1 || it.kind.toLowerCase().indexOf(q) !== -1;
+      });
+      sel = 0;
+      render();
+    }
+
+    function open() {
+      backdrop.classList.add('show');
+      input.value = '';
+      filtered = items.slice();
+      sel = 0;
+      render();
+      setTimeout(function () { input.focus(); }, 0);
+    }
+
+    function close() {
+      backdrop.classList.remove('show');
+    }
+
+    function execute() {
+      var it = filtered[sel];
+      if (!it) return;
+      close();
+      if (it.action) it.action();
+      else if (it.href) window.location.href = it.href;
+    }
+
+    /* Keyboard: ⌘K / Ctrl+K toggles the palette; / opens it. */
+    document.addEventListener('keydown', function (e) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        backdrop.classList.contains('show') ? close() : open();
+        return;
+      }
+      if (!backdrop.classList.contains('show')) return;
+      if (e.key === 'Escape') { e.preventDefault(); close(); }
+      else if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        sel = (sel + 1) % Math.max(filtered.length, 1);
+        render();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        sel = (sel - 1 + filtered.length) % Math.max(filtered.length, 1);
+        render();
+      } else if (e.key === 'Enter') {
+        e.preventDefault();
+        execute();
+      }
+    });
+
+    input.addEventListener('input', filter);
+
+    list.addEventListener('click', function (e) {
+      var li = e.target.closest('.cmdk-item');
+      if (!li) return;
+      sel = parseInt(li.dataset.index, 10);
+      execute();
+    });
+
+    backdrop.addEventListener('click', function (e) {
+      if (e.target === backdrop) close();
+    });
+
+    if (openBtn) openBtn.addEventListener('click', open);
+  })();
+</script>
+{{end}}

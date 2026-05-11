@@ -5,28 +5,32 @@
 
 <h1>Import CSV</h1>
 
-<div class="panel">
-  <p>Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row — no need to pick.</p>
+<div class="card" style="margin-bottom: 24px;">
+  <p class="muted">Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row.</p>
   <form id="import-form" hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
     <div id="drop-zone" class="drop-zone">
-      <strong>Drop a .csv file here</strong> &nbsp;or&nbsp;
-      <input type="file" name="file" accept=".csv" required>
-      <button type="submit">Import</button>
-      <span id="busy" class="muted htmx-indicator" style="margin-left:12px;">working…</span>
+      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--fg-subtle); margin-bottom: 8px;">
+        <path d="M12 3 L12 16"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/>
+      </svg>
+      <div style="font-weight: 600; margin-bottom: 4px;">Drop a .csv file here</div>
+      <div class="muted" style="margin-bottom: 12px;">or pick from disk</div>
+      <div class="row" style="justify-content: center;">
+        <input type="file" name="file" accept=".csv" required>
+        <button type="submit" class="btn btn--primary">Import</button>
+        <span id="busy" class="muted htmx-indicator"><span class="spinner"></span> working…</span>
+      </div>
     </div>
   </form>
   <div id="outcome" style="margin-top:16px;"></div>
 </div>
+
 <style>
-  .drop-zone { padding: 18px; border: 2px dashed #cbd5e1; border-radius: 6px;
-               text-align: center; transition: all 120ms ease-out; }
-  .drop-zone.dragover { border-color: #0f172a; background: #f1f5f9; }
-  .drop-zone input[type=file] { margin: 0 6px; }
+  .drop-zone { padding: 28px 24px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-md);
+               text-align: center; transition: border-color var(--t-fast), background var(--t-fast); }
+  .drop-zone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  .drop-zone input[type=file] { font-size: 12px; }
 </style>
 <script>
-  // Drag-and-drop file upload. Drop event grabs the first dropped file,
-  // POSTs it as multipart/form-data, and renders the same outcome partial
-  // into #outcome that the form submit path uses.
   (function () {
     const zone = document.getElementById('drop-zone');
     if (!zone) return;
@@ -37,7 +41,6 @@
     ['dragleave', 'drop'].forEach((ev) => {
       zone.addEventListener(ev, (e) => { stop(e); zone.classList.remove('dragover'); });
     });
-    // Some browsers fire `dragleave` over children — guard against flicker.
     document.addEventListener('drop', stop);
     document.addEventListener('dragover', stop);
 
@@ -47,47 +50,49 @@
       const fd = new FormData();
       fd.append('file', file);
       const out = document.getElementById('outcome');
-      out.innerHTML = '<span class="muted">working…</span>';
+      out.innerHTML = '<div class="card"><span class="spinner"></span> working…</div>';
       try {
         const resp = await fetch('/import/upload', { method: 'POST', body: fd });
         out.innerHTML = await resp.text();
       } catch (err) {
-        out.innerHTML = '<div class="panel error">Upload failed: ' + err.message + '</div>';
+        out.innerHTML = '<div class="card card--neg">Upload failed: ' + err.message + '</div>';
       }
     });
   })();
 </script>
 
 <h2>Recent imports</h2>
-<table>
-  <thead>
-    <tr>
-      <th>When (UTC)</th>
-      <th>Source</th>
-      <th>Status</th>
-      <th>Execs</th>
-      <th>Trades</th>
-      <th>File</th>
-      <th>Message</th>
-    </tr>
-  </thead>
-  <tbody>
-  {{range .Recent}}
-    <tr>
-      <td>{{.SyncedAt.UTC.Format "2006-01-02 15:04:05"}}</td>
-      <td><code>{{.SyncType}}</code></td>
-      <td>
-        {{if eq .Status "success"}}<span class="pill success">success</span>
-        {{else}}<span class="pill error">{{.Status}}</span>{{end}}
-      </td>
-      <td>{{.ExecsAdded}}</td>
-      <td>{{.TradesAdded}}</td>
-      <td><span class="muted">{{derefStr .SourceFile}}</span></td>
-      <td><span class="muted">{{derefStr .Message}}</span></td>
-    </tr>
-  {{else}}
-    <tr><td colspan="7" class="muted">No imports yet.</td></tr>
-  {{end}}
-  </tbody>
-</table>
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>When (UTC)</th>
+        <th>Source</th>
+        <th>Status</th>
+        <th class="tabular">Execs</th>
+        <th class="tabular">Trades</th>
+        <th>File</th>
+        <th>Message</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Recent}}
+      <tr>
+        <td class="num muted">{{.SyncedAt.UTC.Format "2006-01-02 15:04:05"}}</td>
+        <td><code>{{.SyncType}}</code></td>
+        <td>
+          {{if eq .Status "success"}}<span class="pill success">success</span>
+          {{else}}<span class="pill error">{{.Status}}</span>{{end}}
+        </td>
+        <td class="tabular num">{{.ExecsAdded}}</td>
+        <td class="tabular num">{{.TradesAdded}}</td>
+        <td><span class="muted">{{derefStr .SourceFile}}</span></td>
+        <td><span class="muted">{{derefStr .Message}}</span></td>
+      </tr>
+    {{else}}
+      <tr><td colspan="7" class="muted" style="text-align:center; padding: 24px;">No imports yet.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
 {{end}}

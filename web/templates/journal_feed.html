@@ -1,109 +1,43 @@
 {{define "title"}}Journal — Trading Journal{{end}}
 
 {{define "content"}}
-<style>
-  /* Two-panel layout: ADD vs FILTER. Both share .panel-card visuals but use
-     distinct accent colors so the two intents (creating an entry vs narrowing
-     the feed) stay visually separate. */
-  .panel-card { background: white; border-radius: 6px; padding: 12px 16px;
-                box-shadow: 0 1px 2px rgba(0,0,0,.05); margin-bottom: 16px; }
-  .panel-card .panel-label { display: inline-block; font-size: 10px; font-weight: 700;
-                             text-transform: uppercase; letter-spacing: 0.08em;
-                             padding: 2px 8px; border-radius: 999px;
-                             margin-bottom: 10px; }
-  .panel-card.add .panel-label    { background: #dcfce7; color: #166534; }
-  .panel-card.filter .panel-label { background: #dbeafe; color: #1e40af; }
-
-  .panel-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
-  .panel-row label { display: flex; flex-direction: column; font-size: 11px;
-                     color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
-  .panel-row input[type=date], .panel-row input[type=week] {
-    padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;
-  }
-  .panel-row a.today { padding: 8px 14px; background: #0f172a; color: white; border-radius: 4px;
-                       text-decoration: none; font-size: 13px; }
-  .panel-row a.today:hover { background: #1e293b; }
-
-  /* Chip-style multi-select: a label wraps a hidden checkbox. :has(:checked)
-     paints the chip in the scope/tag color. */
-  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
-  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
-          border: 1.5px solid #cbd5e1; border-radius: 999px; font-size: 12px;
-          color: #475569; cursor: pointer; user-select: none; transition: all 100ms; }
-  .chip:hover { border-color: #94a3b8; }
-  .chip input[type=checkbox] { display: none; }
-  .chip:has(:checked).scope-day   { background: #dbeafe; border-color: #1e40af; color: #1e40af; }
-  .chip:has(:checked).scope-trade { background: #fef3c7; border-color: #92400e; color: #92400e; }
-  .chip:has(:checked).scope-week  { background: #f3e8ff; border-color: #6b21a8; color: #6b21a8; }
-  .chip:has(:checked).tag-good    { background: #dcfce7; border-color: #16a34a; color: #166534; }
-  .chip:has(:checked).tag-neutral { background: #f1f5f9; border-color: #475569; color: #1e293b; }
-  .chip:has(:checked).tag-bad     { background: #fee2e2; border-color: #dc2626; color: #991b1b; }
-  .chip:has(:checked).tag-untagged { background: #f1f5f9; border-color: #94a3b8; color: #475569; }
-
-  .filter-actions { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
-  .filter-actions button { padding: 6px 14px; }
-  .filter-actions .muted { font-size: 12px; }
-
-  ul.feed { list-style: none; padding: 0; margin: 0; }
-  ul.feed li { background: white; border-radius: 6px; padding: 12px 16px; margin-bottom: 8px;
-               box-shadow: 0 1px 2px rgba(0,0,0,.05); transition: background 100ms; }
-  ul.feed li:hover { background: #f8fafc; }
-  ul.feed a.entry-link { display: grid; grid-template-columns: 92px 1fr auto;
-                         gap: 12px; align-items: start; text-decoration: none; color: #0f172a; }
-  .scope-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
-                 border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase;
-                 letter-spacing: 0.04em; align-self: start; justify-self: start; }
-  .scope-badge.scope-day   { background: #dbeafe; color: #1e40af; }
-  .scope-badge.scope-trade { background: #fef3c7; color: #92400e; }
-  .scope-badge.scope-week  { background: #f3e8ff; color: #6b21a8; }
-  .entry-main .date { font-weight: 600; }
-  .entry-main .meta { color: #64748b; font-size: 13px; margin-left: 6px; }
-  .entry-preview { color: #475569; font-size: 13px; margin-top: 4px;
-                   overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
-                   -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .tag-chip { padding: 2px 8px; border-radius: 999px; font-size: 11px; align-self: start; }
-  .tag-chip.good    { background: #dcfce7; color: #166534; }
-  .tag-chip.neutral { background: #f1f5f9; color: #1e293b; }
-  .tag-chip.bad     { background: #fee2e2; color: #991b1b; }
-  .empty-state { background: white; padding: 32px; border-radius: 6px; text-align: center;
-                 color: #64748b; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
-</style>
-
 {{template "back_button" .}}
 
 <h1>Journal</h1>
 
 <!-- ADD-NEW panel: starts a new entry; does NOT filter the feed. -->
-<div class="panel-card add">
-  <span class="panel-label">Add new</span>
-  <div class="panel-row">
-    <a class="today" href="/journal/{{.Today}}?back=/journal">+ Today</a>
-    <label>Any day
+<div class="card card--accent" style="margin-bottom: 16px;">
+  <div class="row">
+    <a class="btn btn--primary" href="/journal/{{.Today}}?back=/journal">+ Today</a>
+    <label class="field">
+      <span class="field-label">Any day</span>
       <input type="date" max="{{.Today}}"
              onchange="if (this.value) window.location.href='/journal/'+this.value+'?back=/journal'">
     </label>
-    <label>Any week
+    <label class="field">
+      <span class="field-label">Any week</span>
       <input type="week" value="{{.ThisWeek}}"
              onchange="if (this.value) window.location.href='/journal/week/'+this.value+'?back=/journal'">
     </label>
   </div>
 </div>
 
-<!-- FILTER panel: narrows the feed below. Submits via form GET; chips
-     and dates round-trip through the query string. -->
-<form class="panel-card filter" method="get" action="/journal">
-  <span class="panel-label">Filter</span>
-  <div class="panel-row">
-    <label>From
+<!-- FILTER panel -->
+<form class="card" method="get" action="/journal" style="margin-bottom: 16px;">
+  <div class="card-title">Filter</div>
+  <div class="row">
+    <label class="field">
+      <span class="field-label">From</span>
       <input type="date" name="from" value="{{.FilterFrom}}">
     </label>
-    <label>To
+    <label class="field">
+      <span class="field-label">To</span>
       <input type="date" name="to" value="{{.FilterTo}}">
     </label>
   </div>
-  <div class="panel-row" style="margin-top: 10px;">
+  <div class="row" style="margin-top: 12px;">
     <div>
-      <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">Type</div>
+      <div class="field-label" style="margin-bottom: 6px;">Type</div>
       <div class="chip-row">
         <label class="chip scope-day"><input type="checkbox" name="scope" value="day"   {{if index $.ScopeSelected "day"}}checked{{end}}>Day</label>
         <label class="chip scope-trade"><input type="checkbox" name="scope" value="trade" {{if index $.ScopeSelected "trade"}}checked{{end}}>Trade</label>
@@ -111,7 +45,7 @@
       </div>
     </div>
     <div>
-      <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">Tag</div>
+      <div class="field-label" style="margin-bottom: 6px;">Tag</div>
       <div class="chip-row">
         <label class="chip tag-good"><input type="checkbox" name="tag" value="good"     {{if index $.TagSelected "good"}}checked{{end}}>Good</label>
         <label class="chip tag-neutral"><input type="checkbox" name="tag" value="neutral" {{if index $.TagSelected "neutral"}}checked{{end}}>Neutral</label>
@@ -120,10 +54,10 @@
       </div>
     </div>
   </div>
-  <div class="filter-actions">
-    <button type="submit">Apply</button>
-    {{if .FilterActive}}<a href="/journal" style="font-size: 13px; color: #475569; text-decoration: none;">Clear</a>{{end}}
-    <span class="muted" style="margin-left: auto;">{{len .Items}} entries{{if .FilterActive}} (filtered){{end}}.</span>
+  <div class="row" style="margin-top: 16px;">
+    <button type="submit" class="btn btn--primary">Apply</button>
+    {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear</a>{{end}}
+    <span class="muted" style="margin-left: auto;"><span class="num">{{len .Items}}</span> entries{{if .FilterActive}} (filtered){{end}}.</span>
   </div>
 </form>
 
@@ -133,27 +67,74 @@
     <li>
       <a class="entry-link" href="{{.EditURL}}">
         <span class="scope-badge scope-{{.Scope}}">
-          {{if eq .Scope "day"}}{{template "journal_icon" "neutral"}} Day
-          {{else if eq .Scope "trade"}}📊 Trade
-          {{else}}📅 Week{{end}}
+          {{if eq .Scope "day"}}Day
+          {{else if eq .Scope "trade"}}Trade
+          {{else}}Week{{end}}
         </span>
         <span class="entry-main">
           <span class="date">{{.DateLabel}}</span>
           {{if .MetaLabel}}<span class="meta">{{.MetaLabel}}</span>{{end}}
           <div class="entry-preview">{{snippet .Body 180}}</div>
         </span>
-        {{if .Tag}}<span class="tag-chip {{.Tag}}">{{.Tag}}</span>{{end}}
+        {{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}
       </a>
     </li>
   {{end}}
 </ul>
 {{else}}
 <div class="empty-state">
+  <div class="empty-icon">
+    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 3 L18 3 L18 21 L6 21 Z"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="12" y1="8" x2="16" y2="8"/><line x1="12" y1="12" x2="16" y2="12"/></svg>
+  </div>
   {{if .FilterActive}}
-    No journal entries match the current filter. <a href="/journal" style="color: #1e40af;">Clear filter</a>.
+    <div class="empty-title">No entries match the filter</div>
+    <div class="empty-sub"><a href="/journal">Clear filter</a> to see all entries.</div>
   {{else}}
-    No journal entries yet. Click <strong>+ Today</strong> above to write your first one, or open any past trade and add a note from the detail modal.
+    <div class="empty-title">No journal entries yet</div>
+    <div class="empty-sub">Click <strong>+ Today</strong> above, or add a note from a trade detail modal.</div>
   {{end}}
 </div>
 {{end}}
+
+<style>
+  /* Chip/scope/tag colors. Hue stays consistent between the chip-picker and
+     the scope-badge / tag-chip pills shown on each feed entry. */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+          border: 1.5px solid var(--border); border-radius: var(--r-pill); font-size: 12px;
+          color: var(--fg-muted); cursor: pointer; user-select: none;
+          transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast); }
+  .chip:hover { border-color: var(--border-strong); color: var(--fg); }
+  .chip input[type=checkbox] { display: none; }
+  .chip:has(:checked).scope-day   { background: var(--info-soft);   border-color: var(--info);   color: var(--info); }
+  .chip:has(:checked).scope-trade { background: var(--warn-soft);   border-color: var(--warn);   color: var(--warn); }
+  .chip:has(:checked).scope-week  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .chip:has(:checked).tag-good    { background: var(--pos-soft);    border-color: var(--pos);    color: var(--pos); }
+  .chip:has(:checked).tag-neutral { background: var(--bg-sunken);   border-color: var(--fg-muted); color: var(--fg); }
+  .chip:has(:checked).tag-bad     { background: var(--neg-soft);    border-color: var(--neg);    color: var(--neg); }
+  .chip:has(:checked).tag-untagged{ background: var(--bg-sunken);   border-color: var(--fg-subtle); color: var(--fg-muted); }
+
+  /* Feed list */
+  ul.feed { list-style: none; padding: 0; margin: 0;
+            border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden;
+            background: var(--bg-elev); }
+  ul.feed li { padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background var(--t-fast); }
+  ul.feed li:last-child { border-bottom: 0; }
+  ul.feed li:hover { background: var(--bg-hover); }
+  ul.feed a.entry-link { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: start; text-decoration: none; color: var(--fg); }
+  .scope-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px;
+                 border-radius: var(--r-pill); font-size: 11px; font-weight: 600;
+                 text-transform: uppercase; letter-spacing: 0.04em; align-self: start; justify-self: start; }
+  .scope-badge.scope-day   { background: var(--info-soft);   color: var(--info); }
+  .scope-badge.scope-trade { background: var(--warn-soft);   color: var(--warn); }
+  .scope-badge.scope-week  { background: var(--accent-soft); color: var(--accent); }
+  .entry-main .date { font-weight: 600; color: var(--fg); }
+  .entry-main .meta { color: var(--fg-muted); font-size: 13px; margin-left: 6px; }
+  .entry-preview { color: var(--fg-muted); font-size: 13px; margin-top: 4px;
+                   overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
+                   -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+  .tag-chip-good    { background: var(--pos-soft); color: var(--pos); }
+  .tag-chip-neutral { background: var(--bg-sunken); color: var(--fg-muted); }
+  .tag-chip-bad     { background: var(--neg-soft); color: var(--neg); }
+</style>
 {{end}}

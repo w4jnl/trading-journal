@@ -1,91 +1,44 @@
 {{define "title"}}Calendar — {{.MonthLabel}} — Trading Journal{{end}}
 
 {{define "content"}}
-<style>
-  .calendar { width: 100%; border-collapse: separate; border-spacing: 4px; }
-  .calendar th { padding: 6px 0; font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; }
-  .calendar td { background: white; border-radius: 6px; padding: 8px; vertical-align: top; height: 80px; width: 14.28%; box-shadow: 0 1px 2px rgba(0,0,0,.05); position: relative; }
-  .calendar td.out-of-month { background: transparent; box-shadow: none; }
-  .calendar td.has-pnl-pos { background: linear-gradient(135deg, #dcfce7 0%, #bbf7d0 100%); }
-  .calendar td.has-pnl-pos-strong { background: linear-gradient(135deg, #86efac 0%, #4ade80 100%); }
-  .calendar td.has-pnl-neg { background: linear-gradient(135deg, #fee2e2 0%, #fecaca 100%); }
-  .calendar td.has-pnl-neg-strong { background: linear-gradient(135deg, #fca5a5 0%, #f87171 100%); }
-  .day-num { font-size: 13px; color: #64748b; }
-  .day-num.in-month { color: #0f172a; font-weight: 500; }
-  .day-pnl { font-size: 14px; font-weight: 600; margin-top: 4px; }
-  .day-pnl.pos { color: #15803d; }
-  .day-pnl.neg { color: #b91c1c; }
-  .day-meta { font-size: 11px; color: #475569; margin-top: 2px; }
-  .day-link { position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 8px; }
-  .j-cell-icon { position: absolute; top: 4px; right: 6px; z-index: 2; line-height: 0; text-decoration: none; }
-  /* Cell backgrounds get colored on big P&L days, so empty icons need more
-     contrast than the table-default light grey to stay readable. */
-  .j-cell-icon .icon-journal.icon-empty { color: #64748b; opacity: 0.55; }
-  .j-cell-icon:hover .icon-journal.icon-empty { opacity: 0.9; }
-  .j-cell-icon:hover .icon-journal { transform: rotate(-3deg) translateY(-1px); }
-  /* Saturday cells lean on the week summary instead of per-day trade detail
-     (futures markets are closed Saturday, so per-day data is empty in
-     practice). Tint by the week's net P&L. */
-  .calendar td.sat-cell { background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
-  .calendar td.sat-cell.week-pos        { background: linear-gradient(135deg, #ecfdf5 0%, #bbf7d0 100%); }
-  .calendar td.sat-cell.week-pos-strong { background: linear-gradient(135deg, #bbf7d0 0%, #4ade80 100%); }
-  .calendar td.sat-cell.week-neg        { background: linear-gradient(135deg, #fff1f2 0%, #fecaca 100%); }
-  .calendar td.sat-cell.week-neg-strong { background: linear-gradient(135deg, #fecaca 0%, #f87171 100%); }
-  /* Saturday cells: week summary fills the cell, centered, no day-number on top. */
-  .week-summary-center { position: absolute; inset: 0; display: flex; flex-direction: column;
-                         align-items: center; justify-content: center; padding: 4px;
-                         line-height: 1.25; pointer-events: none; }
-  .week-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; font-weight: 600; }
-  .week-pnl-val { font-size: 17px; font-weight: 700; margin-top: 2px; }
-  .week-pnl-val.pos { color: #15803d; }
-  .week-pnl-val.neg { color: #b91c1c; }
-  .week-trades { font-size: 11px; color: #475569; margin-top: 1px; }
-  .nav-row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
-  .nav-row a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
-  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
-  .summary-card { background: white; border-radius: 6px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
-  .summary-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
-  .summary-card .value { font-size: 18px; font-weight: 600; margin-top: 4px; }
-  .pnl-pos { color: #15803d; }
-  .pnl-neg { color: #b91c1c; }
-</style>
-
 {{template "back_button" .}}
 
-<div class="nav-row">
-  <h1 style="margin: 0; flex: 1;">{{.MonthLabel}}</h1>
-  <a href="/calendar?month={{.PrevMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">‹ Prev</a>
-  <a href="/calendar{{if .FilterQS}}?{{.FilterQS}}{{end}}">This month</a>
-  <a href="/calendar?month={{.NextMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">Next ›</a>
+<div class="row-between" style="margin-bottom: 16px;">
+  <h1 style="margin: 0;">{{.MonthLabel}}</h1>
+  <div class="row-sm">
+    <a class="btn btn--secondary btn--sm" href="/calendar?month={{.PrevMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">‹ Prev</a>
+    <a class="btn btn--secondary btn--sm" href="/calendar{{if .FilterQS}}?{{.FilterQS}}{{end}}">This month</a>
+    <a class="btn btn--secondary btn--sm" href="/calendar?month={{.NextMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">Next ›</a>
+  </div>
 </div>
 
-<form method="get" action="/calendar" class="filter-row panel" style="display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px;">
+<form method="get" action="/calendar" class="filter-row">
   <input type="hidden" name="month" value="{{.MonthQS}}">
   {{template "account_filter" .}}
-  <button type="submit" style="align-self: end;">Apply</button>
-  <a href="/calendar?month={{.MonthQS}}" style="font-size: 13px; color: #475569; text-decoration: none; align-self: end; padding-bottom: 9px;">Clear filter</a>
+  <button type="submit" class="btn btn--primary">Apply</button>
+  <a href="/calendar?month={{.MonthQS}}" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 
-<div class="summary-grid">
-  <div class="summary-card">
+<div class="grid-auto" style="--min: 150px; margin-bottom: 16px;">
+  <div class="card card--compact">
     <div class="label">Net P&amp;L</div>
-    <div class="value {{if gt .MonthNet 0.0}}pnl-pos{{else if lt .MonthNet 0.0}}pnl-neg{{end}}">{{printf "%.2f" .MonthNet}}</div>
+    <div class="value num {{if gt .MonthNet 0.0}}pnl-pos{{else if lt .MonthNet 0.0}}pnl-neg{{end}}">{{printf "%.2f" .MonthNet}}</div>
   </div>
-  <div class="summary-card">
+  <div class="card card--compact">
     <div class="label">Gross P&amp;L</div>
-    <div class="value">{{printf "%.2f" .MonthGross}}</div>
+    <div class="value num">{{printf "%.2f" .MonthGross}}</div>
   </div>
-  <div class="summary-card">
+  <div class="card card--compact">
     <div class="label">Commission</div>
-    <div class="value">{{printf "%.2f" .MonthComm}}</div>
+    <div class="value num">{{printf "%.2f" .MonthComm}}</div>
   </div>
-  <div class="summary-card">
+  <div class="card card--compact">
     <div class="label">Trades</div>
-    <div class="value">{{.Trades}}</div>
+    <div class="value num">{{.Trades}}</div>
   </div>
-  <div class="summary-card">
-    <div class="label">Win days / Loss days</div>
-    <div class="value"><span class="pnl-pos">{{.WinDays}}</span> / <span class="pnl-neg">{{.LossDays}}</span></div>
+  <div class="card card--compact">
+    <div class="label">Win / Loss days</div>
+    <div class="value"><span class="pnl-pos num">{{.WinDays}}</span> <span class="muted">/</span> <span class="pnl-neg num">{{.LossDays}}</span></div>
   </div>
 </div>
 
@@ -102,8 +55,6 @@
       {{range $di, $day := $week}}
         <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}">
           {{if and $day.InMonth (ne $di 6) (not $day.InFuture)}}
-            {{/* Journal icon only on past/today non-Saturday cells. Saturday
-                 is the weekly-sum column, and future dates can't be journaled. */}}
             <a class="j-cell-icon"
                href="/journal/{{$day.Date.Format "2006-01-02"}}?back={{$.CalendarBack}}"
                title="{{if $day.HasJournal}}Journal entry{{if $day.JournalTag}} ({{$day.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">
@@ -111,19 +62,18 @@
             </a>
           {{end}}
           {{if eq $di 6}}
-            {{/* Saturday: week summary only — no day number, no journal icon. */}}
             {{if $wt.HasData}}
             <div class="week-summary-center">
               <div class="week-label">Week {{$wt.ISOWeek}}</div>
-              <div class="week-pnl-val {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
-              <div class="week-trades">{{$wt.Trades}} trades</div>
+              <div class="week-pnl-val num {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
+              <div class="week-trades"><span class="num">{{$wt.Trades}}</span> trades</div>
             </div>
             {{end}}
           {{else if and $day.InMonth $day.HasData}}
             <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num in-month">{{$day.Date.Day}}</div>
-              <div class="day-pnl {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $day.NetPnl}}</div>
-              <div class="day-meta">{{$day.Trades}} trades · {{$day.Wins}}W/{{$day.Losses}}L</div>
+              <div class="day-pnl num {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $day.NetPnl}}</div>
+              <div class="day-meta"><span class="num">{{$day.Trades}}</span> trades · <span class="num">{{$day.Wins}}W/{{$day.Losses}}L</span></div>
             </a>
           {{else}}
             <div class="day-num {{if $day.InMonth}}in-month{{end}}">{{$day.Date.Day}}</div>
@@ -134,4 +84,43 @@
     {{end}}
   </tbody>
 </table>
+
+<style>
+  .calendar { width: 100%; border-collapse: separate; border-spacing: 6px; border: 0; background: transparent; box-shadow: none; }
+  .calendar th { padding: 6px 0; font-size: 11px; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; background: transparent; border: 0; position: static; text-align: center; }
+  .calendar td { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px; vertical-align: top; height: 92px; width: 14.28%; position: relative; transition: border-color var(--t-fast), background var(--t-fast); }
+  .calendar td:hover:not(.out-of-month) { border-color: var(--border-strong); }
+  .calendar td.out-of-month { background: transparent; border-color: transparent; }
+  /* Use linear-gradient with token colors; works in both themes. */
+  .calendar td.has-pnl-pos        { background: linear-gradient(135deg, var(--cal-pos-1), var(--cal-pos-2)); border-color: transparent; }
+  .calendar td.has-pnl-pos-strong { background: linear-gradient(135deg, var(--cal-pos-3), var(--cal-pos-4)); border-color: transparent; }
+  .calendar td.has-pnl-neg        { background: linear-gradient(135deg, var(--cal-neg-1), var(--cal-neg-2)); border-color: transparent; }
+  .calendar td.has-pnl-neg-strong { background: linear-gradient(135deg, var(--cal-neg-3), var(--cal-neg-4)); border-color: transparent; }
+  .calendar td.sat-cell           { background: var(--bg-sunken); border: 1px dashed var(--border); }
+  .calendar td.sat-cell.week-pos        { background: linear-gradient(135deg, var(--cal-pos-1), var(--cal-pos-3)); border-style: solid; border-color: transparent; }
+  .calendar td.sat-cell.week-pos-strong { background: linear-gradient(135deg, var(--cal-pos-3), var(--cal-pos-4)); border-style: solid; border-color: transparent; }
+  .calendar td.sat-cell.week-neg        { background: linear-gradient(135deg, var(--cal-neg-1), var(--cal-neg-3)); border-style: solid; border-color: transparent; }
+  .calendar td.sat-cell.week-neg-strong { background: linear-gradient(135deg, var(--cal-neg-3), var(--cal-neg-4)); border-style: solid; border-color: transparent; }
+  .day-num { font-size: 12px; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+  .day-num.in-month { color: var(--fg); font-weight: 600; }
+  .day-pnl { font-size: 15px; font-weight: 700; margin-top: 4px; letter-spacing: -0.01em; }
+  .day-pnl.pos { color: var(--pos); }
+  .day-pnl.neg { color: var(--neg); }
+  .day-meta { font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+  .day-link { position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 8px; border-radius: var(--r-md); }
+  .j-cell-icon { position: absolute; top: 4px; right: 6px; z-index: 2; line-height: 0; text-decoration: none; }
+  .j-cell-icon .icon-journal.icon-empty { color: var(--fg-muted); opacity: 0.55; }
+  .j-cell-icon:hover .icon-journal.icon-empty { opacity: 0.9; }
+  .j-cell-icon:hover .icon-journal { transform: rotate(-3deg) translateY(-1px); }
+  .week-summary-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; line-height: 1.25; pointer-events: none; }
+  .week-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); font-weight: 600; }
+  .week-pnl-val { font-size: 16px; font-weight: 700; margin-top: 2px; letter-spacing: -0.01em; }
+  .week-pnl-val.pos { color: var(--pos); }
+  .week-pnl-val.neg { color: var(--neg); }
+  .week-trades { font-size: 11px; color: var(--fg-muted); margin-top: 1px; }
+  @media (max-width: 600px) {
+    .calendar td { height: 70px; padding: 4px; font-size: 11px; }
+    .day-pnl { font-size: 12px; }
+  }
+</style>
 {{end}}
