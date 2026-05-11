@@ -24,6 +24,16 @@ type dayCell struct {
 	JournalTag string // good|bad|neutral|""
 }
 
+// weekTotal aggregates a single row of the calendar grid. Counts every day in
+// the row including spillover from neighbouring months — this matches the
+// reference design where week summaries don't try to clip at month boundaries.
+type weekTotal struct {
+	Index   int     // 1-based "Week 1", "Week 2", …
+	HasData bool
+	Trades  int64
+	NetPnl  float64
+}
+
 // CalendarPage renders /calendar — a monthly grid colored by net P&L.
 // Query params: month=YYYY-MM (default current), account_id (default all).
 func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
@@ -128,8 +138,17 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	// Month totals.
 	var monthNet, monthGross, monthComm float64
 	var monthTrades, winDays, lossDays int64
-	for _, week := range weeks {
+	weeklyTotals := make([]weekTotal, len(weeks))
+	for wi, week := range weeks {
+		wt := weekTotal{Index: wi + 1}
 		for _, c := range week {
+			// Week aggregates: every day in the row, including spillover.
+			if c.HasData {
+				wt.HasData = true
+				wt.Trades += c.Trades
+				wt.NetPnl += c.NetPnl
+			}
+			// Month aggregates: only in-month days.
 			if !c.InMonth || !c.HasData {
 				continue
 			}
@@ -144,6 +163,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 				lossDays++
 			}
 		}
+		weeklyTotals[wi] = wt
 	}
 
 	accounts, err := h.Queries.ListAccounts(ctx)
@@ -160,19 +180,20 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.renderPage(w, "calendar.html", map[string]any{
-		"MonthLabel":    monthStart.Format("January 2006"),
-		"MonthQS":       monthStart.Format("2006-01"),
-		"PrevMonth":     monthStart.AddDate(0, -1, 0).Format("2006-01"),
-		"NextMonth":     monthStart.AddDate(0, 1, 0).Format("2006-01"),
-		"Weeks":         weeks,
-		"MonthNet":      monthNet,
-		"MonthGross":    monthGross,
-		"MonthComm":     monthComm,
-		"Trades":        monthTrades,
-		"WinDays":       winDays,
-		"LossDays":      lossDays,
-		"Accounts":      accounts,
-		"AccountID":     accountIDForTmpl,
+		"MonthLabel":   monthStart.Format("January 2006"),
+		"MonthQS":      monthStart.Format("2006-01"),
+		"PrevMonth":    monthStart.AddDate(0, -1, 0).Format("2006-01"),
+		"NextMonth":    monthStart.AddDate(0, 1, 0).Format("2006-01"),
+		"Weeks":        weeks,
+		"WeeklyTotals": weeklyTotals,
+		"MonthNet":     monthNet,
+		"MonthGross":   monthGross,
+		"MonthComm":    monthComm,
+		"Trades":       monthTrades,
+		"WinDays":      winDays,
+		"LossDays":     lossDays,
+		"Accounts":     accounts,
+		"AccountID":    accountIDForTmpl,
 	})
 }
 

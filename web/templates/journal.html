@@ -4,8 +4,8 @@
 <style>
   .journal-grid { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
   @media (max-width: 800px) { .journal-grid { grid-template-columns: 1fr; } }
-  .journal-header { display: flex; gap: 12px; align-items: baseline; margin-bottom: 16px; }
-  .journal-header h1 { margin: 0; }
+  .journal-header { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
+  .journal-header h1 { margin: 0; flex-shrink: 0; }
   .journal-nav a { color: #1e40af; text-decoration: none; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   .journal-nav input[type=date] { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   .mood-row { display: flex; gap: 4px; margin: 12px 0; }
@@ -31,6 +31,9 @@
 
 <div class="journal-header">
   <h1>Journal · {{.DateNice}}</h1>
+  {{if .BackHref}}
+  <a href="{{.BackHref}}" style="margin-left: auto; padding: 4px 12px; background: #0f172a; color: white; border-radius: 4px; text-decoration: none; font-size: 13px;">← Back to calendar</a>
+  {{end}}
 </div>
 
 <div class="journal-nav" style="margin-bottom: 16px; display: flex; gap: 8px; align-items: center;">
@@ -52,21 +55,13 @@
 <div class="journal-grid">
   <section>
     <form method="post" action="/journal/{{.Date}}">
-      <div class="mood-row">
-        <span class="muted" style="margin-right: 8px; align-self: center;">Mood:</span>
-        {{range $m := mkRange 1 5}}
-        <label>
-          <input type="radio" name="mood" value="{{$m}}" {{if eq $.Mood $m}}checked{{end}}>
-          <span>{{moodEmoji $m}}</span>
-        </label>
-        {{end}}
-        <label>
-          <input type="radio" name="mood" value="" {{if eq $.Mood 0}}checked{{end}}>
-          <span style="font-size: 13px;">none</span>
-        </label>
-      </div>
-
-      <div style="margin: 12px 0; display: flex; gap: 8px; align-items: center;">
+      {{/* Preserve the calendar round-trip context across save. */}}
+      {{if .BackHref}}
+        <input type="hidden" name="from" value="calendar">
+        {{if .MonthQS}}<input type="hidden" name="month" value="{{.MonthQS}}">{{end}}
+        {{if .AccountID}}<input type="hidden" name="account_id" value="{{.AccountID}}">{{end}}
+      {{end}}
+      <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
         <span class="muted" style="margin-right: 4px;">Tag:</span>
         {{template "tag_picker" (dict "Tag" $.Tag)}}
       </div>

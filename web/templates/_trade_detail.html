@@ -36,12 +36,20 @@
         hx-swap="innerHTML"
         hx-encoding="application/x-www-form-urlencoded">
     {{template "tag_picker" (dict "Tag" $.JournalTag)}}
-    <textarea name="body" rows="6" placeholder="What did you see, do, feel about this trade? Markdown supported.">{{$.JournalBody}}</textarea>
+    <textarea name="body" rows="6" placeholder="What did you see, do, feel about this trade? Markdown supported."
+              style="width: 100%; box-sizing: border-box; min-height: 140px; padding: 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 13px;">{{$.JournalBody}}</textarea>
     <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
       <button type="submit">Save</button>
       <span class="muted" style="font-size:12px;">Empty body deletes the entry.</span>
     </div>
   </form>
+
+  {{/* A save (or delete) just happened — flag it so the modal close path
+       reloads the underlying /trades page and the journal pictogram in the
+       row updates without manual refresh. */}}
+  {{if or (eq $.Flash "saved") (eq $.Flash "deleted")}}
+  <script>window.__journalChanged = true;</script>
+  {{end}}
 
   {{if $.JournalRendered}}
   <div class="markdown-preview" style="background:#f8fafc; padding:12px; border-radius:4px; margin-top:12px;">
@@ -108,9 +116,11 @@
           font-size: 13px; color: #475569; user-select: none; transition: all 120ms ease-out; }
   .chip:hover { border-color: #94a3b8; }
   .chip .icon { width: 14px; height: 14px; }
-  .chip-on.chip-good    { background: #f0fdf4; border-color: #16a34a; color: #166534; }
-  .chip-on.chip-neutral { background: #f1f5f9; border-color: #475569; color: #1e293b; }
-  .chip-on.chip-bad     { background: #fef2f2; border-color: #dc2626; color: #991b1b; }
-  .chip-on.chip-none    { background: #f8fafc; }
+  /* Live highlight on click via :has(:checked). Server-rendered chip-on stays
+     as a fallback for the initial paint (and older browsers that miss :has). */
+  .chip:has(input[value="good"]:checked),    .chip-on.chip-good    { background: #f0fdf4; border-color: #16a34a; color: #166534; }
+  .chip:has(input[value="neutral"]:checked), .chip-on.chip-neutral { background: #f1f5f9; border-color: #475569; color: #1e293b; }
+  .chip:has(input[value="bad"]:checked),     .chip-on.chip-bad     { background: #fef2f2; border-color: #dc2626; color: #991b1b; }
+  .chip:has(input[value=""]:checked),        .chip-on.chip-none    { background: #f8fafc; }
 </style>
 {{end}}

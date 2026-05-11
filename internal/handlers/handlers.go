@@ -193,6 +193,24 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return "neutral"
 		},
+		// weekCellClass tints a Saturday cell by the *week* net P&L. Threshold
+		// is $500 vs $100 for daily — weekly aggregates are naturally bigger.
+		"weekCellClass": func(netPnl float64, hasData bool) string {
+			if !hasData {
+				return ""
+			}
+			switch {
+			case netPnl >= 500:
+				return "week-pos-strong"
+			case netPnl > 0:
+				return "week-pos"
+			case netPnl <= -500:
+				return "week-neg-strong"
+			case netPnl < 0:
+				return "week-neg"
+			}
+			return ""
+		},
 	}
 }
 

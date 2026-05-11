@@ -18,8 +18,25 @@
   .day-meta { font-size: 11px; color: #475569; margin-top: 2px; }
   .day-link { position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 8px; }
   .j-cell-icon { position: absolute; top: 4px; right: 6px; z-index: 2; line-height: 0; text-decoration: none; }
-  .j-cell-icon .icon-journal.icon-empty { opacity: 0.35; }
+  /* Cell backgrounds get colored on big P&L days, so empty icons need more
+     contrast than the table-default light grey to stay readable. */
+  .j-cell-icon .icon-journal.icon-empty { color: #64748b; opacity: 0.55; }
+  .j-cell-icon:hover .icon-journal.icon-empty { opacity: 0.9; }
   .j-cell-icon:hover .icon-journal { transform: rotate(-3deg) translateY(-1px); }
+  /* Saturday cells lean on the week summary instead of per-day trade detail
+     (futures markets are closed Saturday, so per-day data is empty in
+     practice). Tint by the week's net P&L. */
+  .calendar td.sat-cell { background: linear-gradient(135deg, #f1f5f9 0%, #e2e8f0 100%); }
+  .calendar td.sat-cell.week-pos        { background: linear-gradient(135deg, #ecfdf5 0%, #bbf7d0 100%); }
+  .calendar td.sat-cell.week-pos-strong { background: linear-gradient(135deg, #bbf7d0 0%, #4ade80 100%); }
+  .calendar td.sat-cell.week-neg        { background: linear-gradient(135deg, #fff1f2 0%, #fecaca 100%); }
+  .calendar td.sat-cell.week-neg-strong { background: linear-gradient(135deg, #fecaca 0%, #f87171 100%); }
+  .week-summary { position: absolute; left: 8px; right: 8px; bottom: 8px; line-height: 1.2; pointer-events: none; }
+  .week-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; font-weight: 600; }
+  .week-pnl-val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .week-pnl-val.pos { color: #15803d; }
+  .week-pnl-val.neg { color: #b91c1c; }
+  .week-trades { font-size: 11px; color: #475569; margin-top: 1px; }
   .nav-row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   .nav-row a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -76,25 +93,38 @@
     </tr>
   </thead>
   <tbody>
-    {{range .Weeks}}
+    {{range $wi, $week := .Weeks}}
+    {{$wt := index $.WeeklyTotals $wi}}
     <tr>
-      {{range .}}
-        <td class="{{if not .InMonth}}out-of-month{{else}}{{cellClass .NetPnl .HasData}}{{end}}">
-          {{if .InMonth}}
+      {{range $di, $day := $week}}
+        <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}">
+          {{if $day.InMonth}}
             <a class="j-cell-icon"
-               href="/journal/{{.Date.Format "2006-01-02"}}"
-               title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">
-              {{template "journal_icon" (journalState .HasJournal .JournalTag)}}
+               href="/journal/{{$day.Date.Format "2006-01-02"}}?from=calendar&month={{$.MonthQS}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}"
+               title="{{if $day.HasJournal}}Journal entry{{if $day.JournalTag}} ({{$day.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">
+              {{template "journal_icon" (journalState $day.HasJournal $day.JournalTag)}}
             </a>
           {{end}}
-          {{if and .InMonth .HasData}}
-            <a class="day-link" href="/trades?from={{.Date.Format "2006-01-02"}}&to={{.Date.Format "2006-01-02"}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}">
-              <div class="day-num in-month">{{.Date.Day}}</div>
-              <div class="day-pnl {{if gt .NetPnl 0.0}}pos{{else if lt .NetPnl 0.0}}neg{{end}}">{{printf "%.0f" .NetPnl}}</div>
-              <div class="day-meta">{{.Trades}} trades · {{.Wins}}W/{{.Losses}}L</div>
+          {{if eq $di 6}}
+            {{/* Saturday: day number + week summary; skip the per-day trade
+                 overlay. US futures rarely trade Saturday, and the week sum
+                 is the load-bearing thing for this cell. */}}
+            <div class="day-num {{if $day.InMonth}}in-month{{end}}">{{$day.Date.Day}}</div>
+            {{if $wt.HasData}}
+            <div class="week-summary">
+              <div class="week-label">Week {{$wt.Index}}</div>
+              <div class="week-pnl-val {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $wt.NetPnl}}</div>
+              <div class="week-trades">{{$wt.Trades}} trades</div>
+            </div>
+            {{end}}
+          {{else if and $day.InMonth $day.HasData}}
+            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}">
+              <div class="day-num in-month">{{$day.Date.Day}}</div>
+              <div class="day-pnl {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $day.NetPnl}}</div>
+              <div class="day-meta">{{$day.Trades}} trades · {{$day.Wins}}W/{{$day.Losses}}L</div>
             </a>
           {{else}}
-            <div class="day-num {{if .InMonth}}in-month{{end}}">{{.Date.Day}}</div>
+            <div class="day-num {{if $day.InMonth}}in-month{{end}}">{{$day.Date.Day}}</div>
           {{end}}
         </td>
       {{end}}

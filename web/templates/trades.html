@@ -113,10 +113,22 @@
   <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
 
-<div id="modal-backdrop" onclick="if (event.target === this) this.classList.remove('show')">
+<div id="modal-backdrop" onclick="if (event.target === this) closeTradeModal()">
   <div class="modal">
-    <button class="close-btn" onclick="document.getElementById('modal-backdrop').classList.remove('show')">close</button>
+    <button class="close-btn" onclick="closeTradeModal()">close</button>
     <div id="modal-content">loading…</div>
   </div>
 </div>
+<script>
+  // Close the trade-detail modal. If the journal was saved/deleted inside
+  // the modal, reload the page so the row pictogram reflects the change.
+  function closeTradeModal() {
+    document.getElementById('modal-backdrop').classList.remove('show');
+    if (window.__journalChanged) {
+      window.__journalChanged = false;
+      // Tiny delay so the modal can finish hiding before the reload flash.
+      setTimeout(() => location.reload(), 30);
+    }
+  }
+</script>
 {{end}}

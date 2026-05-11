@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -69,6 +70,26 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 
 	flash := r.URL.Query().Get("flash")
 
+	// `?from=calendar` (with optional month/account_id) lets the page render a
+	// "Back to calendar" affordance and round-trip the user back to the same
+	// month view they came from.
+	backHref := ""
+	monthQS := r.URL.Query().Get("month")
+	accountIDQS := r.URL.Query().Get("account_id")
+	if r.URL.Query().Get("from") == "calendar" {
+		q := url.Values{}
+		if monthQS != "" {
+			q.Set("month", monthQS)
+		}
+		if accountIDQS != "" {
+			q.Set("account_id", accountIDQS)
+		}
+		backHref = "/calendar"
+		if encoded := q.Encode(); encoded != "" {
+			backHref += "?" + encoded
+		}
+	}
+
 	h.renderPage(w, "journal.html", map[string]any{
 		"Date":     dateStr,
 		"DateNice": date.Format("Mon, 2 Jan 2006"),
@@ -81,7 +102,10 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Tag":      tag,
 		"Rendered": rendered,
 		"Recent":   recent,
-		"Flash":    flash,
+		"Flash":     flash,
+		"BackHref":  backHref,
+		"MonthQS":   monthQS,
+		"AccountID": accountIDQS,
 	})
 }
 
@@ -110,7 +134,8 @@ func parseTag(s string) *string {
 
 // JournalSave handles POST /journal/{date}: upserts a day-level entry for
 // the date, then redirects back to GET /journal/{date} so a refresh doesn't
-// resubmit the form.
+// resubmit the form. Carries through the `from`, `month`, and `account_id`
+// query params if set, so a "Back to calendar" round-trip survives the save.
 func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	dateStr := r.PathValue("date")
@@ -123,6 +148,16 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	redirectQuery := func(flash string) string {
+		q := url.Values{}
+		q.Set("flash", flash)
+		for _, key := range []string{"from", "month", "account_id"} {
+			if v := r.FormValue(key); v != "" {
+				q.Set(key, v)
+			}
+		}
+		return "/journal/" + dateStr + "?" + q.Encode()
+	}
 
 	body := strings.TrimSpace(r.FormValue("body"))
 	mood := parseMood(r.FormValue("mood"))
@@ -133,7 +168,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, sql.ErrNoRows):
 		if body == "" {
 			// Nothing to save. Just redirect.
-			http.Redirect(w, r, "/journal/"+dateStr+"?flash=empty", http.StatusSeeOther)
+			http.Redirect(w, r, redirectQuery("empty"), http.StatusSeeOther)
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
@@ -157,7 +192,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete journal: %w", err))
 				return
 			}
-			http.Redirect(w, r, "/journal/"+dateStr+"?flash=deleted", http.StatusSeeOther)
+			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
@@ -171,7 +206,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/journal/"+dateStr+"?flash=saved", http.StatusSeeOther)
+	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
 }
 
 // renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown
