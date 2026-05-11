@@ -68,12 +68,20 @@
     <div class="label">Largest win / loss</div>
     <div class="value">
       {{if .LargestWinTradeID}}
-        <a class="trade-link" href="/trades?modal={{.LargestWinTradeID}}&back={{$.SelfURL}}" title="Open this trade"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></a>
+        <a class="trade-link" href="#"
+           hx-get="/trades/{{.LargestWinTradeID}}"
+           hx-target="#modal-content" hx-swap="innerHTML"
+           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;"
+           title="Open this trade"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></a>
       {{else}}<span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span>{{end}}
     </div>
     <div class="sub">
       {{if .LargestLossTradeID}}
-        <a class="trade-link" href="/trades?modal={{.LargestLossTradeID}}&back={{$.SelfURL}}" title="Open this trade"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></a>
+        <a class="trade-link" href="#"
+           hx-get="/trades/{{.LargestLossTradeID}}"
+           hx-target="#modal-content" hx-swap="innerHTML"
+           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;"
+           title="Open this trade"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></a>
       {{else}}<span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span>{{end}}
     </div>
   </div>
@@ -101,6 +109,24 @@
     {{template "bucket_table" .ByHour}}
   </section>
 </div>
+
+{{template "trade_modal" .}}
+<script>
+  // Inline modal on /analytics: just hide on close, no page navigation. No
+  // journal-reload path either — there's nothing on this page that the modal
+  // would invalidate.
+  function closeTradeModal() {
+    document.getElementById('modal-backdrop').classList.remove('show');
+  }
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const m = document.getElementById('modal-backdrop');
+    if (m && m.classList.contains('show')) {
+      e.preventDefault();
+      closeTradeModal();
+    }
+  });
+</script>
 {{end}}
 
 {{define "bucket_table"}}

@@ -15,12 +15,7 @@
   .pager { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
   .pager a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
   .pager a.disabled { color: #94a3b8; pointer-events: none; }
-  /* Modal */
-  #modal-backdrop { position: fixed; inset: 0; background: rgba(15,23,42,0.5); display: none; align-items: center; justify-content: center; z-index: 100; }
-  #modal-backdrop.show { display: flex; }
-  .modal { background: white; border-radius: 8px; max-width: 800px; width: 90%; max-height: 85vh; overflow: auto; padding: 20px; }
-  .modal h2 { margin-top: 0; }
-  .close-btn { float: right; background: none; color: #475569; padding: 4px 8px; }
+  /* Modal styling lives in _trade_modal.html (shared with /analytics). */
 </style>
 
 {{template "back_button" .}}
@@ -107,27 +102,20 @@
   <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
 
-<div id="modal-backdrop" onclick="if (event.target === this) closeTradeModal()">
-  <div class="modal">
-    <button class="close-btn" onclick="closeTradeModal()">close</button>
-    <div id="modal-content">loading…</div>
-  </div>
-</div>
+{{template "trade_modal" .}}
 <script>
-  // Close the trade-detail modal.
-  //   - If we got here via /trades?modal=N&back=URL (a deep link from
-  //     /analytics or elsewhere whose only purpose was to show this trade),
-  //     close returns to that back URL instead of leaving the user stranded
-  //     on the trade list.
+  // Close the trade-detail modal on /trades:
   //   - If the journal was saved/deleted inside the modal, reload the page
   //     so the row pictogram reflects the change.
+  //   - If we got here via /trades?modal=N&back=URL from a different page
+  //     for the sole purpose of showing this trade, fall back to the URL —
+  //     legacy path; /analytics now opens the modal inline instead.
   //   - Otherwise, plain hide.
   function closeTradeModal() {
     document.getElementById('modal-backdrop').classList.remove('show');
     const params = new URLSearchParams(location.search);
-    const back = params.get('back');
-    if (params.get('modal') && back) {
-      setTimeout(() => { location.href = back; }, 30);
+    if (params.get('modal') && params.get('back') && !window.__journalChanged) {
+      setTimeout(() => { location.href = params.get('back'); }, 30);
       return;
     }
     if (window.__journalChanged) {
