@@ -8,3 +8,6 @@ ON CONFLICT(account_id, broker_exec_id) DO NOTHING;
 
 -- name: ListExecutionsByAccount :many
 SELECT * FROM executions WHERE account_id = ? ORDER BY exec_time, id;
+
+-- name: GetExecutionByBrokerID :one
+SELECT * FROM executions WHERE account_id = ? AND broker_exec_id = ?;

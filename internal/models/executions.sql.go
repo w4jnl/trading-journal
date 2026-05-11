@@ -10,6 +10,34 @@ import (
 	"time"
 )
 
+const getExecutionByBrokerID = `-- name: GetExecutionByBrokerID :one
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions WHERE account_id = ? AND broker_exec_id = ?
+`
+
+type GetExecutionByBrokerIDParams struct {
+	AccountID    int64  `json:"account_id"`
+	BrokerExecID string `json:"broker_exec_id"`
+}
+
+func (q *Queries) GetExecutionByBrokerID(ctx context.Context, arg GetExecutionByBrokerIDParams) (Execution, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionByBrokerID, arg.AccountID, arg.BrokerExecID)
+	var i Execution
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.BrokerExecID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Side,
+		&i.Qty,
+		&i.Price,
+		&i.Commission,
+		&i.ExecTime,
+		&i.RawData,
+	)
+	return i, err
+}
+
 const insertExecution = `-- name: InsertExecution :execrows
 INSERT INTO executions (
     account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, raw_data

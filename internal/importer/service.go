@@ -68,20 +68,35 @@ func (s *ImportService) ImportFile(ctx context.Context, path string) (Outcome, e
 
 	out.Format = DetectFormat(content)
 	if out.Format == FormatUnknown {
-		out.ErrorMessage = "unrecognized CSV header (neither MotiveWave nor TopstepX)"
+		out.ErrorMessage = "unrecognized CSV header (neither MotiveWave nor TopstepX orders/trades)"
 		return s.finalizeFailure(ctx, path, out)
 	}
 
-	fills, err := dispatchParse(out.Format, bytes.NewReader(content))
-	if err != nil {
-		out.ErrorMessage = fmt.Sprintf("parse: %v", err)
-		return s.finalizeFailure(ctx, path, out)
-	}
-	out.FillsParsed = len(fills)
-
-	if err := s.ingest(ctx, fills, out.Format, &out); err != nil {
-		out.ErrorMessage = fmt.Sprintf("ingest: %v", err)
-		return s.finalizeFailure(ctx, path, out)
+	// Branch by shape: fill-based formats go through FIFO; trade-based formats
+	// write trades directly because the source already aggregated them.
+	switch out.Format {
+	case FormatMotiveWave, FormatTopstepX:
+		fills, err := dispatchParse(out.Format, bytes.NewReader(content))
+		if err != nil {
+			out.ErrorMessage = fmt.Sprintf("parse: %v", err)
+			return s.finalizeFailure(ctx, path, out)
+		}
+		out.FillsParsed = len(fills)
+		if err := s.ingest(ctx, fills, out.Format, &out); err != nil {
+			out.ErrorMessage = fmt.Sprintf("ingest: %v", err)
+			return s.finalizeFailure(ctx, path, out)
+		}
+	case FormatTopstepXTrades:
+		records, err := ParseTopstepXTrades(bytes.NewReader(content))
+		if err != nil {
+			out.ErrorMessage = fmt.Sprintf("parse: %v", err)
+			return s.finalizeFailure(ctx, path, out)
+		}
+		out.FillsParsed = len(records)
+		if err := s.ingestTrades(ctx, records, path, &out); err != nil {
+			out.ErrorMessage = fmt.Sprintf("ingest: %v", err)
+			return s.finalizeFailure(ctx, path, out)
+		}
 	}
 
 	return s.finalizeSuccess(ctx, path, out)
@@ -100,6 +115,11 @@ func dispatchParse(format Format, r io.Reader) ([]Fill, error) {
 
 // DetectFormat inspects the first line to identify the CSV source. A leading
 // UTF-8 BOM is tolerated (TopstepX exports include one).
+//
+// TopstepX ships two distinct shapes — the legacy orders export and the
+// newer per-trade export. We tell them apart by the second header column:
+//   Id,AccountName,…  → orders export
+//   Id,ContractName,… → trades export
 func DetectFormat(content []byte) Format {
 	content = stripBOMBytes(content)
 	end := bytes.IndexByte(content, '\n')
@@ -111,11 +131,21 @@ func DetectFormat(content []byte) Format {
 		return FormatUnknown
 	}
 	cols := strings.Split(header, ",")
-	switch strings.TrimSpace(cols[0]) {
+	first := strings.TrimSpace(cols[0])
+	second := ""
+	if len(cols) > 1 {
+		second = strings.TrimSpace(cols[1])
+	}
+	switch first {
 	case "Account":
 		return FormatMotiveWave
 	case "Id":
-		return FormatTopstepX
+		switch second {
+		case "AccountName":
+			return FormatTopstepX
+		case "ContractName":
+			return FormatTopstepXTrades
+		}
 	}
 	return FormatUnknown
 }
@@ -204,6 +234,410 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// ingestTrades writes pre-aggregated trade rows (TopstepX trades CSV) to
+// `trades` directly, with two synthetic executions per trade for audit-trail
+// continuity. The FIFO position builder is intentionally skipped — the source
+// file already has the entry/exit price, gross P&L, and commission.
+//
+// Account resolution: TopstepX trades CSV files don't carry an account
+// identifier, so we read the filename. Pattern: strip "topstep_" /
+// "topstepx_" prefix and "_trades" suffix, then look up by the remainder.
+// Fall back to the single existing TopStep account if there is exactly one,
+// else create TOPSTEP-DEFAULT (needs_setup=1).
+func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord, srcPath string, out *Outcome) error {
+	if len(records) == 0 {
+		return nil
+	}
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	q := s.Queries.WithTx(tx)
+
+	accountID, created, err := s.resolveTopstepAccount(ctx, q, srcPath)
+	if err != nil {
+		return fmt.Errorf("resolve account: %w", err)
+	}
+	if created {
+		out.AccountsCreated++
+	}
+
+	instruments := map[string]bool{}
+	for _, rec := range records {
+		// Instrument stub upsert — only once per root.
+		if _, seen := instruments[rec.SymbolRoot]; !seen {
+			f := Fill{SymbolRoot: rec.SymbolRoot, Exchange: ""}
+			stubCreated, err := upsertInstrumentStub(ctx, tx, q, f)
+			if err != nil {
+				return fmt.Errorf("instrument %s: %w", rec.SymbolRoot, err)
+			}
+			if stubCreated {
+				out.InstrumentsStubbed++
+			}
+			instruments[rec.SymbolRoot] = true
+		}
+
+		// Skip if this trade is already imported.
+		if _, err := q.GetTradeByBrokerID(ctx, models.GetTradeByBrokerIDParams{
+			AccountID:     accountID,
+			BrokerTradeID: ptrStr(rec.BrokerTradeID),
+		}); err == nil {
+			continue
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("dedup trade %s: %w", rec.BrokerTradeID, err)
+		}
+
+		entrySide, exitSide := sidesForDirection(rec.Direction)
+
+		// Entry execution.
+		entryExecID, err := upsertExecutionReturningID(ctx, q, models.InsertExecutionParams{
+			AccountID:    accountID,
+			BrokerExecID: rec.BrokerTradeID + "-entry",
+			Symbol:       rec.Symbol,
+			SymbolRoot:   rec.SymbolRoot,
+			Side:         entrySide,
+			Qty:          rec.Qty,
+			Price:        rec.EntryPrice,
+			ExecTime:     rec.EntryTime,
+			RawData:      strPtrOrNil(rec.RawData),
+		})
+		if err != nil {
+			return fmt.Errorf("entry exec %s: %w", rec.BrokerTradeID, err)
+		}
+
+		// Exit execution.
+		exitExecID, err := upsertExecutionReturningID(ctx, q, models.InsertExecutionParams{
+			AccountID:    accountID,
+			BrokerExecID: rec.BrokerTradeID + "-exit",
+			Symbol:       rec.Symbol,
+			SymbolRoot:   rec.SymbolRoot,
+			Side:         exitSide,
+			Qty:          rec.Qty,
+			Price:        rec.ExitPrice,
+			ExecTime:     rec.ExitTime,
+			RawData:      nil, // RawData already on the entry side
+		})
+		if err != nil {
+			return fmt.Errorf("exit exec %s: %w", rec.BrokerTradeID, err)
+		}
+
+		// Trade row.
+		exitPriceVal := rec.ExitPrice
+		exitTimeVal := rec.ExitTime
+		gross := rec.GrossPnL
+		commission := rec.Commission
+		net := rec.NetPnL
+		trade, err := q.CreateImportedTrade(ctx, models.CreateImportedTradeParams{
+			AccountID:     accountID,
+			Symbol:        rec.Symbol,
+			SymbolRoot:    rec.SymbolRoot,
+			Direction:     rec.Direction,
+			Qty:           rec.Qty,
+			EntryPrice:    rec.EntryPrice,
+			ExitPrice:     &exitPriceVal,
+			EntryTime:     rec.EntryTime,
+			ExitTime:      &exitTimeVal,
+			GrossPnl:      &gross,
+			Commission:    &commission,
+			NetPnl:        &net,
+			BrokerTradeID: ptrStr(rec.BrokerTradeID),
+		})
+		if err != nil {
+			return fmt.Errorf("create trade %s: %w", rec.BrokerTradeID, err)
+		}
+		out.TradesCreated++
+		out.ExecsInserted += 2 // approximate; some may have been pre-existing on retry
+
+		// Junction rows.
+		if err := q.LinkTradeExecution(ctx, models.LinkTradeExecutionParams{
+			TradeID: trade.ID, ExecutionID: entryExecID, Role: "entry", QtyUsed: rec.Qty,
+		}); err != nil {
+			return fmt.Errorf("link entry: %w", err)
+		}
+		if err := q.LinkTradeExecution(ctx, models.LinkTradeExecutionParams{
+			TradeID: trade.ID, ExecutionID: exitExecID, Role: "exit", QtyUsed: rec.Qty,
+		}); err != nil {
+			return fmt.Errorf("link exit: %w", err)
+		}
+	}
+
+	// daily_stats has to refresh too so /calendar and /analytics pick up the
+	// new trades. We call the position builder's rebuild path scoped to this
+	// account — it rewrites trades for any (account, symbol) pair the user
+	// has, INCLUDING those we just inserted. But that would clobber the
+	// pre-aggregated trades. Instead, just refresh daily_stats from the
+	// authoritative trades table — no FIFO rebuild for trade-imported
+	// accounts.
+	if err := refreshDailyStatsForAccount(ctx, q, accountID, s.Timezone); err != nil {
+		return fmt.Errorf("refresh daily_stats: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit: %w", err)
+	}
+	return nil
+}
+
+// sidesForDirection turns a trade direction into (entry side, exit side).
+// A long trade is entered with a buy and exited with a sell; short, the
+// other way around.
+func sidesForDirection(direction string) (entry, exit string) {
+	if direction == "short" {
+		return "sell", "buy"
+	}
+	return "buy", "sell"
+}
+
+// upsertExecutionReturningID inserts the execution (idempotent via INSERT OR
+// IGNORE) and returns the row's id by following up with a lookup. Two-step
+// because the existing InsertExecution query returns affected rowcount, not
+// LastInsertId.
+func upsertExecutionReturningID(ctx context.Context, q *models.Queries, p models.InsertExecutionParams) (int64, error) {
+	if _, err := q.InsertExecution(ctx, p); err != nil {
+		return 0, fmt.Errorf("insert: %w", err)
+	}
+	row, err := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{
+		AccountID:    p.AccountID,
+		BrokerExecID: p.BrokerExecID,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("lookup after insert: %w", err)
+	}
+	return row.ID, nil
+}
+
+// resolveTopstepAccount picks (or creates) the TopStep account a trades CSV
+// belongs to. Order of preference:
+//   1. Filename is a recognizable account ref → use it (create the account
+//      on first sight). Recognized shapes:
+//         - starts with "topstep_" / "topstepx_" (user-prefix convention)
+//         - or starts with "EXPRESS-" (TopstepX's own ref shape)
+//      In both cases the `_trades` suffix is also stripped.
+//   2. No recognizable ref. If exactly one TopStep account exists → use it.
+//   3. Else create TOPSTEP-DEFAULT with needs_setup=1.
+//
+// All TopstepX-sourced accounts share `import_source = "topstepx_csv"` so the
+// trades export and the legacy orders export converge on the same row when
+// they're for the same broker account.
+func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Queries, srcPath string) (int64, bool, error) {
+	ref := extractTopstepAccountRef(srcPath)
+
+	// Pull the candidate set: any TopStep-import-sourced account, plus any
+	// account whose firm is explicitly topstep (covers user-renamed cases).
+	all, err := q.ListAccounts(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	var topsteppy []models.Account
+	for _, a := range all {
+		if a.ImportSource == string(FormatTopstepX) ||
+			(a.Firm != nil && *a.Firm == "topstep") {
+			topsteppy = append(topsteppy, a)
+		}
+	}
+
+	firm := "topstep"
+	defaultType := "prop_eval"
+
+	// 1. Filename ref — find existing or create with that ref.
+	if ref != "" {
+		for _, a := range topsteppy {
+			if a.AccountRef == ref {
+				return a.ID, false, nil
+			}
+		}
+		created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+			Name:         ref,
+			Firm:         &firm,
+			ImportSource: string(FormatTopstepX),
+			AccountRef:   ref,
+			Type:         &defaultType,
+			Currency:     "USD",
+			NeedsSetup:   1,
+		})
+		if err != nil {
+			return 0, false, err
+		}
+		return created.ID, true, nil
+	}
+
+	// 2. No ref. If exactly one TopStep account exists, use it.
+	if len(topsteppy) == 1 {
+		return topsteppy[0].ID, false, nil
+	}
+
+	// 3. Else find-or-create TOPSTEP-DEFAULT — a stable bucket for files the
+	// user didn't tag with an account ref. (If we always tried CREATE, the
+	// unique constraint on (import_source, account_ref) would fail on the
+	// second generic drop.)
+	for _, a := range topsteppy {
+		if a.AccountRef == "TOPSTEP-DEFAULT" {
+			return a.ID, false, nil
+		}
+	}
+	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+		Name:         "TOPSTEP-DEFAULT",
+		Firm:         &firm,
+		ImportSource: string(FormatTopstepX),
+		AccountRef:   "TOPSTEP-DEFAULT",
+		Type:         &defaultType,
+		Currency:     "USD",
+		NeedsSetup:   1,
+	})
+	if err != nil {
+		return 0, false, err
+	}
+	return created.ID, true, nil
+}
+
+// extractTopstepAccountRef recovers a TopstepX account_ref from a filename
+// when the user explicitly signaled one. Two recognized conventions:
+//
+//   1. Prefix: "topstep_<ref>[_trades].csv" or "topstepx_<ref>[_trades].csv"
+//      → ref is everything between the prefix and the optional suffix.
+//   2. Native shape: "EXPRESS-<rest>[_trades].csv" — TopstepX's own account
+//      naming convention as seen in their exports.
+//
+// Anything else returns "" — we don't try to guess so a generic filename
+// like `topstepTrades.csv` doesn't accidentally invent a phantom account.
+func extractTopstepAccountRef(srcPath string) string {
+	base := filepath.Base(srcPath)
+	base = strings.TrimSuffix(base, filepath.Ext(base))
+
+	// Prefix convention.
+	for _, prefix := range []string{"topstepx_", "topstep_"} {
+		if strings.HasPrefix(base, prefix) {
+			ref := strings.TrimPrefix(base, prefix)
+			ref = strings.TrimSuffix(ref, "_trades")
+			ref = strings.TrimSuffix(ref, "-trades")
+			if ref != "" && isRefSafe(ref) {
+				return ref
+			}
+			return ""
+		}
+	}
+
+	// Native EXPRESS- shape.
+	if strings.HasPrefix(base, "EXPRESS-") {
+		ref := strings.TrimSuffix(base, "_trades")
+		ref = strings.TrimSuffix(ref, "-trades")
+		if isRefSafe(ref) {
+			return ref
+		}
+	}
+	return ""
+}
+
+// isRefSafe rejects anything that isn't pure alphanumeric/dash/underscore —
+// guards against weird filename characters making it into the DB as an
+// account_ref.
+func isRefSafe(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if !(r == '-' || r == '_' || (r >= '0' && r <= '9') ||
+			(r >= 'A' && r <= 'Z') || (r >= 'a' && r <= 'z')) {
+			return false
+		}
+	}
+	return true
+}
+
+// ptrStr returns a *string pointer, even for the empty string. (strPtrOrNil
+// returns nil for empty; for broker_trade_id we want to persist whatever
+// value we were given — an empty string would be a real bug we'd want to
+// catch in the unique index, not silently turn into NULL.)
+func ptrStr(s string) *string { return &s }
+
+// refreshDailyStatsForAccount rebuilds daily_stats for an account from its
+// trades table. Standalone so trade-imported accounts can refresh stats
+// without invoking the FIFO position builder.
+func refreshDailyStatsForAccount(ctx context.Context, q *models.Queries, accountID int64, tz *time.Location) error {
+	if tz == nil {
+		tz = time.UTC
+	}
+	if err := q.DeleteDailyStatsForAccount(ctx, accountID); err != nil {
+		return err
+	}
+	trades, err := q.ListTradesByDate(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	type bucket struct {
+		count, wins, losses int64
+		gross, net, comm    float64
+		lw, ll              float64
+		hasW, hasL          bool
+	}
+	groups := map[time.Time]*bucket{}
+	var dates []time.Time
+	for _, t := range trades {
+		if t.ExitTime == nil {
+			continue
+		}
+		y, m, d := t.ExitTime.In(tz).Date()
+		key := time.Date(y, m, d, 0, 0, 0, 0, tz)
+		b, ok := groups[key]
+		if !ok {
+			b = &bucket{}
+			groups[key] = b
+			dates = append(dates, key)
+		}
+		b.count++
+		if t.GrossPnl != nil {
+			b.gross += *t.GrossPnl
+		}
+		if t.Commission != nil {
+			b.comm += *t.Commission
+		}
+		if t.NetPnl == nil {
+			continue
+		}
+		b.net += *t.NetPnl
+		switch {
+		case *t.NetPnl > 0:
+			b.wins++
+			if !b.hasW || *t.NetPnl > b.lw {
+				b.lw = *t.NetPnl
+				b.hasW = true
+			}
+		case *t.NetPnl < 0:
+			b.losses++
+			if !b.hasL || *t.NetPnl < b.ll {
+				b.ll = *t.NetPnl
+				b.hasL = true
+			}
+		}
+	}
+	for _, d := range dates {
+		b := groups[d]
+		var lw, ll *float64
+		if b.hasW {
+			lw = &b.lw
+		}
+		if b.hasL {
+			ll = &b.ll
+		}
+		if err := q.CreateDailyStat(ctx, models.CreateDailyStatParams{
+			AccountID:   accountID,
+			StatDate:    d,
+			TradesCount: b.count,
+			Wins:        b.wins,
+			Losses:      b.losses,
+			GrossPnl:    b.gross,
+			NetPnl:      b.net,
+			Commission:  b.comm,
+			LargestWin:  lw,
+			LargestLoss: ll,
+		}); err != nil {
+			return err
+		}
 	}
 	return nil
 }

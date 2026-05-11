@@ -10,6 +10,78 @@ import (
 	"time"
 )
 
+const createImportedTrade = `-- name: CreateImportedTrade :one
+INSERT INTO trades (
+    account_id, symbol, symbol_root, direction, qty,
+    entry_price, exit_price, entry_time, exit_time,
+    gross_pnl, commission, net_pnl, status, broker_trade_id
+) VALUES (
+    ?, ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?, ?, 'closed', ?
+)
+RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id
+`
+
+type CreateImportedTradeParams struct {
+	AccountID     int64      `json:"account_id"`
+	Symbol        string     `json:"symbol"`
+	SymbolRoot    string     `json:"symbol_root"`
+	Direction     string     `json:"direction"`
+	Qty           float64    `json:"qty"`
+	EntryPrice    float64    `json:"entry_price"`
+	ExitPrice     *float64   `json:"exit_price"`
+	EntryTime     time.Time  `json:"entry_time"`
+	ExitTime      *time.Time `json:"exit_time"`
+	GrossPnl      *float64   `json:"gross_pnl"`
+	Commission    *float64   `json:"commission"`
+	NetPnl        *float64   `json:"net_pnl"`
+	BrokerTradeID *string    `json:"broker_trade_id"`
+}
+
+// Used by trade-level imports (TopstepX trades CSV) where the trade is
+// already fully formed in the source file. broker_trade_id is the dedup
+// key for re-imports.
+func (q *Queries) CreateImportedTrade(ctx context.Context, arg CreateImportedTradeParams) (Trade, error) {
+	row := q.db.QueryRowContext(ctx, createImportedTrade,
+		arg.AccountID,
+		arg.Symbol,
+		arg.SymbolRoot,
+		arg.Direction,
+		arg.Qty,
+		arg.EntryPrice,
+		arg.ExitPrice,
+		arg.EntryTime,
+		arg.ExitTime,
+		arg.GrossPnl,
+		arg.Commission,
+		arg.NetPnl,
+		arg.BrokerTradeID,
+	)
+	var i Trade
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Direction,
+		&i.Qty,
+		&i.EntryPrice,
+		&i.ExitPrice,
+		&i.EntryTime,
+		&i.ExitTime,
+		&i.GrossPnl,
+		&i.Commission,
+		&i.NetPnl,
+		&i.Status,
+		&i.Tags,
+		&i.Setup,
+		&i.CreatedAt,
+		&i.BrokerTradeID,
+	)
+	return i, err
+}
+
 const createTrade = `-- name: CreateTrade :one
 INSERT INTO trades (
     account_id, symbol, symbol_root, direction, qty,
@@ -20,7 +92,7 @@ INSERT INTO trades (
     ?, ?, ?, ?,
     ?, ?, ?, ?
 )
-RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at
+RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id
 `
 
 type CreateTradeParams struct {
@@ -74,6 +146,7 @@ func (q *Queries) CreateTrade(ctx context.Context, arg CreateTradeParams) (Trade
 		&i.Tags,
 		&i.Setup,
 		&i.CreatedAt,
+		&i.BrokerTradeID,
 	)
 	return i, err
 }
@@ -92,33 +165,69 @@ func (q *Queries) DeleteTradesForAccountSymbol(ctx context.Context, arg DeleteTr
 	return err
 }
 
+const getTradeByBrokerID = `-- name: GetTradeByBrokerID :one
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades WHERE account_id = ? AND broker_trade_id = ?
+`
+
+type GetTradeByBrokerIDParams struct {
+	AccountID     int64   `json:"account_id"`
+	BrokerTradeID *string `json:"broker_trade_id"`
+}
+
+func (q *Queries) GetTradeByBrokerID(ctx context.Context, arg GetTradeByBrokerIDParams) (Trade, error) {
+	row := q.db.QueryRowContext(ctx, getTradeByBrokerID, arg.AccountID, arg.BrokerTradeID)
+	var i Trade
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Direction,
+		&i.Qty,
+		&i.EntryPrice,
+		&i.ExitPrice,
+		&i.EntryTime,
+		&i.ExitTime,
+		&i.GrossPnl,
+		&i.Commission,
+		&i.NetPnl,
+		&i.Status,
+		&i.Tags,
+		&i.Setup,
+		&i.CreatedAt,
+		&i.BrokerTradeID,
+	)
+	return i, err
+}
+
 const getTradeByID = `-- name: GetTradeByID :one
-SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, a.name AS account_name, a.firm AS account_firm
+SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, t.broker_trade_id, a.name AS account_name, a.firm AS account_firm
 FROM trades t
 JOIN accounts a ON a.id = t.account_id
 WHERE t.id = ?
 `
 
 type GetTradeByIDRow struct {
-	ID          int64      `json:"id"`
-	AccountID   int64      `json:"account_id"`
-	Symbol      string     `json:"symbol"`
-	SymbolRoot  string     `json:"symbol_root"`
-	Direction   string     `json:"direction"`
-	Qty         float64    `json:"qty"`
-	EntryPrice  float64    `json:"entry_price"`
-	ExitPrice   *float64   `json:"exit_price"`
-	EntryTime   time.Time  `json:"entry_time"`
-	ExitTime    *time.Time `json:"exit_time"`
-	GrossPnl    *float64   `json:"gross_pnl"`
-	Commission  *float64   `json:"commission"`
-	NetPnl      *float64   `json:"net_pnl"`
-	Status      string     `json:"status"`
-	Tags        *string    `json:"tags"`
-	Setup       *string    `json:"setup"`
-	CreatedAt   time.Time  `json:"created_at"`
-	AccountName string     `json:"account_name"`
-	AccountFirm *string    `json:"account_firm"`
+	ID            int64      `json:"id"`
+	AccountID     int64      `json:"account_id"`
+	Symbol        string     `json:"symbol"`
+	SymbolRoot    string     `json:"symbol_root"`
+	Direction     string     `json:"direction"`
+	Qty           float64    `json:"qty"`
+	EntryPrice    float64    `json:"entry_price"`
+	ExitPrice     *float64   `json:"exit_price"`
+	EntryTime     time.Time  `json:"entry_time"`
+	ExitTime      *time.Time `json:"exit_time"`
+	GrossPnl      *float64   `json:"gross_pnl"`
+	Commission    *float64   `json:"commission"`
+	NetPnl        *float64   `json:"net_pnl"`
+	Status        string     `json:"status"`
+	Tags          *string    `json:"tags"`
+	Setup         *string    `json:"setup"`
+	CreatedAt     time.Time  `json:"created_at"`
+	BrokerTradeID *string    `json:"broker_trade_id"`
+	AccountName   string     `json:"account_name"`
+	AccountFirm   *string    `json:"account_firm"`
 }
 
 func (q *Queries) GetTradeByID(ctx context.Context, id int64) (GetTradeByIDRow, error) {
@@ -142,6 +251,7 @@ func (q *Queries) GetTradeByID(ctx context.Context, id int64) (GetTradeByIDRow, 
 		&i.Tags,
 		&i.Setup,
 		&i.CreatedAt,
+		&i.BrokerTradeID,
 		&i.AccountName,
 		&i.AccountFirm,
 	)
@@ -259,7 +369,7 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 }
 
 const listTradesByDate = `-- name: ListTradesByDate :many
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at FROM trades
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades
 WHERE account_id = ? AND status = 'closed' AND exit_time IS NOT NULL
 ORDER BY exit_time, id
 `
@@ -291,6 +401,7 @@ func (q *Queries) ListTradesByDate(ctx context.Context, accountID int64) ([]Trad
 			&i.Tags,
 			&i.Setup,
 			&i.CreatedAt,
+			&i.BrokerTradeID,
 		); err != nil {
 			return nil, err
 		}
@@ -306,7 +417,7 @@ func (q *Queries) ListTradesByDate(ctx context.Context, accountID int64) ([]Trad
 }
 
 const listTradesForAccount = `-- name: ListTradesForAccount :many
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at FROM trades WHERE account_id = ? ORDER BY entry_time, id
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades WHERE account_id = ? ORDER BY entry_time, id
 `
 
 func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]Trade, error) {
@@ -336,6 +447,7 @@ func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]
 			&i.Tags,
 			&i.Setup,
 			&i.CreatedAt,
+			&i.BrokerTradeID,
 		); err != nil {
 			return nil, err
 		}

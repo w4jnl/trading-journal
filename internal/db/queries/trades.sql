@@ -10,6 +10,24 @@ INSERT INTO trades (
 )
 RETURNING *;
 
+-- name: CreateImportedTrade :one
+-- Used by trade-level imports (TopstepX trades CSV) where the trade is
+-- already fully formed in the source file. broker_trade_id is the dedup
+-- key for re-imports.
+INSERT INTO trades (
+    account_id, symbol, symbol_root, direction, qty,
+    entry_price, exit_price, entry_time, exit_time,
+    gross_pnl, commission, net_pnl, status, broker_trade_id
+) VALUES (
+    ?, ?, ?, ?, ?,
+    ?, ?, ?, ?,
+    ?, ?, ?, 'closed', ?
+)
+RETURNING *;
+
+-- name: GetTradeByBrokerID :one
+SELECT * FROM trades WHERE account_id = ? AND broker_trade_id = ?;
+
 -- name: DeleteTradesForAccountSymbol :exec
 DELETE FROM trades WHERE account_id = ? AND symbol = ?;
 

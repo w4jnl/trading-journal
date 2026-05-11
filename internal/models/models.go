@@ -97,23 +97,24 @@ type SyncLog struct {
 }
 
 type Trade struct {
-	ID         int64      `json:"id"`
-	AccountID  int64      `json:"account_id"`
-	Symbol     string     `json:"symbol"`
-	SymbolRoot string     `json:"symbol_root"`
-	Direction  string     `json:"direction"`
-	Qty        float64    `json:"qty"`
-	EntryPrice float64    `json:"entry_price"`
-	ExitPrice  *float64   `json:"exit_price"`
-	EntryTime  time.Time  `json:"entry_time"`
-	ExitTime   *time.Time `json:"exit_time"`
-	GrossPnl   *float64   `json:"gross_pnl"`
-	Commission *float64   `json:"commission"`
-	NetPnl     *float64   `json:"net_pnl"`
-	Status     string     `json:"status"`
-	Tags       *string    `json:"tags"`
-	Setup      *string    `json:"setup"`
-	CreatedAt  time.Time  `json:"created_at"`
+	ID            int64      `json:"id"`
+	AccountID     int64      `json:"account_id"`
+	Symbol        string     `json:"symbol"`
+	SymbolRoot    string     `json:"symbol_root"`
+	Direction     string     `json:"direction"`
+	Qty           float64    `json:"qty"`
+	EntryPrice    float64    `json:"entry_price"`
+	ExitPrice     *float64   `json:"exit_price"`
+	EntryTime     time.Time  `json:"entry_time"`
+	ExitTime      *time.Time `json:"exit_time"`
+	GrossPnl      *float64   `json:"gross_pnl"`
+	Commission    *float64   `json:"commission"`
+	NetPnl        *float64   `json:"net_pnl"`
+	Status        string     `json:"status"`
+	Tags          *string    `json:"tags"`
+	Setup         *string    `json:"setup"`
+	CreatedAt     time.Time  `json:"created_at"`
+	BrokerTradeID *string    `json:"broker_trade_id"`
 }
 
 type TradeExecution struct {

@@ -47,10 +47,34 @@ type Fill struct {
 type Format string
 
 const (
-	FormatMotiveWave Format = "motivewave_csv"
-	FormatTopstepX   Format = "topstepx_csv"
-	FormatUnknown    Format = ""
+	FormatMotiveWave       Format = "motivewave_csv"
+	FormatTopstepX         Format = "topstepx_csv"        // legacy orders export
+	FormatTopstepXTrades   Format = "topstepx_trades_csv" // newer per-trade export
+	FormatUnknown          Format = ""
 )
+
+// TradeRecord is a pre-aggregated trade row from a CSV that already carries
+// the final entry/exit/P&L/commission numbers. Unlike Fill (which represents
+// one raw fill / order leg that needs FIFO reconstruction), each TradeRecord
+// is the source-of-truth shape of a complete trade and can be inserted into
+// `trades` directly. TopstepX's trades export is the first source that uses
+// this shape; Apex/Lucid trades exports (if they ever land) would slot in
+// identically.
+type TradeRecord struct {
+	BrokerTradeID string    // file's stable Id — dedup key per account
+	Symbol        string    // contract code, e.g. "ESM6"
+	SymbolRoot    string    // canonical root, e.g. "ES"
+	Direction     string    // "long" / "short"
+	Qty           float64
+	EntryPrice    float64
+	ExitPrice     float64
+	EntryTime     time.Time // UTC
+	ExitTime      time.Time // UTC
+	GrossPnL      float64   // already net of any tick math the broker did
+	Commission    float64   // total commission (Fees + Commissions in TopstepX)
+	NetPnL        float64   // GrossPnL - Commission
+	RawData       string    // JSON of the original row
+}
 
 // GuessFirm maps an account reference and import-source hints to a clearing firm.
 // Returns "" when nothing matches; the importer still creates the account but
