@@ -134,5 +134,16 @@
       closeTradeModal();
     }
   });
+  // Cross-page deep link: /trades?modal=N opens the modal for that trade
+  // on page load. Used by /analytics to jump straight to the biggest
+  // win/loss trade.
+  (function () {
+    const modalID = new URLSearchParams(location.search).get('modal');
+    if (!modalID) return;
+    window.addEventListener('DOMContentLoaded', () => {
+      htmx.ajax('GET', '/trades/' + modalID, '#modal-content')
+        .then(() => document.getElementById('modal-backdrop').classList.add('show'));
+    });
+  })();
 </script>
 {{end}}

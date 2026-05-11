@@ -114,7 +114,7 @@
             {{/* Saturday: week summary only — no day number, no journal icon. */}}
             {{if $wt.HasData}}
             <div class="week-summary-center">
-              <div class="week-label">Week {{$wt.Index}}</div>
+              <div class="week-label">Week {{$wt.ISOWeek}}</div>
               <div class="week-pnl-val {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $wt.NetPnl}}</div>
               <div class="week-trades">{{$wt.Trades}} trades</div>
             </div>

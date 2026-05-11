@@ -30,7 +30,7 @@ type dayCell struct {
 // the row including spillover from neighbouring months — this matches the
 // reference design where week summaries don't try to clip at month boundaries.
 type weekTotal struct {
-	Index   int     // 1-based "Week 1", "Week 2", …
+	ISOWeek int // ISO 8601 week of year (1..53)
 	HasData bool
 	Trades  int64
 	NetPnl  float64
@@ -154,7 +154,11 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	var monthTrades, winDays, lossDays int64
 	weeklyTotals := make([]weekTotal, len(weeks))
 	for wi, week := range weeks {
-		wt := weekTotal{Index: wi + 1}
+		// ISO week is anchored to Monday — week[1] is Monday of this row, the
+		// stable representative for the ISO week regardless of which Sunday
+		// or Saturday the grid happens to start on.
+		_, isoWeek := week[1].Date.ISOWeek()
+		wt := weekTotal{ISOWeek: isoWeek}
 		for _, c := range week {
 			// Week aggregates: every day in the row, including spillover.
 			if c.HasData {

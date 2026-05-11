@@ -22,20 +22,21 @@ var validFirms = map[string]bool{
 	"ibkr":    true,
 }
 
-// validTypes accepts every type the system has ever issued. The dropdown
-// uses accountTypeOptions() below to control what's offered to the user; any
-// legacy value already saved in the DB still passes validation on subsequent
-// edits so we don't trap users into re-typing their entire account list.
+// validTypes accepts every type slug the system honors. `live` is the
+// canonical real-money type (it absorbed the older `personal` slug — see
+// migration 20260511130000). `personal` is still accepted on input so an
+// in-flight tab pasting that value doesn't error; the value flows through
+// validation but new rows should be saved as `live`.
 var validTypes = map[string]bool{
 	"":            true,
 	"prop_eval":   true,
 	"prop_funded": true,
 	"prop_live":   true,
-	"personal":    true,
+	"live":        true,
 	"paper":       true,
-	// Legacy values from before the prop_eval/funded/live split.
-	"prop": true,
-	"live": true,
+	// Accepted on input for tolerance; not offered in the dropdown.
+	"personal": true,
+	"prop":     true,
 }
 
 // accountTypeOption pairs a slug with a human-readable label. Templates use
@@ -45,19 +46,17 @@ type accountTypeOption struct {
 	Label string
 }
 
-// accountTypeOptions returns the dropdown entries in order. Legacy values are
-// included but suffixed "(legacy)" so the user can see and migrate away from
-// them.
+// accountTypeOptions returns the dropdown entries in order. `prop` stays
+// labeled "(legacy)" so users with old rows can see and migrate from it.
 func accountTypeOptions() []accountTypeOption {
 	return []accountTypeOption{
 		{"", "—"},
 		{"prop_eval", "Prop · Eval"},
 		{"prop_funded", "Prop · Funded"},
 		{"prop_live", "Prop · Live"},
-		{"personal", "Personal"},
+		{"live", "Live"},
 		{"paper", "Paper"},
 		{"prop", "prop (legacy)"},
-		{"live", "live (legacy)"},
 	}
 }
 
@@ -143,7 +142,7 @@ func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 	h.renderPartial(w, "_account_row.html", "account_row", map[string]any{
 		"Account":     updated,
 		"FirmOptions": []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
-		"TypeOptions": []string{"", "prop", "live", "paper"},
+		"TypeOptions": accountTypeOptions(),
 	})
 }
 

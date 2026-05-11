@@ -2,10 +2,12 @@
 
 {{define "content"}}
 <style>
-  .journal-grid { display: grid; grid-template-columns: 1fr 280px; gap: 24px; }
-  @media (max-width: 800px) { .journal-grid { grid-template-columns: 1fr; } }
   .journal-header { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; }
   .journal-header h1 { margin: 0; flex-shrink: 0; }
+  .recent-section { margin-top: 32px; padding-top: 20px; border-top: 1px solid #e2e8f0; }
+  .recent-section h3 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; margin: 0 0 12px 0; }
+  .recent-section ul.recent-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+  .recent-section ul.recent-list li { border-bottom: 0; padding: 10px 12px; background: white; border-radius: 4px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
   .journal-nav a { color: #1e40af; text-decoration: none; padding: 4px 10px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   .journal-nav input[type=date] { padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   .mood-row { display: flex; gap: 4px; margin: 12px 0; }
@@ -51,42 +53,40 @@
 </div>
 {{end}}
 
-<div class="journal-grid">
-  <section>
-    <form method="post" action="/journal/{{.Date}}">
-      {{/* Preserve the back URL across save → redirect → reload. */}}
-      {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
-      <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
-        <span class="muted" style="margin-right: 4px;">Tag:</span>
-        {{template "tag_picker" (dict "Tag" $.Tag)}}
-      </div>
+<section>
+  <form method="post" action="/journal/{{.Date}}">
+    {{/* Preserve the back URL across save → redirect → reload. */}}
+    {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
+    <div style="margin-bottom: 12px; display: flex; gap: 8px; align-items: center;">
+      <span class="muted" style="margin-right: 4px;">Tag:</span>
+      {{template "tag_picker" (dict "Tag" $.Tag)}}
+    </div>
 
-      <textarea name="body" placeholder="What happened today? Markdown supported: headings, lists, **bold**, code, blockquotes.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
+    <textarea name="body" placeholder="What happened today? Markdown supported: headings, lists, **bold**, code, blockquotes.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
 
-      <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
-        <button type="submit">Save</button>
-        <span class="muted">Empty body deletes the entry.</span>
-      </div>
-    </form>
+    <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+      <button type="submit">Save</button>
+      <span class="muted">Empty body deletes the entry.</span>
+    </div>
+  </form>
 
-    {{if .Rendered}}
-    <h3 style="margin-top: 24px;">Preview</h3>
-    <div class="markdown-preview">{{.Rendered}}</div>
+  {{if .Rendered}}
+  <h3 style="margin-top: 24px;">Preview</h3>
+  <div class="markdown-preview">{{.Rendered}}</div>
+  {{end}}
+</section>
+
+<section class="recent-section">
+  <h3>Recent entries</h3>
+  <ul class="recent-list">
+    {{range .Recent}}
+      <li>
+        <a href="/journal/{{.EntryDate.Format "2006-01-02"}}">{{.EntryDate.Format "Mon, 2 Jan"}}</a>
+        <span class="preview">{{snippet .Body 80}}</span>
+      </li>
+    {{else}}
+      <li class="muted">No journal entries yet.</li>
     {{end}}
-  </section>
-
-  <aside>
-    <h3 style="margin-top: 0;">Recent</h3>
-    <ul class="recent-list">
-      {{range .Recent}}
-        <li>
-          <a href="/journal/{{.EntryDate.Format "2006-01-02"}}">{{.EntryDate.Format "Mon, 2 Jan"}}</a>
-          <span class="preview">{{snippet .Body 80}}</span>
-        </li>
-      {{else}}
-        <li class="muted">No journal entries yet.</li>
-      {{end}}
-    </ul>
-  </aside>
-</div>
+  </ul>
+</section>
 {{end}}

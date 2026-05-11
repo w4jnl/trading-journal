@@ -15,6 +15,7 @@ import (
 // computing the analytics page. Pulling from raw SQL keeps the handler in
 // charge of the type so we can avoid a full models.Trade allocation per row.
 type analyticsTrade struct {
+	ID         int64
 	AccountID  int64
 	Symbol     string
 	SymbolRoot string
@@ -158,7 +159,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 			where += " AND " + c
 		}
 	}
-	query := `SELECT account_id, symbol, symbol_root, direction, gross_pnl, net_pnl, commission, entry_time, exit_time
+	query := `SELECT id, account_id, symbol, symbol_root, direction, gross_pnl, net_pnl, commission, entry_time, exit_time
 	          FROM trades WHERE ` + where + ` ORDER BY exit_time`
 	rows, err := h.DB.QueryContext(ctx, query, args...)
 	if err != nil {
@@ -170,7 +171,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	for rows.Next() {
 		var t analyticsTrade
 		var exit sql.NullTime // exit_time IS NOT NULL filter above, but be defensive
-		if err := rows.Scan(&t.AccountID, &t.Symbol, &t.SymbolRoot, &t.Direction,
+		if err := rows.Scan(&t.ID, &t.AccountID, &t.Symbol, &t.SymbolRoot, &t.Direction,
 			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.EntryTime, &exit); err != nil {
 			return nil, err
 		}
@@ -184,19 +185,21 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 
 // headlineMetrics is the numbers shown in big stat cards at the top.
 type headlineMetrics struct {
-	Trades       int64
-	Wins         int64
-	Losses       int64
-	WinRate      float64
-	NetPnl       float64
-	GrossPnl     float64
-	Commission   float64
-	AvgWin       float64
-	AvgLoss      float64 // negative number
-	LargestWin   float64
-	LargestLoss  float64 // negative number
-	ProfitFactor float64
-	Expectancy   float64
+	Trades             int64
+	Wins               int64
+	Losses             int64
+	WinRate            float64
+	NetPnl             float64
+	GrossPnl           float64
+	Commission         float64
+	AvgWin             float64
+	AvgLoss            float64 // negative number
+	LargestWin         float64
+	LargestLoss        float64 // negative number
+	LargestWinTradeID  int64   // 0 if none
+	LargestLossTradeID int64   // 0 if none
+	ProfitFactor       float64
+	Expectancy         float64
 }
 
 func computeHeadline(trades []analyticsTrade) headlineMetrics {
@@ -222,18 +225,21 @@ func computeHeadline(trades []analyticsTrade) headlineMetrics {
 		case *t.NetPnl > 0:
 			m.Wins++
 			sumWins += *t.NetPnl
-			if first || *t.NetPnl > m.LargestWin {
+			if m.LargestWinTradeID == 0 || *t.NetPnl > m.LargestWin {
 				m.LargestWin = *t.NetPnl
+				m.LargestWinTradeID = t.ID
 			}
 		case *t.NetPnl < 0:
 			m.Losses++
 			sumLosses += -*t.NetPnl
-			if first || *t.NetPnl < m.LargestLoss {
+			if m.LargestLossTradeID == 0 || *t.NetPnl < m.LargestLoss {
 				m.LargestLoss = *t.NetPnl
+				m.LargestLossTradeID = t.ID
 			}
 		}
 		first = false
 	}
+	_ = first // retained for future shape-of-edge-case checks
 	decided := m.Wins + m.Losses
 	if decided > 0 {
 		m.WinRate = float64(m.Wins) / float64(decided)

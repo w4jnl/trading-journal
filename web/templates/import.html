@@ -7,13 +7,56 @@
 
 <div class="panel">
   <p>Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row — no need to pick.</p>
-  <form hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
-    <input type="file" name="file" accept=".csv" required>
-    <button type="submit">Import</button>
-    <span id="busy" class="muted htmx-indicator" style="margin-left:12px;">working…</span>
+  <form id="import-form" hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
+    <div id="drop-zone" class="drop-zone">
+      <strong>Drop a .csv file here</strong> &nbsp;or&nbsp;
+      <input type="file" name="file" accept=".csv" required>
+      <button type="submit">Import</button>
+      <span id="busy" class="muted htmx-indicator" style="margin-left:12px;">working…</span>
+    </div>
   </form>
   <div id="outcome" style="margin-top:16px;"></div>
 </div>
+<style>
+  .drop-zone { padding: 18px; border: 2px dashed #cbd5e1; border-radius: 6px;
+               text-align: center; transition: all 120ms ease-out; }
+  .drop-zone.dragover { border-color: #0f172a; background: #f1f5f9; }
+  .drop-zone input[type=file] { margin: 0 6px; }
+</style>
+<script>
+  // Drag-and-drop file upload. Drop event grabs the first dropped file,
+  // POSTs it as multipart/form-data, and renders the same outcome partial
+  // into #outcome that the form submit path uses.
+  (function () {
+    const zone = document.getElementById('drop-zone');
+    if (!zone) return;
+    const stop = (e) => { e.preventDefault(); e.stopPropagation(); };
+    ['dragenter', 'dragover'].forEach((ev) => {
+      zone.addEventListener(ev, (e) => { stop(e); zone.classList.add('dragover'); });
+    });
+    ['dragleave', 'drop'].forEach((ev) => {
+      zone.addEventListener(ev, (e) => { stop(e); zone.classList.remove('dragover'); });
+    });
+    // Some browsers fire `dragleave` over children — guard against flicker.
+    document.addEventListener('drop', stop);
+    document.addEventListener('dragover', stop);
+
+    zone.addEventListener('drop', async (e) => {
+      if (!e.dataTransfer || !e.dataTransfer.files.length) return;
+      const file = e.dataTransfer.files[0];
+      const fd = new FormData();
+      fd.append('file', file);
+      const out = document.getElementById('outcome');
+      out.innerHTML = '<span class="muted">working…</span>';
+      try {
+        const resp = await fetch('/import/upload', { method: 'POST', body: fd });
+        out.innerHTML = await resp.text();
+      } catch (err) {
+        out.innerHTML = '<div class="panel error">Upload failed: ' + err.message + '</div>';
+      }
+    });
+  })();
+</script>
 
 <h2>Recent imports</h2>
 <table>

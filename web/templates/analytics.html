@@ -9,6 +9,8 @@
   .head-card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
   .pnl-pos { color: #15803d; }
   .pnl-neg { color: #b91c1c; }
+  .trade-link { text-decoration: none; border-bottom: 1px dashed currentColor; }
+  .trade-link:hover { border-bottom-style: solid; }
   .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
   @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
   .breakdown-grid h3 { margin-top: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; }
@@ -64,8 +66,16 @@
   </div>
   <div class="head-card">
     <div class="label">Largest win / loss</div>
-    <div class="value"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></div>
-    <div class="sub"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></div>
+    <div class="value">
+      {{if .LargestWinTradeID}}
+        <a class="trade-link" href="/trades?modal={{.LargestWinTradeID}}" title="Open this trade"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></a>
+      {{else}}<span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span>{{end}}
+    </div>
+    <div class="sub">
+      {{if .LargestLossTradeID}}
+        <a class="trade-link" href="/trades?modal={{.LargestLossTradeID}}" title="Open this trade"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></a>
+      {{else}}<span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span>{{end}}
+    </div>
   </div>
 </div>
 {{else}}
