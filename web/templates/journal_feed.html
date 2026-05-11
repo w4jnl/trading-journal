@@ -2,14 +2,47 @@
 
 {{define "content"}}
 <style>
-  .quick-add { background: white; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05);
-               display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 20px; }
-  .quick-add label { display: flex; flex-direction: column; font-size: 11px; color: #64748b;
-                     text-transform: uppercase; letter-spacing: 0.04em; }
-  .quick-add input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
-  .quick-add a.today { padding: 8px 14px; background: #0f172a; color: white; border-radius: 4px;
+  /* Two-panel layout: ADD vs FILTER. Both share .panel-card visuals but use
+     distinct accent colors so the two intents (creating an entry vs narrowing
+     the feed) stay visually separate. */
+  .panel-card { background: white; border-radius: 6px; padding: 12px 16px;
+                box-shadow: 0 1px 2px rgba(0,0,0,.05); margin-bottom: 16px; }
+  .panel-card .panel-label { display: inline-block; font-size: 10px; font-weight: 700;
+                             text-transform: uppercase; letter-spacing: 0.08em;
+                             padding: 2px 8px; border-radius: 999px;
+                             margin-bottom: 10px; }
+  .panel-card.add .panel-label    { background: #dcfce7; color: #166534; }
+  .panel-card.filter .panel-label { background: #dbeafe; color: #1e40af; }
+
+  .panel-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+  .panel-row label { display: flex; flex-direction: column; font-size: 11px;
+                     color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
+  .panel-row input[type=date], .panel-row input[type=week] {
+    padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;
+  }
+  .panel-row a.today { padding: 8px 14px; background: #0f172a; color: white; border-radius: 4px;
                        text-decoration: none; font-size: 13px; }
-  .quick-add a.today:hover { background: #1e293b; }
+  .panel-row a.today:hover { background: #1e293b; }
+
+  /* Chip-style multi-select: a label wraps a hidden checkbox. :has(:checked)
+     paints the chip in the scope/tag color. */
+  .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+          border: 1.5px solid #cbd5e1; border-radius: 999px; font-size: 12px;
+          color: #475569; cursor: pointer; user-select: none; transition: all 100ms; }
+  .chip:hover { border-color: #94a3b8; }
+  .chip input[type=checkbox] { display: none; }
+  .chip:has(:checked).scope-day   { background: #dbeafe; border-color: #1e40af; color: #1e40af; }
+  .chip:has(:checked).scope-trade { background: #fef3c7; border-color: #92400e; color: #92400e; }
+  .chip:has(:checked).scope-week  { background: #f3e8ff; border-color: #6b21a8; color: #6b21a8; }
+  .chip:has(:checked).tag-good    { background: #dcfce7; border-color: #16a34a; color: #166534; }
+  .chip:has(:checked).tag-neutral { background: #f1f5f9; border-color: #475569; color: #1e293b; }
+  .chip:has(:checked).tag-bad     { background: #fee2e2; border-color: #dc2626; color: #991b1b; }
+  .chip:has(:checked).tag-untagged { background: #f1f5f9; border-color: #94a3b8; color: #475569; }
+
+  .filter-actions { display: flex; gap: 12px; align-items: center; margin-top: 12px; }
+  .filter-actions button { padding: 6px 14px; }
+  .filter-actions .muted { font-size: 12px; }
 
   ul.feed { list-style: none; padding: 0; margin: 0; }
   ul.feed li { background: white; border-radius: 6px; padding: 12px 16px; margin-bottom: 8px;
@@ -20,9 +53,9 @@
   .scope-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px;
                  border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase;
                  letter-spacing: 0.04em; align-self: start; justify-self: start; }
-  .scope-day   { background: #dbeafe; color: #1e40af; }
-  .scope-trade { background: #fef3c7; color: #92400e; }
-  .scope-week  { background: #f3e8ff; color: #6b21a8; }
+  .scope-badge.scope-day   { background: #dbeafe; color: #1e40af; }
+  .scope-badge.scope-trade { background: #fef3c7; color: #92400e; }
+  .scope-badge.scope-week  { background: #f3e8ff; color: #6b21a8; }
   .entry-main .date { font-weight: 600; }
   .entry-main .meta { color: #64748b; font-size: 13px; margin-left: 6px; }
   .entry-preview { color: #475569; font-size: 13px; margin-top: 4px;
@@ -40,17 +73,59 @@
 
 <h1>Journal</h1>
 
-<div class="quick-add">
-  <a class="today" href="/journal/{{.Today}}?back=/journal">+ Today</a>
-  <label>Any day
-    <input type="date" max="{{.Today}}"
-           onchange="if (this.value) window.location.href='/journal/'+this.value+'?back=/journal'">
-  </label>
-  <label>Any week
-    <input type="week" value="{{.ThisWeek}}"
-           onchange="if (this.value) window.location.href='/journal/week/'+this.value+'?back=/journal'">
-  </label>
+<!-- ADD-NEW panel: starts a new entry; does NOT filter the feed. -->
+<div class="panel-card add">
+  <span class="panel-label">Add new</span>
+  <div class="panel-row">
+    <a class="today" href="/journal/{{.Today}}?back=/journal">+ Today</a>
+    <label>Any day
+      <input type="date" max="{{.Today}}"
+             onchange="if (this.value) window.location.href='/journal/'+this.value+'?back=/journal'">
+    </label>
+    <label>Any week
+      <input type="week" value="{{.ThisWeek}}"
+             onchange="if (this.value) window.location.href='/journal/week/'+this.value+'?back=/journal'">
+    </label>
+  </div>
 </div>
+
+<!-- FILTER panel: narrows the feed below. Submits via form GET; chips
+     and dates round-trip through the query string. -->
+<form class="panel-card filter" method="get" action="/journal">
+  <span class="panel-label">Filter</span>
+  <div class="panel-row">
+    <label>From
+      <input type="date" name="from" value="{{.FilterFrom}}">
+    </label>
+    <label>To
+      <input type="date" name="to" value="{{.FilterTo}}">
+    </label>
+  </div>
+  <div class="panel-row" style="margin-top: 10px;">
+    <div>
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">Type</div>
+      <div class="chip-row">
+        <label class="chip scope-day"><input type="checkbox" name="scope" value="day"   {{if index $.ScopeSelected "day"}}checked{{end}}>Day</label>
+        <label class="chip scope-trade"><input type="checkbox" name="scope" value="trade" {{if index $.ScopeSelected "trade"}}checked{{end}}>Trade</label>
+        <label class="chip scope-week"><input type="checkbox" name="scope" value="week"  {{if index $.ScopeSelected "week"}}checked{{end}}>Week</label>
+      </div>
+    </div>
+    <div>
+      <div style="font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px;">Tag</div>
+      <div class="chip-row">
+        <label class="chip tag-good"><input type="checkbox" name="tag" value="good"     {{if index $.TagSelected "good"}}checked{{end}}>Good</label>
+        <label class="chip tag-neutral"><input type="checkbox" name="tag" value="neutral" {{if index $.TagSelected "neutral"}}checked{{end}}>Neutral</label>
+        <label class="chip tag-bad"><input type="checkbox" name="tag" value="bad"      {{if index $.TagSelected "bad"}}checked{{end}}>Bad</label>
+        <label class="chip tag-untagged"><input type="checkbox" name="tag" value="untagged" {{if index $.TagSelected "untagged"}}checked{{end}}>Untagged</label>
+      </div>
+    </div>
+  </div>
+  <div class="filter-actions">
+    <button type="submit">Apply</button>
+    {{if .FilterActive}}<a href="/journal" style="font-size: 13px; color: #475569; text-decoration: none;">Clear</a>{{end}}
+    <span class="muted" style="margin-left: auto;">{{len .Items}} entries{{if .FilterActive}} (filtered){{end}}.</span>
+  </div>
+</form>
 
 {{if .Items}}
 <ul class="feed">
@@ -74,7 +149,11 @@
 </ul>
 {{else}}
 <div class="empty-state">
-  No journal entries yet. Click <strong>+ Today</strong> above to write your first one, or open any past trade and add a note from the detail modal.
+  {{if .FilterActive}}
+    No journal entries match the current filter. <a href="/journal" style="color: #1e40af;">Clear filter</a>.
+  {{else}}
+    No journal entries yet. Click <strong>+ Today</strong> above to write your first one, or open any past trade and add a note from the detail modal.
+  {{end}}
 </div>
 {{end}}
 {{end}}

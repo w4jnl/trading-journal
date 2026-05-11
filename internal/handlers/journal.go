@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -20,27 +21,32 @@ import (
 
 // JournalFeed renders /journal — the chronological feed mixing day, trade,
 // and week entries by date desc. Quick-add bar at the top lets the user jump
-// to today / any date / any week. Clicking a feed item opens the right edit
-// surface (modal for trade scope, page for day/week scopes).
+// to today / any date / any week. Filter section below it narrows the feed
+// by date range, scope (day/trade/week), and tag.
+//
+// Clicking a feed item opens the right edit surface (modal for trade scope,
+// page for day/week scopes).
 func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tz := h.localTZ()
 
-	rows, err := h.Queries.ListJournalFeed(ctx, 100)
+	filters := parseJournalFilters(r, tz)
+
+	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 100)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list feed: %w", err))
 		return
 	}
 
 	type feedItem struct {
-		ID           int64
-		Scope        string  // day | trade | week
-		Date         time.Time
-		DateLabel    string
-		MetaLabel    string  // "APEX-1 / MESM6 long · $42.50" for trade, "May 4–10" for week
-		Tag          string
-		Body         string
-		EditURL      string  // where to navigate when the row is clicked
+		ID        int64
+		Scope     string // day | trade | week
+		Date      time.Time
+		DateLabel string
+		MetaLabel string // "APEX-1 / MESM6 long · $42.50" for trade, "May 4–10" for week
+		Tag       string
+		Body      string
+		EditURL   string // where to navigate when the row is clicked
 	}
 	items := make([]feedItem, 0, len(rows))
 	for _, row := range rows {
@@ -98,12 +104,174 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
 
 	h.renderPage(w, "journal_feed.html", map[string]any{
-		"NavActive":   "journal",
-		"BackHref":    validBackHref(r),
-		"Items":       items,
-		"Today":       todayStr,
-		"ThisWeek":    thisWeekStr,
+		"NavActive":      "journal",
+		"BackHref":       validBackHref(r),
+		"Items":          items,
+		"Today":          todayStr,
+		"ThisWeek":       thisWeekStr,
+		"FilterFrom":     filters.fromStr,
+		"FilterTo":       filters.toStr,
+		"ScopeSelected":  filters.scopeSet, // map[string]bool — used by checkboxes
+		"TagSelected":    filters.tagSet,
+		"FilterActive":   filters.active(),
 	})
+}
+
+// journalFilters carries the parsed feed filters: date range + scope + tag.
+type journalFilters struct {
+	from, to      *time.Time
+	fromStr, toStr string
+	scopes        []string // "day" | "trade" | "week"
+	scopeSet      map[string]bool
+	// tags is the set the user picked. Special value "" stands for "untagged"
+	// (tag column IS NULL). The DB tag values are good/neutral/bad.
+	tags    []string
+	tagSet  map[string]bool
+}
+
+func (f journalFilters) active() bool {
+	return f.from != nil || f.to != nil || len(f.scopes) > 0 || len(f.tags) > 0
+}
+
+// parseJournalFilters reads ?from=&to=&scope=&tag= from the request.
+func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
+	f := journalFilters{
+		scopeSet: map[string]bool{},
+		tagSet:   map[string]bool{},
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("from")); v != "" {
+		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
+			f.from = &t
+			f.fromStr = v
+		}
+	}
+	if v := strings.TrimSpace(r.URL.Query().Get("to")); v != "" {
+		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
+			t2 := t.AddDate(0, 0, 1) // inclusive upper bound
+			f.to = &t2
+			f.toStr = v
+		}
+	}
+	for _, v := range r.URL.Query()["scope"] {
+		switch v {
+		case "day", "trade", "week":
+			if !f.scopeSet[v] {
+				f.scopes = append(f.scopes, v)
+				f.scopeSet[v] = true
+			}
+		}
+	}
+	for _, v := range r.URL.Query()["tag"] {
+		switch v {
+		case "good", "neutral", "bad", "untagged":
+			if !f.tagSet[v] {
+				f.tags = append(f.tags, v)
+				f.tagSet[v] = true
+			}
+		}
+	}
+	return f
+}
+
+// feedRow is the projection ListJournalFeed used to return — we keep the
+// same shape so the feedItem construction loop didn't have to change.
+type feedRow struct {
+	ID             int64
+	TradeID        *int64
+	AccountID      *int64
+	EntryDate      time.Time
+	Body           string
+	Mood           *int64
+	Tag            *string
+	Scope          string
+	TradeSymbol    *string
+	TradeDirection *string
+	TradeNetPnl    *float64
+	AccountName    *string
+}
+
+// listJournalFeedFiltered runs a raw SQL query so the dynamic WHERE clause
+// can include scope/tag IN (...) and the date range. Same join shape as the
+// sqlc ListJournalFeed query, minus a couple of columns the feed doesn't need.
+func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, limit int) ([]feedRow, error) {
+	clauses := []string{"1=1"}
+	var args []any
+	if f.from != nil {
+		clauses = append(clauses, "je.entry_date >= ?")
+		args = append(args, *f.from)
+	}
+	if f.to != nil {
+		clauses = append(clauses, "je.entry_date < ?")
+		args = append(args, *f.to)
+	}
+	if len(f.scopes) > 0 {
+		ph := strings.Repeat("?,", len(f.scopes))
+		ph = ph[:len(ph)-1]
+		clauses = append(clauses, "je.scope IN ("+ph+")")
+		for _, s := range f.scopes {
+			args = append(args, s)
+		}
+	}
+	if len(f.tags) > 0 {
+		// Build (tag IN (...) OR tag IS NULL) when "untagged" is one of the picks.
+		var real []string
+		untagged := false
+		for _, t := range f.tags {
+			if t == "untagged" {
+				untagged = true
+			} else {
+				real = append(real, t)
+			}
+		}
+		parts := []string{}
+		if len(real) > 0 {
+			ph := strings.Repeat("?,", len(real))
+			ph = ph[:len(ph)-1]
+			parts = append(parts, "je.tag IN ("+ph+")")
+			for _, t := range real {
+				args = append(args, t)
+			}
+		}
+		if untagged {
+			parts = append(parts, "je.tag IS NULL")
+		}
+		if len(parts) > 0 {
+			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+		}
+	}
+
+	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
+	             je.mood, je.tag, je.scope,
+	             t.symbol, t.direction, t.net_pnl,
+	             a.name
+	      FROM journal_entries je
+	      LEFT JOIN trades t   ON t.id = je.trade_id
+	      LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
+	      WHERE ` + strings.Join(clauses, " AND ") + `
+	      ORDER BY je.entry_date DESC, je.id DESC
+	      LIMIT ?`
+	args = append(args, limit)
+
+	rows, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []feedRow
+	for rows.Next() {
+		var r feedRow
+		if err := rows.Scan(
+			&r.ID, &r.TradeID, &r.AccountID, &r.EntryDate, &r.Body,
+			&r.Mood, &r.Tag, &r.Scope,
+			&r.TradeSymbol, &r.TradeDirection, &r.TradeNetPnl,
+			&r.AccountName,
+		); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
 }
 
 // JournalPage renders /journal/{date} — the day-level entry editor for a
