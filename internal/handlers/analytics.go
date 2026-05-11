@@ -109,6 +109,13 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		formTo = to.AddDate(0, 0, -1).Format("2006-01-02")
 	}
 
+	// Build the self-URL we want users dropped back at when they close a
+	// trade modal we deep-linked them into.
+	selfURL := "/analytics"
+	if rq := r.URL.RawQuery; rq != "" {
+		selfURL += "?" + rq
+	}
+
 	h.renderPage(w, "analytics.html", map[string]any{
 		"NavActive":        "analytics",
 		"BackHref":         validBackHref(r),
@@ -123,6 +130,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"From":             formFrom,
 		"To":               formTo,
 		"TradeCount":       int64(len(trades)),
+		"SelfURL":          selfURL,
 	})
 }
 

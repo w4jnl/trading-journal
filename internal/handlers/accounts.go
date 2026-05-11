@@ -46,19 +46,19 @@ type accountTypeOption struct {
 	Label string
 }
 
-// accountTypeOptions returns the dropdown entries in order. `prop` stays
-// labeled "(legacy)" so users with old rows can see and migrate from it.
+// accountTypeOptions returns the dropdown entries in order. Legacy `prop`
+// rows were migrated to `prop_eval` (migration 20260511140000) so the slug
+// is no longer offered — still accepted on input via validTypes for tolerance.
 func accountTypeOptions() []accountTypeOption {
 	return []accountTypeOption{
-		{"", "—"},
 		{"prop_eval", "Prop · Eval"},
 		{"prop_funded", "Prop · Funded"},
 		{"prop_live", "Prop · Live"},
 		{"live", "Live"},
 		{"paper", "Paper"},
-		{"prop", "prop (legacy)"},
 	}
 }
+
 
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
 // back to /accounts/{id} to update the row in place via HTMX.
@@ -74,12 +74,139 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"Accounts":    accounts,
 		"FirmOptions": []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
 		"TypeOptions": accountTypeOptions(),
+		"Flash":       r.URL.Query().Get("flash"),
 	})
+}
+
+// AccountsBulkSave handles POST /accounts/save — one form submission for
+// every row on the page. Each row's inputs use the name "accounts.<id>.<field>"
+// so the handler can iterate r.PostForm and update each account in turn.
+// Returns 303 back to /accounts so a refresh doesn't resubmit.
+func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	// Group form values by account id. Field names look like
+	// "accounts.42.name", "accounts.42.firm", … plus a checkbox
+	// "accounts.42.active" that's only present when checked.
+	type rowInput struct {
+		Name     string
+		Firm     string
+		Type     string
+		Currency string
+		Active   bool
+	}
+	byID := map[int64]*rowInput{}
+	get := func(id int64) *rowInput {
+		if r, ok := byID[id]; ok {
+			return r
+		}
+		r := &rowInput{}
+		byID[id] = r
+		return r
+	}
+	for key, values := range r.PostForm {
+		if !strings.HasPrefix(key, "accounts.") || len(values) == 0 {
+			continue
+		}
+		rest := key[len("accounts."):]
+		dot := strings.IndexByte(rest, '.')
+		if dot < 0 {
+			continue
+		}
+		idStr := rest[:dot]
+		field := rest[dot+1:]
+		id, err := strconv.ParseInt(idStr, 10, 64)
+		if err != nil {
+			continue
+		}
+		ri := get(id)
+		v := strings.TrimSpace(values[0])
+		switch field {
+		case "name":
+			ri.Name = v
+		case "firm":
+			ri.Firm = v
+		case "type":
+			ri.Type = v
+		case "currency":
+			ri.Currency = v
+		case "active":
+			ri.Active = v == "on" || v == "1"
+		}
+	}
+
+	// Accounts whose `active` checkbox wasn't submitted (unchecked) are
+	// implicitly inactive — make sure we materialize their row too so we don't
+	// silently drop the toggle. Pull every account once, walk via the form map.
+	allAccounts, err := h.Queries.ListAccounts(ctx)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+
+	firmChanged := map[int64]bool{}
+	for _, acc := range allAccounts {
+		ri, present := byID[acc.ID]
+		if !present {
+			// No fields submitted for this account — leave it alone.
+			continue
+		}
+		if ri.Name == "" {
+			continue // require a name; skip silently rather than 400 the whole batch
+		}
+		if !validFirms[ri.Firm] || !validTypes[ri.Type] {
+			continue // ignore rows with invalid enums
+		}
+		if ri.Currency == "" {
+			ri.Currency = "USD"
+		}
+		needsSetup := int64(0)
+		if ri.Firm == "" || ri.Type == "" {
+			needsSetup = 1
+		}
+
+		prevFirm := ""
+		if acc.Firm != nil {
+			prevFirm = *acc.Firm
+		}
+
+		if _, err := h.Queries.UpdateAccount(ctx, models.UpdateAccountParams{
+			Name:       ri.Name,
+			Firm:       strPtrOrNil(ri.Firm),
+			Type:       strPtrOrNil(ri.Type),
+			Currency:   ri.Currency,
+			Active:     boolToInt(ri.Active),
+			NeedsSetup: needsSetup,
+			ID:         acc.ID,
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("update account %d: %w", acc.ID, err))
+			return
+		}
+		if prevFirm != ri.Firm {
+			firmChanged[acc.ID] = true
+		}
+	}
+
+	for id := range firmChanged {
+		if err := h.ImportSvc.RebuildTradesForAccount(ctx, id); err != nil {
+			h.logger().Warn("recompute trades after bulk save firm change",
+				"account_id", id, "err", err)
+		}
+	}
+
+	http.Redirect(w, r, "/accounts?flash=saved", http.StatusSeeOther)
 }
 
 // AccountUpdate handles POST /accounts/{id}: validates input, applies the
 // update (auto-clearing needs_setup when both firm and type are set), and
 // returns the updated row partial for HTMX to swap in.
+//
+// Kept for the (now hidden) per-row save path so older HTMX-driven UIs keep
+// working; the canonical save path is AccountsBulkSave.
 func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := r.PathValue("id")

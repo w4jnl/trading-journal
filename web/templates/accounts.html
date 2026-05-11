@@ -4,35 +4,123 @@
 <style>
   table.accounts input, table.accounts select { padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   table.accounts td { vertical-align: middle; }
+  .save-bar { position: sticky; bottom: 0; background: white; padding: 12px 16px;
+              border-top: 1px solid #e2e8f0; display: none; align-items: center;
+              gap: 12px; box-shadow: 0 -2px 8px rgba(0,0,0,0.05); margin-top: 16px; }
+  .save-bar.dirty { display: flex; }
+  .save-bar .muted { font-size: 13px; }
+  .row-dirty input, .row-dirty select { border-color: #d97706; }
+  .flash { padding: 8px 12px; border-radius: 4px; margin-bottom: 12px; font-size: 14px; }
+  .flash.saved { background: #dcfce7; color: #166534; }
 </style>
 
 {{template "back_button" .}}
 
 <h1>Accounts</h1>
 
+{{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
+
 <div class="panel" style="background:#fef3c7; border-left: 4px solid #d97706;">
-  Accounts are auto-created from CSV imports. Set <strong>firm</strong> (drives commission lookup) and <strong>type</strong> to clear the <code>setup</code> flag. Changing the firm refreshes commissions on existing trades.
+  Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades.
 </div>
 
-<table class="accounts">
-  <thead>
-    <tr>
-      <th>Source / Ref</th>
-      <th>Name</th>
-      <th>Firm</th>
-      <th>Type</th>
-      <th>Curr</th>
-      <th>Active</th>
-      <th>Status</th>
-      <th></th>
-    </tr>
-  </thead>
-  <tbody>
-    {{range .Accounts}}
-      {{template "account_row" (dict "Account" . "FirmOptions" $.FirmOptions "TypeOptions" $.TypeOptions)}}
-    {{else}}
-      <tr><td colspan="8" class="muted">No accounts yet — drop a CSV to /import.</td></tr>
-    {{end}}
-  </tbody>
-</table>
+<form id="accounts-form" method="post" action="/accounts/save">
+  <table class="accounts">
+    <thead>
+      <tr>
+        <th>Source / Ref</th>
+        <th>Name</th>
+        <th>Firm</th>
+        <th>Type</th>
+        <th>Curr</th>
+        <th>Active</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Accounts}}
+        {{$a := .}}
+        <tr data-account-id="{{$a.ID}}">
+          <td>
+            <code class="muted">{{$a.AccountRef}}</code><br>
+            <span class="muted" style="font-size:11px;">{{$a.ImportSource}}</span>
+          </td>
+          <td><input type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
+          <td>
+            <select name="accounts.{{$a.ID}}.firm">
+              {{range $.FirmOptions}}
+                <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+              {{end}}
+            </select>
+          </td>
+          <td>
+            <select name="accounts.{{$a.ID}}.type">
+              <option value="" {{if not $a.Type}}selected{{end}}>—</option>
+              {{range $.TypeOptions}}
+                <option value="{{.Value}}" {{if and $a.Type (eq .Value (derefStr $a.Type))}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </td>
+          <td><input type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 60px;"></td>
+          <td><input type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
+          <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="7" class="muted">No accounts yet — drop a CSV to /import.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+
+  <div id="save-bar" class="save-bar">
+    <span class="muted"><strong id="dirty-count">0</strong> row(s) changed.</span>
+    <button type="submit">Save changes</button>
+    <button type="button" id="reset-btn">Discard</button>
+  </div>
+</form>
+
+<script>
+  // Dirty-detection: snapshot every input's initial value on load. On any
+  // change, mark its row .row-dirty and reveal the sticky save bar. Reset
+  // button restores the snapshot.
+  (function () {
+    const form = document.getElementById('accounts-form');
+    if (!form) return;
+    const inputs = Array.from(form.querySelectorAll('input, select'));
+    const snapshot = new Map();
+    const getVal = (el) => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+    const setVal = (el, v) => {
+      if (el.type === 'checkbox') el.checked = (v === '1');
+      else el.value = v;
+    };
+    inputs.forEach((el) => snapshot.set(el, getVal(el)));
+
+    const saveBar = document.getElementById('save-bar');
+    const dirtyCount = document.getElementById('dirty-count');
+
+    const refresh = () => {
+      const dirtyRows = new Set();
+      let anyDirty = false;
+      inputs.forEach((el) => {
+        if (getVal(el) !== snapshot.get(el)) {
+          anyDirty = true;
+          const tr = el.closest('tr');
+          if (tr) dirtyRows.add(tr);
+        }
+      });
+      form.querySelectorAll('tr.row-dirty').forEach((tr) => {
+        if (!dirtyRows.has(tr)) tr.classList.remove('row-dirty');
+      });
+      dirtyRows.forEach((tr) => tr.classList.add('row-dirty'));
+      saveBar.classList.toggle('dirty', anyDirty);
+      dirtyCount.textContent = dirtyRows.size;
+    };
+
+    form.addEventListener('input', refresh);
+    form.addEventListener('change', refresh);
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      inputs.forEach((el) => setVal(el, snapshot.get(el)));
+      refresh();
+    });
+  })();
+</script>
 {{end}}

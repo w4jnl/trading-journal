@@ -141,6 +141,14 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad date", http.StatusBadRequest)
 		return
 	}
+	// Reject future-dated journal entries — UI hides the link too, but defend
+	// the API path against direct POSTs.
+	now := time.Now().In(h.localTZ())
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, h.localTZ())
+	if date.After(today) {
+		http.Error(w, "journal entries are not allowed on future dates", http.StatusBadRequest)
+		return
+	}
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return

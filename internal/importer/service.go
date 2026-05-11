@@ -241,14 +241,23 @@ func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queri
 	}
 
 	firm := GuessFirm(format, ref, source)
+	// Default new accounts to Prop · Eval — most common starting state for a
+	// fresh prop-firm account. User can promote to funded/live or change
+	// entirely via /accounts. needs_setup clears when firm + type are both
+	// set (firm guess can still fail for unrecognized brokers).
+	defaultType := "prop_eval"
+	needsSetup := int64(0)
+	if firm == "" {
+		needsSetup = 1
+	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
 		Name:         ref,
 		Firm:         strPtrOrNil(firm),
 		ImportSource: string(format),
 		AccountRef:   ref,
-		Type:         nil,
+		Type:         &defaultType,
 		Currency:     "USD",
-		NeedsSetup:   1,
+		NeedsSetup:   needsSetup,
 	})
 	if err != nil {
 		return 0, false, fmt.Errorf("create: %w", err)

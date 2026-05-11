@@ -23,17 +23,18 @@ inline script so the user sees feedback before submitting.
   <div class="filter-panel">
     <fieldset>
       <legend>By account type</legend>
-      <label><input type="checkbox" name="filter" value="type:prop_eval"   {{if index .FilterSelections "type:prop_eval"}}checked{{end}}> Prop · Eval</label>
-      <label><input type="checkbox" name="filter" value="type:prop_funded" {{if index .FilterSelections "type:prop_funded"}}checked{{end}}> Prop · Funded</label>
-      <label><input type="checkbox" name="filter" value="type:prop_live"   {{if index .FilterSelections "type:prop_live"}}checked{{end}}> Prop · Live</label>
-      <label><input type="checkbox" name="filter" value="type:live"        {{if index .FilterSelections "type:live"}}checked{{end}}> Live</label>
-      <label><input type="checkbox" name="filter" value="type:paper"       {{if index .FilterSelections "type:paper"}}checked{{end}}> Paper</label>
+      <label><input type="checkbox" name="filter" value="type:prop_eval"   {{if index .FilterSelections "type:prop_eval"}}checked{{end}}><span class="filter-text">Prop · Eval</span></label>
+      <label><input type="checkbox" name="filter" value="type:prop_funded" {{if index .FilterSelections "type:prop_funded"}}checked{{end}}><span class="filter-text">Prop · Funded</span></label>
+      <label><input type="checkbox" name="filter" value="type:prop_live"   {{if index .FilterSelections "type:prop_live"}}checked{{end}}><span class="filter-text">Prop · Live</span></label>
+      <label><input type="checkbox" name="filter" value="type:live"        {{if index .FilterSelections "type:live"}}checked{{end}}><span class="filter-text">Live</span></label>
+      <label><input type="checkbox" name="filter" value="type:paper"       {{if index .FilterSelections "type:paper"}}checked{{end}}><span class="filter-text">Paper</span></label>
     </fieldset>
     <fieldset>
       <legend>By account</legend>
       {{range .Accounts}}
-        <label><input type="checkbox" name="filter" value="acc:{{.ID}}" {{if index $.FilterSelections (printf "acc:%d" .ID)}}checked{{end}}>
-          {{.Name}}{{if .Firm}} <span class="muted-inline">· {{derefStr .Firm}}</span>{{end}}
+        <label>
+          <input type="checkbox" name="filter" value="acc:{{.ID}}" {{if index $.FilterSelections (printf "acc:%d" .ID)}}checked{{end}}>
+          <span class="filter-text">{{.Name}}{{if .Firm}} <span class="muted-inline">· {{derefStr .Firm}}</span>{{end}}</span>
         </label>
       {{end}}
     </fieldset>
@@ -60,10 +61,15 @@ inline script so the user sees feedback before submitting.
   .filter-panel fieldset:last-child { margin-bottom: 0; }
   .filter-panel legend { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
                          color: #94a3b8; font-weight: 600; padding: 0 0 4px 0; }
-  .filter-panel label { display: flex; align-items: center; gap: 6px; padding: 4px 6px;
-                        cursor: pointer; font-size: 13px; border-radius: 3px; }
+  .filter-panel label { display: flex; align-items: center; gap: 8px; padding: 4px 6px;
+                        cursor: pointer; font-size: 13px; border-radius: 3px;
+                        white-space: nowrap; }
   .filter-panel label:hover { background: #f1f5f9; }
-  .filter-panel input[type=checkbox] { margin: 0; cursor: pointer; }
+  /* Force the checkbox to a fixed slot so multi-line account names don't push it.
+     The flex layout above keeps label content on one row; the text inside truncates
+     with ellipsis if it overflows the dropdown's width. */
+  .filter-panel input[type=checkbox] { margin: 0; cursor: pointer; flex: 0 0 14px; width: 14px; height: 14px; }
+  .filter-panel label .filter-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
   .muted-inline { color: #94a3b8; font-size: 11px; }
 </style>
 <script>

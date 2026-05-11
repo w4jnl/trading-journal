@@ -89,8 +89,8 @@
       <td>{{.Symbol}} <span class="muted">({{.SymbolRoot}})</span></td>
       <td>{{if eq .Direction "long"}}<span class="dir-long">long</span>{{else}}<span class="dir-short">short</span>{{end}}</td>
       <td>{{.Qty}}</td>
-      <td>{{.EntryPrice}}</td>
-      <td>{{if .ExitPrice}}{{deref .ExitPrice}}{{else}}—{{end}}</td>
+      <td>{{printf "%.2f" .EntryPrice}}</td>
+      <td>{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
       <td>{{pnlClass .GrossPnl}}</td>
       <td>{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
       <td>{{pnlClass .NetPnl}}</td>
@@ -114,13 +114,24 @@
   </div>
 </div>
 <script>
-  // Close the trade-detail modal. If the journal was saved/deleted inside
-  // the modal, reload the page so the row pictogram reflects the change.
+  // Close the trade-detail modal.
+  //   - If we got here via /trades?modal=N&back=URL (a deep link from
+  //     /analytics or elsewhere whose only purpose was to show this trade),
+  //     close returns to that back URL instead of leaving the user stranded
+  //     on the trade list.
+  //   - If the journal was saved/deleted inside the modal, reload the page
+  //     so the row pictogram reflects the change.
+  //   - Otherwise, plain hide.
   function closeTradeModal() {
     document.getElementById('modal-backdrop').classList.remove('show');
+    const params = new URLSearchParams(location.search);
+    const back = params.get('back');
+    if (params.get('modal') && back) {
+      setTimeout(() => { location.href = back; }, 30);
+      return;
+    }
     if (window.__journalChanged) {
       window.__journalChanged = false;
-      // Tiny delay so the modal can finish hiding before the reload flash.
       setTimeout(() => location.reload(), 30);
     }
   }

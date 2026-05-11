@@ -101,9 +101,9 @@
     <tr>
       {{range $di, $day := $week}}
         <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}">
-          {{if and $day.InMonth (ne $di 6)}}
-            {{/* Journal icon only on non-Saturday cells. Saturday is the
-                 weekly-sum column and stays focused on the week numbers. */}}
+          {{if and $day.InMonth (ne $di 6) (not $day.InFuture)}}
+            {{/* Journal icon only on past/today non-Saturday cells. Saturday
+                 is the weekly-sum column, and future dates can't be journaled. */}}
             <a class="j-cell-icon"
                href="/journal/{{$day.Date.Format "2006-01-02"}}?back={{$.CalendarBack}}"
                title="{{if $day.HasJournal}}Journal entry{{if $day.JournalTag}} ({{$day.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">
@@ -115,14 +115,14 @@
             {{if $wt.HasData}}
             <div class="week-summary-center">
               <div class="week-label">Week {{$wt.ISOWeek}}</div>
-              <div class="week-pnl-val {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $wt.NetPnl}}</div>
+              <div class="week-pnl-val {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
               <div class="week-trades">{{$wt.Trades}} trades</div>
             </div>
             {{end}}
           {{else if and $day.InMonth $day.HasData}}
             <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num in-month">{{$day.Date.Day}}</div>
-              <div class="day-pnl {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $day.NetPnl}}</div>
+              <div class="day-pnl {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $day.NetPnl}}</div>
               <div class="day-meta">{{$day.Trades}} trades · {{$day.Wins}}W/{{$day.Losses}}L</div>
             </a>
           {{else}}

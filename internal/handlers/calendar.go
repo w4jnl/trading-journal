@@ -15,6 +15,7 @@ import (
 type dayCell struct {
 	Date       time.Time
 	InMonth    bool // false for spillover from prev/next month
+	InFuture   bool // true when the date is past today — journal entry disabled
 	HasData    bool
 	Trades     int64
 	Wins       int64
@@ -124,13 +125,19 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	for gridStart.Weekday() != time.Sunday {
 		gridStart = gridStart.AddDate(0, 0, -1)
 	}
+	now := time.Now().In(tz)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
 	weeks := make([][]dayCell, 6)
 	for wk := 0; wk < 6; wk++ {
 		row := make([]dayCell, 7)
 		for d := 0; d < 7; d++ {
 			day := gridStart.AddDate(0, 0, wk*7+d)
 			key := day.Format("2006-01-02")
-			cell := dayCell{Date: day, InMonth: day.Month() == monthStart.Month()}
+			cell := dayCell{
+				Date:     day,
+				InMonth:  day.Month() == monthStart.Month(),
+				InFuture: day.After(today),
+			}
 			if c, ok := byDate[key]; ok {
 				cell.HasData = c.HasData
 				cell.Trades = c.Trades

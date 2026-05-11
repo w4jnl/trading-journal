@@ -68,12 +68,12 @@
     <div class="label">Largest win / loss</div>
     <div class="value">
       {{if .LargestWinTradeID}}
-        <a class="trade-link" href="/trades?modal={{.LargestWinTradeID}}" title="Open this trade"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></a>
+        <a class="trade-link" href="/trades?modal={{.LargestWinTradeID}}&back={{$.SelfURL}}" title="Open this trade"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></a>
       {{else}}<span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span>{{end}}
     </div>
     <div class="sub">
       {{if .LargestLossTradeID}}
-        <a class="trade-link" href="/trades?modal={{.LargestLossTradeID}}" title="Open this trade"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></a>
+        <a class="trade-link" href="/trades?modal={{.LargestLossTradeID}}&back={{$.SelfURL}}" title="Open this trade"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></a>
       {{else}}<span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span>{{end}}
     </div>
   </div>

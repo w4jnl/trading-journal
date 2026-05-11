@@ -14,8 +14,8 @@
 <table style="margin-bottom:16px;">
   <tr>
     <th>Qty</th><td>{{.Qty}}</td>
-    <th>Entry (avg)</th><td>{{.EntryPrice}}</td>
-    <th>Exit (avg)</th><td>{{if .ExitPrice}}{{deref .ExitPrice}}{{else}}—{{end}}</td>
+    <th>Entry (avg)</th><td>{{printf "%.2f" .EntryPrice}}</td>
+    <th>Exit (avg)</th><td>{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
   </tr>
   <tr>
     <th>Gross P&amp;L</th><td>{{pnlClass .GrossPnl}}</td>
@@ -77,7 +77,7 @@
       <td>{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
       <td><code>{{.Role}}</code></td>
       <td>{{.Side}}</td>
-      <td>{{.Price}}</td>
+      <td>{{printf "%.2f" .Price}}</td>
       <td>{{.Qty}}</td>
       <td>{{.QtyUsed}}</td>
       <td><span class="muted">{{.BrokerExecID}}</span></td>
