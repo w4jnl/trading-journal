@@ -1,29 +1,92 @@
 {{/*
-Reusable multi-select for "filter by account and/or type". Expects:
+Collapsible "filter by account and/or type" picker. Uses <details>/<summary>
+so it acts like a dropdown without any JS framework — click opens, click
+checkboxes to multi-select (no Cmd/Ctrl trickery that conflicts with macOS
+right-click), click outside or summary again to close.
 
-  .Accounts          []models.Account — full list to populate the dropdown
-  .FilterSelections  map[string]bool  — which "acc:N" / "type:slug" values
-                                        are currently selected (from URL)
+Expects:
+  .Accounts          []models.Account
+  .FilterSelections  map[string]bool — which "acc:N" / "type:slug" are active
 
-The form using this picker must submit GET to its own page; the `<select>`'s
-`name` is "filter" so multi-values serialize as `?filter=acc:1&filter=type:prop_funded`.
+Selected count is summarized in the summary text and live-updated by a small
+inline script so the user sees feedback before submitting.
 */}}
 {{define "account_filter"}}
-<label>Filter
-  <select name="filter" multiple size="6" style="min-width: 220px;">
-    <optgroup label="By account type">
-      <option value="type:prop_eval"   {{if index $.FilterSelections "type:prop_eval"}}selected{{end}}>Prop · Eval</option>
-      <option value="type:prop_funded" {{if index $.FilterSelections "type:prop_funded"}}selected{{end}}>Prop · Funded</option>
-      <option value="type:prop_live"   {{if index $.FilterSelections "type:prop_live"}}selected{{end}}>Prop · Live</option>
-      <option value="type:personal"    {{if index $.FilterSelections "type:personal"}}selected{{end}}>Personal</option>
-      <option value="type:paper"       {{if index $.FilterSelections "type:paper"}}selected{{end}}>Paper</option>
-    </optgroup>
-    <optgroup label="By account">
+<details class="filter-picker">
+  <summary>
+    <span class="filter-label">Filter</span>
+    <span class="filter-count" data-empty-label="All accounts">
+      {{if eq .FilterCount 0}}All accounts{{else if eq .FilterCount 1}}1 selected{{else}}{{.FilterCount}} selected{{end}}
+    </span>
+    <span class="filter-caret">▾</span>
+  </summary>
+  <div class="filter-panel">
+    <fieldset>
+      <legend>By account type</legend>
+      <label><input type="checkbox" name="filter" value="type:prop_eval"   {{if index .FilterSelections "type:prop_eval"}}checked{{end}}> Prop · Eval</label>
+      <label><input type="checkbox" name="filter" value="type:prop_funded" {{if index .FilterSelections "type:prop_funded"}}checked{{end}}> Prop · Funded</label>
+      <label><input type="checkbox" name="filter" value="type:prop_live"   {{if index .FilterSelections "type:prop_live"}}checked{{end}}> Prop · Live</label>
+      <label><input type="checkbox" name="filter" value="type:personal"    {{if index .FilterSelections "type:personal"}}checked{{end}}> Personal</label>
+      <label><input type="checkbox" name="filter" value="type:paper"       {{if index .FilterSelections "type:paper"}}checked{{end}}> Paper</label>
+    </fieldset>
+    <fieldset>
+      <legend>By account</legend>
       {{range .Accounts}}
-        <option value="acc:{{.ID}}" {{if index $.FilterSelections (printf "acc:%d" .ID)}}selected{{end}}>{{.Name}}{{if .Firm}} · {{derefStr .Firm}}{{end}}</option>
+        <label><input type="checkbox" name="filter" value="acc:{{.ID}}" {{if index $.FilterSelections (printf "acc:%d" .ID)}}checked{{end}}>
+          {{.Name}}{{if .Firm}} <span class="muted-inline">· {{derefStr .Firm}}</span>{{end}}
+        </label>
       {{end}}
-    </optgroup>
-  </select>
-  <span class="muted" style="display: block; font-size: 11px; margin-top: 2px;">Hold ⌘/Ctrl for multiple. Empty = all.</span>
-</label>
+    </fieldset>
+  </div>
+</details>
+<style>
+  .filter-picker { position: relative; display: inline-block; }
+  .filter-picker > summary { cursor: pointer; padding: 6px 12px; border: 1px solid #cbd5e1;
+                             border-radius: 4px; background: white; list-style: none;
+                             display: inline-flex; align-items: center; gap: 8px;
+                             font-size: 13px; user-select: none; min-width: 200px; }
+  .filter-picker > summary::-webkit-details-marker { display: none; }
+  .filter-picker > summary::marker { content: ''; }
+  .filter-picker[open] > summary { border-color: #475569; }
+  .filter-label { color: #64748b; font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .filter-count { font-weight: 500; flex: 1; }
+  .filter-caret { color: #64748b; transition: transform 120ms; }
+  .filter-picker[open] .filter-caret { transform: rotate(180deg); }
+  .filter-panel { position: absolute; top: calc(100% + 4px); left: 0; min-width: 280px;
+                  max-height: 400px; overflow-y: auto; background: white;
+                  border: 1px solid #cbd5e1; border-radius: 4px; padding: 8px;
+                  box-shadow: 0 4px 12px rgba(0,0,0,0.08); z-index: 100; }
+  .filter-panel fieldset { border: 0; padding: 0; margin: 0 0 10px 0; }
+  .filter-panel fieldset:last-child { margin-bottom: 0; }
+  .filter-panel legend { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
+                         color: #94a3b8; font-weight: 600; padding: 0 0 4px 0; }
+  .filter-panel label { display: flex; align-items: center; gap: 6px; padding: 4px 6px;
+                        cursor: pointer; font-size: 13px; border-radius: 3px; }
+  .filter-panel label:hover { background: #f1f5f9; }
+  .filter-panel input[type=checkbox] { margin: 0; cursor: pointer; }
+  .muted-inline { color: #94a3b8; font-size: 11px; }
+</style>
+<script>
+  // Live-update the picker's summary count as the user toggles checkboxes.
+  // Click-outside-to-close keeps the dropdown UX consistent with native selects.
+  (function () {
+    const pickers = document.querySelectorAll('.filter-picker');
+    pickers.forEach((p) => {
+      const countEl = p.querySelector('.filter-count');
+      const emptyLabel = countEl.dataset.emptyLabel || 'All accounts';
+      const refresh = () => {
+        const n = p.querySelectorAll('input[type=checkbox]:checked').length;
+        countEl.textContent = n === 0 ? emptyLabel
+                             : n === 1 ? '1 selected'
+                             : n + ' selected';
+      };
+      p.addEventListener('change', refresh);
+    });
+    document.addEventListener('click', (e) => {
+      pickers.forEach((p) => {
+        if (p.open && !p.contains(e.target)) p.open = false;
+      });
+    });
+  })();
+</script>
 {{end}}

@@ -31,9 +31,12 @@
   .calendar td.sat-cell.week-pos-strong { background: linear-gradient(135deg, #bbf7d0 0%, #4ade80 100%); }
   .calendar td.sat-cell.week-neg        { background: linear-gradient(135deg, #fff1f2 0%, #fecaca 100%); }
   .calendar td.sat-cell.week-neg-strong { background: linear-gradient(135deg, #fecaca 0%, #f87171 100%); }
-  .week-summary { position: absolute; left: 8px; right: 8px; bottom: 8px; line-height: 1.2; pointer-events: none; }
+  /* Saturday cells: week summary fills the cell, centered, no day-number on top. */
+  .week-summary-center { position: absolute; inset: 0; display: flex; flex-direction: column;
+                         align-items: center; justify-content: center; padding: 4px;
+                         line-height: 1.25; pointer-events: none; }
   .week-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em; color: #64748b; font-weight: 600; }
-  .week-pnl-val { font-size: 16px; font-weight: 700; margin-top: 2px; }
+  .week-pnl-val { font-size: 17px; font-weight: 700; margin-top: 2px; }
   .week-pnl-val.pos { color: #15803d; }
   .week-pnl-val.neg { color: #b91c1c; }
   .week-trades { font-size: 11px; color: #475569; margin-top: 1px; }
@@ -98,7 +101,9 @@
     <tr>
       {{range $di, $day := $week}}
         <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}">
-          {{if $day.InMonth}}
+          {{if and $day.InMonth (ne $di 6)}}
+            {{/* Journal icon only on non-Saturday cells. Saturday is the
+                 weekly-sum column and stays focused on the week numbers. */}}
             <a class="j-cell-icon"
                href="/journal/{{$day.Date.Format "2006-01-02"}}?back={{$.CalendarBack}}"
                title="{{if $day.HasJournal}}Journal entry{{if $day.JournalTag}} ({{$day.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">
@@ -106,12 +111,9 @@
             </a>
           {{end}}
           {{if eq $di 6}}
-            {{/* Saturday: day number + week summary; skip the per-day trade
-                 overlay. US futures rarely trade Saturday, and the week sum
-                 is the load-bearing thing for this cell. */}}
-            <div class="day-num {{if $day.InMonth}}in-month{{end}}">{{$day.Date.Day}}</div>
+            {{/* Saturday: week summary only — no day number, no journal icon. */}}
             {{if $wt.HasData}}
-            <div class="week-summary">
+            <div class="week-summary-center">
               <div class="week-label">Week {{$wt.Index}}</div>
               <div class="week-pnl-val {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $wt.NetPnl}}</div>
               <div class="week-trades">{{$wt.Trades}} trades</div>

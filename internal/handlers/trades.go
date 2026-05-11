@@ -104,6 +104,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"SymbolRoots":       roots,
 		"Filters":           filtersAsForm(filters),
 		"FilterSelections":  filters.Account.Selected,
+		"FilterCount":       filters.Account.SelectedCount,
 		"PrevPage":          pageRef(r, filters.Page-1, pages),
 		"NextPage":          pageRef(r, filters.Page+1, pages),
 	})

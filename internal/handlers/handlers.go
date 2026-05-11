@@ -251,12 +251,13 @@ func validBackHref(r *http.Request) string {
 // The resolved AccountIDs is the OR-union of both kinds. Active is true iff
 // the user selected anything, even if the union is empty (then "show none").
 // RawValues is the original list of selections, for re-rendering the
-// dropdown's selected state.
+// dropdown's selected state. SelectedCount is len(non-empty selections).
 type accountFilter struct {
-	AccountIDs []int64
-	Active     bool
-	RawValues  []string
-	Selected   map[string]bool
+	AccountIDs    []int64
+	Active        bool
+	RawValues     []string
+	Selected      map[string]bool
+	SelectedCount int
 }
 
 // resolveAccountFilter parses ?filter=acc:N&filter=type:X (multi-valued) into
@@ -275,6 +276,7 @@ func (h *Handlers) resolveAccountFilter(r *http.Request) (accountFilter, error) 
 			continue
 		}
 		af.Selected[v] = true
+		af.SelectedCount++
 		switch {
 		case strings.HasPrefix(v, "acc:"):
 			if id, err := strconv.ParseInt(v[4:], 10, 64); err == nil {

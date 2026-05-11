@@ -118,6 +118,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"ByHour":           byHour,
 		"Accounts":         accounts,
 		"FilterSelections": accountFilt.Selected,
+		"FilterCount":      accountFilt.SelectedCount,
 		"From":             formFrom,
 		"To":               formTo,
 		"TradeCount":       int64(len(trades)),

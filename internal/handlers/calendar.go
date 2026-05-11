@@ -223,6 +223,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		"LossDays":         lossDays,
 		"Accounts":         accounts,
 		"FilterSelections": accountFilt.Selected,
+		"FilterCount":      accountFilt.SelectedCount,
 		"FilterQS":         filterQS,
 		"CalendarBack":     calendarBack,
 	})
