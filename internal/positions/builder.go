@@ -10,9 +10,10 @@
 //   - P&L uses instruments.multiplier × price-diff × qty. If multiplier is NULL
 //     (stub instrument awaiting setup), gross_pnl stays NULL — we never silently
 //     substitute a price-difference shortcut.
-//   - Commission lookups go (account.firm, instrument.symbol_root) → commission_rates.
-//     Missing firm or missing rate row → commission NULL. net_pnl = gross_pnl
-//     minus commission-or-zero, but stays NULL if gross_pnl is NULL.
+//   - Commission lookups go (instrument.asset_class, account.firm, instrument.size_class)
+//     → commission_rates. Missing firm, uncategorized instrument, or no matching
+//     rate row → commission NULL. net_pnl = gross_pnl minus commission-or-zero,
+//     but stays NULL if gross_pnl is NULL.
 //   - daily_stats is keyed on the trade exit date in the configured trading
 //     timezone, not UTC, so a US trader's session doesn't get split at UTC midnight.
 package positions
@@ -325,10 +326,11 @@ func (b *Builder) computePnl(ctx context.Context, direction string, avgEntry, av
 	}
 	gross = &g
 
-	if account.Firm != nil && inst.SymbolRoot != "" {
+	if account.Firm != nil && inst.AssetClass != nil && inst.SizeClass != nil {
 		rate, lookupErr := b.Queries.GetCommissionRate(ctx, models.GetCommissionRateParams{
+			AssetClass: *inst.AssetClass,
 			Firm:       *account.Firm,
-			SymbolRoot: inst.SymbolRoot,
+			SizeClass:  *inst.SizeClass,
 		})
 		switch {
 		case lookupErr == nil:
@@ -337,15 +339,16 @@ func (b *Builder) computePnl(ctx context.Context, direction string, avgEntry, av
 			n := g - c
 			net = &n
 		case errors.Is(lookupErr, sql.ErrNoRows):
-			// No rate configured for (firm, symbol_root): leave commission NULL,
-			// net_pnl = gross_pnl (no commission charged in our records).
+			// No rate row for this (asset_class, firm, size_class): leave commission
+			// NULL, net_pnl = gross_pnl. User fixes via /commissions.
 			n := g
 			net = &n
 		default:
 			return nil, nil, nil, fmt.Errorf("commission lookup: %w", lookupErr)
 		}
 	} else {
-		// firm unknown: no commission charged. net_pnl = gross_pnl.
+		// Firm unknown or instrument uncategorized: no commission charged.
+		// net_pnl = gross_pnl until the user sets things up.
 		n := g
 		net = &n
 	}

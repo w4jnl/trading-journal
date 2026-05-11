@@ -1,0 +1,24 @@
+{{define "commission_rate_row"}}
+{{$key := printf "%s|%s|%s" .Rate.AssetClass .Rate.Firm .Rate.SizeClass}}
+<tr id="rate-{{$key}}" data-cell="{{$key}}">
+  <td>{{.Rate.AssetClass}}</td>
+  <td>{{.Rate.Firm}}</td>
+  <td>{{.Rate.SizeClass}}</td>
+  <td>
+    <input form="commissions-form" type="number" step="0.01" min="0"
+           name="rate.{{$key}}.per_contract_rt"
+           value="{{printf "%.4f" .Rate.PerContractRt}}"
+           class="num" style="width: 90px; text-align: right;">
+  </td>
+  <td style="text-align: right;">
+    <button type="button" class="btn btn--ghost btn--sm"
+            hx-post="/commissions/rates/delete"
+            hx-target="closest tr"
+            hx-swap="delete"
+            hx-vals='{"asset_class": "{{.Rate.AssetClass}}", "firm": "{{.Rate.Firm}}", "size_class": "{{.Rate.SizeClass}}"}'
+            hx-confirm="Delete the {{.Rate.Firm}} rate for {{.Rate.AssetClass}} / {{.Rate.SizeClass}}? Trades that depend on it will refresh to commission = NULL.">
+      Delete
+    </button>
+  </td>
+</tr>
+{{end}}

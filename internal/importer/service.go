@@ -905,19 +905,89 @@ func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID i
 		return nil
 	}
 
+	keys := make([]positions.Key, 0, len(symbols))
+	for _, sym := range symbols {
+		keys = append(keys, positions.Key{AccountID: accountID, Symbol: sym})
+	}
+	if err := s.runRebuild(ctx, q, keys); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RebuildTradesForSymbol re-runs the builder for every (account_id, symbol)
+// pair that involves this symbol_root. Called from the /commissions UI when
+// the user (re)categorizes an instrument's asset_class/size_class.
+func (s *ImportService) RebuildTradesForSymbol(ctx context.Context, symbolRoot string) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	q := s.Queries.WithTx(tx)
+
+	rows, err := q.ListAccountSymbolKeysForRoot(ctx, symbolRoot)
+	if err != nil {
+		return fmt.Errorf("list keys for root %s: %w", symbolRoot, err)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	keys := make([]positions.Key, 0, len(rows))
+	for _, r := range rows {
+		keys = append(keys, positions.Key{AccountID: r.AccountID, Symbol: r.Symbol})
+	}
+	if err := s.runRebuild(ctx, q, keys); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// RebuildTradesForCommissionCell re-runs the builder for every (account,
+// symbol) pair where the account.firm matches and the instrument falls in the
+// given (asset_class, size_class). Called from /commissions when a rate is
+// added, edited, or deleted so the affected trades pick up the new rate.
+func (s *ImportService) RebuildTradesForCommissionCell(ctx context.Context, firm, assetClass, sizeClass string) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	q := s.Queries.WithTx(tx)
+
+	rows, err := q.ListAccountSymbolKeysForCell(ctx, models.ListAccountSymbolKeysForCellParams{
+		Firm:       &firm,
+		AssetClass: &assetClass,
+		SizeClass:  &sizeClass,
+	})
+	if err != nil {
+		return fmt.Errorf("list keys for cell (%s,%s,%s): %w", firm, assetClass, sizeClass, err)
+	}
+	if len(rows) == 0 {
+		return nil
+	}
+	keys := make([]positions.Key, 0, len(rows))
+	for _, r := range rows {
+		keys = append(keys, positions.Key{AccountID: r.AccountID, Symbol: r.Symbol})
+	}
+	if err := s.runRebuild(ctx, q, keys); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+// runRebuild is the shared "build a positions.Builder with the service
+// timezone, replay these keys" body used by all three Rebuild* helpers.
+func (s *ImportService) runRebuild(ctx context.Context, q *models.Queries, keys []positions.Key) error {
 	tz := s.Timezone
 	if tz == nil {
 		tz = time.UTC
 	}
 	builder := &positions.Builder{Queries: q, Timezone: tz}
-	keys := make([]positions.Key, 0, len(symbols))
-	for _, sym := range symbols {
-		keys = append(keys, positions.Key{AccountID: accountID, Symbol: sym})
-	}
 	if _, err := builder.Rebuild(ctx, keys); err != nil {
 		return fmt.Errorf("rebuild: %w", err)
 	}
-	return tx.Commit()
+	return nil
 }
 
 func (o Outcome) errorOrSummary() string {

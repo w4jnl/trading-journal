@@ -10,18 +10,25 @@ import (
 )
 
 const getCommissionRate = `-- name: GetCommissionRate :one
-SELECT firm, symbol_root, per_contract_rt FROM commission_rates WHERE firm = ? AND symbol_root = ?
+SELECT asset_class, firm, size_class, per_contract_rt FROM commission_rates
+WHERE asset_class = ? AND firm = ? AND size_class = ?
 `
 
 type GetCommissionRateParams struct {
+	AssetClass string `json:"asset_class"`
 	Firm       string `json:"firm"`
-	SymbolRoot string `json:"symbol_root"`
+	SizeClass  string `json:"size_class"`
 }
 
 func (q *Queries) GetCommissionRate(ctx context.Context, arg GetCommissionRateParams) (CommissionRate, error) {
-	row := q.db.QueryRowContext(ctx, getCommissionRate, arg.Firm, arg.SymbolRoot)
+	row := q.db.QueryRowContext(ctx, getCommissionRate, arg.AssetClass, arg.Firm, arg.SizeClass)
 	var i CommissionRate
-	err := row.Scan(&i.Firm, &i.SymbolRoot, &i.PerContractRt)
+	err := row.Scan(
+		&i.AssetClass,
+		&i.Firm,
+		&i.SizeClass,
+		&i.PerContractRt,
+	)
 	return i, err
 }
 

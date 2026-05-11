@@ -50,6 +50,12 @@ func RunMigrations(conn *sql.DB) error {
 			return fmt.Errorf("migration %s: %w", path, err)
 		}
 
+		if check, ok := preChecks[version]; ok {
+			if err := check(conn); err != nil {
+				return fmt.Errorf("pre-check %s: %w", path, err)
+			}
+		}
+
 		if err := applyOne(conn, version, upSQL); err != nil {
 			return fmt.Errorf("apply %s: %w", path, err)
 		}
@@ -103,6 +109,49 @@ func versionFromFilename(path string) string {
 		return base[:i]
 	}
 	return ""
+}
+
+// preChecks runs before applying a specific migration. The check returns an
+// error if the migration would fail in a way that's better caught with a
+// readable message than as a raw SQL constraint violation.
+var preChecks = map[string]func(*sql.DB) error{
+	// Before rebuilding commission_rates around (asset_class, firm, size_class):
+	// flag any existing rate whose symbol's instrument lacks the new categorization
+	// fields. Those rows would be silently dropped by the INSERT … WHERE filter
+	// otherwise; surfacing them explicitly lets the user fix the data first.
+	"20260512100200": func(conn *sql.DB) error {
+		rows, err := conn.Query(`
+			SELECT c.firm, c.symbol_root
+			FROM commission_rates c
+			LEFT JOIN instruments i ON c.symbol_root = i.symbol_root
+			WHERE i.symbol_root IS NULL OR i.asset_class IS NULL OR i.size_class IS NULL
+			ORDER BY c.firm, c.symbol_root
+		`)
+		if err != nil {
+			return fmt.Errorf("query orphan rates: %w", err)
+		}
+		defer rows.Close()
+		var orphans []string
+		for rows.Next() {
+			var firm, sym string
+			if err := rows.Scan(&firm, &sym); err != nil {
+				return err
+			}
+			orphans = append(orphans, fmt.Sprintf("(%s, %s)", firm, sym))
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+		if len(orphans) > 0 {
+			return fmt.Errorf(
+				"commission_rates has %d row(s) whose instrument is uncategorized: %s. "+
+					"Either categorize those instruments (UPDATE instruments SET asset_class=…, size_class=…) "+
+					"or delete the orphan rate rows, then re-run migrations",
+				len(orphans), strings.Join(orphans, ", "),
+			)
+		}
+		return nil
+	},
 }
 
 // extractUp returns the SQL between `-- migrate:up` and `-- migrate:down` markers.

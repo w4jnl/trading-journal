@@ -10,7 +10,7 @@ import (
 )
 
 const getInstrument = `-- name: GetInstrument :one
-SELECT symbol_root, exchange, tick_size, tick_value, multiplier, currency, needs_setup FROM instruments WHERE symbol_root = ?
+SELECT symbol_root, exchange, tick_size, tick_value, multiplier, currency, needs_setup, asset_class, size_class FROM instruments WHERE symbol_root = ?
 `
 
 func (q *Queries) GetInstrument(ctx context.Context, symbolRoot string) (Instrument, error) {
@@ -24,12 +24,14 @@ func (q *Queries) GetInstrument(ctx context.Context, symbolRoot string) (Instrum
 		&i.Multiplier,
 		&i.Currency,
 		&i.NeedsSetup,
+		&i.AssetClass,
+		&i.SizeClass,
 	)
 	return i, err
 }
 
 const listInstruments = `-- name: ListInstruments :many
-SELECT symbol_root, exchange, tick_size, tick_value, multiplier, currency, needs_setup FROM instruments ORDER BY symbol_root
+SELECT symbol_root, exchange, tick_size, tick_value, multiplier, currency, needs_setup, asset_class, size_class FROM instruments ORDER BY symbol_root
 `
 
 func (q *Queries) ListInstruments(ctx context.Context) ([]Instrument, error) {
@@ -49,6 +51,8 @@ func (q *Queries) ListInstruments(ctx context.Context) ([]Instrument, error) {
 			&i.Multiplier,
 			&i.Currency,
 			&i.NeedsSetup,
+			&i.AssetClass,
+			&i.SizeClass,
 		); err != nil {
 			return nil, err
 		}

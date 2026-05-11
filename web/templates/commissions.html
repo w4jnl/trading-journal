@@ -1,0 +1,299 @@
+{{define "title"}}Commissions — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+
+<h1>Commissions</h1>
+
+{{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
+{{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
+
+<div class="card card--warn" style="margin-bottom: 16px;">
+  Commission rates are keyed by <strong>asset class × firm × size</strong>.
+  Set each contract's asset class and size in the lower table — the system
+  then looks up <em>(equity_futures, apex, mini)</em> instead of per-symbol
+  rates. TopstepX is excluded; its CSV carries commissions inline.
+</div>
+
+{{if .Orphans}}
+<div class="card card--neg" style="margin-bottom: 16px;">
+  <strong>{{len .Orphans}} fixable problem(s) detected</strong> — trades with no commission applied:
+  <ul style="margin: 8px 0 0 0; padding-left: 18px;">
+    {{range .Orphans}}
+      <li style="margin: 4px 0;">
+        {{if eq .Kind "symbol_uncategorized"}}
+          <span class="num">{{.TradeCount}}</span> trade(s) — symbol
+          <strong>{{.SymbolRoot}}</strong> is uncategorized.
+          <a href="#instr-{{.SymbolRoot}}" class="btn btn--secondary btn--sm" style="margin-left: 4px;">Categorize ↓</a>
+        {{else if eq .Kind "account_firm_missing"}}
+          <span class="num">{{.TradeCount}}</span> trade(s) — account
+          <strong>{{.AccountName}}</strong> has no firm assigned.
+          <a href="/accounts" class="btn btn--secondary btn--sm" style="margin-left: 4px;">Open Accounts ↗</a>
+        {{else if eq .Kind "rate_missing"}}
+          <span class="num">{{.TradeCount}}</span> trade(s) — no rate for
+          <strong>{{.Firm}}</strong> · {{.AssetClass}} · {{.SizeClass}}.
+          <a href="#rate-{{.AssetClass}}|{{.Firm}}|{{.SizeClass}}" class="btn btn--secondary btn--sm" style="margin-left: 4px;">Set rate ↓</a>
+        {{end}}
+      </li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+
+{{/* Bulk-save form lives outside the tables; inputs reference it via form="commissions-form". */}}
+<form id="commissions-form" method="post" action="/commissions/save"></form>
+
+<h2 style="margin-top: 24px;">Commission rates</h2>
+<div class="table-scroll" style="margin-top: 8px;">
+  <table class="rates">
+    <thead>
+      <tr>
+        <th>Asset class</th>
+        <th>Firm</th>
+        <th>Size</th>
+        <th style="text-align: right;">Per-contract RT (USD)</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="rates-tbody">
+      {{range .Rates}}
+        {{template "commission_rate_row" (dict "Rate" . "Firms" $.Firms)}}
+      {{else}}
+        <tr><td colspan="5" class="muted" style="text-align:center; padding: 16px;">No commission rates configured yet. Use the form below to add the first.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<details class="disclose" style="margin-top: 12px;">
+  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add rate</summary>
+  <form hx-post="/commissions/rates/new"
+        hx-target="#rates-tbody"
+        hx-swap="beforeend"
+        class="card" style="margin-top: 8px;">
+    <div class="row">
+      <label class="field"><span class="field-label">Asset class</span>
+        <select name="asset_class" required>
+          <option value="">— pick —</option>
+          {{range .AssetClasses}}<option value="{{.Code}}">{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Firm</span>
+        <select name="firm" required>
+          <option value="">— pick —</option>
+          {{range $.Firms}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Size</span>
+        <select name="size_class" required>
+          <option value="">— pick —</option>
+          {{range .SizeClasses}}<option value="{{.Code}}">{{.Label}}</option>{{end}}
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Rate (USD RT)</span>
+        <input type="number" name="per_contract_rt" step="0.01" min="0" required placeholder="1.99" style="width: 110px;">
+      </label>
+      <button type="submit" class="btn btn--primary">Add</button>
+    </div>
+    <p class="muted" style="margin-top: 8px; font-size: 12px;">
+      If a rate already exists for that (asset class, firm, size), it's updated.
+    </p>
+  </form>
+</details>
+
+<h2 style="margin-top: 32px;">Instrument categorization</h2>
+<div class="table-scroll" style="margin-top: 8px;">
+  <table class="instruments">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Exchange</th>
+        <th style="text-align: right;">Tick</th>
+        <th style="text-align: right;">Tick value</th>
+        <th style="text-align: right;">Multiplier</th>
+        <th>Asset class</th>
+        <th>Size</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Instruments}}
+        {{$i := .}}
+        <tr id="instr-{{$i.SymbolRoot}}" data-symbol="{{$i.SymbolRoot}}">
+          <td><strong>{{$i.SymbolRoot}}</strong></td>
+          <td class="muted">{{if $i.Exchange}}{{derefStr $i.Exchange}}{{else}}—{{end}}</td>
+          <td><input form="commissions-form" type="number" step="0.0001" min="0"
+                     name="instrument.{{$i.SymbolRoot}}.tick_size"
+                     value="{{if $i.TickSize}}{{deref $i.TickSize}}{{end}}"
+                     class="num" style="width: 80px; text-align: right;"></td>
+          <td><input form="commissions-form" type="number" step="0.01" min="0"
+                     name="instrument.{{$i.SymbolRoot}}.tick_value"
+                     value="{{if $i.TickValue}}{{deref $i.TickValue}}{{end}}"
+                     class="num" style="width: 80px; text-align: right;"></td>
+          <td><input form="commissions-form" type="number" step="0.01" min="0"
+                     name="instrument.{{$i.SymbolRoot}}.multiplier"
+                     value="{{if $i.Multiplier}}{{deref $i.Multiplier}}{{end}}"
+                     class="num" style="width: 80px; text-align: right;"></td>
+          <td>
+            <select form="commissions-form" name="instrument.{{$i.SymbolRoot}}.asset_class">
+              <option value="" {{if not $i.AssetClass}}selected{{end}}>—</option>
+              {{range $.AssetClasses}}
+                <option value="{{.Code}}" {{if and $i.AssetClass (eq .Code (derefStr $i.AssetClass))}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </td>
+          <td>
+            <select form="commissions-form" name="instrument.{{$i.SymbolRoot}}.size_class">
+              <option value="" {{if not $i.SizeClass}}selected{{end}}>—</option>
+              {{range $.SizeClasses}}
+                <option value="{{.Code}}" {{if and $i.SizeClass (eq .Code (derefStr $i.SizeClass))}}selected{{end}}>{{.Label}}</option>
+              {{end}}
+            </select>
+          </td>
+          <td>{{if eq $i.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+        </tr>
+      {{else}}
+        <tr><td colspan="8" class="muted" style="text-align: center; padding: 16px;">No instruments yet — they appear when you import trades.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<details class="disclose" id="classes" style="margin-top: 32px;">
+  <summary style="cursor: pointer; font-size: 13px; color: var(--fg-muted); padding: 8px 0;">
+    ▸ Class definitions (asset classes and sizes)
+  </summary>
+  <div class="grid-2" style="margin-top: 8px; gap: 16px;">
+    <div class="card">
+      <h3 style="margin-top: 0;">Asset classes</h3>
+      <ul style="margin: 0; padding-left: 18px;">
+        {{range .AssetClasses}}
+          <li><code class="num">{{.Code}}</code> — {{.Label}} <span class="muted" style="font-size:11px;">(sort {{.SortOrder}})</span></li>
+        {{end}}
+      </ul>
+      <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
+        <input type="hidden" name="kind" value="asset">
+        <label class="field"><span class="field-label">Code</span>
+          <input type="text" name="code" required placeholder="e.g. ag_futures" style="width: 140px;"></label>
+        <label class="field"><span class="field-label">Label</span>
+          <input type="text" name="label" required placeholder="e.g. Agricultural Futures" style="width: 180px;"></label>
+        <label class="field"><span class="field-label">Sort</span>
+          <input type="number" name="sort_order" value="100" style="width: 64px;"></label>
+        <button type="submit" class="btn btn--secondary btn--sm">+ Add asset class</button>
+      </form>
+    </div>
+    <div class="card">
+      <h3 style="margin-top: 0;">Size classes</h3>
+      <ul style="margin: 0; padding-left: 18px;">
+        {{range .SizeClasses}}
+          <li><code class="num">{{.Code}}</code> — {{.Label}} <span class="muted" style="font-size:11px;">(sort {{.SortOrder}})</span></li>
+        {{end}}
+      </ul>
+      <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
+        <input type="hidden" name="kind" value="size">
+        <label class="field"><span class="field-label">Code</span>
+          <input type="text" name="code" required placeholder="e.g. nano" style="width: 140px;"></label>
+        <label class="field"><span class="field-label">Label</span>
+          <input type="text" name="label" required placeholder="e.g. Nano" style="width: 180px;"></label>
+        <label class="field"><span class="field-label">Sort</span>
+          <input type="number" name="sort_order" value="100" style="width: 64px;"></label>
+        <button type="submit" class="btn btn--secondary btn--sm">+ Add size class</button>
+      </form>
+    </div>
+  </div>
+</details>
+
+<div id="save-bar" class="save-bar">
+  <span class="muted"><strong id="dirty-count" class="num">0</strong> row(s) changed.</span>
+  <div class="row-sm" style="margin-left: auto;">
+    <button type="button" id="reset-btn" class="btn btn--ghost btn--sm">Discard</button>
+    <button form="commissions-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
+  </div>
+</div>
+
+<style>
+  table.rates input, table.rates select,
+  table.instruments input, table.instruments select { height: 28px; padding: 4px 8px; font-size: 12px; }
+  table.rates td, table.instruments td { vertical-align: middle; font-size: 13px; }
+
+  .save-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-elev);
+    padding: 12px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    display: none;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .save-bar.dirty { display: flex; }
+
+  tr.row-dirty td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+
+  details.disclose > summary { list-style: none; }
+  details.disclose > summary::-webkit-details-marker { display: none; }
+</style>
+
+<script>
+  /* Dirty-tracking JS shared in shape with /accounts: snapshot initial values,
+     mark dirty rows, show sticky save-bar, support discard. */
+  (function () {
+    const form = document.getElementById('commissions-form');
+    if (!form) return;
+    /* The form itself is empty (used only as an "anchor"); collect everything
+       with form="commissions-form" attribute via querySelectorAll. */
+    const refreshInputs = () => Array.from(document.querySelectorAll('[form="commissions-form"]'))
+      .filter((el) => el.tagName === 'INPUT' || el.tagName === 'SELECT');
+    let inputs = refreshInputs();
+    const snapshot = new Map();
+    const getVal = (el) => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
+    const setVal = (el, v) => {
+      if (el.type === 'checkbox') el.checked = (v === '1');
+      else el.value = v;
+    };
+    inputs.forEach((el) => snapshot.set(el, getVal(el)));
+
+    const saveBar = document.getElementById('save-bar');
+    const dirtyCount = document.getElementById('dirty-count');
+
+    const refresh = () => {
+      inputs = refreshInputs();
+      /* Snapshot any inputs that appeared after the initial paint
+         (HTMX-inserted rate rows). */
+      inputs.forEach((el) => { if (!snapshot.has(el)) snapshot.set(el, getVal(el)); });
+      const dirtyRows = new Set();
+      let anyDirty = false;
+      inputs.forEach((el) => {
+        if (getVal(el) !== snapshot.get(el)) {
+          anyDirty = true;
+          const tr = el.closest('tr');
+          if (tr) dirtyRows.add(tr);
+        }
+      });
+      document.querySelectorAll('tr.row-dirty').forEach((tr) => {
+        if (!dirtyRows.has(tr)) tr.classList.remove('row-dirty');
+      });
+      dirtyRows.forEach((tr) => tr.classList.add('row-dirty'));
+      saveBar.classList.toggle('dirty', anyDirty);
+      dirtyCount.textContent = dirtyRows.size;
+    };
+
+    document.addEventListener('input', (e) => {
+      if (e.target.matches('[form="commissions-form"]')) refresh();
+    });
+    document.addEventListener('change', (e) => {
+      if (e.target.matches('[form="commissions-form"]')) refresh();
+    });
+    document.body.addEventListener('htmx:afterSwap', refresh);
+
+    document.getElementById('reset-btn').addEventListener('click', () => {
+      inputs = refreshInputs();
+      inputs.forEach((el) => setVal(el, snapshot.get(el)));
+      refresh();
+    });
+  })();
+</script>
+{{end}}

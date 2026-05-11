@@ -21,9 +21,16 @@ type Account struct {
 	CreatedAt    time.Time `json:"created_at"`
 }
 
+type AssetClass struct {
+	Code      string `json:"code"`
+	Label     string `json:"label"`
+	SortOrder int64  `json:"sort_order"`
+}
+
 type CommissionRate struct {
+	AssetClass    string  `json:"asset_class"`
 	Firm          string  `json:"firm"`
-	SymbolRoot    string  `json:"symbol_root"`
+	SizeClass     string  `json:"size_class"`
 	PerContractRt float64 `json:"per_contract_rt"`
 }
 
@@ -63,6 +70,8 @@ type Instrument struct {
 	Multiplier *float64 `json:"multiplier"`
 	Currency   string   `json:"currency"`
 	NeedsSetup int64    `json:"needs_setup"`
+	AssetClass *string  `json:"asset_class"`
+	SizeClass  *string  `json:"size_class"`
 }
 
 type InstrumentAlias struct {
@@ -82,6 +91,12 @@ type JournalEntry struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Tag       *string   `json:"tag"`
 	Scope     string    `json:"scope"`
+}
+
+type SizeClass struct {
+	Code      string `json:"code"`
+	Label     string `json:"label"`
+	SortOrder int64  `json:"sort_order"`
 }
 
 type SyncLog struct {
