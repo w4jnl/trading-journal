@@ -1,53 +1,95 @@
 {{define "title"}}Analytics — Trading Journal{{end}}
 
 {{define "content"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
 <style>
-  .head-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 800px) {
+    .row-3, .row-2 { grid-template-columns: 1fr; }
+  }
   .head-card { background: white; border-radius: 6px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
   .head-card .label { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 0.04em; }
   .head-card .value { font-size: 22px; font-weight: 600; margin-top: 4px; }
-  .head-card .sub { font-size: 12px; color: #64748b; margin-top: 4px; }
+  .head-card .sub { font-size: 12px; color: #64748b; margin-top: 4px; line-height: 1.4; }
   .pnl-pos { color: #15803d; }
   .pnl-neg { color: #b91c1c; }
   .trade-link { text-decoration: none; border-bottom: 1px dashed currentColor; }
   .trade-link:hover { border-bottom-style: solid; }
-  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
   @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
   .breakdown-grid h3 { margin-top: 0; font-size: 14px; text-transform: uppercase; letter-spacing: 0.04em; color: #475569; }
   .filter-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 16px; padding: 12px 16px; background: white; border-radius: 6px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
   .filter-row label { display: flex; flex-direction: column; font-size: 12px; color: #475569; }
   .filter-row select, .filter-row input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
+  .preset-btn { padding: 6px 12px; border: 1px solid #cbd5e1; background: white; color: #0f172a;
+                border-radius: 4px; font-size: 13px; cursor: pointer; }
+  .preset-btn:hover { border-color: #475569; }
+
+  .chart-box { background: white; border-radius: 6px; padding: 12px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.05); }
+  .chart-box .chart-title { font-size: 12px; color: #475569; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 8px; }
+  .chart-host { width: 100%; }
+
+  /* Horizontal bar charts (Duration / Win-rate analysis). */
+  .bar-row { display: grid; grid-template-columns: 120px 1fr 40px; gap: 8px; align-items: center;
+             padding: 3px 0; font-size: 12px; }
+  .bar-row .lbl { color: #475569; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-row .bar { height: 14px; border-radius: 3px; background: #cbd5e1; }
+  .bar-row .bar.pos { background: #4ade80; }
+  .bar-row .bar.neg { background: #f87171; }
+  .bar-row .val { text-align: right; color: #0f172a; font-variant-numeric: tabular-nums; }
+
+  .blurb { font-size: 12px; color: #475569; line-height: 1.5; }
+  .blurb .pair { display: inline-block; margin-right: 12px; }
+  .blurb code { background: #f1f5f9; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
 </style>
 
 {{template "back_button" .}}
 
 <h1>Analytics</h1>
 
-<form method="get" action="/analytics" class="filter-row">
+<form method="get" action="/analytics" class="filter-row" id="analytics-filter">
   {{template "account_filter" .}}
   <label>From
-    <input type="date" name="from" value="{{.From}}">
+    <input id="from-input" type="date" name="from" value="{{.From}}">
   </label>
   <label>To
-    <input type="date" name="to" value="{{.To}}">
+    <input id="to-input" type="date" name="to" value="{{.To}}">
   </label>
   <button type="submit">Apply</button>
+  <span style="display: inline-flex; gap: 6px; margin-left: 4px;">
+    <button type="button" class="preset-btn" data-preset="today">Today</button>
+    <button type="button" class="preset-btn" data-preset="week">Last week</button>
+    <button type="button" class="preset-btn" data-preset="month">Last month</button>
+  </span>
   <a href="/analytics" style="margin-left: 4px; font-size: 13px; color: #475569; text-decoration: none;">Clear</a>
   <span class="muted" style="margin-left: auto;">{{.TradeCount}} closed trades in selection.</span>
 </form>
 
 {{with .Headline}}
 {{if .Trades}}
-<div class="head-grid">
+<!-- KPI tile grid -->
+<div class="kpi-grid">
   <div class="head-card">
-    <div class="label">Net P&amp;L</div>
+    <div class="label">Total P&amp;L</div>
     <div class="value {{if gt .NetPnl 0.0}}pnl-pos{{else if lt .NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" .NetPnl}}</div>
     <div class="sub">Gross {{printf "%.2f" .GrossPnl}} · comm {{printf "%.2f" .Commission}}</div>
   </div>
   <div class="head-card">
-    <div class="label">Trades · Win rate</div>
-    <div class="value">{{.Trades}}</div>
-    <div class="sub"><span class="pnl-pos">{{.Wins}}W</span> / <span class="pnl-neg">{{.Losses}}L</span> · {{printf "%.0f%%" (mul .WinRate 100.0)}}</div>
+    <div class="label">Trade Win %</div>
+    <div class="value">{{printf "%.2f%%" (mul .WinRate 100.0)}}</div>
+    <div class="sub"><span class="pnl-pos">{{.Wins}}W</span> / <span class="pnl-neg">{{.Losses}}L</span> · {{.Trades}} trades</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Avg Win / Avg Loss</div>
+    <div class="value">{{if lt .AvgLoss 0.0}}{{printf "%.2f" (div .AvgWin (negFloat .AvgLoss))}}{{else}}—{{end}}</div>
+    <div class="sub"><span class="pnl-pos">{{printf "%.2f" .AvgWin}}</span> / <span class="pnl-neg">{{printf "%.2f" .AvgLoss}}</span></div>
+  </div>
+  <div class="head-card">
+    <div class="label">Day Win %</div>
+    <div class="value">{{if eq $.Dash.DayWinPct 0.0}}—{{else}}{{printf "%.2f%%" $.Dash.DayWinPct}}{{end}}</div>
+    <div class="sub">active days that ended green</div>
   </div>
   <div class="head-card">
     <div class="label">Profit factor</div>
@@ -55,37 +97,162 @@
     <div class="sub">total wins / total losses</div>
   </div>
   <div class="head-card">
-    <div class="label">Expectancy</div>
-    <div class="value {{if gt .Expectancy 0.0}}pnl-pos{{else if lt .Expectancy 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Expectancy}}</div>
-    <div class="sub">avg edge per trade</div>
-  </div>
-  <div class="head-card">
-    <div class="label">Avg win / Avg loss</div>
-    <div class="value"><span class="pnl-pos">{{printf "%.2f" .AvgWin}}</span></div>
-    <div class="sub"><span class="pnl-neg">{{printf "%.2f" .AvgLoss}}</span></div>
-  </div>
-  <div class="head-card">
-    <div class="label">Largest win / loss</div>
-    <div class="value">
-      {{if .LargestWinTradeID}}
-        <a class="trade-link" href="#"
-           hx-get="/trades/{{.LargestWinTradeID}}"
-           hx-target="#modal-content" hx-swap="innerHTML"
-           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;"
-           title="Open this trade"><span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span></a>
-      {{else}}<span class="pnl-pos">{{printf "%.2f" .LargestWin}}</span>{{end}}
-    </div>
-    <div class="sub">
-      {{if .LargestLossTradeID}}
-        <a class="trade-link" href="#"
-           hx-get="/trades/{{.LargestLossTradeID}}"
-           hx-target="#modal-content" hx-swap="innerHTML"
-           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;"
-           title="Open this trade"><span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span></a>
-      {{else}}<span class="pnl-neg">{{printf "%.2f" .LargestLoss}}</span>{{end}}
-    </div>
+    <div class="label">Best day % of profit</div>
+    <div class="value">{{if eq $.Dash.BestDayPctOfProfit 0.0}}—{{else}}{{printf "%.2f%%" $.Dash.BestDayPctOfProfit}}{{end}}</div>
+    <div class="sub">biggest winning day / Σ winning days</div>
   </div>
 </div>
+
+<!-- Daily account balance (cumulative equity) -->
+<div class="chart-box" style="margin-bottom: 16px;">
+  <div class="chart-title">Daily Account Balance</div>
+  <div id="chart-balance" class="chart-host" style="height: 240px;"></div>
+</div>
+
+<!-- Day-of-week stats -->
+<div class="row-3">
+  <div class="head-card">
+    <div class="label">Most Active Day</div>
+    {{with $.Dash.MostActive}}
+      <div class="value">{{.DOW}}</div>
+      <div class="sub">{{.ActiveDates}} active days · {{.TotalTrades}} total trades · {{printf "%.2f" .AvgPerDay}} avg/day</div>
+    {{else}}<div class="value">—</div>{{end}}
+  </div>
+  <div class="head-card">
+    <div class="label">Most Profitable Day</div>
+    {{with $.Dash.MostProfitable}}
+      <div class="value">{{.DOW}}</div>
+      <div class="sub {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</div>
+    {{else}}<div class="value">—</div>{{end}}
+  </div>
+  <div class="head-card">
+    <div class="label">Least Profitable Day</div>
+    {{with $.Dash.LeastProfitable}}
+      <div class="value">{{.DOW}}</div>
+      <div class="sub {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</div>
+    {{else}}<div class="value">—</div>{{end}}
+  </div>
+</div>
+
+<!-- Counts -->
+<div class="row-3">
+  <div class="head-card">
+    <div class="label">Total Number of Trades</div>
+    <div class="value">{{.Trades}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Total Lots Traded</div>
+    <div class="value">{{printf "%.0f" $.Dash.TotalLots}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Average Trade Duration</div>
+    <div class="value" style="font-size: 18px;">{{humanDuration $.Dash.AvgTradeDuration}}</div>
+  </div>
+</div>
+
+<!-- Win / Loss durations -->
+<div class="row-2">
+  <div class="head-card">
+    <div class="label">Average Win Duration</div>
+    <div class="value" style="font-size: 18px;" class="pnl-pos">{{humanDuration $.Dash.AvgWinDuration}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Average Loss Duration</div>
+    <div class="value" style="font-size: 18px;" class="pnl-neg">{{humanDuration $.Dash.AvgLossDuration}}</div>
+  </div>
+</div>
+
+<!-- Averages + direction -->
+<div class="row-3">
+  <div class="head-card">
+    <div class="label">Avg Winning Trade</div>
+    <div class="value pnl-pos">{{printf "%.2f" .AvgWin}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Avg Losing Trade</div>
+    <div class="value pnl-neg">{{printf "%.2f" .AvgLoss}}</div>
+  </div>
+  <div class="head-card">
+    <div class="label">Trade Direction %</div>
+    <div class="value">{{printf "%.2f%%" $.Dash.LongPct}}</div>
+    <div class="sub">Long {{$.Dash.LongCount}} · Short {{$.Dash.ShortCount}}</div>
+  </div>
+</div>
+
+<!-- Best / Worst trade -->
+<div class="row-2">
+  <div class="head-card">
+    <div class="label">Best Trade</div>
+    {{with $.Dash.Best}}
+      <div class="value pnl-pos">
+        <a class="trade-link" href="#"
+           hx-get="/trades/{{.ID}}" hx-target="#modal-content" hx-swap="innerHTML"
+           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;">{{printf "%.2f" .NetPnl}}</a>
+      </div>
+      <div class="blurb">
+        <span class="pair">{{.Direction}} {{printf "%.0f" .Qty}} <code>{{.Symbol}}</code> @ {{printf "%.2f" .EntryPrice}}</span>
+        <span class="pair">→ {{printf "%.2f" .ExitPrice}}</span>
+        <span class="pair">{{.ExitTime.UTC.Format "2006-01-02 15:04"}}</span>
+        <span class="pair">{{.AccountName}}</span>
+      </div>
+    {{else}}<div class="value">—</div>{{end}}
+  </div>
+  <div class="head-card">
+    <div class="label">Worst Trade</div>
+    {{with $.Dash.Worst}}
+      <div class="value pnl-neg">
+        <a class="trade-link" href="#"
+           hx-get="/trades/{{.ID}}" hx-target="#modal-content" hx-swap="innerHTML"
+           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;">{{printf "%.2f" .NetPnl}}</a>
+      </div>
+      <div class="blurb">
+        <span class="pair">{{.Direction}} {{printf "%.0f" .Qty}} <code>{{.Symbol}}</code> @ {{printf "%.2f" .EntryPrice}}</span>
+        <span class="pair">→ {{printf "%.2f" .ExitPrice}}</span>
+        <span class="pair">{{.ExitTime.UTC.Format "2006-01-02 15:04"}}</span>
+        <span class="pair">{{.AccountName}}</span>
+      </div>
+    {{else}}<div class="value">—</div>{{end}}
+  </div>
+</div>
+
+<!-- Charts row: Daily Net Cumulative P&L + Net Daily P&L -->
+<div class="row-2">
+  <div class="chart-box">
+    <div class="chart-title">Daily Net Cumulative P&amp;L</div>
+    <div id="chart-cum" class="chart-host" style="height: 240px;"></div>
+  </div>
+  <div class="chart-box">
+    <div class="chart-title">Net Daily P&amp;L</div>
+    <div id="chart-daily" class="chart-host" style="height: 240px;"></div>
+  </div>
+</div>
+
+<!-- Duration & win-rate analysis (horizontal bars) -->
+<div class="row-2">
+  <div class="chart-box">
+    <div class="chart-title">Trade Duration Analysis</div>
+    {{$maxTrades := 0}}
+    {{range $.Dash.DurationBuckets}}{{if gt (i64ToInt .Trades) $maxTrades}}{{$maxTrades = i64ToInt .Trades}}{{end}}{{end}}
+    {{range $.Dash.DurationBuckets}}
+      <div class="bar-row">
+        <span class="lbl">{{.Label}}</span>
+        <span class="bar" style="width: {{barWidth (i64ToFloat .Trades) (intToFloat $maxTrades)}}%;"></span>
+        <span class="val">{{.Trades}}</span>
+      </div>
+    {{end}}
+  </div>
+  <div class="chart-box">
+    <div class="chart-title">Win Rate Analysis</div>
+    {{range $.Dash.DurationBuckets}}
+      <div class="bar-row">
+        <span class="lbl">{{.Label}}</span>
+        <span class="bar {{if and (gt .Trades 0) (ge .WinRate 50.0)}}pos{{else if gt .Trades 0}}neg{{end}}" style="width: {{.WinRate}}%;"></span>
+        <span class="val">{{if eq .Trades 0}}—{{else}}{{printf "%.0f%%" .WinRate}}{{end}}</span>
+      </div>
+    {{end}}
+  </div>
+</div>
+
 {{else}}
 <div class="panel" style="text-align: center; color: #64748b;">No trades match the current filter.</div>
 {{end}}
@@ -111,10 +278,9 @@
 </div>
 
 {{template "trade_modal" .}}
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
 <script>
-  // Inline modal on /analytics: just hide on close, no page navigation. No
-  // journal-reload path either — there's nothing on this page that the modal
-  // would invalidate.
+  // Inline modal on /analytics: just hide on close.
   function closeTradeModal() {
     document.getElementById('modal-backdrop').classList.remove('show');
   }
@@ -126,6 +292,100 @@
       closeTradeModal();
     }
   });
+
+  // Date-range preset buttons: write the from/to inputs, then submit.
+  (function () {
+    const form = document.getElementById('analytics-filter');
+    if (!form) return;
+    const fromInput = document.getElementById('from-input');
+    const toInput = document.getElementById('to-input');
+    const fmt = (d) => d.toISOString().slice(0, 10);
+    document.querySelectorAll('.preset-btn').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const today = new Date();
+        let from = new Date(today);
+        if (btn.dataset.preset === 'week') from.setDate(today.getDate() - 7);
+        if (btn.dataset.preset === 'month') from.setDate(today.getDate() - 30);
+        fromInput.value = fmt(from);
+        toInput.value = fmt(today);
+        form.submit();
+      });
+    });
+  })();
+
+  // Chart data is rendered into the page as inline JSON by the handler.
+  const chartData = {{.ChartJSON}};
+
+  // Common uPlot opts for the date-series charts.
+  function makeChart(host, opts) {
+    const el = document.querySelector(host);
+    if (!el || !chartData.dates || chartData.dates.length === 0) {
+      if (el) el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No data in selection.</div>';
+      return;
+    }
+    const u = new uPlot(opts, [chartData.dates].concat(opts.__series), el);
+    return u;
+  }
+
+  // Daily Account Balance (cumulative line + area).
+  makeChart('#chart-balance', {
+    width: document.querySelector('#chart-balance').clientWidth,
+    height: 220,
+    series: [
+      {},
+      { label: 'Balance', stroke: '#0f172a', fill: 'rgba(16, 185, 129, 0.10)', width: 1.5 },
+    ],
+    axes: [
+      { stroke: '#94a3b8' },
+      { stroke: '#94a3b8' },
+    ],
+    __series: [chartData.cum],
+  });
+
+  // Daily Net Cumulative P&L (same data as balance — kept separate so a future
+  // refinement can split "starting balance + cumulative" vs "P&L cumulative").
+  makeChart('#chart-cum', {
+    width: document.querySelector('#chart-cum').clientWidth,
+    height: 220,
+    series: [
+      {},
+      { label: 'Cumulative', stroke: '#dc2626', fill: 'rgba(220, 38, 38, 0.10)', width: 1.5 },
+    ],
+    axes: [
+      { stroke: '#94a3b8' },
+      { stroke: '#94a3b8' },
+    ],
+    __series: [chartData.cum],
+  });
+
+  // Net Daily P&L bar chart.
+  (function () {
+    const el = document.querySelector('#chart-daily');
+    if (!el || !chartData.dates || chartData.dates.length === 0) {
+      if (el) el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No data in selection.</div>';
+      return;
+    }
+    new uPlot({
+      width: el.clientWidth,
+      height: 220,
+      series: [
+        {},
+        {
+          label: 'Net daily',
+          paths: uPlot.paths.bars({ size: [0.7, 16] }),
+          stroke: (u, idx) => {
+            const v = u.data[1][idx];
+            return v >= 0 ? '#16a34a' : '#dc2626';
+          },
+          fill: (u, idx) => {
+            const v = u.data[1][idx];
+            return v >= 0 ? '#86efac' : '#fca5a5';
+          },
+        },
+      ],
+      axes: [{ stroke: '#94a3b8' }, { stroke: '#94a3b8' }],
+    }, [chartData.dates, chartData.nets], el);
+  })();
 </script>
 {{end}}
 

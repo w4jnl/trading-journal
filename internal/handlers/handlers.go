@@ -178,10 +178,45 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return ""
 		},
-		"mul":        func(a, b float64) float64 { return a * b },
-		"div":        func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
-		"i64ToFloat": func(i int64) float64 { return float64(i) },
-		"isInf":      func(f float64) bool { return math.IsInf(f, 0) },
+		"mul":         func(a, b float64) float64 { return a * b },
+		"div":         func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
+		"i64ToFloat":  func(i int64) float64 { return float64(i) },
+		"i64ToInt":    func(i int64) int { return int(i) },
+		"intToFloat":  func(i int) float64 { return float64(i) },
+		"negFloat":    func(f float64) float64 { return -f },
+		"isInf":       func(f float64) bool { return math.IsInf(f, 0) },
+		// barWidth returns 0..100 — the percentage to use as a CSS bar width.
+		// Used by the horizontal bar charts (Duration / Win Rate Analysis).
+		"barWidth": func(v, max float64) float64 {
+			if max <= 0 {
+				return 0
+			}
+			pct := v / max * 100
+			if pct < 0 {
+				return 0
+			}
+			if pct > 100 {
+				return 100
+			}
+			return pct
+		},
+		// humanDuration formats a time.Duration as "X min Y sec" / "X hr Y min"
+		// for the dashboard tiles. Compact ASCII, no fractional seconds.
+		"humanDuration": func(d time.Duration) string {
+			if d <= 0 {
+				return "—"
+			}
+			s := int(d.Seconds())
+			if s < 60 {
+				return fmt.Sprintf("%d sec", s)
+			}
+			if s < 3600 {
+				return fmt.Sprintf("%d min %d sec", s/60, s%60)
+			}
+			h := s / 3600
+			m := (s % 3600) / 60
+			return fmt.Sprintf("%d hr %d min", h, m)
+		},
 		// journalState maps (hasEntry, tag) onto the journal_icon template's
 		// state string: empty / neutral / good / bad. Untagged entries fall
 		// back to "neutral" so they still get a distinct color from "empty".
