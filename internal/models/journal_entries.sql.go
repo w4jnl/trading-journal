@@ -11,9 +11,9 @@ import (
 )
 
 const createJournalEntry = `-- name: CreateJournalEntry :one
-INSERT INTO journal_entries (trade_id, account_id, entry_date, body, mood, tag)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag
+INSERT INTO journal_entries (trade_id, account_id, entry_date, body, mood, tag, scope)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope
 `
 
 type CreateJournalEntryParams struct {
@@ -23,6 +23,7 @@ type CreateJournalEntryParams struct {
 	Body      string    `json:"body"`
 	Mood      *int64    `json:"mood"`
 	Tag       *string   `json:"tag"`
+	Scope     string    `json:"scope"`
 }
 
 func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntryParams) (JournalEntry, error) {
@@ -33,6 +34,7 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		arg.Body,
 		arg.Mood,
 		arg.Tag,
+		arg.Scope,
 	)
 	var i JournalEntry
 	err := row.Scan(
@@ -45,6 +47,7 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Tag,
+		&i.Scope,
 	)
 	return i, err
 }
@@ -59,8 +62,8 @@ func (q *Queries) DeleteJournalEntry(ctx context.Context, id int64) error {
 }
 
 const getDayJournalEntry = `-- name: GetDayJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag FROM journal_entries
-WHERE entry_date = ? AND trade_id IS NULL
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries
+WHERE entry_date = ? AND scope = 'day'
 LIMIT 1
 `
 
@@ -77,12 +80,13 @@ func (q *Queries) GetDayJournalEntry(ctx context.Context, entryDate time.Time) (
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Tag,
+		&i.Scope,
 	)
 	return i, err
 }
 
 const getJournalEntryByTradeID = `-- name: GetJournalEntryByTradeID :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag FROM journal_entries WHERE trade_id = ? LIMIT 1
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries WHERE trade_id = ? LIMIT 1
 `
 
 func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) (JournalEntry, error) {
@@ -98,13 +102,39 @@ func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) 
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Tag,
+		&i.Scope,
+	)
+	return i, err
+}
+
+const getWeekJournalEntry = `-- name: GetWeekJournalEntry :one
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries
+WHERE entry_date = ? AND scope = 'week'
+LIMIT 1
+`
+
+// entry_date for week-scoped rows is the Monday of that ISO week.
+func (q *Queries) GetWeekJournalEntry(ctx context.Context, entryDate time.Time) (JournalEntry, error) {
+	row := q.db.QueryRowContext(ctx, getWeekJournalEntry, entryDate)
+	var i JournalEntry
+	err := row.Scan(
+		&i.ID,
+		&i.TradeID,
+		&i.AccountID,
+		&i.EntryDate,
+		&i.Body,
+		&i.Mood,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Tag,
+		&i.Scope,
 	)
 	return i, err
 }
 
 const listDayJournalsInRange = `-- name: ListDayJournalsInRange :many
 SELECT entry_date, tag FROM journal_entries
-WHERE trade_id IS NULL AND entry_date >= ? AND entry_date < ?
+WHERE scope = 'day' AND entry_date >= ? AND entry_date < ?
 ORDER BY entry_date
 `
 
@@ -142,9 +172,82 @@ func (q *Queries) ListDayJournalsInRange(ctx context.Context, arg ListDayJournal
 	return items, nil
 }
 
+const listJournalFeed = `-- name: ListJournalFeed :many
+SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body, je.mood, je.tag, je.scope,
+       je.created_at, je.updated_at,
+       t.symbol AS trade_symbol, t.symbol_root AS trade_symbol_root,
+       t.direction AS trade_direction, t.net_pnl AS trade_net_pnl,
+       a.name AS account_name
+FROM journal_entries je
+LEFT JOIN trades t   ON t.id = je.trade_id
+LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
+ORDER BY je.entry_date DESC, je.id DESC
+LIMIT ?
+`
+
+type ListJournalFeedRow struct {
+	ID              int64     `json:"id"`
+	TradeID         *int64    `json:"trade_id"`
+	AccountID       *int64    `json:"account_id"`
+	EntryDate       time.Time `json:"entry_date"`
+	Body            string    `json:"body"`
+	Mood            *int64    `json:"mood"`
+	Tag             *string   `json:"tag"`
+	Scope           string    `json:"scope"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	TradeSymbol     *string   `json:"trade_symbol"`
+	TradeSymbolRoot *string   `json:"trade_symbol_root"`
+	TradeDirection  *string   `json:"trade_direction"`
+	TradeNetPnl     *float64  `json:"trade_net_pnl"`
+	AccountName     *string   `json:"account_name"`
+}
+
+// The cross-scope chronological feed. Joins in trade + account context so the
+// feed item for a trade-scoped entry can render the symbol/direction/account
+// in the row without a second query per entry.
+func (q *Queries) ListJournalFeed(ctx context.Context, limit int64) ([]ListJournalFeedRow, error) {
+	rows, err := q.db.QueryContext(ctx, listJournalFeed, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListJournalFeedRow
+	for rows.Next() {
+		var i ListJournalFeedRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.TradeID,
+			&i.AccountID,
+			&i.EntryDate,
+			&i.Body,
+			&i.Mood,
+			&i.Tag,
+			&i.Scope,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.TradeSymbol,
+			&i.TradeSymbolRoot,
+			&i.TradeDirection,
+			&i.TradeNetPnl,
+			&i.AccountName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentJournalEntries = `-- name: ListRecentJournalEntries :many
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag FROM journal_entries
-WHERE trade_id IS NULL
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries
+WHERE scope = 'day'
 ORDER BY entry_date DESC, id DESC
 LIMIT ?
 `
@@ -168,6 +271,7 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Tag,
+			&i.Scope,
 		); err != nil {
 			return nil, err
 		}

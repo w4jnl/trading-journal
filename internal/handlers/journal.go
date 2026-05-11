@@ -18,10 +18,96 @@ import (
 	"github.com/jaro/trading-journal/internal/models"
 )
 
-// JournalPage renders /journal — the day-level entry editor for a given date
-// (defaults to today in trading-tz). Path /journal/{date} navigates to a
-// specific YYYY-MM-DD; the recent-entries sidebar comes from sync_log of
-// previously-saved day entries.
+// JournalFeed renders /journal — the chronological feed mixing day, trade,
+// and week entries by date desc. Quick-add bar at the top lets the user jump
+// to today / any date / any week. Clicking a feed item opens the right edit
+// surface (modal for trade scope, page for day/week scopes).
+func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tz := h.localTZ()
+
+	rows, err := h.Queries.ListJournalFeed(ctx, 100)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list feed: %w", err))
+		return
+	}
+
+	type feedItem struct {
+		ID           int64
+		Scope        string  // day | trade | week
+		Date         time.Time
+		DateLabel    string
+		MetaLabel    string  // "APEX-1 / MESM6 long · $42.50" for trade, "May 4–10" for week
+		Tag          string
+		Body         string
+		EditURL      string  // where to navigate when the row is clicked
+	}
+	items := make([]feedItem, 0, len(rows))
+	for _, row := range rows {
+		fi := feedItem{
+			ID:    row.ID,
+			Scope: row.Scope,
+			Date:  row.EntryDate.In(tz),
+			Body:  row.Body,
+		}
+		if row.Tag != nil {
+			fi.Tag = *row.Tag
+		}
+		switch row.Scope {
+		case "day":
+			fi.DateLabel = fi.Date.Format("Mon, 2 Jan 2006")
+			fi.EditURL = "/journal/" + fi.Date.Format("2006-01-02") + "?back=/journal"
+		case "trade":
+			fi.DateLabel = fi.Date.Format("Mon, 2 Jan 2006")
+			meta := ""
+			if row.AccountName != nil {
+				meta = *row.AccountName
+			}
+			if row.TradeSymbol != nil {
+				if meta != "" {
+					meta += " · "
+				}
+				meta += *row.TradeSymbol
+				if row.TradeDirection != nil {
+					meta += " " + *row.TradeDirection
+				}
+			}
+			if row.TradeNetPnl != nil {
+				if meta != "" {
+					meta += " · "
+				}
+				meta += fmt.Sprintf("$%.2f", *row.TradeNetPnl)
+			}
+			fi.MetaLabel = meta
+			if row.TradeID != nil {
+				fi.EditURL = fmt.Sprintf("/trades?modal=%d&back=/journal", *row.TradeID)
+			}
+		case "week":
+			y, w := fi.Date.ISOWeek()
+			sunday := fi.Date.AddDate(0, 0, 6)
+			fi.DateLabel = fmt.Sprintf("Week %d", w)
+			fi.MetaLabel = fmt.Sprintf("%s – %s", fi.Date.Format("Jan 2"), sunday.Format("Jan 2"))
+			fi.EditURL = fmt.Sprintf("/journal/week/%d-W%02d?back=/journal", y, w)
+		}
+		items = append(items, fi)
+	}
+
+	now := time.Now().In(tz)
+	todayStr := now.Format("2006-01-02")
+	y, wk := now.ISOWeek()
+	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
+
+	h.renderPage(w, "journal_feed.html", map[string]any{
+		"NavActive":   "journal",
+		"BackHref":    validBackHref(r),
+		"Items":       items,
+		"Today":       todayStr,
+		"ThisWeek":    thisWeekStr,
+	})
+}
+
+// JournalPage renders /journal/{date} — the day-level entry editor for a
+// specific YYYY-MM-DD.
 func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 
@@ -188,6 +274,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			Body:      body,
 			Mood:      mood,
 			Tag:       tag,
+			Scope:     "day",
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create journal: %w", err))
 			return
@@ -217,6 +304,152 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
+}
+
+// WeekJournalPage renders /journal/week/{2026-W19} — the week-level entry
+// editor. entry_date for a week-scoped row is the Monday of that ISO week.
+func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	weekID := r.PathValue("week")
+	monday, isoYear, isoWeek, err := parseISOWeek(weekID, h.localTZ())
+	if err != nil {
+		http.Error(w, "bad week id: expected YYYY-Www (e.g. 2026-W19)", http.StatusBadRequest)
+		return
+	}
+
+	entry, err := h.Queries.GetWeekJournalEntry(ctx, monday)
+	hasEntry := true
+	if errors.Is(err, sql.ErrNoRows) {
+		hasEntry = false
+		entry = models.JournalEntry{}
+	} else if err != nil {
+		h.serverError(w, fmt.Errorf("get week entry: %w", err))
+		return
+	}
+
+	var rendered template.HTML
+	if hasEntry && entry.Body != "" {
+		rendered = template.HTML(renderMarkdown(entry.Body))
+	}
+	tag := ""
+	if entry.Tag != nil {
+		tag = *entry.Tag
+	}
+
+	prev := monday.AddDate(0, 0, -7)
+	next := monday.AddDate(0, 0, 7)
+	py, pw := prev.ISOWeek()
+	ny, nw := next.ISOWeek()
+	sunday := monday.AddDate(0, 0, 6)
+
+	h.renderPage(w, "journal_week.html", map[string]any{
+		"NavActive":  "journal",
+		"BackHref":   validBackHref(r),
+		"WeekID":     fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
+		"WeekLabel":  fmt.Sprintf("Week %d, %d", isoWeek, isoYear),
+		"RangeLabel": fmt.Sprintf("%s – %s", monday.Format("Mon, 2 Jan"), sunday.Format("Mon, 2 Jan 2006")),
+		"PrevWeek":   fmt.Sprintf("%d-W%02d", py, pw),
+		"NextWeek":   fmt.Sprintf("%d-W%02d", ny, nw),
+		"HasEntry":   hasEntry,
+		"Entry":      entry,
+		"Tag":        tag,
+		"Rendered":   rendered,
+		"Flash":      r.URL.Query().Get("flash"),
+	})
+}
+
+// WeekJournalSave handles POST /journal/week/{week_id}.
+func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	weekID := r.PathValue("week")
+	monday, _, _, err := parseISOWeek(weekID, h.localTZ())
+	if err != nil {
+		http.Error(w, "bad week id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	redirectQuery := func(flash string) string {
+		q := url.Values{}
+		q.Set("flash", flash)
+		if v := r.FormValue("back"); v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
+			q.Set("back", v)
+		}
+		return "/journal/week/" + weekID + "?" + q.Encode()
+	}
+
+	body := strings.TrimSpace(r.FormValue("body"))
+	tag := parseTag(r.FormValue("tag"))
+
+	existing, err := h.Queries.GetWeekJournalEntry(ctx, monday)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if body == "" {
+			http.Redirect(w, r, redirectQuery("empty"), http.StatusSeeOther)
+			return
+		}
+		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+			TradeID:   nil,
+			AccountID: nil,
+			EntryDate: monday,
+			Body:      body,
+			Mood:      nil,
+			Tag:       tag,
+			Scope:     "week",
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("create week journal: %w", err))
+			return
+		}
+	case err != nil:
+		h.serverError(w, fmt.Errorf("get week journal: %w", err))
+		return
+	default:
+		if body == "" {
+			if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+				h.serverError(w, fmt.Errorf("delete week journal: %w", err))
+				return
+			}
+			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
+			return
+		}
+		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
+			Body: body,
+			Mood: existing.Mood,
+			Tag:  tag,
+			ID:   existing.ID,
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("update week journal: %w", err))
+			return
+		}
+	}
+	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
+}
+
+// parseISOWeek parses "YYYY-Www" and returns the Monday of that ISO week
+// (in tz, at midnight), plus the ISO year/week components for re-formatting.
+// The algorithm anchors on Jan 4 — which is always in ISO week 1 — then walks
+// back to that week's Monday and forward N-1 weeks.
+func parseISOWeek(s string, tz *time.Location) (monday time.Time, isoYear, isoWeek int, err error) {
+	parts := strings.SplitN(s, "-W", 2)
+	if len(parts) != 2 {
+		return time.Time{}, 0, 0, fmt.Errorf("invalid week id %q", s)
+	}
+	year, err1 := strconv.Atoi(parts[0])
+	week, err2 := strconv.Atoi(parts[1])
+	if err1 != nil || err2 != nil || week < 1 || week > 53 {
+		return time.Time{}, 0, 0, fmt.Errorf("invalid week id %q", s)
+	}
+	jan4 := time.Date(year, 1, 4, 0, 0, 0, 0, tz)
+	wd := int(jan4.Weekday())
+	if wd == 0 {
+		wd = 7
+	}
+	week1Monday := jan4.AddDate(0, 0, 1-wd)
+	monday = week1Monday.AddDate(0, 0, (week-1)*7)
+	y, w := monday.ISOWeek()
+	return monday, y, w, nil
 }
 
 // renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown

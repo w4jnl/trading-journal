@@ -211,6 +211,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 			Body:      body,
 			Mood:      nil,
 			Tag:       tag,
+			Scope:     "trade",
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create trade journal: %w", err))
 			return
