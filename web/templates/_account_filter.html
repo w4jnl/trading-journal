@@ -61,15 +61,38 @@ inline script so the user sees feedback before submitting.
   .filter-panel fieldset:last-child { margin-bottom: 0; }
   .filter-panel legend { font-size: 10px; text-transform: uppercase; letter-spacing: 0.06em;
                          color: #94a3b8; font-weight: 600; padding: 0 0 4px 0; }
-  .filter-panel label { display: flex; align-items: center; gap: 8px; padding: 4px 6px;
-                        cursor: pointer; font-size: 13px; border-radius: 3px;
-                        white-space: nowrap; }
-  .filter-panel label:hover { background: #f1f5f9; }
-  /* Force the checkbox to a fixed slot so multi-line account names don't push it.
-     The flex layout above keeps label content on one row; the text inside truncates
-     with ellipsis if it overflows the dropdown's width. */
-  .filter-panel input[type=checkbox] { margin: 0; cursor: pointer; flex: 0 0 14px; width: 14px; height: 14px; }
-  .filter-panel label .filter-text { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+  /* High specificity (.filter-picker .filter-panel label = 3 classes) so we
+     reliably beat the parent page's `.filter-row label { flex-direction:
+     column }` rule meant for the date inputs alongside the picker. */
+  .filter-picker .filter-panel label {
+    display: flex !important;
+    flex-direction: row !important;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 6px;
+    cursor: pointer;
+    font-size: 13px;
+    border-radius: 3px;
+    white-space: nowrap;
+    text-transform: none;
+    letter-spacing: normal;
+    color: #0f172a;
+  }
+  .filter-picker .filter-panel label:hover { background: #f1f5f9; }
+  /* Fixed-width checkbox slot so long account names don't bump the box out of line. */
+  .filter-picker .filter-panel input[type=checkbox] {
+    margin: 0;
+    cursor: pointer;
+    flex: 0 0 14px;
+    width: 14px;
+    height: 14px;
+  }
+  .filter-picker .filter-panel label .filter-text {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex: 1;
+  }
   .muted-inline { color: #94a3b8; font-size: 11px; }
 </style>
 <script>
