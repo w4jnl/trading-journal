@@ -800,10 +800,14 @@ tbody tr:hover { background: var(--bg-hover); }
 /* ---- Sketch icons (preserved) -------------------------------------------- */
 
 .icon { display: inline-block; vertical-align: -3px; }
-.icon-journal.icon-empty   { color: var(--fg-subtle); }
+/* Empty stays a low-contrast outline with a faint plus-glyph; the three
+   filled states each take their own colour so a row/day with notes is
+   obvious without reading the tag. Neutral (entry exists, no sentiment
+   tag) uses the accent colour so it's clearly distinct from "no entry". */
+.icon-journal.icon-empty   { color: var(--fg-subtle); opacity: 0.55; }
 .icon-journal.icon-good    { color: var(--pos); }
 .icon-journal.icon-bad     { color: var(--neg); }
-.icon-journal.icon-neutral { color: var(--fg-muted); }
+.icon-journal.icon-neutral { color: var(--accent); }
 .icon-journal { transition: transform 120ms ease-out; }
 a:hover > .icon-journal,
 .trade-row:hover .icon-journal { transform: rotate(-2deg) translateY(-0.5px); }
