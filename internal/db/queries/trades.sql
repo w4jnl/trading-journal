@@ -28,6 +28,15 @@ RETURNING *;
 -- name: GetTradeByBrokerID :one
 SELECT * FROM trades WHERE account_id = ? AND broker_trade_id = ?;
 
+-- name: ReassignTradesAccount :execrows
+UPDATE trades SET account_id = ? WHERE account_id = ?;
+
+-- name: ReassignExecutionsAccount :execrows
+UPDATE executions SET account_id = ? WHERE account_id = ?;
+
+-- name: ReassignJournalEntriesAccount :execrows
+UPDATE journal_entries SET account_id = ? WHERE account_id = ?;
+
 -- name: DeleteTradesForAccountSymbol :exec
 DELETE FROM trades WHERE account_id = ? AND symbol = ?;
 

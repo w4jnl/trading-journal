@@ -1,0 +1,69 @@
+{{/*
+Account picker that appears in the /import outcome slot when a TopstepX
+trades CSV is uploaded and we can't infer which account it belongs to.
+
+Two paths in one panel:
+  · "Assign to existing": dropdown of current TopStep accounts.
+  · "Create + assign":    inline form to make a new account, then ingest.
+
+Both paths post to /import/assign with a hidden staged_path so the same
+ImportService.ImportFileToAccount call completes the ingest.
+*/}}
+{{define "import_picker"}}
+<div class="panel" style="border-left: 4px solid #1e40af;">
+  <h3 style="margin-top: 0;">Choose a TopStep account for this file</h3>
+  <p class="muted" style="font-size: 13px;">
+    <strong>{{.OriginalName}}</strong> is a TopstepX trades export but the filename doesn't
+    say which of your TopStep accounts it belongs to. Pick one below — or rename the
+    file to start with <code>topstep_&lt;ref&gt;_</code> next time to skip this step.
+  </p>
+
+  <details open style="margin-bottom: 16px;">
+    <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">Assign to existing account</summary>
+    <form method="post" action="/import/assign" style="display: flex; gap: 12px; align-items: end; margin-top: 8px;">
+      <input type="hidden" name="staged_path" value="{{.StagedPath}}">
+      <label style="display: flex; flex-direction: column; font-size: 12px; color: #475569;">Account
+        <select name="account_id" required style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; min-width: 260px;">
+          <option value="">— pick —</option>
+          {{range .TopstepAccounts}}
+            <option value="{{.ID}}">{{.Name}} · <code>{{.AccountRef}}</code></option>
+          {{end}}
+        </select>
+      </label>
+      <button type="submit">Import here</button>
+    </form>
+  </details>
+
+  <details>
+    <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">Or create a new account and import</summary>
+    <form method="post" action="/import/assign" style="display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-top: 8px;">
+      <input type="hidden" name="staged_path" value="{{.StagedPath}}">
+      <label style="display: flex; flex-direction: column; font-size: 12px; color: #475569;">Name
+        <input type="text" name="new_name" required placeholder="e.g. TopStep Eval 5" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+      </label>
+      <label style="display: flex; flex-direction: column; font-size: 12px; color: #475569;">Account ref
+        <input type="text" name="new_account_ref" placeholder="e.g. EXPRESS-V2-…" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+      </label>
+      <label style="display: flex; flex-direction: column; font-size: 12px; color: #475569;">Firm
+        <select name="new_firm" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+          {{range .FirmOptions}}
+            <option value="{{.}}" {{if eq . "topstep"}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label style="display: flex; flex-direction: column; font-size: 12px; color: #475569;">Type
+        <select name="new_type" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px;">
+          <option value="">—</option>
+          {{range .TypeOptions}}
+            <option value="{{.Value}}" {{if eq .Value "prop_eval"}}selected{{end}}>{{.Label}}</option>
+          {{end}}
+        </select>
+      </label>
+      <label style="display: flex; flex-direction: column; font-size: 12px; color: #475569;">Currency
+        <input type="text" name="new_currency" value="USD" style="padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; width: 70px;">
+      </label>
+      <button type="submit">Create + import</button>
+    </form>
+  </details>
+</div>
+{{end}}

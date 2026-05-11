@@ -54,11 +54,23 @@ type Outcome struct {
 }
 
 // ImportFile reads, parses, ingests, and relocates a single CSV file.
-// Errors during parse/DB operations are captured: the file is moved to
-// FailedDir with a sidecar .error.txt, and a sync_log row records the failure.
-// The returned error is non-nil only for failures that prevented any of that
-// recovery from happening (e.g. the source file vanished mid-processing).
+// Account discovery for trade-shaped formats happens from the filename.
 func (s *ImportService) ImportFile(ctx context.Context, path string) (Outcome, error) {
+	return s.importFile(ctx, path, 0)
+}
+
+// ImportFileToAccount is the explicit-account variant used by the /import
+// UI's account picker — caller supplies the target account_id, bypassing
+// filename-based resolution. Used only for trade-shaped formats; for
+// fill-shaped formats (MotiveWave, TopstepX orders) the account ID is
+// embedded per-row and this parameter is ignored.
+func (s *ImportService) ImportFileToAccount(ctx context.Context, path string, accountID int64) (Outcome, error) {
+	return s.importFile(ctx, path, accountID)
+}
+
+// importFile is the shared body. forceAccountID=0 means "use the filename-
+// based resolver"; >0 means "ingest into this exact account".
+func (s *ImportService) importFile(ctx context.Context, path string, forceAccountID int64) (Outcome, error) {
 	out := Outcome{SourcePath: path}
 
 	content, err := os.ReadFile(path)
@@ -93,7 +105,7 @@ func (s *ImportService) ImportFile(ctx context.Context, path string) (Outcome, e
 			return s.finalizeFailure(ctx, path, out)
 		}
 		out.FillsParsed = len(records)
-		if err := s.ingestTrades(ctx, records, path, &out); err != nil {
+		if err := s.ingestTrades(ctx, records, path, &out, forceAccountID); err != nil {
 			out.ErrorMessage = fmt.Sprintf("ingest: %v", err)
 			return s.finalizeFailure(ctx, path, out)
 		}
@@ -248,7 +260,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 // "topstepx_" prefix and "_trades" suffix, then look up by the remainder.
 // Fall back to the single existing TopStep account if there is exactly one,
 // else create TOPSTEP-DEFAULT (needs_setup=1).
-func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord, srcPath string, out *Outcome) error {
+func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord, srcPath string, out *Outcome, forceAccountID int64) error {
 	if len(records) == 0 {
 		return nil
 	}
@@ -259,12 +271,21 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	accountID, created, err := s.resolveTopstepAccount(ctx, q, srcPath)
-	if err != nil {
-		return fmt.Errorf("resolve account: %w", err)
-	}
-	if created {
-		out.AccountsCreated++
+	var accountID int64
+	if forceAccountID > 0 {
+		// Explicit assignment from the UI picker — caller has validated the
+		// account exists, so just use it.
+		accountID = forceAccountID
+	} else {
+		var err error
+		var created bool
+		accountID, created, err = s.resolveTopstepAccount(ctx, q, srcPath)
+		if err != nil {
+			return fmt.Errorf("resolve account: %w", err)
+		}
+		if created {
+			out.AccountsCreated++
+		}
 	}
 
 	instruments := map[string]bool{}
@@ -373,7 +394,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	// pre-aggregated trades. Instead, just refresh daily_stats from the
 	// authoritative trades table — no FIFO rebuild for trade-imported
 	// accounts.
-	if err := refreshDailyStatsForAccount(ctx, q, accountID, s.Timezone); err != nil {
+	if err := RefreshDailyStatsForAccount(ctx, q, accountID, s.Timezone); err != nil {
 		return fmt.Errorf("refresh daily_stats: %w", err)
 	}
 
@@ -495,6 +516,13 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 	return created.ID, true, nil
 }
 
+// ExtractTopstepAccountRef is the public entry point so callers outside the
+// importer package (the /import upload handler) can run the same recognition
+// logic before deciding whether to prompt the user for an account.
+func ExtractTopstepAccountRef(srcPath string) string {
+	return extractTopstepAccountRef(srcPath)
+}
+
 // extractTopstepAccountRef recovers a TopstepX account_ref from a filename
 // when the user explicitly signaled one. Two recognized conventions:
 //
@@ -555,10 +583,11 @@ func isRefSafe(s string) bool {
 // catch in the unique index, not silently turn into NULL.)
 func ptrStr(s string) *string { return &s }
 
-// refreshDailyStatsForAccount rebuilds daily_stats for an account from its
+// RefreshDailyStatsForAccount rebuilds daily_stats for an account from its
 // trades table. Standalone so trade-imported accounts can refresh stats
-// without invoking the FIFO position builder.
-func refreshDailyStatsForAccount(ctx context.Context, q *models.Queries, accountID int64, tz *time.Location) error {
+// without invoking the FIFO position builder, and so other packages
+// (e.g. handlers) can refresh after a reassign.
+func RefreshDailyStatsForAccount(ctx context.Context, q *models.Queries, accountID int64, tz *time.Location) error {
 	if tz == nil {
 		tz = time.UTC
 	}

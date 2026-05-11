@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 
+	"github.com/jaro/trading-journal/internal/importer"
 	"github.com/jaro/trading-journal/internal/models"
 )
 
@@ -68,13 +70,26 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
 	}
+	flashRaw := r.URL.Query().Get("flash")
+	flashErr := r.URL.Query().Get("err")
+	movedCount := int64(0)
+	// "moved=N" flashes through the value: "flash=moved%3D42" (urlencoded =).
+	flash := flashRaw
+	if strings.HasPrefix(flashRaw, "moved=") {
+		if n, err := strconv.ParseInt(flashRaw[len("moved="):], 10, 64); err == nil {
+			movedCount = n
+		}
+		flash = ""
+	}
 	h.renderPage(w, "accounts.html", map[string]any{
 		"NavActive":   "accounts",
 		"BackHref":    validBackHref(r),
 		"Accounts":    accounts,
 		"FirmOptions": []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
 		"TypeOptions": accountTypeOptions(),
-		"Flash":       r.URL.Query().Get("flash"),
+		"Flash":       flash,
+		"FlashErr":    flashErr,
+		"MovedCount":  movedCount,
 	})
 }
 
@@ -199,6 +214,147 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, "/accounts?flash=saved", http.StatusSeeOther)
+}
+
+// AccountsCreate handles POST /accounts/new — a small manual-create form
+// from the /accounts page. Fields: name (required), firm, type, currency,
+// account_ref (defaults to name). import_source is derived from firm so a
+// manually-created account converges with a future import for the same
+// (import_source, account_ref) pair.
+func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	firm := strings.TrimSpace(r.FormValue("firm"))
+	typ := strings.TrimSpace(r.FormValue("type"))
+	currency := strings.TrimSpace(r.FormValue("currency"))
+	ref := strings.TrimSpace(r.FormValue("account_ref"))
+
+	if name == "" {
+		http.Error(w, "name is required", http.StatusBadRequest)
+		return
+	}
+	if !validFirms[firm] {
+		http.Error(w, "invalid firm: "+firm, http.StatusBadRequest)
+		return
+	}
+	if !validTypes[typ] {
+		http.Error(w, "invalid type: "+typ, http.StatusBadRequest)
+		return
+	}
+	if currency == "" {
+		currency = "USD"
+	}
+	if ref == "" {
+		ref = name
+	}
+	// import_source: pick the CSV channel a future automated import would
+	// arrive on, so manual + import accounts merge naturally.
+	importSrc := "manual"
+	switch firm {
+	case "topstep":
+		importSrc = "topstepx_csv"
+	case "apex", "lucid", "amp", "ibkr":
+		importSrc = "motivewave_csv"
+	}
+	needsSetup := int64(0)
+	if firm == "" || typ == "" {
+		needsSetup = 1
+	}
+	if _, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+		Name:         name,
+		Firm:         strPtrOrNil(firm),
+		ImportSource: importSrc,
+		AccountRef:   ref,
+		Type:         strPtrOrNil(typ),
+		Currency:     currency,
+		NeedsSetup:   needsSetup,
+	}); err != nil {
+		// Most likely a unique-key collision on (import_source, account_ref).
+		// Surface it inline so the user sees the message.
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, "/accounts?flash=created", http.StatusSeeOther)
+}
+
+// AccountsReassign handles POST /accounts/{id}/reassign with form field `to`
+// = target account id. Moves trades, executions, and journal_entries from
+// the source account to the target, then refreshes daily_stats on both.
+//
+// The source account is left in place (empty); user can delete it manually
+// once they confirm the move worked. The transaction guarantees that either
+// the entire move lands or nothing does.
+func (h *Handlers) AccountsReassign(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	srcStr := r.PathValue("id")
+	srcID, err := strconv.ParseInt(srcStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad source id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	dstStr := strings.TrimSpace(r.FormValue("to"))
+	dstID, err := strconv.ParseInt(dstStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad target id", http.StatusBadRequest)
+		return
+	}
+	if dstID == srcID {
+		http.Redirect(w, r, "/accounts?flash=reassignsame", http.StatusSeeOther)
+		return
+	}
+
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("begin: %w", err))
+		return
+	}
+	defer tx.Rollback()
+	q := h.Queries.WithTx(tx)
+
+	tradesMoved, err := q.ReassignTradesAccount(ctx, models.ReassignTradesAccountParams{
+		AccountID:   dstID, // new value
+		AccountID_2: srcID, // WHERE account_id = ?
+	})
+	if err != nil {
+		h.serverError(w, fmt.Errorf("reassign trades: %w", err))
+		return
+	}
+	if _, err := q.ReassignExecutionsAccount(ctx, models.ReassignExecutionsAccountParams{
+		AccountID: dstID, AccountID_2: srcID,
+	}); err != nil {
+		h.serverError(w, fmt.Errorf("reassign executions: %w", err))
+		return
+	}
+	if _, err := q.ReassignJournalEntriesAccount(ctx, models.ReassignJournalEntriesAccountParams{
+		AccountID: &dstID, AccountID_2: &srcID,
+	}); err != nil {
+		h.serverError(w, fmt.Errorf("reassign journal: %w", err))
+		return
+	}
+	tz := h.Timezone
+	if err := importer.RefreshDailyStatsForAccount(ctx, q, srcID, tz); err != nil {
+		h.serverError(w, fmt.Errorf("refresh src stats: %w", err))
+		return
+	}
+	if err := importer.RefreshDailyStatsForAccount(ctx, q, dstID, tz); err != nil {
+		h.serverError(w, fmt.Errorf("refresh dst stats: %w", err))
+		return
+	}
+	if err := tx.Commit(); err != nil {
+		h.serverError(w, fmt.Errorf("commit: %w", err))
+		return
+	}
+
+	flash := fmt.Sprintf("moved%%3D%d", tradesMoved) // moved=<n>
+	http.Redirect(w, r, "/accounts?flash="+flash, http.StatusSeeOther)
 }
 
 // AccountUpdate handles POST /accounts/{id}: validates input, applies the

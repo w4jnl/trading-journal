@@ -461,3 +461,54 @@ func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]
 	}
 	return items, nil
 }
+
+const reassignExecutionsAccount = `-- name: ReassignExecutionsAccount :execrows
+UPDATE executions SET account_id = ? WHERE account_id = ?
+`
+
+type ReassignExecutionsAccountParams struct {
+	AccountID   int64 `json:"account_id"`
+	AccountID_2 int64 `json:"account_id_2"`
+}
+
+func (q *Queries) ReassignExecutionsAccount(ctx context.Context, arg ReassignExecutionsAccountParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reassignExecutionsAccount, arg.AccountID, arg.AccountID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const reassignJournalEntriesAccount = `-- name: ReassignJournalEntriesAccount :execrows
+UPDATE journal_entries SET account_id = ? WHERE account_id = ?
+`
+
+type ReassignJournalEntriesAccountParams struct {
+	AccountID   *int64 `json:"account_id"`
+	AccountID_2 *int64 `json:"account_id_2"`
+}
+
+func (q *Queries) ReassignJournalEntriesAccount(ctx context.Context, arg ReassignJournalEntriesAccountParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reassignJournalEntriesAccount, arg.AccountID, arg.AccountID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
+const reassignTradesAccount = `-- name: ReassignTradesAccount :execrows
+UPDATE trades SET account_id = ? WHERE account_id = ?
+`
+
+type ReassignTradesAccountParams struct {
+	AccountID   int64 `json:"account_id"`
+	AccountID_2 int64 `json:"account_id_2"`
+}
+
+func (q *Queries) ReassignTradesAccount(ctx context.Context, arg ReassignTradesAccountParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reassignTradesAccount, arg.AccountID, arg.AccountID_2)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
