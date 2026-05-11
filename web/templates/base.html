@@ -28,6 +28,16 @@
     .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
     .pill.success { background: #dcfce7; color: #166534; }
     .pill.error { background: #fee2e2; color: #991b1b; }
+    /* Sketch-style icons. Color comes from the parent's `color`; SVG strokes inherit via currentColor. */
+    .icon { display: inline-block; vertical-align: -3px; }
+    .icon-journal.icon-empty   { color: #cbd5e1; }
+    .icon-journal.icon-good    { color: #16a34a; }
+    .icon-journal.icon-bad     { color: #dc2626; }
+    .icon-journal.icon-neutral { color: #64748b; }
+    /* Slight wobble on hover for the "hand-drawn" feel without overdoing it. */
+    .icon-journal { transition: transform 120ms ease-out; }
+    a:hover > .icon-journal,
+    .trade-row:hover .icon-journal { transform: rotate(-2deg) translateY(-0.5px); }
   </style>
 </head>
 <body>

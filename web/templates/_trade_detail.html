@@ -79,24 +79,38 @@
 </table>
 {{end}}
 
-{{/* Reusable tag picker — used by trade-detail and the day-journal form. */}}
+{{/* Reusable tag picker — used by trade-detail and the day-journal form.
+     Uses sketch-style SVG icons (defined in _icons.html) instead of emoji so the
+     chips render consistently across platforms and inherit color from the chip's
+     selected state. */}}
 {{define "tag_picker"}}
 <div class="tag-picker" style="display:flex; gap:6px; margin-bottom:8px;">
-  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; {{if eq .Tag "good"}}background:#dcfce7; border-color:#16a34a; color:#166534;{{end}}">
+  <label class="chip {{if eq .Tag "good"}}chip-good chip-on{{end}}">
     <input type="radio" name="tag" value="good" {{if eq .Tag "good"}}checked{{end}} style="display:none;">
-    👍 good
+    {{template "thumb_up"}}<span>good</span>
   </label>
-  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; {{if eq .Tag "neutral"}}background:#e2e8f0; border-color:#475569; color:#1e293b;{{end}}">
+  <label class="chip {{if eq .Tag "neutral"}}chip-neutral chip-on{{end}}">
     <input type="radio" name="tag" value="neutral" {{if eq .Tag "neutral"}}checked{{end}} style="display:none;">
-    ⚪ neutral
+    {{template "neutral_dot"}}<span>neutral</span>
   </label>
-  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; {{if eq .Tag "bad"}}background:#fee2e2; border-color:#dc2626; color:#991b1b;{{end}}">
+  <label class="chip {{if eq .Tag "bad"}}chip-bad chip-on{{end}}">
     <input type="radio" name="tag" value="bad" {{if eq .Tag "bad"}}checked{{end}} style="display:none;">
-    👎 bad
+    {{template "thumb_down"}}<span>bad</span>
   </label>
-  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; color:#64748b; {{if eq .Tag ""}}background:#f8fafc;{{end}}">
+  <label class="chip chip-none {{if eq .Tag ""}}chip-on{{end}}">
     <input type="radio" name="tag" value="" {{if eq .Tag ""}}checked{{end}} style="display:none;">
-    none
+    <span>none</span>
   </label>
 </div>
+<style>
+  .chip { display: inline-flex; align-items: center; gap: 6px; cursor: pointer;
+          padding: 4px 10px; border: 1.5px solid #cbd5e1; border-radius: 999px;
+          font-size: 13px; color: #475569; user-select: none; transition: all 120ms ease-out; }
+  .chip:hover { border-color: #94a3b8; }
+  .chip .icon { width: 14px; height: 14px; }
+  .chip-on.chip-good    { background: #f0fdf4; border-color: #16a34a; color: #166534; }
+  .chip-on.chip-neutral { background: #f1f5f9; border-color: #475569; color: #1e293b; }
+  .chip-on.chip-bad     { background: #fef2f2; border-color: #dc2626; color: #991b1b; }
+  .chip-on.chip-none    { background: #f8fafc; }
+</style>
 {{end}}

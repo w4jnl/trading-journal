@@ -56,9 +56,14 @@ func (h *Handlers) renderPage(w http.ResponseWriter, page string, data any) {
 }
 
 // renderPartial renders a single named template — no base wrap. Used for
-// HTMX fragment responses.
+// HTMX fragment responses. We bundle templates/_icons.html so the partial can
+// reference shared icon sub-templates without each partial enumerating them.
 func (h *Handlers) renderPartial(w http.ResponseWriter, partial, name string, data any) {
-	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, "templates/"+partial)
+	files := []string{"templates/" + partial}
+	if _, err := fs.Stat(h.Templates, "templates/_icons.html"); err == nil && partial != "_icons.html" {
+		files = append(files, "templates/_icons.html")
+	}
+	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse %s: %w", partial, err))
 		return
@@ -175,6 +180,19 @@ func (h *Handlers) funcMap() template.FuncMap {
 		"div":        func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
 		"i64ToFloat": func(i int64) float64 { return float64(i) },
 		"isInf":      func(f float64) bool { return math.IsInf(f, 0) },
+		// journalState maps (hasEntry, tag) onto the journal_icon template's
+		// state string: empty / neutral / good / bad. Untagged entries fall
+		// back to "neutral" so they still get a distinct color from "empty".
+		"journalState": func(has bool, tag string) string {
+			if !has {
+				return "empty"
+			}
+			switch tag {
+			case "good", "bad", "neutral":
+				return tag
+			}
+			return "neutral"
+		},
 	}
 }
 
