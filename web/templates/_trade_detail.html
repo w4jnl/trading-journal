@@ -25,6 +25,31 @@
 </table>
 {{end}}
 
+<section style="margin-bottom: 16px;">
+  <h3 style="margin-bottom: 8px;">Journal</h3>
+  {{if eq $.Flash "saved"}}<div class="flash saved" style="background:#dcfce7;color:#166534;padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:8px;">Saved.</div>{{end}}
+  {{if eq $.Flash "deleted"}}<div class="flash deleted" style="background:#fef3c7;color:#92400e;padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:8px;">Entry deleted (body was empty).</div>{{end}}
+  {{if eq $.Flash "empty"}}<div class="flash empty" style="background:#e2e8f0;color:#475569;padding:6px 10px;border-radius:4px;font-size:13px;margin-bottom:8px;">Nothing to save — body was empty.</div>{{end}}
+
+  <form hx-post="/trades/{{$.TradeID}}/journal"
+        hx-target="#modal-content"
+        hx-swap="innerHTML"
+        hx-encoding="application/x-www-form-urlencoded">
+    {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+    <textarea name="body" rows="6" placeholder="What did you see, do, feel about this trade? Markdown supported.">{{$.JournalBody}}</textarea>
+    <div style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+      <button type="submit">Save</button>
+      <span class="muted" style="font-size:12px;">Empty body deletes the entry.</span>
+    </div>
+  </form>
+
+  {{if $.JournalRendered}}
+  <div class="markdown-preview" style="background:#f8fafc; padding:12px; border-radius:4px; margin-top:12px;">
+    {{$.JournalRendered}}
+  </div>
+  {{end}}
+</section>
+
 <h3>Executions ({{len .Executions}})</h3>
 <table>
   <thead>
@@ -52,4 +77,26 @@
   {{end}}
   </tbody>
 </table>
+{{end}}
+
+{{/* Reusable tag picker — used by trade-detail and the day-journal form. */}}
+{{define "tag_picker"}}
+<div class="tag-picker" style="display:flex; gap:6px; margin-bottom:8px;">
+  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; {{if eq .Tag "good"}}background:#dcfce7; border-color:#16a34a; color:#166534;{{end}}">
+    <input type="radio" name="tag" value="good" {{if eq .Tag "good"}}checked{{end}} style="display:none;">
+    👍 good
+  </label>
+  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; {{if eq .Tag "neutral"}}background:#e2e8f0; border-color:#475569; color:#1e293b;{{end}}">
+    <input type="radio" name="tag" value="neutral" {{if eq .Tag "neutral"}}checked{{end}} style="display:none;">
+    ⚪ neutral
+  </label>
+  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; {{if eq .Tag "bad"}}background:#fee2e2; border-color:#dc2626; color:#991b1b;{{end}}">
+    <input type="radio" name="tag" value="bad" {{if eq .Tag "bad"}}checked{{end}} style="display:none;">
+    👎 bad
+  </label>
+  <label style="cursor:pointer; padding:4px 10px; border:1px solid #cbd5e1; border-radius:999px; font-size:13px; color:#64748b; {{if eq .Tag ""}}background:#f8fafc;{{end}}">
+    <input type="radio" name="tag" value="" {{if eq .Tag ""}}checked{{end}} style="display:none;">
+    none
+  </label>
+</div>
 {{end}}

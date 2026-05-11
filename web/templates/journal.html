@@ -37,9 +37,7 @@
   <a href="/journal/{{.PrevDay}}">‹ Prev</a>
   <a href="/journal/{{.Today}}">Today</a>
   <a href="/journal/{{.NextDay}}">Next ›</a>
-  <form method="get" action="/journal/" onsubmit="this.action='/journal/'+this.date.value;" style="display: inline; margin-left: 12px;">
-    <input type="date" name="date" value="{{.Date}}" onchange="this.form.submit()">
-  </form>
+  <input type="date" value="{{.Date}}" onchange="if (this.value) window.location.href='/journal/'+this.value" style="padding: 4px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; margin-left: 12px;">
 </div>
 
 {{if .Flash}}
@@ -66,6 +64,11 @@
           <input type="radio" name="mood" value="" {{if eq $.Mood 0}}checked{{end}}>
           <span style="font-size: 13px;">none</span>
         </label>
+      </div>
+
+      <div style="margin: 12px 0; display: flex; gap: 8px; align-items: center;">
+        <span class="muted" style="margin-right: 4px;">Tag:</span>
+        {{template "tag_picker" (dict "Tag" $.Tag)}}
       </div>
 
       <textarea name="body" placeholder="What happened today? Markdown supported: headings, lists, **bold**, code, blockquotes.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>

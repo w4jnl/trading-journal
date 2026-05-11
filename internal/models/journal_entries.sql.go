@@ -11,9 +11,9 @@ import (
 )
 
 const createJournalEntry = `-- name: CreateJournalEntry :one
-INSERT INTO journal_entries (trade_id, account_id, entry_date, body, mood)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at
+INSERT INTO journal_entries (trade_id, account_id, entry_date, body, mood, tag)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag
 `
 
 type CreateJournalEntryParams struct {
@@ -22,6 +22,7 @@ type CreateJournalEntryParams struct {
 	EntryDate time.Time `json:"entry_date"`
 	Body      string    `json:"body"`
 	Mood      *int64    `json:"mood"`
+	Tag       *string   `json:"tag"`
 }
 
 func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntryParams) (JournalEntry, error) {
@@ -31,6 +32,7 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		arg.EntryDate,
 		arg.Body,
 		arg.Mood,
+		arg.Tag,
 	)
 	var i JournalEntry
 	err := row.Scan(
@@ -42,6 +44,7 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		&i.Mood,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Tag,
 	)
 	return i, err
 }
@@ -56,7 +59,7 @@ func (q *Queries) DeleteJournalEntry(ctx context.Context, id int64) error {
 }
 
 const getDayJournalEntry = `-- name: GetDayJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag FROM journal_entries
 WHERE entry_date = ? AND trade_id IS NULL
 LIMIT 1
 `
@@ -73,12 +76,74 @@ func (q *Queries) GetDayJournalEntry(ctx context.Context, entryDate time.Time) (
 		&i.Mood,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Tag,
 	)
 	return i, err
 }
 
+const getJournalEntryByTradeID = `-- name: GetJournalEntryByTradeID :one
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag FROM journal_entries WHERE trade_id = ? LIMIT 1
+`
+
+func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) (JournalEntry, error) {
+	row := q.db.QueryRowContext(ctx, getJournalEntryByTradeID, tradeID)
+	var i JournalEntry
+	err := row.Scan(
+		&i.ID,
+		&i.TradeID,
+		&i.AccountID,
+		&i.EntryDate,
+		&i.Body,
+		&i.Mood,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Tag,
+	)
+	return i, err
+}
+
+const listDayJournalsInRange = `-- name: ListDayJournalsInRange :many
+SELECT entry_date, tag FROM journal_entries
+WHERE trade_id IS NULL AND entry_date >= ? AND entry_date < ?
+ORDER BY entry_date
+`
+
+type ListDayJournalsInRangeParams struct {
+	EntryDate   time.Time `json:"entry_date"`
+	EntryDate_2 time.Time `json:"entry_date_2"`
+}
+
+type ListDayJournalsInRangeRow struct {
+	EntryDate time.Time `json:"entry_date"`
+	Tag       *string   `json:"tag"`
+}
+
+// Used by /calendar to flag which dates have day-level entries.
+func (q *Queries) ListDayJournalsInRange(ctx context.Context, arg ListDayJournalsInRangeParams) ([]ListDayJournalsInRangeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDayJournalsInRange, arg.EntryDate, arg.EntryDate_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDayJournalsInRangeRow
+	for rows.Next() {
+		var i ListDayJournalsInRangeRow
+		if err := rows.Scan(&i.EntryDate, &i.Tag); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRecentJournalEntries = `-- name: ListRecentJournalEntries :many
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag FROM journal_entries
 WHERE trade_id IS NULL
 ORDER BY entry_date DESC, id DESC
 LIMIT ?
@@ -102,6 +167,7 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]
 			&i.Mood,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Tag,
 		); err != nil {
 			return nil, err
 		}
@@ -118,17 +184,23 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]
 
 const updateJournalEntry = `-- name: UpdateJournalEntry :exec
 UPDATE journal_entries
-SET body = ?, mood = ?, updated_at = CURRENT_TIMESTAMP
+SET body = ?, mood = ?, tag = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 `
 
 type UpdateJournalEntryParams struct {
-	Body string `json:"body"`
-	Mood *int64 `json:"mood"`
-	ID   int64  `json:"id"`
+	Body string  `json:"body"`
+	Mood *int64  `json:"mood"`
+	Tag  *string `json:"tag"`
+	ID   int64   `json:"id"`
 }
 
 func (q *Queries) UpdateJournalEntry(ctx context.Context, arg UpdateJournalEntryParams) error {
-	_, err := q.db.ExecContext(ctx, updateJournalEntry, arg.Body, arg.Mood, arg.ID)
+	_, err := q.db.ExecContext(ctx, updateJournalEntry,
+		arg.Body,
+		arg.Mood,
+		arg.Tag,
+		arg.ID,
+	)
 	return err
 }

@@ -84,6 +84,7 @@ func run() error {
 	mux.HandleFunc("POST /import/upload", h.ImportUpload)
 	mux.HandleFunc("GET /trades", h.TradesPage)
 	mux.HandleFunc("GET /trades/{id}", h.TradeDetail)
+	mux.HandleFunc("POST /trades/{id}/journal", h.TradeJournalSave)
 	mux.HandleFunc("GET /accounts", h.AccountsPage)
 	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)
 	mux.HandleFunc("GET /journal", h.JournalPage)

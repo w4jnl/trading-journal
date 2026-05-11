@@ -17,6 +17,12 @@
   .day-pnl.neg { color: #b91c1c; }
   .day-meta { font-size: 11px; color: #475569; margin-top: 2px; }
   .day-link { position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 8px; }
+  .j-cell-icon { position: absolute; top: 6px; right: 8px; z-index: 2; font-size: 14px; text-decoration: none; line-height: 1; }
+  .j-cell-icon.empty { opacity: 0.18; filter: grayscale(1); }
+  .j-cell-icon.empty:hover { opacity: 0.6; }
+  .j-cell-icon.good { filter: hue-rotate(-15deg) saturate(1.5); }
+  .j-cell-icon.bad { filter: hue-rotate(180deg) saturate(2); }
+  .j-cell-icon.neutral { opacity: 0.7; filter: grayscale(1); }
   .nav-row { display: flex; gap: 12px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
   .nav-row a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
   .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -77,6 +83,11 @@
     <tr>
       {{range .}}
         <td class="{{if not .InMonth}}out-of-month{{else}}{{cellClass .NetPnl .HasData}}{{end}}">
+          {{if .InMonth}}
+            <a class="j-cell-icon {{if .HasJournal}}{{if .JournalTag}}{{.JournalTag}}{{else}}neutral{{end}}{{else}}empty{{end}}"
+               href="/journal/{{.Date.Format "2006-01-02"}}"
+               title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">📝</a>
+          {{end}}
           {{if and .InMonth .HasData}}
             <a class="day-link" href="/trades?from={{.Date.Format "2006-01-02"}}&to={{.Date.Format "2006-01-02"}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}">
               <div class="day-num in-month">{{.Date.Day}}</div>

@@ -20,6 +20,8 @@ type dayCell struct {
 	NetPnl     float64
 	GrossPnl   float64
 	Commission float64
+	HasJournal bool   // day-level journal entry exists
+	JournalTag string // good|bad|neutral|""
 }
 
 // CalendarPage renders /calendar — a monthly grid colored by net P&L.
@@ -49,6 +51,26 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list daily_stats: %w", err))
 		return
+	}
+
+	// Day-level journal entries for the visible range so we can flag cells.
+	journals, err := h.Queries.ListDayJournalsInRange(ctx, models.ListDayJournalsInRangeParams{
+		EntryDate:   monthStart,
+		EntryDate_2: monthEnd,
+	})
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list day journals: %w", err))
+		return
+	}
+	journalsByDate := map[string]string{} // key: "YYYY-MM-DD" → tag (may be "")
+	for _, j := range journals {
+		y, m, d := j.EntryDate.In(tz).Date()
+		key := fmt.Sprintf("%04d-%02d-%02d", y, m, d)
+		tag := ""
+		if j.Tag != nil {
+			tag = *j.Tag
+		}
+		journalsByDate[key] = tag
 	}
 
 	// Aggregate per local-day key.
@@ -93,6 +115,10 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 				cell.NetPnl = c.NetPnl
 				cell.GrossPnl = c.GrossPnl
 				cell.Commission = c.Commission
+			}
+			if tag, ok := journalsByDate[key]; ok {
+				cell.HasJournal = true
+				cell.JournalTag = tag
 			}
 			row[d] = cell
 		}

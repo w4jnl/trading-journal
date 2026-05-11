@@ -62,22 +62,50 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	if entry.Mood != nil {
 		mood = *entry.Mood
 	}
+	tag := ""
+	if entry.Tag != nil {
+		tag = *entry.Tag
+	}
 
 	flash := r.URL.Query().Get("flash")
 
 	h.renderPage(w, "journal.html", map[string]any{
-		"Date":      dateStr,
-		"DateNice":  date.Format("Mon, 2 Jan 2006"),
-		"PrevDay":   prevDay,
-		"NextDay":   nextDay,
-		"Today":     time.Now().In(h.localTZ()).Format("2006-01-02"),
-		"HasEntry":  hasEntry,
-		"Entry":     entry,
-		"Mood":      mood,
-		"Rendered":  rendered,
-		"Recent":    recent,
-		"Flash":     flash,
+		"Date":     dateStr,
+		"DateNice": date.Format("Mon, 2 Jan 2006"),
+		"PrevDay":  prevDay,
+		"NextDay":  nextDay,
+		"Today":    time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"HasEntry": hasEntry,
+		"Entry":    entry,
+		"Mood":     mood,
+		"Tag":      tag,
+		"Rendered": rendered,
+		"Recent":   recent,
+		"Flash":    flash,
 	})
+}
+
+// parseMood reads the form value 1-5 for mood, returning nil for invalid/empty.
+func parseMood(s string) *int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	m, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || m < 1 || m > 5 {
+		return nil
+	}
+	return &m
+}
+
+// parseTag validates the quick-classify tag — good/bad/neutral or nil.
+func parseTag(s string) *string {
+	s = strings.TrimSpace(s)
+	switch s {
+	case "good", "bad", "neutral":
+		return &s
+	}
+	return nil
 }
 
 // JournalSave handles POST /journal/{date}: upserts a day-level entry for
@@ -97,13 +125,8 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	body := strings.TrimSpace(r.FormValue("body"))
-	moodStr := strings.TrimSpace(r.FormValue("mood"))
-	var mood *int64
-	if moodStr != "" {
-		if m, err := strconv.ParseInt(moodStr, 10, 64); err == nil && m >= 1 && m <= 5 {
-			mood = &m
-		}
-	}
+	mood := parseMood(r.FormValue("mood"))
+	tag := parseTag(r.FormValue("tag"))
 
 	existing, err := h.Queries.GetDayJournalEntry(ctx, date)
 	switch {
@@ -119,6 +142,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			EntryDate: date,
 			Body:      body,
 			Mood:      mood,
+			Tag:       tag,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create journal: %w", err))
 			return
@@ -139,6 +163,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
 			Body: body,
 			Mood: mood,
+			Tag:  tag,
 			ID:   existing.ID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("update journal: %w", err))

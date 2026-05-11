@@ -80,6 +80,7 @@ type JournalEntry struct {
 	Mood      *int64    `json:"mood"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
+	Tag       *string   `json:"tag"`
 }
 
 type SyncLog struct {

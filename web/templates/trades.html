@@ -11,6 +11,11 @@
   .dir-short { background: #fce7f3; color: #9d174d; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
   .trade-row { cursor: pointer; }
   .trade-row:hover { background: #f1f5f9; }
+  .j-icon { font-size: 16px; line-height: 1; }
+  .j-icon.empty { opacity: 0.15; filter: grayscale(1); }
+  .j-icon.good { filter: hue-rotate(-15deg) saturate(1.5); }
+  .j-icon.bad { filter: hue-rotate(180deg) saturate(2); }
+  .j-icon.neutral { opacity: 0.7; filter: grayscale(1); }
   .pager { display: flex; gap: 12px; align-items: center; margin-top: 16px; }
   .pager a { color: #1e40af; text-decoration: none; padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 4px; }
   .pager a.disabled { color: #94a3b8; pointer-events: none; }
@@ -66,6 +71,7 @@
 <table>
   <thead>
     <tr>
+      <th></th>
       <th>Entry (UTC)</th>
       <th>Account</th>
       <th>Symbol</th>
@@ -85,6 +91,9 @@
         hx-target="#modal-content"
         hx-swap="innerHTML"
         onclick="document.getElementById('modal-backdrop').classList.add('show')">
+      <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
+        <span class="j-icon {{if .HasJournal}}{{if .JournalTag}}{{.JournalTag}}{{else}}neutral{{end}}{{else}}empty{{end}}">📝</span>
+      </td>
       <td>{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
       <td>{{.AccountName}}</td>
       <td>{{.Symbol}} <span class="muted">({{.SymbolRoot}})</span></td>
@@ -97,7 +106,7 @@
       <td>{{pnlClass .NetPnl}}</td>
     </tr>
   {{else}}
-    <tr><td colspan="10" class="muted">No trades match the current filters.</td></tr>
+    <tr><td colspan="11" class="muted">No trades match the current filters.</td></tr>
   {{end}}
   </tbody>
 </table>

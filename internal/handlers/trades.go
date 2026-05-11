@@ -3,11 +3,15 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/jaro/trading-journal/internal/models"
 )
 
 const tradesPageSize = 50
@@ -25,6 +29,10 @@ type tradeFilters struct {
 // sqlc + sqlc.narg generates broken positional indexing for SQLite (each narg
 // becomes ?N which doesn't line up with the variadic positional args). The
 // fields are exported so html/template can read them.
+//
+// HasJournal/JournalTag come from a LEFT JOIN onto journal_entries so /trades
+// rows can flag which trades already have an entry. There's at most one
+// trade-level entry per trade in v1.
 type tradeRow struct {
 	ID          int64
 	AccountID   int64
@@ -42,6 +50,8 @@ type tradeRow struct {
 	Status      string
 	AccountName string
 	AccountFirm *string
+	HasJournal  bool
+	JournalTag  string // "" if no entry or no tag set
 }
 
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
@@ -91,8 +101,14 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // TradeDetail renders the trade detail partial — used by HTMX to populate a
-// modal with the trade summary and its execution breakdown.
+// modal with the trade summary, its execution breakdown, and its journal entry.
 func (h *Handlers) TradeDetail(w http.ResponseWriter, r *http.Request) {
+	h.renderTradeDetail(w, r, "")
+}
+
+// renderTradeDetail is the shared rendering path used by both GET /trades/{id}
+// and POST /trades/{id}/journal (so the modal refreshes in place after a save).
+func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, flash string) {
 	ctx := r.Context()
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
@@ -110,10 +126,109 @@ func (h *Handlers) TradeDetail(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list executions: %w", err))
 		return
 	}
+
+	// Trade-level journal entry, if one exists.
+	var journalBody, journalTag string
+	var hasJournal bool
+	var journalRendered template.HTML
+	if entry, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
+		hasJournal = true
+		journalBody = entry.Body
+		if entry.Tag != nil {
+			journalTag = *entry.Tag
+		}
+		journalRendered = template.HTML(renderMarkdown(entry.Body))
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
+		return
+	}
+
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
-		"Trade":      trade,
-		"Executions": execs,
+		"Trade":           trade,
+		"TradeID":         id,
+		"Executions":      execs,
+		"HasJournal":      hasJournal,
+		"JournalBody":     journalBody,
+		"JournalTag":      journalTag,
+		"JournalRendered": journalRendered,
+		"Flash":           flash,
 	})
+}
+
+// TradeJournalSave handles POST /trades/{id}/journal. Empty body deletes the
+// entry. On success it returns the refreshed trade detail partial so the
+// HTMX-swapped modal updates in place.
+func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := r.PathValue("id")
+	tradeID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	body := strings.TrimSpace(r.FormValue("body"))
+	tag := parseTag(r.FormValue("tag"))
+
+	// Use the trade's exit date (or entry date if still open) so day-by-date
+	// queries pick this up alongside the trade.
+	trade, err := h.Queries.GetTradeByID(ctx, tradeID)
+	if err != nil {
+		http.Error(w, "trade not found", http.StatusNotFound)
+		return
+	}
+	entryDate := trade.EntryTime
+	if trade.ExitTime != nil {
+		entryDate = *trade.ExitTime
+	}
+
+	existing, err := h.Queries.GetJournalEntryByTradeID(ctx, &tradeID)
+	flash := "saved"
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		if body == "" {
+			flash = "empty"
+			break
+		}
+		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+			TradeID:   &tradeID,
+			AccountID: &trade.AccountID,
+			EntryDate: entryDate,
+			Body:      body,
+			Mood:      nil,
+			Tag:       tag,
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("create trade journal: %w", err))
+			return
+		}
+	case err != nil:
+		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
+		return
+	default:
+		if body == "" {
+			if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+				h.serverError(w, fmt.Errorf("delete trade journal: %w", err))
+				return
+			}
+			flash = "deleted"
+		} else {
+			if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
+				Body: body,
+				Mood: existing.Mood, // preserve mood; trade entries don't expose it in v1
+				Tag:  tag,
+				ID:   existing.ID,
+			}); err != nil {
+				h.serverError(w, fmt.Errorf("update trade journal: %w", err))
+				return
+			}
+		}
+	}
+
+	h.renderTradeDetail(w, r, flash)
 }
 
 // listTradesFiltered + countTradesFiltered build a SQL WHERE clause from
@@ -126,9 +241,11 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 	q := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
 	             t.gross_pnl, t.commission, t.net_pnl, t.status,
-	             a.name, a.firm
+	             a.name, a.firm,
+	             je.id, je.tag
 	      FROM trades t
 	      JOIN accounts a ON a.id = t.account_id
+	      LEFT JOIN journal_entries je ON je.trade_id = t.id
 	      WHERE ` + where + `
 	      ORDER BY t.entry_time DESC, t.id DESC
 	      LIMIT ? OFFSET ?`
@@ -142,13 +259,22 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 	var out []tradeRow
 	for rs.Next() {
 		var r tradeRow
+		var journalID sql.NullInt64
+		var journalTag sql.NullString
 		if err := rs.Scan(
 			&r.ID, &r.AccountID, &r.Symbol, &r.SymbolRoot, &r.Direction, &r.Qty,
 			&r.EntryPrice, &r.ExitPrice, &r.EntryTime, &r.ExitTime,
 			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.Status,
 			&r.AccountName, &r.AccountFirm,
+			&journalID, &journalTag,
 		); err != nil {
 			return nil, err
+		}
+		if journalID.Valid {
+			r.HasJournal = true
+		}
+		if journalTag.Valid {
+			r.JournalTag = journalTag.String
 		}
 		out = append(out, r)
 	}
