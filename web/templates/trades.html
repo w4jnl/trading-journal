@@ -23,18 +23,12 @@
   .close-btn { float: right; background: none; color: #475569; padding: 4px 8px; }
 </style>
 
+{{template "back_button" .}}
+
 <h1>Trades</h1>
 
 <form method="get" action="/trades" class="filter-row panel">
-  <label>Account
-    <select name="account_id">
-      <option value="">All</option>
-      {{$selAcc := index .Filters "AccountID"}}
-      {{range .Accounts}}
-        <option value="{{.ID}}" {{if eq (printf "%d" .ID) $selAcc}}selected{{end}}>{{.Name}}{{if .Firm}} ({{derefStr .Firm}}){{end}}</option>
-      {{end}}
-    </select>
-  </label>
+  {{template "account_filter" .}}
   <label>Symbol
     <select name="symbol_root">
       <option value="">All</option>

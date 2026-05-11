@@ -2,8 +2,10 @@ package handlers
 
 import (
 	"fmt"
+	"html/template"
 	"net/http"
-	"strconv"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/jaro/trading-journal/internal/models"
@@ -47,11 +49,23 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 	monthEnd := monthStart.AddDate(0, 1, 0)
 
-	var accountID *int64
-	if v := r.URL.Query().Get("account_id"); v != "" {
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-			accountID = &id
-		}
+	// Bridge legacy ?account_id=N → ?filter=acc:N so older calendar bookmarks
+	// keep working through the multi-select transition.
+	if legacy := strings.TrimSpace(r.URL.Query().Get("account_id")); legacy != "" {
+		q := r.URL.Query()
+		q.Add("filter", "acc:"+legacy)
+		newR := *r
+		newR.URL = &url.URL{Path: r.URL.Path, RawQuery: q.Encode()}
+		r = &newR
+	}
+	accountFilt, err := h.resolveAccountFilter(r)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("resolve filter: %w", err))
+		return
+	}
+	accountIDSet := map[int64]bool{}
+	for _, id := range accountFilt.AccountIDs {
+		accountIDSet[id] = true
 	}
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
@@ -86,7 +100,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	// Aggregate per local-day key.
 	byDate := map[string]*dayCell{}
 	for _, row := range rows {
-		if accountID != nil && row.AccountID != *accountID {
+		if accountFilt.Active && !accountIDSet[row.AccountID] {
 			continue
 		}
 		y, m, d := row.StatDate.In(tz).Date()
@@ -172,28 +186,45 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Templates can't compare *int64 to int64; pass the dereferenced value
-	// (0 = "no filter", which is fine since account IDs start at 1).
-	var accountIDForTmpl int64
-	if accountID != nil {
-		accountIDForTmpl = *accountID
+	// CalendarBack is the relative URL ("/calendar?month=…[&filter=…]")
+	// that cross-page deep links from cells embed as `?back=…`. html/template
+	// URL-escapes the value when interpolated into an href, so we pass it raw.
+	calBackParams := url.Values{}
+	calBackParams.Set("month", monthStart.Format("2006-01"))
+	for _, v := range accountFilt.RawValues {
+		calBackParams.Add("filter", v)
 	}
+	calendarBack := "/calendar?" + calBackParams.Encode()
+
+	// FilterQS is the already-encoded filter-only query string that nav links
+	// concatenate onto their own URLs to preserve the active selection across
+	// month navigation. template.URL marks it pre-escaped so html/template
+	// won't double-encode.
+	filterOnly := url.Values{}
+	for _, v := range accountFilt.RawValues {
+		filterOnly.Add("filter", v)
+	}
+	filterQS := template.URL(filterOnly.Encode())
 
 	h.renderPage(w, "calendar.html", map[string]any{
-		"MonthLabel":   monthStart.Format("January 2006"),
-		"MonthQS":      monthStart.Format("2006-01"),
-		"PrevMonth":    monthStart.AddDate(0, -1, 0).Format("2006-01"),
-		"NextMonth":    monthStart.AddDate(0, 1, 0).Format("2006-01"),
-		"Weeks":        weeks,
-		"WeeklyTotals": weeklyTotals,
-		"MonthNet":     monthNet,
-		"MonthGross":   monthGross,
-		"MonthComm":    monthComm,
-		"Trades":       monthTrades,
-		"WinDays":      winDays,
-		"LossDays":     lossDays,
-		"Accounts":     accounts,
-		"AccountID":    accountIDForTmpl,
+		"NavActive":        "calendar",
+		"BackHref":         validBackHref(r),
+		"MonthLabel":       monthStart.Format("January 2006"),
+		"MonthQS":          monthStart.Format("2006-01"),
+		"PrevMonth":        monthStart.AddDate(0, -1, 0).Format("2006-01"),
+		"NextMonth":        monthStart.AddDate(0, 1, 0).Format("2006-01"),
+		"Weeks":            weeks,
+		"WeeklyTotals":     weeklyTotals,
+		"MonthNet":         monthNet,
+		"MonthGross":       monthGross,
+		"MonthComm":        monthComm,
+		"Trades":           monthTrades,
+		"WinDays":          winDays,
+		"LossDays":         lossDays,
+		"Accounts":         accounts,
+		"FilterSelections": accountFilt.Selected,
+		"FilterQS":         filterQS,
+		"CalendarBack":     calendarBack,
 	})
 }
 

@@ -7,7 +7,7 @@ import (
 	"math"
 	"net/http"
 	"sort"
-	"strconv"
+	"strings"
 	"time"
 )
 
@@ -49,12 +49,22 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	tz := h.localTZ()
 
 	q := r.URL.Query()
-	var accountID *int64
-	if v := q.Get("account_id"); v != "" {
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-			accountID = &id
-		}
+	// Bridge legacy ?account_id=N → ?filter=acc:N for older bookmarks.
+	if legacy := q.Get("account_id"); legacy != "" {
+		newQ := q
+		newQ.Add("filter", "acc:"+legacy)
+		newR := *r
+		newR.URL = cloneURL(r.URL)
+		newR.URL.RawQuery = newQ.Encode()
+		r = &newR
+		q = r.URL.Query()
 	}
+	accountFilt, err := h.resolveAccountFilter(r)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("resolve filter: %w", err))
+		return
+	}
+
 	var from, to *time.Time
 	if v := q.Get("from"); v != "" {
 		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
@@ -68,7 +78,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	trades, err := h.fetchAnalyticsTrades(ctx, accountID, from, to)
+	trades, err := h.fetchAnalyticsTrades(ctx, accountFilt, from, to)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("fetch trades: %w", err))
 		return
@@ -90,10 +100,6 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var accountIDForTmpl int64
-	if accountID != nil {
-		accountIDForTmpl = *accountID
-	}
 	formFrom, formTo := "", ""
 	if from != nil {
 		formFrom = from.Format("2006-01-02")
@@ -103,27 +109,37 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.renderPage(w, "analytics.html", map[string]any{
-		"Headline":    headline,
-		"BySymbol":    bySymbol,
-		"ByDirection": byDirection,
-		"ByDOW":       byDOW,
-		"ByHour":      byHour,
-		"Accounts":    accounts,
-		"AccountID":   accountIDForTmpl,
-		"From":        formFrom,
-		"To":          formTo,
-		"TradeCount":  int64(len(trades)),
+		"NavActive":        "analytics",
+		"BackHref":         validBackHref(r),
+		"Headline":         headline,
+		"BySymbol":         bySymbol,
+		"ByDirection":      byDirection,
+		"ByDOW":            byDOW,
+		"ByHour":           byHour,
+		"Accounts":         accounts,
+		"FilterSelections": accountFilt.Selected,
+		"From":             formFrom,
+		"To":               formTo,
+		"TradeCount":       int64(len(trades)),
 	})
 }
 
 // fetchAnalyticsTrades pulls the slice with optional account / date filters
 // applied at the SQL level (cheaper than filtering 500+ trades in Go).
-func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, accountID *int64, from, to *time.Time) ([]analyticsTrade, error) {
+func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, from, to *time.Time) ([]analyticsTrade, error) {
 	clauses := []string{"status='closed'", "exit_time IS NOT NULL"}
 	var args []any
-	if accountID != nil {
-		clauses = append(clauses, "account_id = ?")
-		args = append(args, *accountID)
+	if af.Active {
+		if len(af.AccountIDs) == 0 {
+			clauses = append(clauses, "1 = 0")
+		} else {
+			placeholders := strings.Repeat("?,", len(af.AccountIDs))
+			placeholders = placeholders[:len(placeholders)-1]
+			clauses = append(clauses, "account_id IN ("+placeholders+")")
+			for _, id := range af.AccountIDs {
+				args = append(args, id)
+			}
+		}
 	}
 	if from != nil {
 		clauses = append(clauses, "exit_time >= ?")

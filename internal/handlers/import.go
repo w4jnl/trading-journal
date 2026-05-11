@@ -18,7 +18,9 @@ func (h *Handlers) ImportPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, "import.html", map[string]any{
-		"Recent": recent,
+		"NavActive": "import",
+		"BackHref":  validBackHref(r),
+		"Recent":    recent,
 	})
 }
 

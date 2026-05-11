@@ -13,6 +13,8 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/jaro/trading-journal/internal/importer"
@@ -224,4 +226,98 @@ func (h *Handlers) logger() *slog.Logger {
 		return h.Logger
 	}
 	return slog.Default()
+}
+
+// validBackHref extracts and validates a ?back= URL from the request. The
+// returned string is safe to use as an href: relative path starting with /
+// (so a malicious caller can't redirect to an external site).
+func validBackHref(r *http.Request) string {
+	s := r.URL.Query().Get("back")
+	if s == "" {
+		return ""
+	}
+	// Only allow same-origin relative URLs. Reject "//" (protocol-relative)
+	// and anything not starting with "/" — that excludes "http://…" too.
+	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") {
+		return ""
+	}
+	return s
+}
+
+// accountFilter holds the parsed multi-select filter shared by /trades,
+// /calendar, and /analytics. The `filter` query param accepts multiple values:
+//   acc:<id>      — include this exact account
+//   type:<slug>   — include every account whose `type` matches
+// The resolved AccountIDs is the OR-union of both kinds. Active is true iff
+// the user selected anything, even if the union is empty (then "show none").
+// RawValues is the original list of selections, for re-rendering the
+// dropdown's selected state.
+type accountFilter struct {
+	AccountIDs []int64
+	Active     bool
+	RawValues  []string
+	Selected   map[string]bool
+}
+
+// resolveAccountFilter parses ?filter=acc:N&filter=type:X (multi-valued) into
+// a concrete []int64 of accounts to filter by, resolving type slugs against
+// the accounts table.
+func (h *Handlers) resolveAccountFilter(r *http.Request) (accountFilter, error) {
+	raw := r.URL.Query()["filter"]
+	af := accountFilter{RawValues: raw, Selected: map[string]bool{}}
+	if len(raw) == 0 {
+		return af, nil
+	}
+	var explicitIDs []int64
+	var types []string
+	for _, v := range raw {
+		if v == "" {
+			continue
+		}
+		af.Selected[v] = true
+		switch {
+		case strings.HasPrefix(v, "acc:"):
+			if id, err := strconv.ParseInt(v[4:], 10, 64); err == nil {
+				explicitIDs = append(explicitIDs, id)
+			}
+		case strings.HasPrefix(v, "type:"):
+			types = append(types, v[5:])
+		}
+	}
+	if len(explicitIDs) == 0 && len(types) == 0 {
+		return af, nil
+	}
+	af.Active = true
+	set := map[int64]bool{}
+	for _, id := range explicitIDs {
+		set[id] = true
+	}
+	if len(types) > 0 {
+		placeholders := strings.Repeat("?,", len(types))
+		placeholders = placeholders[:len(placeholders)-1]
+		args := make([]any, len(types))
+		for i, t := range types {
+			args[i] = t
+		}
+		q := "SELECT id FROM accounts WHERE type IN (" + placeholders + ")"
+		rows, err := h.DB.QueryContext(r.Context(), q, args...)
+		if err != nil {
+			return af, fmt.Errorf("resolve type filter: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var id int64
+			if err := rows.Scan(&id); err != nil {
+				return af, err
+			}
+			set[id] = true
+		}
+		if err := rows.Err(); err != nil {
+			return af, err
+		}
+	}
+	for id := range set {
+		af.AccountIDs = append(af.AccountIDs, id)
+	}
+	return af, nil
 }

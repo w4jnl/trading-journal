@@ -64,6 +64,8 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 	isStale := stats.HasTrades && !stats.Date.Equal(today)
 
 	h.renderPage(w, "dashboard.html", map[string]any{
+		"NavActive":    "dashboard",
+		"BackHref":     validBackHref(r),
 		"Stats":        stats,
 		"DateLabel":    stats.Date.Format("Mon, 2 Jan 2006"),
 		"IsStale":      isStale,

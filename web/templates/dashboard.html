@@ -24,6 +24,8 @@
   .pill.error { background: #fee2e2; color: #991b1b; }
 </style>
 
+{{template "back_button" .}}
+
 <h1>Dashboard · {{.DateLabel}}</h1>
 
 {{if .IsStale}}

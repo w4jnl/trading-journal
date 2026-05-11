@@ -1,0 +1,29 @@
+{{/*
+Reusable multi-select for "filter by account and/or type". Expects:
+
+  .Accounts          []models.Account — full list to populate the dropdown
+  .FilterSelections  map[string]bool  — which "acc:N" / "type:slug" values
+                                        are currently selected (from URL)
+
+The form using this picker must submit GET to its own page; the `<select>`'s
+`name` is "filter" so multi-values serialize as `?filter=acc:1&filter=type:prop_funded`.
+*/}}
+{{define "account_filter"}}
+<label>Filter
+  <select name="filter" multiple size="6" style="min-width: 220px;">
+    <optgroup label="By account type">
+      <option value="type:prop_eval"   {{if index $.FilterSelections "type:prop_eval"}}selected{{end}}>Prop · Eval</option>
+      <option value="type:prop_funded" {{if index $.FilterSelections "type:prop_funded"}}selected{{end}}>Prop · Funded</option>
+      <option value="type:prop_live"   {{if index $.FilterSelections "type:prop_live"}}selected{{end}}>Prop · Live</option>
+      <option value="type:personal"    {{if index $.FilterSelections "type:personal"}}selected{{end}}>Personal</option>
+      <option value="type:paper"       {{if index $.FilterSelections "type:paper"}}selected{{end}}>Paper</option>
+    </optgroup>
+    <optgroup label="By account">
+      {{range .Accounts}}
+        <option value="acc:{{.ID}}" {{if index $.FilterSelections (printf "acc:%d" .ID)}}selected{{end}}>{{.Name}}{{if .Firm}} · {{derefStr .Firm}}{{end}}</option>
+      {{end}}
+    </optgroup>
+  </select>
+  <span class="muted" style="display: block; font-size: 11px; margin-top: 2px;">Hold ⌘/Ctrl for multiple. Empty = all.</span>
+</label>
+{{end}}

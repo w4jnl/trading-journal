@@ -22,11 +22,43 @@ var validFirms = map[string]bool{
 	"ibkr":    true,
 }
 
+// validTypes accepts every type the system has ever issued. The dropdown
+// uses accountTypeOptions() below to control what's offered to the user; any
+// legacy value already saved in the DB still passes validation on subsequent
+// edits so we don't trap users into re-typing their entire account list.
 var validTypes = map[string]bool{
-	"":      true,
-	"prop":  true,
-	"live":  true,
-	"paper": true,
+	"":            true,
+	"prop_eval":   true,
+	"prop_funded": true,
+	"prop_live":   true,
+	"personal":    true,
+	"paper":       true,
+	// Legacy values from before the prop_eval/funded/live split.
+	"prop": true,
+	"live": true,
+}
+
+// accountTypeOption pairs a slug with a human-readable label. Templates use
+// .Value as the form value and .Label for display.
+type accountTypeOption struct {
+	Value string
+	Label string
+}
+
+// accountTypeOptions returns the dropdown entries in order. Legacy values are
+// included but suffixed "(legacy)" so the user can see and migrate away from
+// them.
+func accountTypeOptions() []accountTypeOption {
+	return []accountTypeOption{
+		{"", "—"},
+		{"prop_eval", "Prop · Eval"},
+		{"prop_funded", "Prop · Funded"},
+		{"prop_live", "Prop · Live"},
+		{"personal", "Personal"},
+		{"paper", "Paper"},
+		{"prop", "prop (legacy)"},
+		{"live", "live (legacy)"},
+	}
 }
 
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
@@ -38,9 +70,11 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.renderPage(w, "accounts.html", map[string]any{
-		"Accounts":     accounts,
-		"FirmOptions":  []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
-		"TypeOptions":  []string{"", "prop", "live", "paper"},
+		"NavActive":   "accounts",
+		"BackHref":    validBackHref(r),
+		"Accounts":    accounts,
+		"FirmOptions": []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
+		"TypeOptions": accountTypeOptions(),
 	})
 }
 

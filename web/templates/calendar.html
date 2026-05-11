@@ -47,21 +47,21 @@
   .pnl-neg { color: #b91c1c; }
 </style>
 
+{{template "back_button" .}}
+
 <div class="nav-row">
   <h1 style="margin: 0; flex: 1;">{{.MonthLabel}}</h1>
-  <a href="/calendar?month={{.PrevMonth}}{{if .AccountID}}&account_id={{.AccountID}}{{end}}">‹ Prev</a>
-  <a href="/calendar{{if .AccountID}}?account_id={{.AccountID}}{{end}}">This month</a>
-  <a href="/calendar?month={{.NextMonth}}{{if .AccountID}}&account_id={{.AccountID}}{{end}}">Next ›</a>
-  <form method="get" action="/calendar" style="display: flex; gap: 8px; align-items: center;">
-    <input type="hidden" name="month" value="{{.MonthQS}}">
-    <select name="account_id" onchange="this.form.submit()">
-      <option value="">All accounts</option>
-      {{range .Accounts}}
-        <option value="{{.ID}}" {{if eq $.AccountID .ID}}selected{{end}}>{{.Name}}{{if .Firm}} ({{derefStr .Firm}}){{end}}</option>
-      {{end}}
-    </select>
-  </form>
+  <a href="/calendar?month={{.PrevMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">‹ Prev</a>
+  <a href="/calendar{{if .FilterQS}}?{{.FilterQS}}{{end}}">This month</a>
+  <a href="/calendar?month={{.NextMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">Next ›</a>
 </div>
+
+<form method="get" action="/calendar" class="filter-row panel" style="display: flex; gap: 16px; align-items: flex-start; margin-bottom: 16px;">
+  <input type="hidden" name="month" value="{{.MonthQS}}">
+  {{template "account_filter" .}}
+  <button type="submit" style="align-self: end;">Apply</button>
+  <a href="/calendar?month={{.MonthQS}}" style="font-size: 13px; color: #475569; text-decoration: none; align-self: end; padding-bottom: 9px;">Clear filter</a>
+</form>
 
 <div class="summary-grid">
   <div class="summary-card">
@@ -100,7 +100,7 @@
         <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}">
           {{if $day.InMonth}}
             <a class="j-cell-icon"
-               href="/journal/{{$day.Date.Format "2006-01-02"}}?from=calendar&month={{$.MonthQS}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}"
+               href="/journal/{{$day.Date.Format "2006-01-02"}}?back={{$.CalendarBack}}"
                title="{{if $day.HasJournal}}Journal entry{{if $day.JournalTag}} ({{$day.JournalTag}}){{end}} — click to view{{else}}Add journal entry{{end}}">
               {{template "journal_icon" (journalState $day.HasJournal $day.JournalTag)}}
             </a>
@@ -118,7 +118,7 @@
             </div>
             {{end}}
           {{else if and $day.InMonth $day.HasData}}
-            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.AccountID}}&account_id={{$.AccountID}}{{end}}">
+            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num in-month">{{$day.Date.Day}}</div>
               <div class="day-pnl {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.0f" $day.NetPnl}}</div>
               <div class="day-meta">{{$day.Trades}} trades · {{$day.Wins}}W/{{$day.Losses}}L</div>

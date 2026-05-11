@@ -17,17 +17,12 @@
   .filter-row select, .filter-row input { padding: 6px 8px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; }
 </style>
 
+{{template "back_button" .}}
+
 <h1>Analytics</h1>
 
 <form method="get" action="/analytics" class="filter-row">
-  <label>Account
-    <select name="account_id">
-      <option value="">All</option>
-      {{range .Accounts}}
-        <option value="{{.ID}}" {{if eq $.AccountID .ID}}selected{{end}}>{{.Name}}{{if .Firm}} ({{derefStr .Firm}}){{end}}</option>
-      {{end}}
-    </select>
-  </label>
+  {{template "account_filter" .}}
   <label>From
     <input type="date" name="from" value="{{.From}}">
   </label>

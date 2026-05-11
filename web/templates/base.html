@@ -28,6 +28,15 @@
     .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; }
     .pill.success { background: #dcfce7; color: #166534; }
     .pill.error { background: #fee2e2; color: #991b1b; }
+    /* Back button (shown when a cross-page deep link sets ?back=…). */
+    .back-button { display: inline-flex; align-items: center; gap: 6px; padding: 4px 12px;
+                   background: #0f172a; color: white; border-radius: 4px;
+                   text-decoration: none; font-size: 13px; margin-bottom: 12px; }
+    .back-button:hover { background: #1e293b; }
+    .back-button .hint { background: rgba(255,255,255,0.15); padding: 1px 5px; border-radius: 3px;
+                         font-size: 10px; font-family: ui-monospace, SFMono-Regular, monospace; }
+    /* Active nav menu item — bottom underline. */
+    nav a.active { opacity: 1; border-bottom: 2px solid #38bdf8; padding-bottom: 2px; }
     /* Sketch-style icons. Color comes from the parent's `color`; SVG strokes inherit via currentColor. */
     .icon { display: inline-block; vertical-align: -3px; }
     .icon-journal.icon-empty   { color: #cbd5e1; }
@@ -43,12 +52,12 @@
 <body>
   <nav>
     <a href="/" class="brand">Trading Journal</a>
-    <a href="/trades">Trades</a>
-    <a href="/calendar">Calendar</a>
-    <a href="/journal">Journal</a>
-    <a href="/analytics">Analytics</a>
-    <a href="/import">Import</a>
-    <a href="/accounts">Accounts</a>
+    <a href="/trades"    class="{{if eq .NavActive "trades"}}active{{end}}">Trades</a>
+    <a href="/calendar"  class="{{if eq .NavActive "calendar"}}active{{end}}">Calendar</a>
+    <a href="/journal"   class="{{if eq .NavActive "journal"}}active{{end}}">Journal</a>
+    <a href="/analytics" class="{{if eq .NavActive "analytics"}}active{{end}}">Analytics</a>
+    <a href="/import"    class="{{if eq .NavActive "import"}}active{{end}}">Import</a>
+    <a href="/accounts"  class="{{if eq .NavActive "accounts"}}active{{end}}">Accounts</a>
   </nav>
   <main>
     {{block "content" .}}{{end}}

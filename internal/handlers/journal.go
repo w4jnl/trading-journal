@@ -70,19 +70,17 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 
 	flash := r.URL.Query().Get("flash")
 
-	// `?from=calendar` (with optional month/account_id) lets the page render a
-	// "Back to calendar" affordance and round-trip the user back to the same
-	// month view they came from.
-	backHref := ""
-	monthQS := r.URL.Query().Get("month")
-	accountIDQS := r.URL.Query().Get("account_id")
-	if r.URL.Query().Get("from") == "calendar" {
+	// Cross-page links into this view set ?back=<relative-url>. Falls back to
+	// the legacy ?from=calendar form for any in-flight tabs from the older
+	// nav scheme.
+	backHref := validBackHref(r)
+	if backHref == "" && r.URL.Query().Get("from") == "calendar" {
 		q := url.Values{}
-		if monthQS != "" {
-			q.Set("month", monthQS)
+		if v := r.URL.Query().Get("month"); v != "" {
+			q.Set("month", v)
 		}
-		if accountIDQS != "" {
-			q.Set("account_id", accountIDQS)
+		if v := r.URL.Query().Get("account_id"); v != "" {
+			q.Set("account_id", v)
 		}
 		backHref = "/calendar"
 		if encoded := q.Encode(); encoded != "" {
@@ -91,21 +89,20 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.renderPage(w, "journal.html", map[string]any{
-		"Date":     dateStr,
-		"DateNice": date.Format("Mon, 2 Jan 2006"),
-		"PrevDay":  prevDay,
-		"NextDay":  nextDay,
-		"Today":    time.Now().In(h.localTZ()).Format("2006-01-02"),
-		"HasEntry": hasEntry,
-		"Entry":    entry,
-		"Mood":     mood,
-		"Tag":      tag,
-		"Rendered": rendered,
-		"Recent":   recent,
-		"Flash":     flash,
+		"NavActive": "journal",
 		"BackHref":  backHref,
-		"MonthQS":   monthQS,
-		"AccountID": accountIDQS,
+		"Date":      dateStr,
+		"DateNice":  date.Format("Mon, 2 Jan 2006"),
+		"PrevDay":   prevDay,
+		"NextDay":   nextDay,
+		"Today":     time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"HasEntry":  hasEntry,
+		"Entry":     entry,
+		"Mood":      mood,
+		"Tag":       tag,
+		"Rendered":  rendered,
+		"Recent":    recent,
+		"Flash":     flash,
 	})
 }
 
@@ -134,8 +131,8 @@ func parseTag(s string) *string {
 
 // JournalSave handles POST /journal/{date}: upserts a day-level entry for
 // the date, then redirects back to GET /journal/{date} so a refresh doesn't
-// resubmit the form. Carries through the `from`, `month`, and `account_id`
-// query params if set, so a "Back to calendar" round-trip survives the save.
+// resubmit the form. Carries through the `back` field if set, so the
+// "Back to calendar" round-trip survives the save.
 func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	dateStr := r.PathValue("date")
@@ -151,6 +148,11 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	redirectQuery := func(flash string) string {
 		q := url.Values{}
 		q.Set("flash", flash)
+		// Round-trip the back URL if the form carried it. Also accepts legacy
+		// from/month/account_id triple for in-flight tabs.
+		if v := r.FormValue("back"); v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
+			q.Set("back", v)
+		}
 		for _, key := range []string{"from", "month", "account_id"} {
 			if v := r.FormValue(key); v != "" {
 				q.Set(key, v)

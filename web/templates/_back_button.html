@@ -1,0 +1,32 @@
+{{/*
+Reusable "Back" affordance for pages reached via a cross-page deep link.
+Renders only when .BackHref is non-empty, so handlers pass an empty string
+when there's no back target.
+
+Includes a global Esc keydown handler that navigates to the back URL —
+mirrors the trade-modal close-on-Esc pattern. Listener is wrapped in an
+IIFE so multiple instances on a page (theoretically possible) don't
+collide on a shared `back` variable.
+*/}}
+{{define "back_button"}}
+{{if .BackHref}}
+<a href="{{.BackHref}}" class="back-button" title="Back (Esc)">
+  ‹ Back <span class="hint">Esc</span>
+</a>
+<script>
+  (function () {
+    const back = "{{.BackHref}}";
+    if (!back) return;
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape') return;
+      // Don't hijack Esc while a modal is open — the modal owns its own close
+      // path and reads __journalChanged before reloading.
+      const modal = document.getElementById('modal-backdrop');
+      if (modal && modal.classList.contains('show')) return;
+      e.preventDefault();
+      window.location.href = back;
+    });
+  })();
+</script>
+{{end}}
+{{end}}

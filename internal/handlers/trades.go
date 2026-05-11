@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"html/template"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -17,7 +18,8 @@ import (
 const tradesPageSize = 50
 
 type tradeFilters struct {
-	AccountID  *int64
+	// Account is the resolved union of acc:N / type:X selections.
+	Account    accountFilter
 	SymbolRoot *string
 	Direction  *string
 	From       *time.Time
@@ -57,7 +59,11 @@ type tradeRow struct {
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
 func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	filters := parseTradeFilters(r)
+	filters, err := h.parseTradeFilters(r)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("parse filters: %w", err))
+		return
+	}
 
 	rows, err := listTradesFiltered(ctx, h.DB, filters)
 	if err != nil {
@@ -87,16 +93,19 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.renderPage(w, "trades.html", map[string]any{
-		"Trades":      rows,
-		"Total":       total,
-		"Page":        filters.Page,
-		"Pages":       pages,
-		"PageSize":    tradesPageSize,
-		"Accounts":    accounts,
-		"SymbolRoots": roots,
-		"Filters":     filtersAsForm(filters),
-		"PrevPage":    pageRef(r, filters.Page-1, pages),
-		"NextPage":    pageRef(r, filters.Page+1, pages),
+		"NavActive":         "trades",
+		"BackHref":          validBackHref(r),
+		"Trades":            rows,
+		"Total":             total,
+		"Page":              filters.Page,
+		"Pages":             pages,
+		"PageSize":          tradesPageSize,
+		"Accounts":          accounts,
+		"SymbolRoots":       roots,
+		"Filters":           filtersAsForm(filters),
+		"FilterSelections":  filters.Account.Selected,
+		"PrevPage":          pageRef(r, filters.Page-1, pages),
+		"NextPage":          pageRef(r, filters.Page+1, pages),
 	})
 }
 
@@ -297,9 +306,18 @@ func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64
 func buildWhere(f tradeFilters) (string, []any) {
 	clauses := []string{"t.status = 'closed'"}
 	var args []any
-	if f.AccountID != nil {
-		clauses = append(clauses, "t.account_id = ?")
-		args = append(args, *f.AccountID)
+	if f.Account.Active {
+		if len(f.Account.AccountIDs) == 0 {
+			// User requested a filter but no accounts match — return zero rows.
+			clauses = append(clauses, "1 = 0")
+		} else {
+			placeholders := strings.Repeat("?,", len(f.Account.AccountIDs))
+			placeholders = placeholders[:len(placeholders)-1]
+			clauses = append(clauses, "t.account_id IN ("+placeholders+")")
+			for _, id := range f.Account.AccountIDs {
+				args = append(args, id)
+			}
+		}
 	}
 	if f.SymbolRoot != nil {
 		clauses = append(clauses, "t.symbol_root = ?")
@@ -321,16 +339,32 @@ func buildWhere(f tradeFilters) (string, []any) {
 }
 
 // parseTradeFilters reads filter values from the query string. Empty values
-// are treated as "not filtering" — they map to nil pointers.
-func parseTradeFilters(r *http.Request) tradeFilters {
+// are treated as "not filtering" — they map to zero values.
+//
+// Legacy compatibility: `account_id=<n>` (singular) is still honored — it's
+// mapped to the new filter=acc:<n> form so old bookmarks and calendar links
+// keep working through the transition.
+func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	q := r.URL.Query()
 	f := tradeFilters{Page: 1}
 
-	if v := strings.TrimSpace(q.Get("account_id")); v != "" {
-		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
-			f.AccountID = &id
-		}
+	// Bridge legacy ?account_id=N → ?filter=acc:N before resolving.
+	if legacy := strings.TrimSpace(q.Get("account_id")); legacy != "" {
+		r2 := *r
+		r2.URL = cloneURL(r.URL)
+		r2.URL.RawQuery = q.Encode() // start from current
+		newQ := r2.URL.Query()
+		newQ.Add("filter", "acc:"+legacy)
+		r2.URL.RawQuery = newQ.Encode()
+		r = &r2
 	}
+
+	af, err := h.resolveAccountFilter(r)
+	if err != nil {
+		return f, err
+	}
+	f.Account = af
+
 	if v := strings.TrimSpace(q.Get("symbol_root")); v != "" {
 		f.SymbolRoot = &v
 	}
@@ -353,16 +387,18 @@ func parseTradeFilters(r *http.Request) tradeFilters {
 			f.Page = p
 		}
 	}
-	return f
+	return f, nil
 }
 
+// cloneURL returns a shallow copy so we can mutate query params without
+// affecting the caller's request URL.
+func cloneURL(u *url.URL) *url.URL { c := *u; return &c }
+
 // filtersAsForm flattens the filter struct back into string fields for the
-// template (so the form re-renders the active filters).
+// template (so the simple inputs — symbol/direction/dates — re-render with
+// their active values; the multi-select picker reads FilterSelections).
 func filtersAsForm(f tradeFilters) map[string]string {
 	out := map[string]string{}
-	if f.AccountID != nil {
-		out["AccountID"] = strconv.FormatInt(*f.AccountID, 10)
-	}
 	if f.SymbolRoot != nil {
 		out["SymbolRoot"] = *f.SymbolRoot
 	}
