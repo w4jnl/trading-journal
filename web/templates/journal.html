@@ -32,7 +32,20 @@
 <div class="journal-header">
   <h1>Journal · {{.DateNice}}</h1>
   {{if .BackHref}}
-  <a href="{{.BackHref}}" style="margin-left: auto; padding: 4px 12px; background: #0f172a; color: white; border-radius: 4px; text-decoration: none; font-size: 13px;">← Back to calendar</a>
+  <a href="{{.BackHref}}" style="margin-left: auto; padding: 4px 12px; background: #0f172a; color: white; border-radius: 4px; text-decoration: none; font-size: 13px;">← Back to calendar <span class="muted" style="color: #cbd5e1; font-size: 11px;">(Esc)</span></a>
+  <script>
+    // When the user entered this page from the calendar, Esc returns them to
+    // the same month view. Mirrors the trade-modal Esc-to-close pattern.
+    (function () {
+      const back = "{{.BackHref}}";
+      if (!back) return;
+      document.addEventListener('keydown', (e) => {
+        if (e.key !== 'Escape') return;
+        e.preventDefault();
+        window.location.href = back;
+      });
+    })();
+  </script>
   {{end}}
 </div>
 

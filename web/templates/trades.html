@@ -130,5 +130,15 @@
       setTimeout(() => location.reload(), 30);
     }
   }
+  // Esc closes the modal when it's open. Mirrors the click-outside-to-close
+  // behavior so the textarea-inside-modal scenario stays consistent — Esc
+  // discards in-progress edits the same way clicking the backdrop does.
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('modal-backdrop').classList.contains('show')) {
+      e.preventDefault();
+      closeTradeModal();
+    }
+  });
 </script>
 {{end}}
