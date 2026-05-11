@@ -80,6 +80,28 @@ func (b *Builder) Rebuild(ctx context.Context, keys []Key) (Result, error) {
 }
 
 func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
+	// Snapshot journal entries that point to trades we're about to delete so
+	// we can re-link them after the replay creates fresh trade rows. The
+	// journal_entries.trade_id FK is NO ACTION, so failing to detach first
+	// would make the DELETE trip the constraint. Trades reconstructed from
+	// the same executions land on the same entry_time, which is the signal
+	// we re-link on.
+	links, err := b.Queries.ListJournalLinksForAccountSymbol(ctx, models.ListJournalLinksForAccountSymbolParams{
+		AccountID: k.AccountID,
+		Symbol:    k.Symbol,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list journal links: %w", err)
+	}
+	if len(links) > 0 {
+		if err := b.Queries.ClearJournalLinksForAccountSymbol(ctx, models.ClearJournalLinksForAccountSymbolParams{
+			AccountID: k.AccountID,
+			Symbol:    k.Symbol,
+		}); err != nil {
+			return 0, fmt.Errorf("clear journal links: %w", err)
+		}
+	}
+
 	if err := b.Queries.DeleteTradesForAccountSymbol(ctx, models.DeleteTradesForAccountSymbolParams{
 		AccountID: k.AccountID,
 		Symbol:    k.Symbol,
@@ -113,6 +135,33 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 	if err != nil {
 		return 0, err
 	}
+
+	// Re-link the journal entries we detached up top. A reconstructed trade
+	// keeps the same entry_time as the original, so a lookup by signal hits
+	// the right new row. If the underlying executions changed enough that no
+	// trade with that entry_time exists anymore, leave trade_id NULL — the
+	// entry becomes a day-level note, which is the closest sensible fallback.
+	for _, link := range links {
+		newID, err := b.Queries.FindTradeBySignal(ctx, models.FindTradeBySignalParams{
+			AccountID: k.AccountID,
+			Symbol:    k.Symbol,
+			EntryTime: link.EntryTime,
+		})
+		switch {
+		case err == nil:
+			if err := b.Queries.RelinkJournalEntry(ctx, models.RelinkJournalEntryParams{
+				TradeID: &newID,
+				ID:      link.JournalID,
+			}); err != nil {
+				return closed, fmt.Errorf("relink journal entry %d: %w", link.JournalID, err)
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// boundaries shifted; entry stays detached.
+		default:
+			return closed, fmt.Errorf("find trade by signal: %w", err)
+		}
+	}
+
 	return closed, nil
 }
 

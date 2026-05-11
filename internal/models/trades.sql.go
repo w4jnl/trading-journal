@@ -10,6 +10,21 @@ import (
 	"time"
 )
 
+const clearJournalLinksForAccountSymbol = `-- name: ClearJournalLinksForAccountSymbol :exec
+UPDATE journal_entries SET trade_id = NULL
+WHERE trade_id IN (SELECT t.id FROM trades t WHERE t.account_id = ? AND t.symbol = ?)
+`
+
+type ClearJournalLinksForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+func (q *Queries) ClearJournalLinksForAccountSymbol(ctx context.Context, arg ClearJournalLinksForAccountSymbolParams) error {
+	_, err := q.db.ExecContext(ctx, clearJournalLinksForAccountSymbol, arg.AccountID, arg.Symbol)
+	return err
+}
+
 const createImportedTrade = `-- name: CreateImportedTrade :one
 INSERT INTO trades (
     account_id, symbol, symbol_root, direction, qty,
@@ -163,6 +178,25 @@ type DeleteTradesForAccountSymbolParams struct {
 func (q *Queries) DeleteTradesForAccountSymbol(ctx context.Context, arg DeleteTradesForAccountSymbolParams) error {
 	_, err := q.db.ExecContext(ctx, deleteTradesForAccountSymbol, arg.AccountID, arg.Symbol)
 	return err
+}
+
+const findTradeBySignal = `-- name: FindTradeBySignal :one
+SELECT id FROM trades
+WHERE account_id = ? AND symbol = ? AND entry_time = ?
+LIMIT 1
+`
+
+type FindTradeBySignalParams struct {
+	AccountID int64     `json:"account_id"`
+	Symbol    string    `json:"symbol"`
+	EntryTime time.Time `json:"entry_time"`
+}
+
+func (q *Queries) FindTradeBySignal(ctx context.Context, arg FindTradeBySignalParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, findTradeBySignal, arg.AccountID, arg.Symbol, arg.EntryTime)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }
 
 const getTradeByBrokerID = `-- name: GetTradeByBrokerID :one
@@ -368,6 +402,46 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 	return items, nil
 }
 
+const listJournalLinksForAccountSymbol = `-- name: ListJournalLinksForAccountSymbol :many
+SELECT je.id AS journal_id, t.entry_time
+FROM journal_entries je
+JOIN trades t ON je.trade_id = t.id
+WHERE t.account_id = ? AND t.symbol = ?
+`
+
+type ListJournalLinksForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+type ListJournalLinksForAccountSymbolRow struct {
+	JournalID int64     `json:"journal_id"`
+	EntryTime time.Time `json:"entry_time"`
+}
+
+func (q *Queries) ListJournalLinksForAccountSymbol(ctx context.Context, arg ListJournalLinksForAccountSymbolParams) ([]ListJournalLinksForAccountSymbolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listJournalLinksForAccountSymbol, arg.AccountID, arg.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListJournalLinksForAccountSymbolRow
+	for rows.Next() {
+		var i ListJournalLinksForAccountSymbolRow
+		if err := rows.Scan(&i.JournalID, &i.EntryTime); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTradesByDate = `-- name: ListTradesByDate :many
 SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades
 WHERE account_id = ? AND status = 'closed' AND exit_time IS NOT NULL
@@ -511,4 +585,18 @@ func (q *Queries) ReassignTradesAccount(ctx context.Context, arg ReassignTradesA
 		return 0, err
 	}
 	return result.RowsAffected()
+}
+
+const relinkJournalEntry = `-- name: RelinkJournalEntry :exec
+UPDATE journal_entries SET trade_id = ? WHERE id = ?
+`
+
+type RelinkJournalEntryParams struct {
+	TradeID *int64 `json:"trade_id"`
+	ID      int64  `json:"id"`
+}
+
+func (q *Queries) RelinkJournalEntry(ctx context.Context, arg RelinkJournalEntryParams) error {
+	_, err := q.db.ExecContext(ctx, relinkJournalEntry, arg.TradeID, arg.ID)
+	return err
 }

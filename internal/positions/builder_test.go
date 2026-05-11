@@ -336,6 +336,56 @@ func TestRebuild_DailyStats(t *testing.T) {
 	}
 }
 
+func TestRebuild_PreservesJournalLinkAcrossRebuild(t *testing.T) {
+	b, q, conn, accID := setupBuilder(t)
+	// First import: long 1 → out, produces one trade.
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0)},
+		{"sell", 1, 7252, at(5)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("first rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("setup expected 1 trade, got %d", len(trades))
+	}
+	origID := trades[0].ID
+	_ = origID // SQLite may reuse the autoincrement value; we don't assert on it.
+	origEntry := trades[0].EntryTime
+
+	// Attach a journal entry to that trade. journal_entries.trade_id is
+	// NO ACTION, so a naive rebuild would trip the FK on DELETE.
+	if _, err := conn.Exec(
+		`INSERT INTO journal_entries (trade_id, account_id, entry_date, body, scope) VALUES (?, ?, ?, ?, 'trade')`,
+		origID, accID, "2026-05-10", "post-mortem on this trade",
+	); err != nil {
+		t.Fatalf("seed journal entry: %v", err)
+	}
+
+	// Second rebuild over the same executions. Should not error, and the
+	// reconstructed trade should pick up the same journal entry by signal.
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("rebuild with journal link: %v", err)
+	}
+	trades, _ = q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("post-rebuild len(trades) = %d, want 1", len(trades))
+	}
+	if !trades[0].EntryTime.Equal(origEntry) {
+		t.Fatalf("entry_time drift: %v vs %v", trades[0].EntryTime, origEntry)
+	}
+	var linkedID int64
+	if err := conn.QueryRow(
+		`SELECT trade_id FROM journal_entries WHERE body = 'post-mortem on this trade'`,
+	).Scan(&linkedID); err != nil {
+		t.Fatalf("journal link lookup: %v", err)
+	}
+	if linkedID != trades[0].ID {
+		t.Errorf("journal_entries.trade_id = %d, want %d (the new trade)", linkedID, trades[0].ID)
+	}
+}
+
 func TestRebuild_IdempotentReplay(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{

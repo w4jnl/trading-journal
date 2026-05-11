@@ -40,6 +40,24 @@ UPDATE journal_entries SET account_id = ? WHERE account_id = ?;
 -- name: DeleteTradesForAccountSymbol :exec
 DELETE FROM trades WHERE account_id = ? AND symbol = ?;
 
+-- name: ListJournalLinksForAccountSymbol :many
+SELECT je.id AS journal_id, t.entry_time
+FROM journal_entries je
+JOIN trades t ON je.trade_id = t.id
+WHERE t.account_id = ? AND t.symbol = ?;
+
+-- name: ClearJournalLinksForAccountSymbol :exec
+UPDATE journal_entries SET trade_id = NULL
+WHERE trade_id IN (SELECT t.id FROM trades t WHERE t.account_id = ? AND t.symbol = ?);
+
+-- name: FindTradeBySignal :one
+SELECT id FROM trades
+WHERE account_id = ? AND symbol = ? AND entry_time = ?
+LIMIT 1;
+
+-- name: RelinkJournalEntry :exec
+UPDATE journal_entries SET trade_id = ? WHERE id = ?;
+
 -- name: ListTradesForAccount :many
 SELECT * FROM trades WHERE account_id = ? ORDER BY entry_time, id;
 
