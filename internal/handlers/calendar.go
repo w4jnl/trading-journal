@@ -31,10 +31,13 @@ type dayCell struct {
 // the row including spillover from neighbouring months — this matches the
 // reference design where week summaries don't try to clip at month boundaries.
 type weekTotal struct {
-	ISOWeek int // ISO 8601 week of year (1..53)
-	HasData bool
-	Trades  int64
-	NetPnl  float64
+	ISOWeek    int    // ISO 8601 week of year (1..53)
+	WeekID     string // "2026-W19" — the URL slug for /journal/week/{week}
+	HasData    bool
+	Trades     int64
+	NetPnl     float64
+	HasJournal bool   // a week-level journal entry exists for this ISO week
+	JournalTag string // good|bad|neutral|""
 }
 
 // CalendarPage renders /calendar — a monthly grid colored by net P&L.
@@ -96,6 +99,30 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 			tag = *j.Tag
 		}
 		journalsByDate[key] = tag
+	}
+
+	// Week-level journal entries are keyed by Monday's date. Pull a window
+	// that comfortably covers the visible grid (a Sunday-start month always
+	// has Mondays in [monthStart-6 .. monthEnd+6]).
+	weekJournalStart := monthStart.AddDate(0, 0, -7)
+	weekJournalEnd := monthEnd.AddDate(0, 0, 7)
+	weekJournals, err := h.Queries.ListWeekJournalsInRange(ctx, models.ListWeekJournalsInRangeParams{
+		EntryDate:   weekJournalStart,
+		EntryDate_2: weekJournalEnd,
+	})
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list week journals: %w", err))
+		return
+	}
+	weekJournalsByMonday := map[string]string{} // key: Monday "YYYY-MM-DD" → tag
+	for _, j := range weekJournals {
+		y, m, d := j.EntryDate.In(tz).Date()
+		key := fmt.Sprintf("%04d-%02d-%02d", y, m, d)
+		tag := ""
+		if j.Tag != nil {
+			tag = *j.Tag
+		}
+		weekJournalsByMonday[key] = tag
 	}
 
 	// Aggregate per local-day key.
@@ -164,8 +191,16 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		// ISO week is anchored to Monday — week[1] is Monday of this row, the
 		// stable representative for the ISO week regardless of which Sunday
 		// or Saturday the grid happens to start on.
-		_, isoWeek := week[1].Date.ISOWeek()
-		wt := weekTotal{ISOWeek: isoWeek}
+		monday := week[1].Date
+		isoYear, isoWeek := monday.ISOWeek()
+		wt := weekTotal{
+			ISOWeek: isoWeek,
+			WeekID:  fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
+		}
+		if tag, ok := weekJournalsByMonday[monday.Format("2006-01-02")]; ok {
+			wt.HasJournal = true
+			wt.JournalTag = tag
+		}
 		for _, c := range week {
 			// Week aggregates: every day in the row, including spillover.
 			if c.HasData {

@@ -286,6 +286,45 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]
 	return items, nil
 }
 
+const listWeekJournalsInRange = `-- name: ListWeekJournalsInRange :many
+SELECT entry_date, tag FROM journal_entries
+WHERE scope = 'week' AND entry_date >= ? AND entry_date < ?
+ORDER BY entry_date
+`
+
+type ListWeekJournalsInRangeParams struct {
+	EntryDate   time.Time `json:"entry_date"`
+	EntryDate_2 time.Time `json:"entry_date_2"`
+}
+
+type ListWeekJournalsInRangeRow struct {
+	EntryDate time.Time `json:"entry_date"`
+	Tag       *string   `json:"tag"`
+}
+
+func (q *Queries) ListWeekJournalsInRange(ctx context.Context, arg ListWeekJournalsInRangeParams) ([]ListWeekJournalsInRangeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listWeekJournalsInRange, arg.EntryDate, arg.EntryDate_2)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListWeekJournalsInRangeRow
+	for rows.Next() {
+		var i ListWeekJournalsInRangeRow
+		if err := rows.Scan(&i.EntryDate, &i.Tag); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateJournalEntry = `-- name: UpdateJournalEntry :exec
 UPDATE journal_entries
 SET body = ?, mood = ?, tag = ?, updated_at = CURRENT_TIMESTAMP

@@ -37,6 +37,11 @@ SELECT entry_date, tag FROM journal_entries
 WHERE scope = 'day' AND entry_date >= ? AND entry_date < ?
 ORDER BY entry_date;
 
+-- name: ListWeekJournalsInRange :many
+SELECT entry_date, tag FROM journal_entries
+WHERE scope = 'week' AND entry_date >= ? AND entry_date < ?
+ORDER BY entry_date;
+
 -- name: ListJournalFeed :many
 -- The cross-scope chronological feed. Joins in trade + account context so the
 -- feed item for a trade-scoped entry can render the symbol/direction/account

@@ -62,11 +62,21 @@
             </a>
           {{end}}
           {{if eq $di 6}}
+            {{/* Week-level journal affordance — same shape as day cells but linked to /journal/week/<weekID>. */}}
+            <a class="j-cell-icon"
+               href="/journal/week/{{$wt.WeekID}}?back={{$.CalendarBack}}"
+               title="{{if $wt.HasJournal}}Week note{{if $wt.JournalTag}} ({{$wt.JournalTag}}){{end}} — click to view{{else}}Add weekly journal note{{end}}">
+              {{template "journal_icon" (journalState $wt.HasJournal $wt.JournalTag)}}
+            </a>
             {{if $wt.HasData}}
             <div class="week-summary-center">
               <div class="week-label">Week {{$wt.ISOWeek}}</div>
               <div class="week-pnl-val num {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
               <div class="week-trades"><span class="num">{{$wt.Trades}}</span> trades</div>
+            </div>
+            {{else}}
+            <div class="week-summary-center">
+              <div class="week-label">Week {{$wt.ISOWeek}}</div>
             </div>
             {{end}}
           {{else if and $day.InMonth $day.HasData}}
