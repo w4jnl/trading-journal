@@ -54,6 +54,10 @@
       try {
         const resp = await fetch('/import/upload', { method: 'POST', body: fd });
         out.innerHTML = await resp.text();
+        // Wire up hx-post on the freshly-injected picker forms — raw fetch
+        // bypasses HTMX's normal swap pipeline, so the new DOM is invisible
+        // to HTMX until we hand it over explicitly.
+        if (window.htmx) htmx.process(out);
       } catch (err) {
         out.innerHTML = '<div class="card card--neg">Upload failed: ' + err.message + '</div>';
       }
