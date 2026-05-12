@@ -74,8 +74,11 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	flashErr := r.URL.Query().Get("err")
 	movedCount := int64(0)
 	deletedName := ""
-	// "moved=N" / "deleted=NAME" flashes encode their payload after '=' so
-	// the template can render a specific message. Other flashes pass through.
+	recomputedOK := int64(0)
+	recomputedFail := int64(0)
+	// "moved=N" / "deleted=NAME" / "recomputed=N[.F]" flashes encode their
+	// payload after '=' so the template can render a specific message. Other
+	// flashes pass through.
 	flash := flashRaw
 	switch {
 	case strings.HasPrefix(flashRaw, "moved="):
@@ -86,17 +89,30 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	case strings.HasPrefix(flashRaw, "deleted="):
 		deletedName = flashRaw[len("deleted="):]
 		flash = ""
+	case strings.HasPrefix(flashRaw, "recomputed="):
+		parts := strings.SplitN(flashRaw[len("recomputed="):], ".", 2)
+		if n, err := strconv.ParseInt(parts[0], 10, 64); err == nil {
+			recomputedOK = n
+		}
+		if len(parts) == 2 {
+			if n, err := strconv.ParseInt(parts[1], 10, 64); err == nil {
+				recomputedFail = n
+			}
+		}
+		flash = ""
 	}
 	h.renderPage(w, "accounts.html", map[string]any{
-		"NavActive":    "accounts",
-		"BackHref":     validBackHref(r),
-		"Accounts":     accounts,
-		"FirmOptions":  []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
-		"TypeOptions":  accountTypeOptions(),
-		"Flash":        flash,
-		"FlashErr":     flashErr,
-		"MovedCount":   movedCount,
-		"DeletedName":  deletedName,
+		"NavActive":      "accounts",
+		"BackHref":       validBackHref(r),
+		"Accounts":       accounts,
+		"FirmOptions":    []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
+		"TypeOptions":    accountTypeOptions(),
+		"Flash":          flash,
+		"FlashErr":       flashErr,
+		"MovedCount":     movedCount,
+		"DeletedName":    deletedName,
+		"RecomputedOK":   recomputedOK,
+		"RecomputedFail": recomputedFail,
 	})
 }
 
@@ -427,6 +443,33 @@ func (h *Handlers) AccountsDelete(w http.ResponseWriter, r *http.Request) {
 
 	flash := "deleted=" + url.QueryEscape(acct.Name)
 	http.Redirect(w, r, "/accounts?flash="+url.QueryEscape(flash), http.StatusSeeOther)
+}
+
+// AccountsRecomputeAll handles POST /accounts/recompute — re-runs the position
+// builder for every account, rebuilding trades and daily_stats from scratch.
+// Used after a config change (e.g., trading timezone) when the calendar /
+// analytics views need to re-bucket existing data.
+func (h *Handlers) AccountsRecomputeAll(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	accounts, err := h.Queries.ListAccounts(ctx)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+	var rebuilt, failed int
+	for _, a := range accounts {
+		if err := h.ImportSvc.RebuildTradesForAccount(ctx, a.ID); err != nil {
+			h.logger().Warn("recompute trades failed", "account_id", a.ID, "err", err)
+			failed++
+			continue
+		}
+		rebuilt++
+	}
+	flash := fmt.Sprintf("recomputed=%d", rebuilt)
+	if failed > 0 {
+		flash = fmt.Sprintf("recomputed=%d.%d", rebuilt, failed)
+	}
+	http.Redirect(w, r, "/accounts?flash="+flash, http.StatusSeeOther)
 }
 
 // AccountUpdate handles POST /accounts/{id}: validates input, applies the

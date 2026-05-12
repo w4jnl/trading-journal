@@ -89,6 +89,7 @@ func run() error {
 	mux.HandleFunc("GET /accounts", h.AccountsPage)
 	mux.HandleFunc("POST /accounts/save", h.AccountsBulkSave)
 	mux.HandleFunc("POST /accounts/new", h.AccountsCreate)
+	mux.HandleFunc("POST /accounts/recompute", h.AccountsRecomputeAll)
 	mux.HandleFunc("POST /accounts/{id}/reassign", h.AccountsReassign)
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)
 	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)

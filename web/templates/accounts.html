@@ -11,9 +11,18 @@
 {{if eq .Flash "reassignsame"}}<div class="flash error">Source and target are the same account.</div>{{end}}
 {{if .MovedCount}}<div class="flash moved">Moved <span class="num">{{.MovedCount}}</span> trades.</div>{{end}}
 {{if .DeletedName}}<div class="flash deleted">Deleted account <strong>{{.DeletedName}}</strong> and all of its trades, executions, and journal entries.</div>{{end}}
+{{if .RecomputedOK}}<div class="flash saved">Recomputed trades and daily stats for <span class="num">{{.RecomputedOK}}</span> account{{if ne .RecomputedOK 1}}s{{end}}{{if .RecomputedFail}} · <span class="num">{{.RecomputedFail}}</span> failed (see server log){{end}}.</div>{{end}}
 
 <div class="card card--warn" style="margin-bottom: 16px;">
   Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades.
+</div>
+
+<div class="row-sm" style="margin-bottom: 8px; gap: 8px;">
+  <form method="post" action="/accounts/recompute"
+        onsubmit="return confirm('Rebuild trades and daily_stats for every account from raw executions? This is safe to run repeatedly — use it after a timezone or commission change.');"
+        style="display: inline;">
+    <button type="submit" class="btn btn--secondary btn--sm">↻ Recompute all</button>
+  </form>
 </div>
 
 <details class="disclose">
