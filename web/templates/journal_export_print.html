@@ -14,9 +14,10 @@ the page's CSS variables didn't resolve in the print context.
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Journal Export</title>
   <style>
-    /* Force light tokens for paper output. Stops Chrome / Safari from
-       turning the PDF dark if the user's OS or browser is in dark mode. */
-    :root { color-scheme: light only; }
+    /* Force light tokens for paper output. The `only` keyword is a *prefix*
+       in the color-scheme grammar (Safari rejects "light only" outright and,
+       under macOS dark mode, then auto-inverts the page when printing). */
+    :root { color-scheme: only light; }
     html, body {
       margin: 0;
       padding: 0;
@@ -37,6 +38,15 @@ the page's CSS variables didn't resolve in the print context.
 
     @page { margin: 16mm; }
     @media print {
+      /* Belt-and-suspenders for Safari + macOS dark mode: re-assert the
+         light palette inside the print context so the PDF can't end up
+         with light text on white paper. */
+      html, body {
+        background: #ffffff !important;
+        color: #18181b !important;
+        -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+      }
       body  { font-size: 11pt; }
       .page { max-width: none; margin: 0; padding: 0; }
       .no-print { display: none !important; }
