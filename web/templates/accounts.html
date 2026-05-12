@@ -44,17 +44,12 @@
 </details>
 
 <!--
-  All per-row forms live OUTSIDE the table. Buttons/inputs inside the table
-  reference them via HTML5 `form="..."` attributes. This avoids the parser
-  quirks around <form> nested in <td> that were silently breaking the Move
-  and Delete buttons in some browsers — the parsed DOM looked fine in
-  --dump-dom yet click submission did nothing interactively.
+  Bulk-save form sits outside the table; the row inputs reference it via the
+  HTML5 form="…" attribute. Per-row Move and Delete buttons submit via a
+  tiny JS helper (postAccountAction below) instead of HTML form-association
+  so they're not subject to any browser/parser quirks around forms in tables.
 -->
 <form id="accounts-form" method="post" action="/accounts/save"></form>
-{{range .Accounts}}
-  <form id="reassign-form-{{.ID}}" method="post" action="/accounts/{{.ID}}/reassign"></form>
-  <form id="delete-form-{{.ID}}" method="post" action="/accounts/{{.ID}}/delete"></form>
-{{end}}
 
 <div class="table-scroll" style="margin-top: 16px;">
   <table class="accounts">
@@ -81,7 +76,7 @@
               <div class="row" style="margin-top: 8px;">
                 <label class="field">
                   <span class="field-label">To account</span>
-                  <select form="reassign-form-{{$a.ID}}" name="to" required>
+                  <select id="move-target-{{$a.ID}}" required>
                     <option value="">— pick —</option>
                     {{range $.Accounts}}
                       {{if ne .ID $a.ID}}
@@ -90,8 +85,10 @@
                     {{end}}
                   </select>
                 </label>
-                <button form="reassign-form-{{$a.ID}}" type="submit" class="btn btn--danger btn--sm"
-                        onclick="return confirm('Move all trades from {{$a.Name}} to the selected account?\n\nThe source account stays in place (empty). You can delete it later if needed.');">
+                <button type="button" class="btn btn--danger btn--sm"
+                        data-action="move"
+                        data-account-id="{{$a.ID}}"
+                        data-account-name="{{$a.Name}}">
                   Move
                 </button>
               </div>
@@ -103,8 +100,10 @@
                   Permanently removes <strong>{{$a.Name}}</strong> and every trade,
                   execution, and journal entry attached to it. Sync-log history is kept.
                 </p>
-                <button form="delete-form-{{$a.ID}}" type="submit" class="btn btn--danger btn--sm"
-                        onclick="return confirm('Permanently delete account &quot;{{$a.Name}}&quot;?\n\nThis removes ALL of its trades, executions, and journal entries. This cannot be undone.');">
+                <button type="button" class="btn btn--danger btn--sm"
+                        data-action="delete"
+                        data-account-id="{{$a.ID}}"
+                        data-account-name="{{$a.Name}}">
                   Delete account
                 </button>
               </div>
@@ -224,6 +223,57 @@
     document.getElementById('reset-btn').addEventListener('click', () => {
       inputs.forEach((el) => setVal(el, snapshot.get(el)));
       refresh();
+    });
+  })();
+
+  /* Per-row Move / Delete buttons. Build a one-shot form in JS and submit
+     it — avoids ALL the failure modes of HTML form-association inside a
+     table (some browser/extension combinations swallow the submit click). */
+  (function () {
+    function postForm(action, fields) {
+      const f = document.createElement('form');
+      f.method = 'post';
+      f.action = action;
+      f.style.display = 'none';
+      Object.keys(fields).forEach((k) => {
+        const i = document.createElement('input');
+        i.type = 'hidden';
+        i.name = k;
+        i.value = fields[k];
+        f.appendChild(i);
+      });
+      document.body.appendChild(f);
+      f.submit();
+    }
+
+    document.addEventListener('click', (e) => {
+      const btn = e.target.closest('button[data-action]');
+      if (!btn) return;
+      const action = btn.dataset.action;
+      const id = btn.dataset.accountId;
+      const name = btn.dataset.accountName || '';
+
+      if (action === 'delete') {
+        const msg = 'Permanently delete account "' + name + '"?\n\n' +
+                    'This removes ALL of its trades, executions, and journal entries. ' +
+                    'This cannot be undone.';
+        if (!confirm(msg)) return;
+        postForm('/accounts/' + id + '/delete', {});
+        return;
+      }
+
+      if (action === 'move') {
+        const sel = document.getElementById('move-target-' + id);
+        if (!sel || !sel.value) {
+          alert('Pick a target account first.');
+          return;
+        }
+        const msg = 'Move all trades from "' + name + '" to the selected account?\n\n' +
+                    'The source account stays in place (empty). You can delete it later if needed.';
+        if (!confirm(msg)) return;
+        postForm('/accounts/' + id + '/reassign', { to: sel.value });
+        return;
+      }
     });
   })();
 </script>
