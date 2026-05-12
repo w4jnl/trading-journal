@@ -734,38 +734,26 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 	_, _ = w.Write([]byte(b.String()))
 }
 
-// JournalExportPrint serves GET /journal/export/print — a clean HTML page
-// (no sidebar / nav chrome) styled for browser Print → Save as PDF. Same
-// filter parameters as the feed. Bodies render via the existing markdown
-// renderer so headings, lists, and code blocks come through.
-func (h *Handlers) JournalExportPrint(w http.ResponseWriter, r *http.Request) {
+// JournalExportPDF serves GET /journal/export.pdf — a server-generated
+// PDF built from the same filter parameters as the feed. Owning the PDF
+// rendering means the output is identical across browsers (Safari, Chrome,
+// curl) — the long-running blank-PDF issue with browser Print → Save as
+// PDF was caused by exactly that fragility.
+func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	tz := h.localTZ()
 	filters := parseJournalFilters(r, tz)
 
 	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
 	if err != nil {
-		h.serverError(w, fmt.Errorf("print feed: %w", err))
+		h.serverError(w, fmt.Errorf("export feed: %w", err))
 		return
 	}
 
-	type entry struct {
-		Date     time.Time
-		Scope    string
-		Title    string // "Mon, 2 Jan 2026" or "Week 19 · May 4 – May 10"
-		Account  string
-		Trade    string
-		Tag      string
-		BodyHTML template.HTML
-	}
-	out := make([]entry, 0, len(rows))
+	entries := make([]pdfEntry, 0, len(rows))
 	for _, row := range rows {
 		entryDate := row.EntryDate.In(tz)
-		e := entry{
-			Date:     entryDate,
-			Scope:    row.Scope,
-			BodyHTML: template.HTML(renderMarkdown(row.Body)),
-		}
+		e := pdfEntry{Scope: row.Scope, Body: row.Body}
 		switch row.Scope {
 		case "week":
 			_, wk := entryDate.ISOWeek()
@@ -791,28 +779,20 @@ func (h *Handlers) JournalExportPrint(w http.ResponseWriter, r *http.Request) {
 		if row.Tag != nil {
 			e.Tag = *row.Tag
 		}
-		out = append(out, e)
+		entries = append(entries, e)
 	}
 
-	h.renderPrintPage(w, "journal_export_print.html", map[string]any{
-		"GeneratedAt": time.Now().In(tz).Format("2006-01-02 15:04 MST"),
-		"FilterDesc":  filterDescription(filters),
-		"Entries":     out,
-	})
-}
-
-// renderPrintPage parses a stand-alone template that defines its own full
-// HTML (no base.html wrap). Used by the print/export view so the output has
-// no sidebar / nav / app-shell chrome.
-func (h *Handlers) renderPrintPage(w http.ResponseWriter, page string, data any) {
-	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, "templates/"+page)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("parse %s: %w", page, err))
-		return
+	header := pdfHeader{
+		Title:       "Journal Export",
+		GeneratedAt: time.Now().In(tz).Format("2006-01-02 15:04 MST"),
+		FilterDesc:  filterDescription(filters),
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := t.ExecuteTemplate(w, page, data); err != nil {
-		h.logger().Error("render print", "page", page, "err", err)
+
+	filename := exportFilename(filters, "pdf")
+	w.Header().Set("Content-Type", "application/pdf")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	if err := RenderJournalPDF(w, header, entries); err != nil {
+		h.logger().Error("render pdf", "err", err)
 	}
 }
 

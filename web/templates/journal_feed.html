@@ -59,7 +59,7 @@
     {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear</a>{{end}}
     {{/* Export buttons mirror the *applied* filter state — same as Apply. */}}
     <a href="/journal/export.md{{if .ExportQS}}?{{.ExportQS}}{{end}}" class="btn btn--secondary btn--sm">Download .md</a>
-    <a href="/journal/export/print{{if .ExportQS}}?{{.ExportQS}}{{end}}" target="_blank" rel="noopener" class="btn btn--secondary btn--sm">Print / PDF</a>
+    <a href="/journal/export.pdf{{if .ExportQS}}?{{.ExportQS}}{{end}}" class="btn btn--secondary btn--sm">Download PDF</a>
     <span class="muted" style="margin-left: auto;"><span class="num">{{len .Items}}</span> entries{{if .FilterActive}} (filtered){{end}}.</span>
   </div>
 </form>
