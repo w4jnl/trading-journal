@@ -73,23 +73,30 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	flashRaw := r.URL.Query().Get("flash")
 	flashErr := r.URL.Query().Get("err")
 	movedCount := int64(0)
-	// "moved=N" flashes through the value: "flash=moved%3D42" (urlencoded =).
+	deletedName := ""
+	// "moved=N" / "deleted=NAME" flashes encode their payload after '=' so
+	// the template can render a specific message. Other flashes pass through.
 	flash := flashRaw
-	if strings.HasPrefix(flashRaw, "moved=") {
+	switch {
+	case strings.HasPrefix(flashRaw, "moved="):
 		if n, err := strconv.ParseInt(flashRaw[len("moved="):], 10, 64); err == nil {
 			movedCount = n
 		}
 		flash = ""
+	case strings.HasPrefix(flashRaw, "deleted="):
+		deletedName = flashRaw[len("deleted="):]
+		flash = ""
 	}
 	h.renderPage(w, "accounts.html", map[string]any{
-		"NavActive":   "accounts",
-		"BackHref":    validBackHref(r),
-		"Accounts":    accounts,
-		"FirmOptions": []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
-		"TypeOptions": accountTypeOptions(),
-		"Flash":       flash,
-		"FlashErr":    flashErr,
-		"MovedCount":  movedCount,
+		"NavActive":    "accounts",
+		"BackHref":     validBackHref(r),
+		"Accounts":     accounts,
+		"FirmOptions":  []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
+		"TypeOptions":  accountTypeOptions(),
+		"Flash":        flash,
+		"FlashErr":     flashErr,
+		"MovedCount":   movedCount,
+		"DeletedName":  deletedName,
 	})
 }
 
@@ -355,6 +362,71 @@ func (h *Handlers) AccountsReassign(w http.ResponseWriter, r *http.Request) {
 
 	flash := fmt.Sprintf("moved%%3D%d", tradesMoved) // moved=<n>
 	http.Redirect(w, r, "/accounts?flash="+flash, http.StatusSeeOther)
+}
+
+// AccountsDelete handles POST /accounts/{id}/delete — permanently removes
+// the account AND every row that references it: journal entries, trades
+// (which cascade-delete their trade_executions), executions, daily_stats.
+// sync_log rows are kept but their account_id is nulled so the historical
+// import log stays intact.
+//
+// The whole thing runs in a single transaction; SQLite's FK enforcement
+// will trip immediately if anything is mis-ordered.
+func (h *Handlers) AccountsDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+
+	acct, err := h.Queries.GetAccountByID(ctx, id)
+	if err != nil {
+		http.Error(w, "account not found", http.StatusNotFound)
+		return
+	}
+
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("begin: %w", err))
+		return
+	}
+	defer tx.Rollback()
+
+	// Order matters. journal_entries.{account_id, trade_id} and
+	// trades.account_id are NO ACTION FKs — delete children first.
+	// trade_executions has ON DELETE CASCADE on trades.id, so it drops
+	// automatically when we delete trades.
+	statements := []struct {
+		label string
+		sql   string
+	}{
+		{"journal entries", `
+			DELETE FROM journal_entries
+			WHERE account_id = ?1
+			   OR trade_id IN (SELECT id FROM trades WHERE account_id = ?1)
+		`},
+		{"trades", `DELETE FROM trades WHERE account_id = ?1`},
+		{"executions", `DELETE FROM executions WHERE account_id = ?1`},
+		{"daily stats", `DELETE FROM daily_stats WHERE account_id = ?1`},
+		{"sync log", `UPDATE sync_log SET account_id = NULL WHERE account_id = ?1`},
+		{"account", `DELETE FROM accounts WHERE id = ?1`},
+	}
+	for _, st := range statements {
+		if _, err := tx.ExecContext(ctx, st.sql, id); err != nil {
+			h.serverError(w, fmt.Errorf("delete %s: %w", st.label, err))
+			return
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		h.serverError(w, fmt.Errorf("commit: %w", err))
+		return
+	}
+
+	flash := "deleted=" + url.QueryEscape(acct.Name)
+	http.Redirect(w, r, "/accounts?flash="+url.QueryEscape(flash), http.StatusSeeOther)
 }
 
 // AccountUpdate handles POST /accounts/{id}: validates input, applies the
