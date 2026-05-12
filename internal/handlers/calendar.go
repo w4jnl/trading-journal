@@ -40,6 +40,7 @@ type weekTotal struct {
 	NetPnl     float64
 	HasJournal bool   // a week-level journal entry exists for this ISO week
 	JournalTag string // good|bad|neutral|""
+	InFuture   bool   // Monday is after today — no journal/link affordance
 }
 
 // CalendarPage renders /calendar — a monthly grid colored by net P&L.
@@ -200,6 +201,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 			WeekID:    fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
 			MondayStr: monday.Format("2006-01-02"),
 			SundayStr: monday.AddDate(0, 0, 6).Format("2006-01-02"),
+			InFuture:  monday.After(today),
 		}
 		if tag, ok := weekJournalsByMonday[monday.Format("2006-01-02")]; ok {
 			wt.HasJournal = true

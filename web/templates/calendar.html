@@ -45,7 +45,7 @@
 <table class="calendar">
   <thead>
     <tr>
-      <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th>Sat</th>
+      <th>Sun</th><th>Mon</th><th>Tue</th><th>Wed</th><th>Thu</th><th>Fri</th><th class="th-week">Week</th>
     </tr>
   </thead>
   <tbody>
@@ -62,27 +62,33 @@
             </a>
           {{end}}
           {{if eq $di 6}}
-            {{/* Week-level journal affordance — same shape as day cells but linked to /journal/week/<weekID>. */}}
-            <a class="j-cell-icon"
-               href="/journal/week/{{$wt.WeekID}}?back={{$.CalendarBack}}"
-               title="{{if $wt.HasJournal}}Week note{{if $wt.JournalTag}} ({{$wt.JournalTag}}){{end}} — click to view{{else}}Add weekly journal note{{end}}">
-              {{template "journal_icon" (journalState $wt.HasJournal $wt.JournalTag)}}
-            </a>
-            {{/* Whole cell becomes a /trades link spanning Mon..Sun, mirroring the day-cell behaviour.
-                 The journal icon above sits at z-index:2 so its click still wins. */}}
-            <a class="day-link week-link" href="/trades?from={{$wt.MondayStr}}&to={{$wt.SundayStr}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
-            {{if $wt.HasData}}
-              <div class="week-summary-center">
-                <div class="week-label">Week {{$wt.ISOWeek}}</div>
-                <div class="week-pnl-val num {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
-                <div class="week-trades"><span class="num">{{$wt.Trades}}</span> trades</div>
-              </div>
+            {{if not $wt.InFuture}}
+              {{/* Week-level journal affordance — same shape as day cells but linked to /journal/week/<weekID>. */}}
+              <a class="j-cell-icon"
+                 href="/journal/week/{{$wt.WeekID}}?back={{$.CalendarBack}}"
+                 title="{{if $wt.HasJournal}}Week note{{if $wt.JournalTag}} ({{$wt.JournalTag}}){{end}} — click to view{{else}}Add weekly journal note{{end}}">
+                {{template "journal_icon" (journalState $wt.HasJournal $wt.JournalTag)}}
+              </a>
+              {{/* Whole cell becomes a /trades link spanning Mon..Sun, mirroring the day-cell behaviour.
+                   The journal icon above sits at z-index:2 so its click still wins. */}}
+              <a class="day-link week-link" href="/trades?from={{$wt.MondayStr}}&to={{$wt.SundayStr}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
+              {{if $wt.HasData}}
+                <div class="week-summary-center">
+                  <div class="week-label">Week {{$wt.ISOWeek}}</div>
+                  <div class="week-pnl-val num {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
+                  <div class="week-trades"><span class="num">{{$wt.Trades}}</span> trades</div>
+                </div>
+              {{else}}
+                <div class="week-summary-center">
+                  <div class="week-label">Week {{$wt.ISOWeek}}</div>
+                </div>
+              {{end}}
+              </a>
             {{else}}
               <div class="week-summary-center">
                 <div class="week-label">Week {{$wt.ISOWeek}}</div>
               </div>
             {{end}}
-            </a>
           {{else if and $day.InMonth $day.HasData}}
             <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num in-month">{{$day.Date.Day}}</div>
@@ -110,7 +116,13 @@
   .calendar td.has-pnl-pos-strong { background: linear-gradient(135deg, var(--cal-pos-3), var(--cal-pos-4)); border-color: transparent; }
   .calendar td.has-pnl-neg        { background: linear-gradient(135deg, var(--cal-neg-1), var(--cal-neg-2)); border-color: transparent; }
   .calendar td.has-pnl-neg-strong { background: linear-gradient(135deg, var(--cal-neg-3), var(--cal-neg-4)); border-color: transparent; }
-  .calendar td.sat-cell           { background: var(--bg-sunken); border: 1px dashed var(--border); }
+  /* Visual separation of the weekly summary column (column 7) from Friday so it
+     reads as a roll-up, not another day. nth-child applies to every row, including
+     spillover weeks where the Saturday cell is rendered as out-of-month. */
+  .calendar th:nth-child(7),
+  .calendar td:nth-child(7) { border-left: 14px solid transparent; }
+  .calendar th.th-week { color: var(--accent); font-weight: 700; }
+  .calendar td.sat-cell           { background: var(--bg-sunken); border: 1px dashed var(--border); border-left: 14px solid transparent; }
   .calendar td.sat-cell.week-pos        { background: linear-gradient(135deg, var(--cal-pos-1), var(--cal-pos-3)); border-style: solid; border-color: transparent; }
   .calendar td.sat-cell.week-pos-strong { background: linear-gradient(135deg, var(--cal-pos-3), var(--cal-pos-4)); border-style: solid; border-color: transparent; }
   .calendar td.sat-cell.week-neg        { background: linear-gradient(135deg, var(--cal-neg-1), var(--cal-neg-3)); border-style: solid; border-color: transparent; }
@@ -139,7 +151,7 @@
   .j-cell-icon:hover .icon-journal { transform: rotate(-3deg) translateY(-1px); }
   .week-summary-center { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 4px; line-height: 1.25; pointer-events: none; }
   .week-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); font-weight: 600; }
-  .week-pnl-val { font-size: 16px; font-weight: 700; margin-top: 2px; letter-spacing: -0.01em; }
+  .week-pnl-val { font-size: 22px; font-weight: 700; margin-top: 2px; letter-spacing: -0.01em; }
   .week-pnl-val.pos { color: var(--pos); }
   .week-pnl-val.neg { color: var(--neg); }
   .calendar td.sat-cell.week-pos        .week-pnl-val.pos { color: var(--cal-text-pos); }

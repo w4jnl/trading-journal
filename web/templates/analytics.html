@@ -14,6 +14,7 @@
   <button type="submit" class="btn btn--primary">Apply</button>
   <div class="row-sm">
     <button type="button" class="btn btn--secondary btn--sm" data-preset="today">Today</button>
+    <button type="button" class="btn btn--secondary btn--sm" data-preset="thisweek">This week</button>
     <button type="button" class="btn btn--secondary btn--sm" data-preset="week">Last week</button>
     <button type="button" class="btn btn--secondary btn--sm" data-preset="month">Last month</button>
   </div>
@@ -291,6 +292,11 @@
       btn.addEventListener('click', () => {
         const today = new Date();
         let from = new Date(today);
+        if (btn.dataset.preset === 'thisweek') {
+          // Monday of the current ISO-style week. JS getDay(): 0=Sun..6=Sat.
+          const daysSinceMon = (today.getDay() + 6) % 7;
+          from.setDate(today.getDate() - daysSinceMon);
+        }
         if (btn.dataset.preset === 'week') from.setDate(today.getDate() - 7);
         if (btn.dataset.preset === 'month') from.setDate(today.getDate() - 30);
         fromInput.value = fmt(from);
