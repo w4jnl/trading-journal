@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -65,9 +66,15 @@ func accountTypeOptions() []accountTypeOption {
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
 // back to /accounts/{id} to update the row in place via HTMX.
 func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
-	accounts, err := h.Queries.ListAccounts(r.Context())
+	ctx := r.Context()
+	accounts, err := h.Queries.ListAccounts(ctx)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+	balances, err := h.loadBalances(ctx, time.Now())
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load balances: %w", err))
 		return
 	}
 	flashRaw := r.URL.Query().Get("flash")
@@ -113,6 +120,8 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"DeletedName":    deletedName,
 		"RecomputedOK":   recomputedOK,
 		"RecomputedFail": recomputedFail,
+		"Balances":       balances,
+		"Today":          time.Now().In(h.localTZ()).Format("2006-01-02"),
 	})
 }
 

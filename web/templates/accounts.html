@@ -12,6 +12,8 @@
 {{if .MovedCount}}<div class="flash moved">Moved <span class="num">{{.MovedCount}}</span> trades.</div>{{end}}
 {{if .DeletedName}}<div class="flash deleted">Deleted account <strong>{{.DeletedName}}</strong> and all of its trades, executions, and journal entries.</div>{{end}}
 {{if .RecomputedOK}}<div class="flash saved">Recomputed trades and daily stats for <span class="num">{{.RecomputedOK}}</span> account{{if ne .RecomputedOK 1}}s{{end}}{{if .RecomputedFail}} · <span class="num">{{.RecomputedFail}}</span> failed (see server log){{end}}.</div>{{end}}
+{{if eq .Flash "balanced"}}<div class="flash saved">Balance saved.</div>{{end}}
+{{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 <div class="card card--warn" style="margin-bottom: 16px;">
   Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades.
@@ -69,6 +71,7 @@
         <th>Firm</th>
         <th>Type</th>
         <th>Curr</th>
+        <th>Balance</th>
         <th>Active</th>
         <th>Status</th>
       </tr>
@@ -135,11 +138,61 @@
             </select>
           </td>
           <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;"></td>
+          <td class="balance-cell">
+            {{$bal := index $.Balances $a.ID}}
+            {{if $bal.Known}}
+              <div class="balance-val num">{{printf "%.2f" $bal.Balance}}</div>
+              <div class="balance-sub muted">as of {{$.Today}}</div>
+            {{else}}
+              <div class="balance-val muted">—</div>
+            {{end}}
+            <details class="reassign">
+              <summary>{{if $bal.Known}}Adjust…{{else}}Set balance…{{end}}</summary>
+              <form method="post" action="/accounts/{{$a.ID}}/balances" class="balance-form" style="margin-top: 8px;">
+                <div class="row" style="align-items: flex-end;">
+                  <label class="field"><span class="field-label">Date</span>
+                    <input type="date" name="anchor_date" value="{{$.Today}}" required></label>
+                  <label class="field"><span class="field-label">{{$a.Currency}} balance</span>
+                    <input type="text" name="balance" required inputmode="decimal" placeholder="50000.00" style="width: 110px;"></label>
+                  <label class="field"><span class="field-label">Note</span>
+                    <input type="text" name="note" placeholder="optional" style="width: 140px;"></label>
+                  <button type="submit" class="btn btn--primary btn--sm">Save anchor</button>
+                </div>
+              </form>
+              {{if $bal.Anchors}}
+                <table class="anchors" style="margin-top: 10px; width: 100%; font-size: 11px;">
+                  <thead>
+                    <tr>
+                      <th style="text-align: left;">Date</th>
+                      <th style="text-align: right;">Balance</th>
+                      <th style="text-align: left;">Note</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {{range $bal.Anchors}}
+                      <tr>
+                        <td class="num">{{localtime .AnchorDate "2006-01-02"}}</td>
+                        <td class="num" style="text-align: right;">{{printf "%.2f" .Balance}}</td>
+                        <td class="muted">{{.Note}}</td>
+                        <td style="text-align: right;">
+                          <button type="button" class="btn btn--ghost btn--sm"
+                                  data-action="del-anchor"
+                                  data-anchor-id="{{.ID}}"
+                                  data-anchor-date="{{localtime .AnchorDate "2006-01-02"}}">×</button>
+                        </td>
+                      </tr>
+                    {{end}}
+                  </tbody>
+                </table>
+              {{end}}
+            </details>
+          </td>
           <td style="text-align: center;"><input form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
           <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="7" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
+        <tr><td colspan="8" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -187,6 +240,13 @@
   /* "+ New account" disclosure */
   details.disclose > summary { list-style: none; }
   details.disclose > summary::-webkit-details-marker { display: none; }
+
+  /* Balance column */
+  td.balance-cell { min-width: 160px; }
+  .balance-val { font-weight: 600; font-size: 13px; }
+  .balance-sub { font-size: 11px; margin-top: 2px; }
+  table.anchors th, table.anchors td { padding: 4px 6px; border: 0; }
+  table.anchors tbody tr:nth-child(odd) { background: var(--bg-sunken); }
 </style>
 
 <script>
@@ -281,6 +341,14 @@
                     'The source account stays in place (empty). You can delete it later if needed.';
         if (!confirm(msg)) return;
         postForm('/accounts/' + id + '/reassign', { to: sel.value });
+        return;
+      }
+
+      if (action === 'del-anchor') {
+        const anchorID = btn.dataset.anchorId;
+        const anchorDate = btn.dataset.anchorDate || '';
+        if (!confirm('Delete balance anchor for ' + anchorDate + '?')) return;
+        postForm('/balances/' + anchorID + '/delete', {});
         return;
       }
     });
