@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/db"
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // FIFO state-machine tests use synthetic fills inserted directly into a fresh

@@ -17,8 +17,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/importer"
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // Handlers groups every HTTP handler with its shared deps. main.go injects

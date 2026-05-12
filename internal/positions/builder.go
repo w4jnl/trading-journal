@@ -26,7 +26,7 @@ import (
 	"sort"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // Key identifies a (account, contract) FIFO queue.

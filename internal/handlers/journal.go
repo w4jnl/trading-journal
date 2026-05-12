@@ -16,7 +16,7 @@ import (
 	mdHtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
 
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // JournalFeed renders /journal — the chronological feed mixing day, trade,

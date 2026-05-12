@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/jaro/trading-journal/internal/importer"
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // validFirms are the firms recognized by the commission_rates seed and the

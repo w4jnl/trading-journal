@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 const tradesPageSize = 50

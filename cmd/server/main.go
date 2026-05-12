@@ -14,12 +14,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/config"
-	"github.com/jaro/trading-journal/internal/db"
-	"github.com/jaro/trading-journal/internal/handlers"
-	"github.com/jaro/trading-journal/internal/importer"
-	"github.com/jaro/trading-journal/internal/models"
-	"github.com/jaro/trading-journal/web"
+	"github.com/w4jnl/trading-journal/internal/config"
+	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/handlers"
+	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/web"
 )
 
 func main() {

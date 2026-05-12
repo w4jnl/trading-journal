@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/models"
-	"github.com/jaro/trading-journal/internal/positions"
+	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/positions"
 )
 
 // ImportService ingests CSV exports into the database.

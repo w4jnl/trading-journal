@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // dayCell is what the template renders for each day in the grid.

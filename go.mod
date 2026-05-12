@@ -1,4 +1,4 @@
-module github.com/jaro/trading-journal
+module github.com/w4jnl/trading-journal
 
 go 1.26.2
 

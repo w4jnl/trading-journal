@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jaro/trading-journal/internal/db"
-	"github.com/jaro/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 func setupTestService(t *testing.T) (*ImportService, *sql.DB, string, string, string) {
