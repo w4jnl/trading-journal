@@ -33,6 +33,8 @@ type dayCell struct {
 type weekTotal struct {
 	ISOWeek    int    // ISO 8601 week of year (1..53)
 	WeekID     string // "2026-W19" — the URL slug for /journal/week/{week}
+	MondayStr  string // "2026-05-04" — used as ?from on the /trades link
+	SundayStr  string // "2026-05-10" — used as ?to (Sunday = Monday + 6)
 	HasData    bool
 	Trades     int64
 	NetPnl     float64
@@ -194,8 +196,10 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		monday := week[1].Date
 		isoYear, isoWeek := monday.ISOWeek()
 		wt := weekTotal{
-			ISOWeek: isoWeek,
-			WeekID:  fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
+			ISOWeek:   isoWeek,
+			WeekID:    fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
+			MondayStr: monday.Format("2006-01-02"),
+			SundayStr: monday.AddDate(0, 0, 6).Format("2006-01-02"),
 		}
 		if tag, ok := weekJournalsByMonday[monday.Format("2006-01-02")]; ok {
 			wt.HasJournal = true

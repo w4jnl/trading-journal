@@ -73,6 +73,14 @@
   --cal-neg-2: #fee2e2;
   --cal-neg-3: #fca5a5;
   --cal-neg-4: #f87171;
+  /* Text colours that sit on the heat gradients above. --pos/--neg (the
+     sentiment greens/reds used elsewhere) fail WCAG AA on these pale
+     backgrounds in light mode; these darker shades clear it. */
+  --cal-text-pos:        #14532d;
+  --cal-text-pos-strong: #052e16;
+  --cal-text-neg:        #7f1d1d;
+  --cal-text-neg-strong: #450a0a;
+  --cal-meta-on-tint:    #3f3f46;
 
   /* Shadows */
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.04);
@@ -142,6 +150,14 @@
   --cal-neg-2: rgba(239, 68, 68, 0.18);
   --cal-neg-3: rgba(239, 68, 68, 0.32);
   --cal-neg-4: rgba(239, 68, 68, 0.50);
+  /* Dark theme: cells are already low-luminance overlays on a dark
+     background, so the standard sentiment colours have plenty of
+     contrast — pass them through unchanged. */
+  --cal-text-pos:        var(--pos);
+  --cal-text-pos-strong: var(--pos);
+  --cal-text-neg:        var(--neg);
+  --cal-text-neg-strong: var(--neg);
+  --cal-meta-on-tint:    var(--fg-muted);
 
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.30);
   --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.40);

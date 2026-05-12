@@ -97,6 +97,8 @@ func run() error {
 	mux.HandleFunc("POST /commissions/rates/delete", h.CommissionsRateDelete)
 	mux.HandleFunc("POST /commissions/classes/new", h.CommissionsClassCreate)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
+	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
+	mux.HandleFunc("GET /journal/export/print", h.JournalExportPrint)
 	mux.HandleFunc("GET /journal/week/{week}", h.WeekJournalPage)
 	mux.HandleFunc("POST /journal/week/{week}", h.WeekJournalSave)
 	mux.HandleFunc("GET /journal/{date}", h.JournalPage)

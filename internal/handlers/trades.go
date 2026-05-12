@@ -92,22 +92,103 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		pages = 1
 	}
 
+	// Chart data: only when the user has narrowed to a date range (calendar
+	// day cell, Saturday week link, or hand-set from/to). Outside that case
+	// the page is the global trade log — a cumulative curve over hundreds of
+	// trades is not useful, so we skip rendering the chart entirely.
+	chartXs, chartYs, chartTitle, chartTotal, err := buildPerfChart(ctx, h.DB, filters)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("perf chart: %w", err))
+		return
+	}
+
 	h.renderPage(w, "trades.html", map[string]any{
-		"NavActive":         "trades",
-		"BackHref":          validBackHref(r),
-		"Trades":            rows,
-		"Total":             total,
-		"Page":              filters.Page,
-		"Pages":             pages,
-		"PageSize":          tradesPageSize,
-		"Accounts":          accounts,
-		"SymbolRoots":       roots,
-		"Filters":           filtersAsForm(filters),
-		"FilterSelections":  filters.Account.Selected,
-		"FilterCount":       filters.Account.SelectedCount,
-		"PrevPage":          pageRef(r, filters.Page-1, pages),
-		"NextPage":          pageRef(r, filters.Page+1, pages),
+		"NavActive":        "trades",
+		"BackHref":         validBackHref(r),
+		"Trades":           rows,
+		"Total":            total,
+		"Page":             filters.Page,
+		"Pages":            pages,
+		"PageSize":         tradesPageSize,
+		"Accounts":         accounts,
+		"SymbolRoots":      roots,
+		"Filters":          filtersAsForm(filters),
+		"FilterSelections": filters.Account.Selected,
+		"FilterCount":      filters.Account.SelectedCount,
+		"PrevPage":         pageRef(r, filters.Page-1, pages),
+		"NextPage":         pageRef(r, filters.Page+1, pages),
+		"ChartXs":          chartXs,    // []int64 Unix timestamps (seconds)
+		"ChartYs":          chartYs,    // []float64 cumulative net P&L
+		"ChartTitle":       chartTitle, // empty string when chart is suppressed
+		"ChartTotal":       chartTotal, // final cumulative — drives stroke colour
 	})
+}
+
+// buildPerfChart returns the cumulative-P&L curve points for the active
+// filters when from/to are both set. Returned arrays are empty when the
+// chart should be suppressed (no date range or zero matching trades).
+//
+// The cumulative is computed over EVERY filtered trade (not just the visible
+// page), ordered by exit_time ASC. The series prepends a (firstExitTime-1min,
+// 0) baseline point so the curve starts at zero and ramps to the first trade's
+// P&L — matches the visual in exportData/performance.jpg.
+func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64, ys []float64, title string, total float64, err error) {
+	if f.From == nil || f.To == nil {
+		return nil, nil, "", 0, nil
+	}
+	where, args := buildWhere(f)
+	q := `SELECT t.exit_time, t.net_pnl
+	      FROM trades t
+	      WHERE ` + where + `
+	        AND t.exit_time IS NOT NULL
+	        AND t.net_pnl   IS NOT NULL
+	      ORDER BY t.exit_time ASC, t.id ASC`
+	rs, err := db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, nil, "", 0, err
+	}
+	defer rs.Close()
+	type point struct {
+		t   time.Time
+		net float64
+	}
+	var raw []point
+	for rs.Next() {
+		var t time.Time
+		var net float64
+		if err := rs.Scan(&t, &net); err != nil {
+			return nil, nil, "", 0, err
+		}
+		raw = append(raw, point{t, net})
+	}
+	if err := rs.Err(); err != nil {
+		return nil, nil, "", 0, err
+	}
+	if len(raw) == 0 {
+		return nil, nil, "", 0, nil
+	}
+	// Prepend a baseline point at first exit minus 1 minute so the line
+	// starts at zero and rises to the first trade's net.
+	xs = make([]int64, 0, len(raw)+1)
+	ys = make([]float64, 0, len(raw)+1)
+	xs = append(xs, raw[0].t.Add(-time.Minute).Unix())
+	ys = append(ys, 0)
+	cum := 0.0
+	for _, p := range raw {
+		cum += p.net
+		xs = append(xs, p.t.Unix())
+		ys = append(ys, cum)
+	}
+	total = cum
+
+	fromStr := f.From.Format("2006-01-02")
+	toStr := f.To.Add(-24 * time.Hour).Format("2006-01-02") // To is exclusive +24h; restore the user-facing day
+	if fromStr == toStr {
+		title = "Day Performance · " + fromStr
+	} else {
+		title = "Range Performance · " + fromStr + " – " + toStr
+	}
+	return xs, ys, title, total, nil
 }
 
 // TradeDetail renders the trade detail partial — used by HTMX to populate a

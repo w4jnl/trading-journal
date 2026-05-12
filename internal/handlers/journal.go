@@ -104,17 +104,38 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
 
 	h.renderPage(w, "journal_feed.html", map[string]any{
-		"NavActive":      "journal",
-		"BackHref":       validBackHref(r),
-		"Items":          items,
-		"Today":          todayStr,
-		"ThisWeek":       thisWeekStr,
-		"FilterFrom":     filters.fromStr,
-		"FilterTo":       filters.toStr,
-		"ScopeSelected":  filters.scopeSet, // map[string]bool — used by checkboxes
-		"TagSelected":    filters.tagSet,
-		"FilterActive":   filters.active(),
+		"NavActive":     "journal",
+		"BackHref":      validBackHref(r),
+		"Items":         items,
+		"Today":         todayStr,
+		"ThisWeek":      thisWeekStr,
+		"FilterFrom":    filters.fromStr,
+		"FilterTo":      filters.toStr,
+		"ScopeSelected": filters.scopeSet, // map[string]bool — used by checkboxes
+		"TagSelected":   filters.tagSet,
+		"FilterActive":  filters.active(),
+		"ExportQS":      template.URL(exportQueryString(filters)), // ready-to-append (without leading '?')
 	})
+}
+
+// exportQueryString re-emits the active filters as a URL query string so the
+// "Download .md" / "Print" buttons preserve the user's filter state. Empty
+// when nothing is active — the buttons then export everything.
+func exportQueryString(f journalFilters) string {
+	v := url.Values{}
+	if f.fromStr != "" {
+		v.Set("from", f.fromStr)
+	}
+	if f.toStr != "" {
+		v.Set("to", f.toStr)
+	}
+	for _, s := range f.scopes {
+		v.Add("scope", s)
+	}
+	for _, t := range f.tags {
+		v.Add("tag", t)
+	}
+	return v.Encode()
 }
 
 // journalFilters carries the parsed feed filters: date range + scope + tag.
@@ -639,4 +660,199 @@ func (h *Handlers) localTZ() *time.Location {
 		return h.Timezone
 	}
 	return time.UTC
+}
+
+// JournalExportMarkdown serves GET /journal/export.md — a text/markdown
+// attachment built from the same filter parameters as the journal feed. The
+// body of each entry is emitted verbatim (it's already markdown); the wrapper
+// adds an H2 date heading, scope/tag metadata, and a horizontal rule between
+// entries so the result reads as a single document.
+func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tz := h.localTZ()
+	filters := parseJournalFilters(r, tz)
+
+	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("export feed: %w", err))
+		return
+	}
+
+	var b strings.Builder
+	now := time.Now().In(tz)
+	b.WriteString("# Journal Export\n\n")
+	b.WriteString("_Generated ")
+	b.WriteString(now.Format("2006-01-02 15:04 MST"))
+	if active := filterDescription(filters); active != "" {
+		b.WriteString(". ")
+		b.WriteString(active)
+	}
+	b.WriteString("._\n\n---\n\n")
+
+	if len(rows) == 0 {
+		b.WriteString("_No entries match the active filters._\n")
+	}
+
+	for _, row := range rows {
+		entryDate := row.EntryDate.In(tz)
+		switch row.Scope {
+		case "week":
+			_, wk := entryDate.ISOWeek()
+			sunday := entryDate.AddDate(0, 0, 6)
+			fmt.Fprintf(&b, "## Week %d · %s – %s — **week**\n\n",
+				wk, entryDate.Format("Jan 2"), sunday.Format("Jan 2, 2006"))
+		case "trade":
+			fmt.Fprintf(&b, "## %s — **trade**\n\n", entryDate.Format("Mon, 2 Jan 2006"))
+		default:
+			fmt.Fprintf(&b, "## %s — **day**\n\n", entryDate.Format("Mon, 2 Jan 2006"))
+		}
+
+		if row.AccountName != nil && *row.AccountName != "" {
+			fmt.Fprintf(&b, "- **Account:** %s\n", *row.AccountName)
+		}
+		if row.TradeSymbol != nil {
+			meta := *row.TradeSymbol
+			if row.TradeDirection != nil {
+				meta += " " + *row.TradeDirection
+			}
+			if row.TradeNetPnl != nil {
+				meta += fmt.Sprintf(" · $%.2f", *row.TradeNetPnl)
+			}
+			fmt.Fprintf(&b, "- **Trade:** %s\n", meta)
+		}
+		if row.Tag != nil && *row.Tag != "" {
+			fmt.Fprintf(&b, "- **Tag:** %s\n", *row.Tag)
+		}
+		b.WriteString("\n")
+		b.WriteString(strings.TrimRight(row.Body, "\n"))
+		b.WriteString("\n\n---\n\n")
+	}
+
+	filename := exportFilename(filters, "md")
+	w.Header().Set("Content-Type", "text/markdown; charset=utf-8")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+	_, _ = w.Write([]byte(b.String()))
+}
+
+// JournalExportPrint serves GET /journal/export/print — a clean HTML page
+// (no sidebar / nav chrome) styled for browser Print → Save as PDF. Same
+// filter parameters as the feed. Bodies render via the existing markdown
+// renderer so headings, lists, and code blocks come through.
+func (h *Handlers) JournalExportPrint(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	tz := h.localTZ()
+	filters := parseJournalFilters(r, tz)
+
+	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("print feed: %w", err))
+		return
+	}
+
+	type entry struct {
+		Date     time.Time
+		Scope    string
+		Title    string // "Mon, 2 Jan 2026" or "Week 19 · May 4 – May 10"
+		Account  string
+		Trade    string
+		Tag      string
+		BodyHTML template.HTML
+	}
+	out := make([]entry, 0, len(rows))
+	for _, row := range rows {
+		entryDate := row.EntryDate.In(tz)
+		e := entry{
+			Date:     entryDate,
+			Scope:    row.Scope,
+			BodyHTML: template.HTML(renderMarkdown(row.Body)),
+		}
+		switch row.Scope {
+		case "week":
+			_, wk := entryDate.ISOWeek()
+			sunday := entryDate.AddDate(0, 0, 6)
+			e.Title = fmt.Sprintf("Week %d · %s – %s",
+				wk, entryDate.Format("Jan 2"), sunday.Format("Jan 2, 2006"))
+		default:
+			e.Title = entryDate.Format("Mon, 2 Jan 2006")
+		}
+		if row.AccountName != nil {
+			e.Account = *row.AccountName
+		}
+		if row.TradeSymbol != nil {
+			meta := *row.TradeSymbol
+			if row.TradeDirection != nil {
+				meta += " " + *row.TradeDirection
+			}
+			if row.TradeNetPnl != nil {
+				meta += fmt.Sprintf(" · $%.2f", *row.TradeNetPnl)
+			}
+			e.Trade = meta
+		}
+		if row.Tag != nil {
+			e.Tag = *row.Tag
+		}
+		out = append(out, e)
+	}
+
+	h.renderPrintPage(w, "journal_export_print.html", map[string]any{
+		"GeneratedAt": time.Now().In(tz).Format("2006-01-02 15:04 MST"),
+		"FilterDesc":  filterDescription(filters),
+		"Entries":     out,
+	})
+}
+
+// renderPrintPage parses a stand-alone template that defines its own full
+// HTML (no base.html wrap). Used by the print/export view so the output has
+// no sidebar / nav / app-shell chrome.
+func (h *Handlers) renderPrintPage(w http.ResponseWriter, page string, data any) {
+	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, "templates/"+page)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("parse %s: %w", page, err))
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := t.ExecuteTemplate(w, page, data); err != nil {
+		h.logger().Error("render print", "page", page, "err", err)
+	}
+}
+
+// filterDescription produces a short human-readable summary of the active
+// filters, used in the export's header line. Empty when nothing is set.
+func filterDescription(f journalFilters) string {
+	var parts []string
+	if f.fromStr != "" || f.toStr != "" {
+		from, to := f.fromStr, f.toStr
+		if from == "" {
+			from = "…"
+		}
+		if to == "" {
+			to = "…"
+		}
+		parts = append(parts, "range "+from+"–"+to)
+	}
+	if len(f.scopes) > 0 {
+		parts = append(parts, "scope: "+strings.Join(f.scopes, ", "))
+	}
+	if len(f.tags) > 0 {
+		parts = append(parts, "tag: "+strings.Join(f.tags, ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "Filters — " + strings.Join(parts, "; ")
+}
+
+// exportFilename builds a stable filename for the download based on the
+// filter date range. Falls back to today's date when no range is active.
+func exportFilename(f journalFilters, ext string) string {
+	if f.fromStr != "" && f.toStr != "" {
+		return "journal-" + f.fromStr + "_to_" + f.toStr + "." + ext
+	}
+	if f.fromStr != "" {
+		return "journal-from-" + f.fromStr + "." + ext
+	}
+	if f.toStr != "" {
+		return "journal-until-" + f.toStr + "." + ext
+	}
+	return "journal-" + time.Now().Format("2006-01-02") + "." + ext
 }

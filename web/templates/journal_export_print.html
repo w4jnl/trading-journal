@@ -1,0 +1,154 @@
+{{/*
+Stand-alone print/PDF view of the journal feed. NOT wrapped in base.html
+because the export must contain no sidebar, nav, or theme toggle chrome.
+The browser's Print → Save as PDF produces a clean archive.
+*/}}
+{{define "journal_export_print.html"}}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Journal Export</title>
+  <link rel="stylesheet" href="/static/css/app.css">
+  <style>
+    /* Force light tokens — print is always on white paper; carrying dark-mode
+       CSS variables into a PDF saves an ugly black background. */
+    html { background: #ffffff !important; }
+    body {
+      background: #ffffff !important;
+      color: #18181b;
+      font-family: var(--font-sans);
+      line-height: 1.55;
+    }
+    @media screen {
+      body { max-width: 780px; margin: 32px auto; padding: 0 24px; }
+    }
+    @media print {
+      body { margin: 0; padding: 0 12mm; font-size: 11pt; }
+      .no-print { display: none !important; }
+      .entry { page-break-inside: avoid; }
+      a { color: inherit; text-decoration: none; }
+    }
+    .export-header {
+      border-bottom: 1px solid #e4e4e7;
+      padding-bottom: 12px;
+      margin-bottom: 24px;
+    }
+    .export-header h1 { margin: 0 0 4px 0; font-size: 22px; }
+    .export-header .meta { color: #71717a; font-size: 12px; }
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .toolbar button {
+      font-family: var(--font-sans);
+      font-size: 12px;
+      padding: 6px 12px;
+      border: 1px solid #d4d4d8;
+      background: #fafafa;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .entry {
+      margin: 24px 0;
+      padding-bottom: 24px;
+      border-bottom: 1px solid #e4e4e7;
+    }
+    .entry:last-child { border-bottom: 0; }
+    .entry-title {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin: 0 0 8px 0;
+      font-size: 16px;
+      font-weight: 600;
+    }
+    .entry-scope {
+      font-size: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: #f4f4f5;
+      color: #52525b;
+      font-weight: 600;
+    }
+    .entry-scope.scope-trade { background: #eef2ff; color: #4338ca; }
+    .entry-scope.scope-week  { background: #fef3c7; color: #92400e; }
+    .entry-meta {
+      font-size: 12px;
+      color: #52525b;
+      margin: 4px 0 12px 0;
+    }
+    .entry-meta strong { font-weight: 600; color: #18181b; }
+    .entry-tag {
+      display: inline-block;
+      font-size: 11px;
+      padding: 1px 8px;
+      border-radius: 999px;
+      margin-left: 6px;
+      border: 1px solid currentColor;
+    }
+    .entry-tag.tag-good    { color: #16a34a; }
+    .entry-tag.tag-bad     { color: #dc2626; }
+    .entry-tag.tag-neutral { color: #4f46e5; }
+    .entry-body p { margin: 8px 0; }
+    .entry-body pre {
+      background: #f4f4f5;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      overflow-x: auto;
+    }
+    .entry-body code {
+      font-family: var(--font-mono);
+      font-size: 0.9em;
+      background: #f4f4f5;
+      padding: 1px 4px;
+      border-radius: 3px;
+    }
+    .entry-body pre code { background: transparent; padding: 0; }
+    .entry-body blockquote {
+      border-left: 3px solid #d4d4d8;
+      margin: 8px 0;
+      padding: 4px 12px;
+      color: #52525b;
+    }
+    .empty { color: #71717a; padding: 24px 0; }
+  </style>
+</head>
+<body>
+  <div class="toolbar no-print">
+    <button type="button" onclick="window.print()">Print / Save as PDF</button>
+    <button type="button" onclick="window.close()">Close</button>
+  </div>
+
+  <header class="export-header">
+    <h1>Journal Export</h1>
+    <div class="meta">
+      Generated {{.GeneratedAt}}{{if .FilterDesc}} · {{.FilterDesc}}{{end}}
+    </div>
+  </header>
+
+  {{if .Entries}}
+    {{range .Entries}}
+      <article class="entry">
+        <h2 class="entry-title">
+          {{.Title}}
+          <span class="entry-scope scope-{{.Scope}}">{{.Scope}}</span>
+          {{if .Tag}}<span class="entry-tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
+        </h2>
+        {{if or .Account .Trade}}
+        <div class="entry-meta">
+          {{if .Account}}<strong>Account:</strong> {{.Account}}{{end}}
+          {{if and .Account .Trade}} · {{end}}
+          {{if .Trade}}<strong>Trade:</strong> {{.Trade}}{{end}}
+        </div>
+        {{end}}
+        <div class="entry-body">{{.BodyHTML}}</div>
+      </article>
+    {{end}}
+  {{else}}
+    <p class="empty">No entries match the active filters.</p>
+  {{end}}
+</body>
+</html>
+{{end}}

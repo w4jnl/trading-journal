@@ -5,6 +5,72 @@
 
 <h1>Trades</h1>
 
+{{if .ChartTitle}}
+<div class="card card--compact" style="margin-bottom: 16px;">
+  <div class="label" style="margin-bottom: 8px;">{{.ChartTitle}}</div>
+  <div id="perf-chart" data-total="{{.ChartTotal}}" style="height: 240px; width: 100%;"></div>
+</div>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+<script>
+  /* Inline data emitted by the Go handler. Both arrays are aligned and start
+     with a (firstExitTime - 1min, 0) baseline so the curve rises from zero. */
+  window.__perfChart = {
+    xs: [{{range $i, $v := .ChartXs}}{{if $i}},{{end}}{{$v}}{{end}}],
+    ys: [{{range $i, $v := .ChartYs}}{{if $i}},{{end}}{{$v}}{{end}}],
+    total: {{.ChartTotal}},
+  };
+  (function () {
+    var instance = null;
+    function readColors() {
+      var cs = getComputedStyle(document.documentElement);
+      return {
+        pos:   cs.getPropertyValue('--pos').trim()       || '#16a34a',
+        neg:   cs.getPropertyValue('--neg').trim()       || '#dc2626',
+        grid:  cs.getPropertyValue('--border').trim()    || '#e4e4e7',
+        label: cs.getPropertyValue('--fg-muted').trim()  || '#71717a',
+      };
+    }
+    function hexToRgba(hex, a) {
+      if (hex.startsWith('rgb')) return hex;
+      var h = hex.replace('#', '');
+      var bigint = parseInt(h.length === 3 ? h.split('').map(function (x) { return x + x; }).join('') : h, 16);
+      var r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
+      return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + a + ')';
+    }
+    function build() {
+      if (instance) { instance.destroy(); instance = null; }
+      var el = document.getElementById('perf-chart');
+      if (!el || !window.__perfChart.xs.length) return;
+      var c = readColors();
+      var stroke = window.__perfChart.total >= 0 ? c.pos : c.neg;
+      instance = new uPlot({
+        width: el.clientWidth,
+        height: el.clientHeight,
+        scales: { x: { time: true } },
+        series: [
+          {},
+          {
+            label: 'Cumulative P&L',
+            stroke: stroke,
+            fill: hexToRgba(stroke, 0.18),
+            width: 1.8,
+            value: function (u, v) { return v == null ? '' : v.toFixed(2); },
+          },
+        ],
+        axes: [
+          { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+          { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+        ],
+      }, [window.__perfChart.xs, window.__perfChart.ys], el);
+    }
+    build();
+    window.addEventListener('themechange', function () { setTimeout(build, 50); });
+    window.addEventListener('resize', function () { setTimeout(build, 50); });
+  })();
+</script>
+{{end}}
+
 <form method="get" action="/trades" class="filter-row">
   {{template "account_filter" .}}
   <label>Symbol

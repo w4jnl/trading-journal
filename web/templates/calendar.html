@@ -68,17 +68,21 @@
                title="{{if $wt.HasJournal}}Week note{{if $wt.JournalTag}} ({{$wt.JournalTag}}){{end}} — click to view{{else}}Add weekly journal note{{end}}">
               {{template "journal_icon" (journalState $wt.HasJournal $wt.JournalTag)}}
             </a>
+            {{/* Whole cell becomes a /trades link spanning Mon..Sun, mirroring the day-cell behaviour.
+                 The journal icon above sits at z-index:2 so its click still wins. */}}
+            <a class="day-link week-link" href="/trades?from={{$wt.MondayStr}}&to={{$wt.SundayStr}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
             {{if $wt.HasData}}
-            <div class="week-summary-center">
-              <div class="week-label">Week {{$wt.ISOWeek}}</div>
-              <div class="week-pnl-val num {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
-              <div class="week-trades"><span class="num">{{$wt.Trades}}</span> trades</div>
-            </div>
+              <div class="week-summary-center">
+                <div class="week-label">Week {{$wt.ISOWeek}}</div>
+                <div class="week-pnl-val num {{if gt $wt.NetPnl 0.0}}pos{{else if lt $wt.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</div>
+                <div class="week-trades"><span class="num">{{$wt.Trades}}</span> trades</div>
+              </div>
             {{else}}
-            <div class="week-summary-center">
-              <div class="week-label">Week {{$wt.ISOWeek}}</div>
-            </div>
+              <div class="week-summary-center">
+                <div class="week-label">Week {{$wt.ISOWeek}}</div>
+              </div>
             {{end}}
+            </a>
           {{else if and $day.InMonth $day.HasData}}
             <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num in-month">{{$day.Date.Day}}</div>
@@ -116,7 +120,18 @@
   .day-pnl { font-size: 15px; font-weight: 700; margin-top: 4px; letter-spacing: -0.01em; }
   .day-pnl.pos { color: var(--pos); }
   .day-pnl.neg { color: var(--neg); }
+  /* On heat-tinted cells, swap to darker shade tokens. --pos / --neg fail
+     WCAG AA on the pale gradients in light mode; the cal-text-* tokens
+     pass-through to --pos / --neg in dark mode where contrast is fine. */
+  .calendar td.has-pnl-pos        .day-pnl.pos { color: var(--cal-text-pos); }
+  .calendar td.has-pnl-pos-strong .day-pnl.pos { color: var(--cal-text-pos-strong); }
+  .calendar td.has-pnl-neg        .day-pnl.neg { color: var(--cal-text-neg); }
+  .calendar td.has-pnl-neg-strong .day-pnl.neg { color: var(--cal-text-neg-strong); }
   .day-meta { font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+  .calendar td.has-pnl-pos        .day-meta,
+  .calendar td.has-pnl-pos-strong .day-meta,
+  .calendar td.has-pnl-neg        .day-meta,
+  .calendar td.has-pnl-neg-strong .day-meta { color: var(--cal-meta-on-tint); }
   .day-link { position: absolute; inset: 0; text-decoration: none; color: inherit; padding: 8px; border-radius: var(--r-md); }
   .j-cell-icon { position: absolute; top: 4px; right: 6px; z-index: 2; line-height: 0; text-decoration: none; }
   .j-cell-icon .icon-journal.icon-empty { color: var(--fg-muted); opacity: 0.55; }
@@ -127,7 +142,15 @@
   .week-pnl-val { font-size: 16px; font-weight: 700; margin-top: 2px; letter-spacing: -0.01em; }
   .week-pnl-val.pos { color: var(--pos); }
   .week-pnl-val.neg { color: var(--neg); }
+  .calendar td.sat-cell.week-pos        .week-pnl-val.pos { color: var(--cal-text-pos); }
+  .calendar td.sat-cell.week-pos-strong .week-pnl-val.pos { color: var(--cal-text-pos-strong); }
+  .calendar td.sat-cell.week-neg        .week-pnl-val.neg { color: var(--cal-text-neg); }
+  .calendar td.sat-cell.week-neg-strong .week-pnl-val.neg { color: var(--cal-text-neg-strong); }
   .week-trades { font-size: 11px; color: var(--fg-muted); margin-top: 1px; }
+  .calendar td.sat-cell.week-pos        .week-trades,
+  .calendar td.sat-cell.week-pos-strong .week-trades,
+  .calendar td.sat-cell.week-neg        .week-trades,
+  .calendar td.sat-cell.week-neg-strong .week-trades { color: var(--cal-meta-on-tint); }
   @media (max-width: 600px) {
     .calendar td { height: 70px; padding: 4px; font-size: 11px; }
     .day-pnl { font-size: 12px; }
