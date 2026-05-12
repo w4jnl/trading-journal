@@ -1,7 +1,11 @@
 {{/*
 Stand-alone print/PDF view of the journal feed. NOT wrapped in base.html
 because the export must contain no sidebar, nav, or theme toggle chrome.
-The browser's Print → Save as PDF produces a clean archive.
+
+Fully self-contained: no /static/css/app.css link, no CSS-var lookups,
+explicit @page margins. Anything outside this file cannot affect the
+print output, which prevents the "blank PDF" failure mode we saw when
+the page's CSS variables didn't resolve in the print context.
 */}}
 {{define "journal_export_print.html"}}<!doctype html>
 <html lang="en">
@@ -9,51 +13,67 @@ The browser's Print → Save as PDF produces a clean archive.
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Journal Export</title>
-  <link rel="stylesheet" href="/static/css/app.css">
   <style>
-    /* Force light tokens — print is always on white paper; carrying dark-mode
-       CSS variables into a PDF saves an ugly black background. */
-    html { background: #ffffff !important; }
-    body {
-      background: #ffffff !important;
+    /* Force light tokens for paper output. Stops Chrome / Safari from
+       turning the PDF dark if the user's OS or browser is in dark mode. */
+    :root { color-scheme: light only; }
+    html, body {
+      margin: 0;
+      padding: 0;
+      background: #ffffff;
       color: #18181b;
-      font-family: var(--font-sans);
+      font-family: system-ui, -apple-system, 'Inter', 'Segoe UI', Roboto, sans-serif;
+      font-size: 14px;
       line-height: 1.55;
+      -webkit-print-color-adjust: exact;
+              print-color-adjust: exact;
     }
-    @media screen {
-      body { max-width: 780px; margin: 32px auto; padding: 0 24px; }
-    }
+    /* Anchors keep colour on screen (subtle accent) but turn black on print
+       so URLs don't end up as bright blue blocks in the PDF. */
+    a { color: #4338ca; text-decoration: none; }
+
+    /* Screen layout: a centred reading column. */
+    .page { max-width: 780px; margin: 32px auto; padding: 0 24px; }
+
+    @page { margin: 16mm; }
     @media print {
-      body { margin: 0; padding: 0 12mm; font-size: 11pt; }
+      body  { font-size: 11pt; }
+      .page { max-width: none; margin: 0; padding: 0; }
       .no-print { display: none !important; }
-      .entry { page-break-inside: avoid; }
-      a { color: inherit; text-decoration: none; }
+      .entry    { page-break-inside: avoid; }
+      a { color: #18181b; }
     }
+
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
+    .toolbar button {
+      font: inherit;
+      font-size: 12px;
+      padding: 6px 12px;
+      border: 1px solid #d4d4d8;
+      background: #fafafa;
+      color: #18181b;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .toolbar button:hover { background: #f4f4f5; }
+
     .export-header {
       border-bottom: 1px solid #e4e4e7;
       padding-bottom: 12px;
       margin-bottom: 24px;
     }
-    .export-header h1 { margin: 0 0 4px 0; font-size: 22px; }
+    .export-header h1 { margin: 0 0 4px 0; font-size: 22px; font-weight: 600; }
     .export-header .meta { color: #71717a; font-size: 12px; }
-    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; }
-    .toolbar button {
-      font-family: var(--font-sans);
-      font-size: 12px;
-      padding: 6px 12px;
-      border: 1px solid #d4d4d8;
-      background: #fafafa;
-      border-radius: 6px;
-      cursor: pointer;
-    }
+
     .entry {
-      margin: 24px 0;
+      margin: 0 0 24px 0;
       padding-bottom: 24px;
       border-bottom: 1px solid #e4e4e7;
     }
-    .entry:last-child { border-bottom: 0; }
+    .entry:last-of-type { border-bottom: 0; }
     .entry-title {
       display: flex;
+      flex-wrap: wrap;
       align-items: baseline;
       gap: 10px;
       margin: 0 0 8px 0;
@@ -89,17 +109,25 @@ The browser's Print → Save as PDF produces a clean archive.
     .entry-tag.tag-good    { color: #16a34a; }
     .entry-tag.tag-bad     { color: #dc2626; }
     .entry-tag.tag-neutral { color: #4f46e5; }
+
     .entry-body p { margin: 8px 0; }
+    .entry-body h1, .entry-body h2, .entry-body h3 { margin: 12px 0 6px; }
+    .entry-body h1 { font-size: 16px; }
+    .entry-body h2 { font-size: 14px; }
+    .entry-body h3 { font-size: 13px; }
+    .entry-body ul, .entry-body ol { padding-left: 22px; }
     .entry-body pre {
       background: #f4f4f5;
       padding: 8px 12px;
       border-radius: 6px;
-      font-family: var(--font-mono);
+      font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
       font-size: 12px;
       overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
     .entry-body code {
-      font-family: var(--font-mono);
+      font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
       font-size: 0.9em;
       background: #f4f4f5;
       padding: 1px 4px;
@@ -112,43 +140,46 @@ The browser's Print → Save as PDF produces a clean archive.
       padding: 4px 12px;
       color: #52525b;
     }
+
     .empty { color: #71717a; padding: 24px 0; }
   </style>
 </head>
 <body>
-  <div class="toolbar no-print">
-    <button type="button" onclick="window.print()">Print / Save as PDF</button>
-    <button type="button" onclick="window.close()">Close</button>
-  </div>
-
-  <header class="export-header">
-    <h1>Journal Export</h1>
-    <div class="meta">
-      Generated {{.GeneratedAt}}{{if .FilterDesc}} · {{.FilterDesc}}{{end}}
+  <div class="page">
+    <div class="toolbar no-print">
+      <button type="button" onclick="window.print()">Print / Save as PDF</button>
+      <button type="button" onclick="window.close()">Close</button>
     </div>
-  </header>
 
-  {{if .Entries}}
-    {{range .Entries}}
-      <article class="entry">
-        <h2 class="entry-title">
-          {{.Title}}
-          <span class="entry-scope scope-{{.Scope}}">{{.Scope}}</span>
-          {{if .Tag}}<span class="entry-tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
-        </h2>
-        {{if or .Account .Trade}}
-        <div class="entry-meta">
-          {{if .Account}}<strong>Account:</strong> {{.Account}}{{end}}
-          {{if and .Account .Trade}} · {{end}}
-          {{if .Trade}}<strong>Trade:</strong> {{.Trade}}{{end}}
-        </div>
-        {{end}}
-        <div class="entry-body">{{.BodyHTML}}</div>
-      </article>
+    <header class="export-header">
+      <h1>Journal Export</h1>
+      <div class="meta">
+        Generated {{.GeneratedAt}}{{if .FilterDesc}} · {{.FilterDesc}}{{end}}
+      </div>
+    </header>
+
+    {{if .Entries}}
+      {{range .Entries}}
+        <article class="entry">
+          <h2 class="entry-title">
+            {{.Title}}
+            <span class="entry-scope scope-{{.Scope}}">{{.Scope}}</span>
+            {{if .Tag}}<span class="entry-tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
+          </h2>
+          {{if or .Account .Trade}}
+          <div class="entry-meta">
+            {{if .Account}}<strong>Account:</strong> {{.Account}}{{end}}
+            {{if and .Account .Trade}} · {{end}}
+            {{if .Trade}}<strong>Trade:</strong> {{.Trade}}{{end}}
+          </div>
+          {{end}}
+          <div class="entry-body">{{.BodyHTML}}</div>
+        </article>
+      {{end}}
+    {{else}}
+      <p class="empty">No entries match the active filters.</p>
     {{end}}
-  {{else}}
-    <p class="empty">No entries match the active filters.</p>
-  {{end}}
+  </div>
 </body>
 </html>
 {{end}}
