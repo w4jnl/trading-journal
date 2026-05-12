@@ -139,6 +139,13 @@ func (h *Handlers) ImportAssign(w http.ResponseWriter, r *http.Request) {
 // decides whether the UI needs to prompt the user for an account. Returns
 // the list of existing TopStep-flavored accounts so the picker can render
 // the dropdown without doing the query a second time.
+//
+// Fires for any TopstepX trades CSV whose target account can't be inferred
+// from the filename. Even when there are zero or one existing TopStep
+// accounts the picker still appears — with zero, only the "Create new"
+// branch is offered; with one, the user can pick that account or create a
+// new one — so we never silently route into a phantom TOPSTEP-DEFAULT
+// bucket the way the importer's auto-create path used to.
 func (h *Handlers) detectNeedsAccountPicker(ctx context.Context, stagedPath string) (bool, []models.Account, error) {
 	// Read just enough to detect format — first KB is plenty (header row).
 	f, err := os.Open(stagedPath)
@@ -167,10 +174,6 @@ func (h *Handlers) detectNeedsAccountPicker(ctx context.Context, stagedPath stri
 			(a.Firm != nil && *a.Firm == "topstep") {
 			topstep = append(topstep, a)
 		}
-	}
-	// Singleton or zero-account cases are unambiguous: skip the picker.
-	if len(topstep) <= 1 {
-		return false, nil, nil
 	}
 	return true, topstep, nil
 }

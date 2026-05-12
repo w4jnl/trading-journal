@@ -10,10 +10,12 @@ completes the ingest.
   <h3 style="margin-top: 0;">Choose a TopStep account for this file</h3>
   <p class="muted">
     <strong>{{.OriginalName}}</strong> is a TopstepX trades export but the filename doesn't
-    say which of your TopStep accounts it belongs to. Pick one below — or rename the
+    say which of your TopStep accounts it belongs to.
+    {{if .TopstepAccounts}}Pick one below{{else}}You don't have any TopStep accounts yet — create one below{{end}} — or rename the
     file to start with <code>topstep_&lt;ref&gt;_</code> next time to skip this step.
   </p>
 
+  {{if .TopstepAccounts}}
   <details open style="margin-bottom: 12px;">
     <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">Assign to existing account</summary>
     <form hx-post="/import/assign" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy-assign" class="row" style="margin-top: 8px;">
@@ -31,9 +33,10 @@ completes the ingest.
       <span id="busy-assign" class="muted htmx-indicator"><span class="spinner"></span> working…</span>
     </form>
   </details>
+  {{end}}
 
-  <details>
-    <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">Or create a new account and import</summary>
+  <details {{if not .TopstepAccounts}}open{{end}}>
+    <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">{{if .TopstepAccounts}}Or create a new account and import{{else}}Create a new TopStep account and import{{end}}</summary>
     <form hx-post="/import/assign" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy-create" class="row" style="margin-top: 8px;">
       <input type="hidden" name="staged_path" value="{{.StagedPath}}">
       <label class="field"><span class="field-label">Name</span>
