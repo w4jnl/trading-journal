@@ -153,6 +153,165 @@ func dayStart(t time.Time, tz *time.Location) time.Time {
 	return time.Date(y, m, d, 0, 0, 0, 0, tz)
 }
 
+// loadTradeBalances returns map[trade_id] → balance-after-this-trade for every
+// closed trade on an account that has at least one balance anchor. Trades on
+// anchorless accounts are absent from the map; the template renders "—" for
+// those rows.
+//
+// Algorithm — for each account independently:
+//   1. Sort the account's closed trades by exit_time ASC.
+//   2. Sort its anchors by anchor_date ASC. The anchor balance is taken to
+//      mean "end-of-day on anchor_date" (every trade exited on or before
+//      that day's last instant is already baked into it).
+//   3. For each trade, pick the relevant anchor: the latest anchor whose date
+//      is ≤ the trade's exit-day, or — if all anchors are in the future —
+//      the earliest anchor (back-fill).
+//   4. Compute balance_after via a cumulative net-P&L array:
+//      - trade at index i ≤ anchorEndIdx  (trade is in the anchor's past):
+//          balance = anchor.Balance − Σ net_pnl(j) for j in (i, anchorEndIdx]
+//      - trade at index i > anchorEndIdx  (trade is in the anchor's future):
+//          balance = anchor.Balance + Σ net_pnl(j) for j in (anchorEndIdx, i]
+func (h *Handlers) loadTradeBalances(ctx context.Context) (map[int64]*float64, error) {
+	tz := h.localTZ()
+
+	// Anchors per account, sorted by date ASC.
+	type anchorRow struct {
+		Date    time.Time
+		Balance float64
+	}
+	anchorsByAccount := map[int64][]anchorRow{}
+	{
+		rows, err := h.DB.QueryContext(ctx, `
+			SELECT account_id, anchor_date, balance
+			FROM balance_anchors
+			ORDER BY account_id, anchor_date ASC
+		`)
+		if err != nil {
+			return nil, fmt.Errorf("anchors: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var aid int64
+			var d time.Time
+			var b float64
+			if err := rows.Scan(&aid, &d, &b); err != nil {
+				return nil, fmt.Errorf("scan anchor: %w", err)
+			}
+			anchorsByAccount[aid] = append(anchorsByAccount[aid], anchorRow{Date: d, Balance: b})
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+	if len(anchorsByAccount) == 0 {
+		return map[int64]*float64{}, nil
+	}
+
+	// Closed trades for every anchored account, ordered globally by exit_time
+	// so we can group + walk per-account in one pass.
+	type tradeRow struct {
+		ID       int64
+		ExitTime time.Time
+		NetPnl   float64
+	}
+	tradesByAccount := map[int64][]tradeRow{}
+	{
+		rows, err := h.DB.QueryContext(ctx, `
+			SELECT id, account_id, exit_time, COALESCE(net_pnl, 0)
+			FROM trades
+			WHERE status='closed' AND exit_time IS NOT NULL
+			ORDER BY exit_time ASC
+		`)
+		if err != nil {
+			return nil, fmt.Errorf("trades: %w", err)
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var aid int64
+			var tr tradeRow
+			if err := rows.Scan(&tr.ID, &aid, &tr.ExitTime, &tr.NetPnl); err != nil {
+				return nil, fmt.Errorf("scan trade: %w", err)
+			}
+			if _, anchored := anchorsByAccount[aid]; !anchored {
+				continue
+			}
+			tradesByAccount[aid] = append(tradesByAccount[aid], tr)
+		}
+		if err := rows.Err(); err != nil {
+			return nil, err
+		}
+	}
+
+	out := make(map[int64]*float64, 256)
+	for aid, anchors := range anchorsByAccount {
+		trades := tradesByAccount[aid]
+		if len(trades) == 0 {
+			continue
+		}
+
+		// Cumulative net_pnl across the account's trades. cum[i] = sum of
+		// NetPnl[0..i] inclusive.
+		cum := make([]float64, len(trades))
+		var s float64
+		for i, t := range trades {
+			s += t.NetPnl
+			cum[i] = s
+		}
+
+		// For each anchor, find the largest trade index whose exit_time falls
+		// within the anchor's end-of-day. That's the "include up to" index.
+		anchorEndIdx := make([]int, len(anchors))
+		for ai, a := range anchors {
+			endOfDay := dayStart(a.Date, tz).Add(24*time.Hour - time.Nanosecond)
+			idx := -1
+			for j := 0; j < len(trades); j++ {
+				if !trades[j].ExitTime.After(endOfDay) {
+					idx = j
+				} else {
+					break
+				}
+			}
+			anchorEndIdx[ai] = idx
+		}
+
+		// For each trade, pick the anchor: latest anchor whose date ≤ trade's
+		// exit-day, or — when all anchors are in the future — the earliest.
+		for i, t := range trades {
+			tDay := dayStart(t.ExitTime, tz)
+			ai := -1
+			for k := 0; k < len(anchors); k++ {
+				if !dayStart(anchors[k].Date, tz).After(tDay) {
+					ai = k
+				} else {
+					break
+				}
+			}
+			if ai == -1 {
+				ai = 0 // earliest future anchor
+			}
+			anchor := anchors[ai]
+			endIdx := anchorEndIdx[ai]
+
+			var bal float64
+			if i <= endIdx {
+				// Trade is in this anchor's past.
+				delta := cum[endIdx] - cum[i]
+				bal = anchor.Balance - delta
+			} else {
+				// Trade is in this anchor's future.
+				var prev float64
+				if endIdx >= 0 {
+					prev = cum[endIdx]
+				}
+				bal = anchor.Balance + (cum[i] - prev)
+			}
+			b := bal
+			out[t.ID] = &b
+		}
+	}
+	return out, nil
+}
+
 // AccountsAddBalance handles POST /accounts/{id}/balances — inserts (or
 // updates, on UNIQUE conflict) a balance anchor at the given date.
 func (h *Handlers) AccountsAddBalance(w http.ResponseWriter, r *http.Request) {

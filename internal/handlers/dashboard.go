@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"time"
 )
 
@@ -24,6 +25,46 @@ type dashboardStats struct {
 	Longs       int64
 	Shorts      int64
 	HasTrades   bool
+}
+
+// dashboardEquity is the at-a-glance equity tile shown atop the dashboard.
+// Known is true only when at least one active account has a balance anchor;
+// otherwise the tile renders the empty-state link to /accounts.
+//
+// ByType breaks the total down per account type (live / prop_live / prop_eval
+// / prop_funded / paper) so eval money isn't silently mixed in with real
+// capital. Only types with at least one anchored account appear.
+type dashboardEquity struct {
+	Known         bool
+	Total         float64
+	AsOf          string // YYYY-MM-DD in the trading timezone
+	AccountsKnown int64
+	AccountsTotal int64 // active accounts considered
+	ByType        []equityByType
+}
+
+// equityByType is one row of the equity breakdown — the sum across accounts
+// of one type. Order is set by the slice it lives in (handler emits a fixed
+// display order so real-money types come first).
+type equityByType struct {
+	Type     string // "live", "prop_live", etc.
+	Label    string // "Live", "Prop · Live"
+	Total    float64
+	Accounts int64
+}
+
+// equityTypeOrder is the display order for the per-type breakdown — real
+// capital first, eval money last. Mirrors the visual hierarchy a trader
+// uses when sizing risk.
+var equityTypeOrder = []struct {
+	Type  string
+	Label string
+}{
+	{"live", "Live"},
+	{"prop_live", "Prop · Live"},
+	{"prop_funded", "Prop · Funded"},
+	{"prop_eval", "Prop · Eval"},
+	{"paper", "Paper"},
 }
 
 // DashboardPage renders / — the at-a-glance summary. Shows the most recent
@@ -60,6 +101,12 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		recent = recent[:5]
 	}
 
+	equity, err := h.dashboardEquityNow(ctx, tz)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("equity: %w", err))
+		return
+	}
+
 	today := todayLocal(tz)
 	isStale := stats.HasTrades && !stats.Date.Equal(today)
 
@@ -67,6 +114,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		"NavActive":    "dashboard",
 		"BackHref":     validBackHref(r),
 		"Stats":        stats,
+		"Equity":       equity,
 		"DateLabel":    stats.Date.Format("Mon, 2 Jan 2006"),
 		"IsStale":      isStale,
 		"LastSyncs":    lastSyncs,
@@ -172,4 +220,90 @@ func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *ti
 func todayLocal(tz *time.Location) time.Time {
 	now := time.Now().In(tz)
 	return time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
+}
+
+// dashboardEquityNow sums current running balances across active accounts.
+// Active = accounts.active=1. Accounts without a balance anchor contribute
+// 0 to the total and aren't counted toward AccountsKnown; the tile copy
+// surfaces the gap so the user knows what's excluded.
+//
+// The per-type breakdown follows equityTypeOrder so real capital appears
+// above eval / paper money in the rendered table.
+func (h *Handlers) dashboardEquityNow(ctx context.Context, tz *time.Location) (dashboardEquity, error) {
+	balances, err := h.loadBalances(ctx, time.Now())
+	if err != nil {
+		return dashboardEquity{}, err
+	}
+	accounts, err := h.Queries.ListAccounts(ctx)
+	if err != nil {
+		return dashboardEquity{}, err
+	}
+	var eq dashboardEquity
+	eq.AsOf = todayLocal(tz).Format("2006-01-02")
+	byType := map[string]*equityByType{}
+	for _, a := range accounts {
+		if a.Active != 1 {
+			continue
+		}
+		eq.AccountsTotal++
+		b, ok := balances[a.ID]
+		if !ok || !b.Known {
+			continue
+		}
+		eq.AccountsKnown++
+		eq.Total += b.Balance
+		eq.Known = true
+
+		typeSlug := ""
+		if a.Type != nil {
+			typeSlug = *a.Type
+		}
+		row, exists := byType[typeSlug]
+		if !exists {
+			row = &equityByType{Type: typeSlug, Label: equityTypeLabel(typeSlug)}
+			byType[typeSlug] = row
+		}
+		row.Total += b.Balance
+		row.Accounts++
+	}
+	eq.ByType = orderedEquityBreakdown(byType)
+	return eq, nil
+}
+
+// equityTypeLabel maps an account_type slug to the human label used in the
+// breakdown. Falls back to "Other" for unmapped or missing types so a row
+// is still rendered (better than hiding anchored money).
+func equityTypeLabel(slug string) string {
+	for _, ord := range equityTypeOrder {
+		if ord.Type == slug {
+			return ord.Label
+		}
+	}
+	if slug == "" {
+		return "Unspecified"
+	}
+	return slug
+}
+
+// orderedEquityBreakdown returns the per-type rows in equityTypeOrder, then
+// any unknown / unspecified types alphabetically at the end so the breakdown
+// table always lists the same primary types in the same order.
+func orderedEquityBreakdown(byType map[string]*equityByType) []equityByType {
+	var out []equityByType
+	seen := map[string]bool{}
+	for _, ord := range equityTypeOrder {
+		if r, ok := byType[ord.Type]; ok {
+			out = append(out, *r)
+			seen[ord.Type] = true
+		}
+	}
+	var leftovers []equityByType
+	for t, r := range byType {
+		if seen[t] {
+			continue
+		}
+		leftovers = append(leftovers, *r)
+	}
+	sort.Slice(leftovers, func(i, j int) bool { return leftovers[i].Label < leftovers[j].Label })
+	return append(out, leftovers...)
 }

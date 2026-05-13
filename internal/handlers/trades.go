@@ -102,6 +102,14 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Per-trade running balance — populated only for trades whose account has
+	// at least one balance anchor on /accounts. Other rows render "—".
+	tradeBalances, err := h.loadTradeBalances(ctx)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("trade balances: %w", err))
+		return
+	}
+
 	h.renderPage(w, "trades.html", map[string]any{
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
@@ -121,6 +129,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"ChartYs":          chartYs,    // []float64 cumulative net P&L
 		"ChartTitle":       chartTitle, // empty string when chart is suppressed
 		"ChartTotal":       chartTotal, // final cumulative — drives stroke colour
+		"TradeBalances":    tradeBalances, // map[trade_id]float64, missing = no anchor
 	})
 }
 

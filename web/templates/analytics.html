@@ -58,11 +58,50 @@
   </div>
 </div>
 
+<!-- Account equity breakdown (per-type, end-of-range) -->
+<div class="card" style="margin-bottom: 16px;">
+  <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· at end of filter range</span></div>
+  {{if gt $.EquityIncluded 0}}
+    <table class="equity-breakdown">
+      <tbody>
+        {{range $.EquityByType}}
+        <tr>
+          <td class="lbl">{{.Label}}</td>
+          <td class="num val">{{printf "%.2f" .Total}}</td>
+          <td class="muted num count"><span class="num">{{.Accounts}}</span> acct{{if ne .Accounts 1}}s{{end}}</td>
+        </tr>
+        {{end}}
+        <tr class="total-row">
+          <td class="lbl"><strong>Total</strong></td>
+          <td class="num val"><strong>{{printf "%.2f" $.EquityNow}}</strong></td>
+          <td class="muted num count"><span class="num">{{$.EquityIncluded}}</span> anchored{{if gt $.EquityExcluded 0}} · <span class="num">{{$.EquityExcluded}}</span> excluded{{end}}</td>
+        </tr>
+      </tbody>
+    </table>
+  {{else}}
+    <div class="muted">No anchored accounts in this filter — <a href="/accounts">set a balance on /accounts</a>.</div>
+  {{end}}
+</div>
+
 <!-- Daily account balance -->
 <div class="card" style="margin-bottom: 16px;">
   <div class="card-title">Daily Account Balance</div>
   <div id="chart-balance" class="chart-host" style="height: 240px;"></div>
+  {{if and (gt $.EquityIncluded 0) (gt $.EquityExcluded 0)}}
+    <div class="muted" style="margin-top: 8px; font-size: 11px;">
+      Equity curve covers <span class="num">{{$.EquityIncluded}}</span> anchored account{{if ne $.EquityIncluded 1}}s{{end}};
+      <span class="num">{{$.EquityExcluded}}</span> selected account{{if ne $.EquityExcluded 1}}s{{end}} excluded (no anchor on /accounts yet).
+    </div>
+  {{end}}
 </div>
+<style>
+  table.equity-breakdown { width: 100%; max-width: 480px; border-collapse: collapse; margin-top: 4px; }
+  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
+  table.equity-breakdown td.lbl { color: var(--fg-muted); }
+  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
+  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
+  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
+</style>
 
 <!-- Day-of-week stats -->
 <div class="row-3">
@@ -335,6 +374,21 @@
       ];
     }
 
+    // Compact axis values for currency: "52,000" stays "52,000", "152,000"
+    // becomes "152K", "1,250,000" becomes "1.25M". Used by the balance chart
+    // so 6-7 digit equity numbers fit in a reasonable axis gutter.
+    function fmtMoneyShort(v) {
+      if (v == null || Number.isNaN(v)) return '';
+      const abs = Math.abs(v);
+      if (abs >= 1e6) return (v / 1e6).toFixed(2).replace(/\.0+$/, '') + 'M';
+      if (abs >= 1e5) return Math.round(v / 1e3) + 'K';
+      return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
+    function fmtMoneyFull(v) {
+      if (v == null || Number.isNaN(v)) return '—';
+      return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    }
+
     function hexToRgba(hex, a) {
       // tolerate rgba() input untouched
       if (hex.startsWith('rgb')) return hex;
@@ -344,19 +398,39 @@
       return `rgba(${r}, ${g}, ${b}, ${a})`;
     }
 
-    // Daily Account Balance (cumulative line + area)
+    // Money-axis variant: keep the standard X axis but widen the Y gutter and
+    // format ticks compactly. Balance numbers can run into 6-7 digits, which
+    // crops under the default uPlot axis size of 50.
+    function moneyAxes() {
+      return [
+        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+        {
+          stroke: c.label,
+          grid: { stroke: c.grid, width: 1 },
+          size: 70,
+          values: (u, splits) => splits.map(fmtMoneyShort),
+        },
+      ];
+    }
+
+    // Daily Account Balance — actual running equity, anchored per-account.
+    // Falls back to the empty-state message when no selected account has a
+    // balance anchor (the server returns empty balance arrays in that case).
     (function () {
       const el = document.querySelector('#chart-balance');
       if (!el) return;
-      if (!chartData.dates || chartData.dates.length === 0) { el.innerHTML = noData; return; }
+      if (!chartData.balDates || chartData.balDates.length === 0) {
+        el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No equity data — set a balance anchor on <a href="/accounts">/accounts</a>.</div>';
+        return;
+      }
       charts.balance = new uPlot({
         width: el.clientWidth, height: 220,
         series: [
           {},
-          { label: 'Balance', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6 },
+          { label: 'Balance', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6, value: (u, v) => fmtMoneyFull(v) },
         ],
-        axes: commonAxes(),
-      }, [chartData.dates, chartData.cum], el);
+        axes: moneyAxes(),
+      }, [chartData.balDates, chartData.balance], el);
     })();
 
     // Daily Net Cumulative P&L
@@ -368,9 +442,9 @@
         width: el.clientWidth, height: 220,
         series: [
           {},
-          { label: 'Cumulative', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6 },
+          { label: 'Cumulative', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6, value: (u, v) => fmtMoneyFull(v) },
         ],
-        axes: commonAxes(),
+        axes: moneyAxes(),
       }, [chartData.dates, chartData.cum], el);
     })();
 

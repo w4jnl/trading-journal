@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"math"
@@ -110,8 +111,18 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	dailyRollup := h.dailyRollupForFilter(ctx, accountFilt, from, to, tz)
 	dash := computeDashboard(trades, byDOW, dailyRollup, tz)
 
+	// Balance series — running equity over the same date range, walked
+	// forward from each included account's balance anchor.
+	balXs, balYs, equityNow, equityByType, balIncluded, balExcluded, err := h.balanceSeriesForFilter(ctx, accountFilt, from, to, tz)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("balance series: %w", err))
+		return
+	}
+
 	// Chart data is shipped to the page as inline JSON so uPlot can read it
-	// without a second round-trip. {xs, ys, cum} arrays parallel each other.
+	// without a second round-trip. {dates, nets, cum} parallel each other for
+	// the cumulative chart; {balDates, balance} parallel each other for the
+	// equity chart (its own axis because excluded accounts narrow the date set).
 	chartDates := make([]int64, len(dash.DailySeries))
 	chartNets := make([]float64, len(dash.DailySeries))
 	chartCum := make([]float64, len(dash.DailySeries))
@@ -121,9 +132,11 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		chartCum[i] = p.Cumulative
 	}
 	chartJSON, _ := json.Marshal(map[string]any{
-		"dates": chartDates,
-		"nets":  chartNets,
-		"cum":   chartCum,
+		"dates":    chartDates,
+		"nets":     chartNets,
+		"cum":      chartCum,
+		"balDates": balXs,
+		"balance":  balYs,
 	})
 
 	accounts, err := h.Queries.ListAccounts(ctx)
@@ -156,7 +169,204 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"From":             formFrom,
 		"To":               formTo,
 		"TradeCount":       int64(len(trades)),
+		"EquityNow":        equityNow,
+		"EquityByType":     equityByType,
+		"EquityIncluded":   balIncluded,
+		"EquityExcluded":   balExcluded,
 	})
+}
+
+// balanceSeriesForFilter builds a per-day running-equity series across the
+// accounts in the filter that have at least one balance anchor. Returns:
+//   - xs/ys: parallel Unix-seconds and balance arrays for the chart.
+//   - equityNow: the total balance at the end of the range (last ys value, or
+//     the starting total if the range had no daily_stats activity).
+//   - byType: per-account-type breakdown of the end-of-range equity, in
+//     equityTypeOrder so real capital shows above eval / paper.
+//   - included/excluded: account counts for the "N excluded — no anchor" notice.
+//
+// Equity at the start of the range is sourced from loadBalances called for
+// (start − 1 day) — that helper already handles the "no anchor in the past,
+// pick the earliest future anchor and back-fill" edge case. From there each
+// day's daily_stats row applies a per-account delta to the running balance,
+// summed across included accounts.
+func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter, from, to *time.Time, tz *time.Location) (xs []int64, ys []float64, equityNow float64, byType []equityByType, included int64, excluded int64, err error) {
+	// Resolve range. Upper bound: explicit `to`, else tomorrow midnight.
+	end := time.Now().In(tz).AddDate(0, 0, 1)
+	if to != nil {
+		end = *to
+	}
+	// Lower bound: explicit `from` wins. When omitted, walk back to the
+	// earliest closed trade in the filter so an anchored account immediately
+	// shows its full equity history — the back-fill in loadBalances does the
+	// rest. Falls back to 30 days if we can't determine an earliest exit.
+	var start time.Time
+	if from != nil {
+		start = *from
+	} else {
+		earliest, derr := h.earliestExitForFilter(ctx, af)
+		switch {
+		case derr != nil:
+			err = derr
+			return
+		case !earliest.IsZero():
+			start = earliest
+		default:
+			start = end.AddDate(0, 0, -30)
+		}
+	}
+	startDay := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, tz)
+	priorDay := startDay.AddDate(0, 0, -1)
+
+	// Resolve account set in the filter and capture each account's type slug
+	// so we can break the end-of-range equity down per type at the end.
+	accounts, listErr := h.Queries.ListAccounts(ctx)
+	if listErr != nil {
+		err = listErr
+		return
+	}
+	typeByID := map[int64]string{}
+	for _, a := range accounts {
+		t := ""
+		if a.Type != nil {
+			t = *a.Type
+		}
+		typeByID[a.ID] = t
+	}
+	afSet := map[int64]bool{}
+	if af.Active {
+		for _, id := range af.AccountIDs {
+			afSet[id] = true
+		}
+	} else {
+		for _, a := range accounts {
+			afSet[a.ID] = true
+		}
+	}
+
+	// Starting balance per account = balance at end of (start - 1 day).
+	initBalances, err := h.loadBalances(ctx, priorDay)
+	if err != nil {
+		return
+	}
+	state := map[int64]float64{}
+	var startingTotal float64
+	for aid := range afSet {
+		b, ok := initBalances[aid]
+		if !ok || !b.Known {
+			excluded++
+			continue
+		}
+		state[aid] = b.Balance
+		startingTotal += b.Balance
+		included++
+	}
+	if included == 0 {
+		return nil, nil, 0, nil, 0, excluded, nil
+	}
+
+	// Walk daily_stats inside [start, end). Group rows by date in trading tz;
+	// apply each day's deltas to the running balances, then snapshot the total.
+	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+		StatDate:   startDay,
+		StatDate_2: end,
+	})
+	if err != nil {
+		return
+	}
+	byDate := map[time.Time]map[int64]float64{}
+	for _, r := range rows {
+		if _, ok := state[r.AccountID]; !ok {
+			continue // excluded or out of filter
+		}
+		y, m, d := r.StatDate.In(tz).Date()
+		key := time.Date(y, m, d, 0, 0, 0, 0, tz)
+		m2, exists := byDate[key]
+		if !exists {
+			m2 = map[int64]float64{}
+			byDate[key] = m2
+		}
+		m2[r.AccountID] += r.NetPnl
+	}
+	dates := make([]time.Time, 0, len(byDate))
+	for d := range byDate {
+		dates = append(dates, d)
+	}
+	sort.Slice(dates, func(i, j int) bool { return dates[i].Before(dates[j]) })
+
+	xs = make([]int64, 0, len(dates))
+	ys = make([]float64, 0, len(dates))
+	for _, d := range dates {
+		for aid, delta := range byDate[d] {
+			state[aid] += delta
+		}
+		var sum float64
+		for _, b := range state {
+			sum += b
+		}
+		xs = append(xs, d.Unix())
+		ys = append(ys, sum)
+	}
+
+	if len(ys) > 0 {
+		equityNow = ys[len(ys)-1]
+	} else {
+		equityNow = startingTotal
+	}
+
+	// Per-type breakdown of the end-of-range equity. state already holds each
+	// included account's final balance, so we just group by its type slug.
+	byTypeMap := map[string]*equityByType{}
+	for aid, bal := range state {
+		slug := typeByID[aid]
+		row, exists := byTypeMap[slug]
+		if !exists {
+			row = &equityByType{Type: slug, Label: equityTypeLabel(slug)}
+			byTypeMap[slug] = row
+		}
+		row.Total += bal
+		row.Accounts++
+	}
+	byType = orderedEquityBreakdown(byTypeMap)
+
+	return xs, ys, equityNow, byType, included, excluded, nil
+}
+
+// earliestExitForFilter returns the earliest closed trade's exit_time scoped
+// to the active account filter. Used by balanceSeriesForFilter to extend the
+// equity curve back to the start of trading when no explicit `from` was
+// supplied — so adding the first anchor on /accounts immediately reveals the
+// full history.
+//
+// Returns a zero Time when the filter resolves to "no accounts" (e.g., the
+// filter is active but its ID list is empty) or when no closed trades exist.
+//
+// Note the ORDER BY ... LIMIT 1 dance: aggregates like MIN(exit_time) lose
+// the column type in modernc.org/sqlite and can't be scanned into time.Time.
+// Same workaround as pickDashboardDate.
+func (h *Handlers) earliestExitForFilter(ctx context.Context, af accountFilter) (time.Time, error) {
+	where := "status='closed' AND exit_time IS NOT NULL"
+	var args []any
+	if af.Active {
+		if len(af.AccountIDs) == 0 {
+			return time.Time{}, nil
+		}
+		placeholders := strings.Repeat("?,", len(af.AccountIDs))
+		placeholders = placeholders[:len(placeholders)-1]
+		where += " AND account_id IN (" + placeholders + ")"
+		for _, id := range af.AccountIDs {
+			args = append(args, id)
+		}
+	}
+	var earliest time.Time
+	row := h.DB.QueryRowContext(ctx, "SELECT exit_time FROM trades WHERE "+where+" ORDER BY exit_time ASC LIMIT 1", args...)
+	if err := row.Scan(&earliest); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return time.Time{}, nil
+		}
+		return time.Time{}, err
+	}
+	return earliest, nil
 }
 
 // dailyRollupForFilter returns a daily series rolled up from daily_stats for

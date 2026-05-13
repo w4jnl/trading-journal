@@ -5,6 +5,40 @@
 
 <h1>Dashboard <span class="muted" style="font-weight:400;">· {{.DateLabel}}</span></h1>
 
+{{with .Equity}}
+<div class="card" style="margin-bottom: 16px;">
+  <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· as of {{.AsOf}}</span></div>
+  {{if .Known}}
+    <table class="equity-breakdown">
+      <tbody>
+        {{range .ByType}}
+        <tr>
+          <td class="lbl">{{.Label}}</td>
+          <td class="num val">{{printf "%.2f" .Total}}</td>
+          <td class="muted num count"><span class="num">{{.Accounts}}</span> acct{{if ne .Accounts 1}}s{{end}}</td>
+        </tr>
+        {{end}}
+        <tr class="total-row">
+          <td class="lbl"><strong>Total</strong></td>
+          <td class="num val"><strong>{{printf "%.2f" .Total}}</strong></td>
+          <td class="muted num count"><span class="num">{{.AccountsKnown}}</span> of <span class="num">{{.AccountsTotal}}</span> active{{if lt .AccountsKnown .AccountsTotal}} · <a href="/accounts">set the rest</a>{{end}}</td>
+        </tr>
+      </tbody>
+    </table>
+  {{else}}
+    <div class="muted">No balance anchors yet — <a href="/accounts">set one on /accounts</a></div>
+  {{end}}
+</div>
+<style>
+  table.equity-breakdown { width: 100%; max-width: 480px; border-collapse: collapse; margin-top: 4px; }
+  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
+  table.equity-breakdown td.lbl { color: var(--fg-muted); }
+  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
+  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
+  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
+</style>
+{{end}}
+
 {{if .IsStale}}
 <div class="flash warn">No trades today yet. Showing the most recent day with activity.</div>
 {{end}}

@@ -117,6 +117,7 @@
         <th class="tabular">Gross P&amp;L</th>
         <th class="tabular">Comm</th>
         <th class="tabular">Net P&amp;L</th>
+        <th class="tabular" title="Account balance after this trade">Bal after</th>
       </tr>
     </thead>
     <tbody>
@@ -139,9 +140,10 @@
         <td class="tabular num">{{pnlClass .GrossPnl}}</td>
         <td class="tabular num muted">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
         <td class="tabular num">{{pnlClass .NetPnl}}</td>
+        <td class="tabular num">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="11" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+      <tr><td colspan="12" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
     {{end}}
     </tbody>
   </table>
