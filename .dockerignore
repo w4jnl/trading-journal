@@ -1,0 +1,31 @@
+# Keep the docker build context small. The Dockerfile only needs the Go
+# module + sources + embedded templates/static; everything below is either
+# host-state, build artifacts, IDE droppings, or otherwise irrelevant.
+
+.git
+.gitignore
+.github/
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Built artifacts
+trading-journal
+/bin/
+/dist/
+
+# Runtime state — never ride into the image. The container reads its
+# config from the volume mount, not from one baked into the build.
+data/
+imports/
+config.yaml
+
+# Sample / docs that don't influence the build
+exportData/
+trading-journal-design.md
+CLAUDE.md
+
+# Docker tooling itself — docker reads the Dockerfile via -f, no need to
+# also copy the folder into the build context.
+Docker/

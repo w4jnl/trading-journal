@@ -1,0 +1,16 @@
+# Container-side config example. Mount this at /etc/trading-journal/config.yaml
+# (read-only is fine — the binary only reads). Paths point into the volumes
+# declared in docker-compose.yml so the data outlives container restarts.
+
+server:
+  port: 8080
+
+database:
+  path: "/var/lib/trading-journal/data/trading.db"
+
+imports:
+  root: "/var/lib/trading-journal/imports"
+
+# Trading timezone — used for day boundaries on calendar/dashboard.
+# Storage is always UTC.
+timezone: "America/Chicago"

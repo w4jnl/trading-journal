@@ -1,0 +1,46 @@
+# Deployment recipe — pulls the published multi-arch image from
+# registry.example.com and mounts the host paths that need to persist.
+#
+# First-run setup:
+#   cd Docker/
+#   cp config.example.yaml config.yaml      # adjust timezone / port if needed
+#   mkdir -p data imports/{inbox,processed,failed,uploads}
+#   docker compose pull
+#   docker compose up -d
+#
+# The image is built and pushed via Docker/README.md instructions; this
+# compose file just runs whatever the registry currently tags as :latest.
+
+services:
+  trading-journal:
+    image: registry.example.com/trading-journal:latest
+    container_name: trading-journal
+    restart: unless-stopped
+
+    # The configured port in config.yaml MUST match the right-hand side of
+    # this mapping. Left-hand side is the host port — change freely.
+    ports:
+      - "8080:8080"
+
+    # All three mounts live alongside this compose file by default so
+    # `docker compose pull` + `docker compose up` is the entire deploy step.
+    volumes:
+      - ./config.yaml:/etc/trading-journal/config.yaml:ro
+      - ./data:/var/lib/trading-journal/data
+      - ./imports:/var/lib/trading-journal/imports
+
+    # No healthcheck declared — the distroless/static base has no shell or
+    # wget/curl to call /healthz from inside the container. If you need a
+    # probe (e.g., for Traefik or k8s), put it on the reverse proxy and
+    # hit GET /healthz on the published port from there.
+
+    # nonroot user inside the container (uid 65532) needs to be able to
+    # write to data/ and imports/. The simplest fix on the host is to
+    # chown those dirs to 65532:65532 once after creation. Without that
+    # the binary will fail to open the SQLite DB.
+
+# Uncomment if running behind Traefik / Caddy on the same Docker network:
+# networks:
+#   default:
+#     external: true
+#     name: edge
