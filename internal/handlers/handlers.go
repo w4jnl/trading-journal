@@ -117,6 +117,23 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return template.HTML(fmt.Sprintf(`<span class="%s">%.2f</span>`, cls, *p))
 		},
+		// pnlChip renders a tinted-background P&L chip with an explicit +/−
+		// sign so winners and losers pop in long lists. Use on the Net P&L
+		// column in tables; pnlClass is still right for inline text.
+		"pnlChip": func(p *float64) template.HTML {
+			if p == nil {
+				return template.HTML(`<span class="muted">—</span>`)
+			}
+			v := *p
+			cls := "pnl-chip--soft-pos"
+			sign := "+"
+			if v < 0 {
+				cls = "pnl-chip--soft-neg"
+				sign = "−"
+				v = -v
+			}
+			return template.HTML(fmt.Sprintf(`<span class="pnl-chip %s">%s%.2f</span>`, cls, sign, v))
+		},
 		// dict builds an ad-hoc map from key/value pairs. Useful for passing
 		// multi-field data into a sub-template via {{template "x" (dict ...)}}.
 		"dict": func(pairs ...any) (map[string]any, error) {

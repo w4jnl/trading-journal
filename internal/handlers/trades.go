@@ -135,16 +135,39 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 }
 
 // buildPerfChart returns the cumulative-P&L curve points for the active
-// filters when from/to are both set. Returned arrays are empty when the
-// chart should be suppressed (no date range or zero matching trades).
+// filters. When from/to aren't set, falls back to the last 60 days from the
+// latest closed trade so the chart is always-on (rather than the previous
+// behavior of suppressing it on the unfiltered view, which made the surface
+// feel inconsistent). Returned arrays are empty only when there are zero
+// matching trades within the resolved range.
 //
 // The cumulative is computed over EVERY filtered trade (not just the visible
 // page), ordered by exit_time ASC. The series prepends a (firstExitTime-1min,
 // 0) baseline point so the curve starts at zero and ramps to the first trade's
 // P&L — matches the visual in exportData/performance.jpg.
 func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64, ys []float64, title string, total float64, err error) {
-	if f.From == nil || f.To == nil {
-		return nil, nil, "", 0, nil
+	userPickedRange := f.From != nil && f.To != nil
+	// If the user hasn't picked an explicit range, anchor on the most recent
+	// exit_time and walk back 60 days. Doing it relative-to-latest-trade
+	// (rather than to "now") keeps the chart populated even when no fresh
+	// trades have been imported in a while.
+	if !userPickedRange {
+		// Use ORDER BY ... LIMIT 1 instead of MAX() so the driver keeps the
+		// column's TIMESTAMP type and scans cleanly into time.Time.
+		// (modernc.org/sqlite returns MAX() as a string and refuses the
+		// implicit conversion otherwise.)
+		var maxExit time.Time
+		row := db.QueryRowContext(ctx, `SELECT exit_time FROM trades WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL ORDER BY exit_time DESC LIMIT 1`)
+		if err := row.Scan(&maxExit); err != nil {
+			if errors.Is(err, sql.ErrNoRows) {
+				return nil, nil, "", 0, nil
+			}
+			return nil, nil, "", 0, err
+		}
+		end := maxExit.Add(24 * time.Hour)
+		start := end.Add(-60 * 24 * time.Hour)
+		f.From = &start
+		f.To = &end
 	}
 	where, args := buildWhere(f)
 	q := `SELECT t.exit_time, t.net_pnl
@@ -191,12 +214,16 @@ func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64
 	}
 	total = cum
 
-	fromStr := f.From.Format("2006-01-02")
-	toStr := f.To.Add(-24 * time.Hour).Format("2006-01-02") // To is exclusive +24h; restore the user-facing day
-	if fromStr == toStr {
-		title = "Day Performance · " + fromStr
+	if !userPickedRange {
+		title = "Last 60 days"
 	} else {
-		title = "Range Performance · " + fromStr + " – " + toStr
+		fromStr := f.From.Format("2006-01-02")
+		toStr := f.To.Add(-24 * time.Hour).Format("2006-01-02") // To is exclusive +24h; restore the user-facing day
+		if fromStr == toStr {
+			title = "Day Performance · " + fromStr
+		} else {
+			title = "Range Performance · " + fromStr + " – " + toStr
+		}
 	}
 	return xs, ys, title, total, nil
 }

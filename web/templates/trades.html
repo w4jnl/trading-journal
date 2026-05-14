@@ -137,13 +137,13 @@
         <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
         <td>{{.AccountName}}</td>
         <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
-        <td>{{if eq .Direction "long"}}<span class="pill dir-long">long</span>{{else}}<span class="pill dir-short">short</span>{{end}}</td>
+        <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
         <td class="tabular num">{{.Qty}}</td>
         <td class="tabular num">{{printf "%.2f" .EntryPrice}}</td>
         <td class="tabular num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
         <td class="tabular num">{{pnlClass .GrossPnl}}</td>
         <td class="tabular num muted">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
-        <td class="tabular num">{{pnlClass .NetPnl}}</td>
+        <td class="tabular num">{{pnlChip .NetPnl}}</td>
         <td class="tabular num">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}
@@ -161,13 +161,14 @@
 
 <!-- Sticky selection action bar — appears when ≥1 trade is ticked. The form
      POSTs the selected IDs to /journal/group/new which creates the entry and
-     redirects to the editor. -->
-<form id="group-form" method="post" action="/journal/group/new" class="sel-bar">
+     redirects to the editor. Uses the shared .sticky-action-bar utility for
+     safe-area-aware bottom padding. -->
+<form id="group-form" method="post" action="/journal/group/new" class="sel-bar sticky-action-bar">
   <input type="hidden" name="back" value="/trades{{if .Filters}}{{end}}">
   <span class="muted"><strong id="sel-count" class="num">0</strong> trade(s) selected.</span>
   <div class="row-sm" style="margin-left: auto;">
     <button type="button" id="sel-clear" class="btn btn--ghost btn--sm">Clear</button>
-    <button type="submit" class="btn btn--primary btn--sm">Journal selected →</button>
+    <button type="submit" class="btn btn--primary btn--sm" title="Journal selected (⌘D)">Journal selected →</button>
   </div>
 </form>
 
@@ -245,6 +246,20 @@
         form.appendChild(hidden);
       });
     });
+    // ⌘D / Ctrl-D submits the group-journal form when ≥1 trade is ticked.
+    // Skip when typing in an input/textarea so the user can still use the
+    // browser-default Cmd-D bookmark shortcut while interacting with forms.
+    document.addEventListener('keydown', (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta || (e.key !== 'd' && e.key !== 'D')) return;
+      const t = e.target;
+      const tag = t && t.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || (t && t.isContentEditable)) return;
+      const ticked = boxes().filter((b) => b.checked);
+      if (ticked.length === 0) return;
+      e.preventDefault();
+      form.requestSubmit ? form.requestSubmit() : form.submit();
+    });
     refresh();
   })();
 </script>
@@ -266,20 +281,9 @@
     color: #a855f7;
     vertical-align: middle;
   }
-  /* Sticky action bar — hidden until any row is ticked. */
-  .sel-bar {
-    position: sticky;
-    bottom: 0;
-    background: var(--bg-elev);
-    padding: 10px 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    box-shadow: var(--shadow-2);
-    display: none;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-  }
+  /* Selection bar visibility — base layout comes from .sticky-action-bar
+     (safe-area-aware sticky bottom); we only hide it until ≥1 row is ticked. */
+  .sel-bar { display: none; margin-top: 16px; }
   .sel-bar.active { display: flex; }
 </style>
 {{end}}
