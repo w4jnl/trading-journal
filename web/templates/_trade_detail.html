@@ -62,8 +62,8 @@
       "EntryID"     $.JournalEntryID
       "Placeholder" "What did you see, do, feel about this trade? Paste a chart screenshot or apply a template."
       "Templates"   true
-      "Mode"        "single"
-      "MinHeight"   "260px"
+      "Mode"        "split"
+      "MinHeight"   "280px"
     )}}
     <div class="row" style="margin-top: 8px;">
       <button type="submit" class="btn btn--primary">Save</button>
@@ -76,8 +76,9 @@
   {{end}}
 </section>
 
-{{with .Trade}}
-<details style="margin-top: 20px;">
+{{/* Executions live at the top of the render data (.Executions), NOT under
+     .Trade — so this block must stay outside the {{with .Trade}} above. */}}
+<details style="margin-top: 20px;" open>
   <summary style="cursor: pointer; font-weight: 600; font-size: 13px; color: var(--fg-muted); user-select: none;">
     Executions (<span class="num">{{len .Executions}}</span>)
   </summary>
@@ -105,16 +106,16 @@
           <td class="tabular num">{{.QtyUsed}}</td>
           <td><span class="muted num">{{.BrokerExecID}}</span></td>
         </tr>
+      {{else}}
+        <tr><td colspan="7" class="muted" style="text-align:center; padding:16px;">No executions recorded.</td></tr>
       {{end}}
       </tbody>
     </table>
   </div>
 </details>
-{{end}}
 
 {{/* When this partial is swapped in via HTMX (e.g., from /trades/journal POST),
-     update the sheet title to reflect the trade. The host page can listen for
-     htmx:afterSwap to keep its sidebar state in sync. */}}
+     update the sheet title to reflect the trade. */}}
 {{with .Trade}}
 <script>
   (function () {
