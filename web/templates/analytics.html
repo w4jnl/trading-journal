@@ -24,36 +24,54 @@
 
 {{with .Headline}}
 {{if .Trades}}
-<!-- KPI tile grid -->
-<div class="kpi-grid">
-  <div class="card">
+
+<!-- Notable insights — auto-surfaced findings from the active filter. -->
+{{if $.Insights}}
+<div class="insights-grid">
+  {{range $.Insights}}
+  <div class="card card--{{.Tone}} insight-card">
+    <div class="label">{{.Title}}</div>
+    <div class="insight-detail">{{.Detail}}</div>
+    {{if .Href}}<a class="insight-link" href="{{.Href}}">View →</a>{{end}}
+  </div>
+  {{end}}
+</div>
+{{end}}
+
+<!-- Hero KPIs — the three numbers that matter most across the range. -->
+<div class="kpi-hero">
+  <div class="card card--hero">
     <div class="label">Total P&amp;L</div>
-    <div class="value-lg num {{if gt .NetPnl 0.0}}pnl-pos{{else if lt .NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" .NetPnl}}</div>
+    <div class="num--hero {{if gt .NetPnl 0.0}}pnl-pos{{else if lt .NetPnl 0.0}}pnl-neg{{end}}">{{if ge .NetPnl 0.0}}+{{else}}−{{end}}{{printf "%.2f" (abs .NetPnl)}}</div>
     <div class="sub">Gross <span class="num">{{printf "%.2f" .GrossPnl}}</span> · comm <span class="num">{{printf "%.2f" .Commission}}</span></div>
   </div>
-  <div class="card">
-    <div class="label">Trade Win %</div>
-    <div class="value-lg num">{{printf "%.1f%%" (mul .WinRate 100.0)}}</div>
+  <div class="card card--hero">
+    <div class="label">Trade win %</div>
+    <div class="num--hero">{{printf "%.1f%%" (mul .WinRate 100.0)}}</div>
     <div class="sub"><span class="pnl-pos num">{{.Wins}}W</span> / <span class="pnl-neg num">{{.Losses}}L</span> · <span class="num">{{.Trades}}</span> trades</div>
   </div>
+  <div class="card card--hero">
+    <div class="label">Profit factor</div>
+    <div class="num--hero">{{if isInf .ProfitFactor}}∞{{else}}{{printf "%.2f" .ProfitFactor}}{{end}}</div>
+    <div class="sub">total wins / total losses</div>
+  </div>
+</div>
+
+<!-- Supporting KPIs — context for the hero numbers, smaller weight. -->
+<div class="kpi-supporting">
   <div class="card">
-    <div class="label">Avg Win / Avg Loss</div>
-    <div class="value-lg num">{{if lt .AvgLoss 0.0}}{{printf "%.2f" (div .AvgWin (negFloat .AvgLoss))}}{{else}}—{{end}}</div>
+    <div class="label">Avg win / avg loss</div>
+    <div class="num--lg">{{if lt .AvgLoss 0.0}}{{printf "%.2f" (div .AvgWin (abs .AvgLoss))}}{{else}}—{{end}}</div>
     <div class="sub"><span class="pnl-pos num">{{printf "%.2f" .AvgWin}}</span> / <span class="pnl-neg num">{{printf "%.2f" .AvgLoss}}</span></div>
   </div>
   <div class="card">
-    <div class="label">Day Win %</div>
-    <div class="value-lg num">{{if eq $.Dash.DayWinPct 0.0}}—{{else}}{{printf "%.1f%%" $.Dash.DayWinPct}}{{end}}</div>
+    <div class="label">Day win %</div>
+    <div class="num--lg">{{if eq $.Dash.DayWinPct 0.0}}—{{else}}{{printf "%.1f%%" $.Dash.DayWinPct}}{{end}}</div>
     <div class="sub">active days that ended green</div>
   </div>
   <div class="card">
-    <div class="label">Profit factor</div>
-    <div class="value-lg num">{{if isInf .ProfitFactor}}∞{{else}}{{printf "%.2f" .ProfitFactor}}{{end}}</div>
-    <div class="sub">total wins / total losses</div>
-  </div>
-  <div class="card">
     <div class="label">Best day % of profit</div>
-    <div class="value-lg num">{{if eq $.Dash.BestDayPctOfProfit 0.0}}—{{else}}{{printf "%.1f%%" $.Dash.BestDayPctOfProfit}}{{end}}</div>
+    <div class="num--lg">{{if eq $.Dash.BestDayPctOfProfit 0.0}}—{{else}}{{printf "%.1f%%" $.Dash.BestDayPctOfProfit}}{{end}}</div>
     <div class="sub">biggest winning day / Σ winning days</div>
   </div>
 </div>
@@ -258,25 +276,60 @@
 <div class="breakdown-grid">
   <section>
     <h3>By symbol</h3>
-    {{template "bucket_table" .BySymbol}}
+    {{template "bucket_table" (dict "Buckets" .BySymbol "LinkBase" "/trades?symbol_root=")}}
   </section>
   <section>
     <h3>By direction</h3>
-    {{template "bucket_table" .ByDirection}}
+    {{template "bucket_table" (dict "Buckets" .ByDirection "LinkBase" "/trades?direction=")}}
   </section>
   <section>
     <h3>By day of week (entry)</h3>
-    {{template "bucket_table" .ByDOW}}
+    {{template "bucket_table" (dict "Buckets" .ByDOW "LinkBase" "")}}
   </section>
   <section>
     <h3>By hour of day (entry)</h3>
-    {{template "bucket_table" .ByHour}}
+    {{template "bucket_table" (dict "Buckets" .ByHour "LinkBase" "")}}
   </section>
 </div>
 
 {{template "trade_sheet" .}}
 
 <style>
+  /* Auto-surfaced findings. Cards inherit sentiment tone via card--{pos,neg,warn,info}. */
+  .insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .insight-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+  .insight-detail { font-size: 13px; color: var(--fg); line-height: 1.45; }
+  .insight-link {
+    margin-top: auto;
+    font-size: 12px;
+    align-self: flex-start;
+    color: var(--accent);
+  }
+
+  /* Hero / supporting KPI rows replace the old equal-weight 6-tile grid. */
+  .kpi-hero {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .kpi-hero .card--hero { padding: 18px 20px; }
+  .kpi-supporting {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 800px) {
+    .kpi-hero, .kpi-supporting { grid-template-columns: 1fr; }
+  }
+
+  /* Legacy classes — keep so the page still renders cleanly. */
   .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
   .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
@@ -289,6 +342,13 @@
   @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
   .breakdown-grid h3 { margin-top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; margin-bottom: 8px; }
   .chart-host { width: 100%; }
+
+  /* Clickable breakdown rows: the symbol/direction tables drill into /trades
+     with the matching filter. Arrow appears on hover for affordance. */
+  .bucket-key { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .bucket-key:hover { color: var(--accent); }
+  .bucket-key .bucket-arrow { opacity: 0; transition: opacity var(--t-fast); color: var(--accent); }
+  .bucket-key:hover .bucket-arrow { opacity: 1; }
 
   .bar-row { display: grid; grid-template-columns: 120px 1fr 40px; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
   .bar-row .lbl { color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -465,16 +525,31 @@
 </script>
 {{end}}
 
+{{/* bucket_table renders a Trades / W-L / Net / Best / Worst breakdown.
+
+    Pass a dict with:
+      - Buckets:  []analyticsBucket
+      - LinkBase: optional URL prefix for click-to-filter (empty = plain rows)
+    When LinkBase is non-empty, each row's Key becomes an <a> appended to
+    LinkBase — lets the user drill from analytics into /trades pre-filtered. */}}
 {{define "bucket_table"}}
+{{- $buckets := .Buckets -}}
+{{- $linkBase := .LinkBase -}}
 <div class="table-scroll">
   <table>
     <thead>
       <tr><th>Group</th><th class="tabular">Trades</th><th>W/L</th><th class="tabular">Net P&amp;L</th><th class="tabular">Best</th><th class="tabular">Worst</th></tr>
     </thead>
     <tbody>
-      {{range .}}
+      {{range $buckets}}
       <tr>
-        <td><code>{{.Key}}</code></td>
+        <td>
+          {{if $linkBase}}
+            <a href="{{$linkBase}}{{.Key}}" class="bucket-key" title="Filter trades by {{.Key}}"><code>{{.Key}}</code> <span class="bucket-arrow">→</span></a>
+          {{else}}
+            <code>{{.Key}}</code>
+          {{end}}
+        </td>
         <td class="tabular num">{{.Trades}}</td>
         <td><span class="pnl-pos num">{{.Wins}}</span><span class="muted">/</span><span class="pnl-neg num">{{.Losses}}</span></td>
         <td class="tabular num {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</td>

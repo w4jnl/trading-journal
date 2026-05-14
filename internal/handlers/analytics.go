@@ -103,6 +103,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	byHour := bucketBy(trades, func(t analyticsTrade) string {
 		return fmt.Sprintf("%02d:00", t.EntryTime.In(tz).Hour())
 	})
+	insights := computeInsights(headline, bySymbol, byDOW, byHour)
 
 	// Daily series — prefer the daily_stats rollup so the local-tz bucketing
 	// matches the calendar view. Falls back to per-trade derivation if no
@@ -157,6 +158,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"NavActive":        "analytics",
 		"BackHref":         validBackHref(r),
 		"Headline":         headline,
+		"Insights":         insights,
 		"Dash":             dash,
 		"ChartJSON":        template.JS(chartJSON),
 		"BySymbol":         bySymbol,
@@ -497,6 +499,170 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 		out = append(out, t)
 	}
 	return out, rows.Err()
+}
+
+// insight is one auto-surfaced finding rendered in the "Notable" panel at
+// the top of /analytics. The intent is to draw the trader's eye to the most
+// actionable signal in the current filter without forcing them to scan the
+// KPI grid and four breakdown tables themselves.
+//
+// Tone drives the card's left-border color: "pos" / "neg" / "warn" / "info".
+type insight struct {
+	Tone   string // "pos" | "neg" | "warn" | "info"
+	Title  string // short headline
+	Detail string // one supporting line
+	Href   string // optional link (target page already filtered)
+}
+
+// computeInsights derives 4–6 insights from the filtered headline + buckets.
+// Each branch contributes at most one insight and is gated so that weak
+// signals (one trade per bucket, ties, etc.) don't dominate the panel.
+//
+// Order is loose hierarchy: profit factor / R-multiple anomalies first
+// because they apply across the whole filter, then symbol focus, then
+// time-of-day, then day-of-week.
+func computeInsights(h headlineMetrics, bySymbol, byDOW, byHour []analyticsBucket) []insight {
+	var out []insight
+	if h.Trades == 0 {
+		return out
+	}
+
+	// Profit factor — flag the two ends.
+	switch {
+	case math.IsInf(h.ProfitFactor, 0) && h.Wins > 0:
+		out = append(out, insight{
+			Tone:   "pos",
+			Title:  "No losses in this range",
+			Detail: fmt.Sprintf("%d wins, 0 losses — sample is small; widen the range to stress-test.", h.Wins),
+		})
+	case h.ProfitFactor > 0 && h.ProfitFactor < 1 && h.Losses >= 5:
+		out = append(out, insight{
+			Tone:   "neg",
+			Title:  "Profit factor below 1",
+			Detail: fmt.Sprintf("Wins cover only %.2fx losses. Total losses exceed total wins in this filter.", h.ProfitFactor),
+		})
+	case h.ProfitFactor >= 2 && h.Wins+h.Losses >= 10:
+		out = append(out, insight{
+			Tone:   "pos",
+			Title:  "Strong profit factor",
+			Detail: fmt.Sprintf("Wins are %.2fx losses across %d decided trades.", h.ProfitFactor, h.Wins+h.Losses),
+		})
+	}
+
+	// Win/loss R-multiple — flag asymmetry that would erode an OK win rate.
+	if h.AvgLoss < 0 && h.AvgWin > 0 {
+		r := h.AvgWin / -h.AvgLoss
+		switch {
+		case r < 0.75 && h.WinRate < 0.6:
+			out = append(out, insight{
+				Tone:   "warn",
+				Title:  "Avg loss exceeds avg win",
+				Detail: fmt.Sprintf("Avg win %.2f vs avg loss %.2f (R %.2f). At %.0f%% win rate the math is tight.", h.AvgWin, h.AvgLoss, r, h.WinRate*100),
+			})
+		case r >= 2.0:
+			out = append(out, insight{
+				Tone:   "pos",
+				Title:  "Wins are bigger than losses",
+				Detail: fmt.Sprintf("Avg win %.2f vs avg loss %.2f (R %.2f).", h.AvgWin, h.AvgLoss, r),
+			})
+		}
+	}
+
+	// Symbol focus — when the most-traded root isn't the most-profitable.
+	if len(bySymbol) >= 2 {
+		mostTraded := pickMaxBucket(bySymbol, func(b analyticsBucket) float64 { return float64(b.Trades) })
+		mostProfit := pickMaxBucket(bySymbol, func(b analyticsBucket) float64 { return b.Net })
+		if mostTraded.Key != "" && mostProfit.Key != "" && mostTraded.Key != mostProfit.Key && mostProfit.Net > 0 {
+			out = append(out, insight{
+				Tone:   "info",
+				Title:  "Most-traded ≠ most-profitable",
+				Detail: fmt.Sprintf("%s has the most trades (%d) but %s makes the most money (%+.2f).", mostTraded.Key, mostTraded.Trades, mostProfit.Key, mostProfit.Net),
+				Href:   "/trades?symbol_root=" + mostProfit.Key,
+			})
+		}
+	}
+
+	// Best / worst hour — when the spread is wide enough to be actionable
+	// (best ≥ +X and worst ≤ -X, where X scales with trade count).
+	if len(byHour) >= 2 {
+		bestH := pickMaxBucket(byHour, func(b analyticsBucket) float64 { return b.Net })
+		worstH := pickMinBucket(byHour, func(b analyticsBucket) float64 { return b.Net })
+		if bestH.Key != "" && bestH.Net > 0 && bestH.Trades >= 3 {
+			out = append(out, insight{
+				Tone:   "pos",
+				Title:  "Best hour: " + bestH.Key,
+				Detail: fmt.Sprintf("%+.2f across %d trades · %s avg per trade", bestH.Net, bestH.Trades, money(bestH.Net/float64(bestH.Trades))),
+			})
+		}
+		if worstH.Key != "" && worstH.Net < 0 && worstH.Trades >= 3 && worstH.Key != bestH.Key {
+			out = append(out, insight{
+				Tone:   "neg",
+				Title:  "Worst hour: " + worstH.Key,
+				Detail: fmt.Sprintf("%+.2f across %d trades · %s avg per trade", worstH.Net, worstH.Trades, money(worstH.Net/float64(worstH.Trades))),
+			})
+		}
+	}
+
+	// Best / worst day-of-week — same idea, but only when distinct.
+	if len(byDOW) >= 2 {
+		bestD := pickMaxBucket(byDOW, func(b analyticsBucket) float64 { return b.Net })
+		worstD := pickMinBucket(byDOW, func(b analyticsBucket) float64 { return b.Net })
+		if bestD.Key != "" && bestD.Net > 0 && bestD.Trades >= 3 {
+			out = append(out, insight{
+				Tone:   "pos",
+				Title:  "Best day: " + bestD.Key,
+				Detail: fmt.Sprintf("%+.2f across %d trades", bestD.Net, bestD.Trades),
+			})
+		}
+		if worstD.Key != "" && worstD.Net < 0 && worstD.Trades >= 3 && worstD.Key != bestD.Key {
+			out = append(out, insight{
+				Tone:   "neg",
+				Title:  "Worst day: " + worstD.Key,
+				Detail: fmt.Sprintf("%+.2f across %d trades", worstD.Net, worstD.Trades),
+			})
+		}
+	}
+
+	// Cap the panel so it doesn't dominate the page. Six is the visual
+	// budget — two rows of three cards on desktop, scrolls on mobile.
+	if len(out) > 6 {
+		out = out[:6]
+	}
+	return out
+}
+
+// pickMaxBucket / pickMinBucket return the bucket with the largest / smallest
+// score from `score`. Returns the zero-value analyticsBucket when input is
+// empty so callers can check Key=="" for "no signal".
+func pickMaxBucket(bs []analyticsBucket, score func(analyticsBucket) float64) analyticsBucket {
+	var best analyticsBucket
+	first := true
+	for _, b := range bs {
+		s := score(b)
+		if first || s > score(best) {
+			best = b
+			first = false
+		}
+	}
+	return best
+}
+func pickMinBucket(bs []analyticsBucket, score func(analyticsBucket) float64) analyticsBucket {
+	var worst analyticsBucket
+	first := true
+	for _, b := range bs {
+		s := score(b)
+		if first || s < score(worst) {
+			worst = b
+			first = false
+		}
+	}
+	return worst
+}
+
+// money is a tiny helper for embedding signed currency values in detail
+// strings. Always 2dp, no symbol — the surrounding copy carries context.
+func money(v float64) string {
+	return fmt.Sprintf("%+.2f", v)
 }
 
 // headlineMetrics is the numbers shown in big stat cards at the top.
