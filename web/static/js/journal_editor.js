@@ -134,6 +134,9 @@
           case "templates":
             toggleTemplates(ctx, btn);
             break;
+          case "recall":
+            toggleRecall(ctx, btn);
+            break;
         }
       });
     });
@@ -380,6 +383,131 @@
     }
     ta.dispatchEvent(new Event("input", { bubbles: true }));
     ta.focus();
+  }
+
+  // ---------- Recall (prior entries of same scope) ----------
+
+  function toggleRecall(ctx, button) {
+    var existing = ctx.root.querySelector(".je-recall");
+    if (existing) { existing.remove(); return; }
+    fetchRecent(ctx).then(function (entries) {
+      var box = document.createElement("div");
+      box.className = "je-recall";
+      if (!entries || entries.length === 0) {
+        var empty = document.createElement("div");
+        empty.className = "je-recall-empty";
+        empty.textContent = "No prior " + (ctx.scope || "entries") + " entries yet.";
+        box.appendChild(empty);
+      }
+      entries.forEach(function (e) {
+        var item = document.createElement("button");
+        item.type = "button";
+        item.className = "je-recall-item";
+        var d = document.createElement("div");
+        d.className = "je-recall-date";
+        d.textContent = e.date_label;
+        if (e.tag) {
+          var tagBadge = document.createElement("span");
+          tagBadge.style.marginLeft = "6px";
+          tagBadge.style.fontSize = "10px";
+          tagBadge.style.color = e.tag === "good" ? "var(--pos)" : e.tag === "bad" ? "var(--neg)" : "var(--fg-subtle)";
+          tagBadge.textContent = "· " + e.tag;
+          d.appendChild(tagBadge);
+        }
+        item.appendChild(d);
+        var s = document.createElement("div");
+        s.className = "je-recall-snippet";
+        s.textContent = e.snippet;
+        item.appendChild(s);
+        item.addEventListener("click", function () {
+          showPeek(ctx, e);
+          box.remove();
+        });
+        box.appendChild(item);
+      });
+      button.appendChild(box);
+      function close(e) {
+        if (e.type === "keydown" && e.key !== "Escape") return;
+        if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
+        box.remove();
+        document.removeEventListener("click", close, true);
+        document.removeEventListener("keydown", close);
+      }
+      setTimeout(function () {
+        document.addEventListener("click", close, true);
+        document.addEventListener("keydown", close);
+      }, 0);
+    });
+  }
+
+  function fetchRecent(ctx) {
+    var url = "/journal/recent?scope=" + encodeURIComponent(ctx.scope || "day");
+    if (ctx.entryId && ctx.entryId !== "0") {
+      url += "&exclude_id=" + encodeURIComponent(ctx.entryId);
+    }
+    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+      return (j && j.entries) || [];
+    }).catch(function () { return []; });
+  }
+
+  function showPeek(ctx, entry) {
+    // Remove any existing peek.
+    var prev = ctx.root.querySelector(".je-peek");
+    if (prev) prev.remove();
+
+    var peek = document.createElement("div");
+    peek.className = "je-peek";
+
+    var header = document.createElement("div");
+    header.className = "je-peek-header";
+    var title = document.createElement("span");
+    title.className = "je-peek-title";
+    title.textContent = "Recall · " + entry.date_label;
+    header.appendChild(title);
+    if (entry.tag) {
+      var tag = document.createElement("span");
+      tag.style.fontSize = "11px";
+      tag.style.color = "var(--fg-muted)";
+      tag.textContent = " (" + entry.tag + ")";
+      header.appendChild(tag);
+    }
+    var close = document.createElement("button");
+    close.type = "button";
+    close.className = "je-peek-close";
+    close.setAttribute("aria-label", "Close (Esc)");
+    close.textContent = "×";
+    close.addEventListener("click", function () { peek.remove(); });
+    header.appendChild(close);
+    peek.appendChild(header);
+
+    var body = document.createElement("div");
+    body.className = "je-peek-body";
+    body.innerHTML = '<p class="journal-editor__preview-empty">Rendering…</p>';
+    peek.appendChild(body);
+    ctx.root.appendChild(peek);
+
+    // Server-render the body to match the live-preview format.
+    var form = new URLSearchParams();
+    form.set("body", entry.body || "");
+    fetch(ctx.previewUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded; charset=utf-8" },
+      body: form.toString(),
+    }).then(function (r) { return r.text(); }).then(function (html) {
+      body.innerHTML = html;
+    }).catch(function (err) {
+      body.innerHTML = '<p class="journal-editor__preview-empty">Could not render: ' + escapeHtml(String(err)) + "</p>";
+    });
+
+    // Esc closes the peek (only when peek itself is open and editor focused).
+    function onKey(e) {
+      if (e.key === "Escape" && ctx.root.contains(peek)) {
+        e.stopPropagation();
+        peek.remove();
+        document.removeEventListener("keydown", onKey, true);
+      }
+    }
+    document.addEventListener("keydown", onKey, true);
   }
 
   // ---------- Helpers ----------

@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // Maximum size for a single attachment upload. Chart screenshots from a 4K
@@ -203,6 +204,86 @@ func (h *Handlers) JournalAttachmentServe(w http.ResponseWriter, r *http.Request
 	} else {
 		_, _ = io.Copy(w, f)
 	}
+}
+
+// JournalRecentList handles GET /journal/recent — returns recent journal
+// entries of the given scope as JSON for the editor's "Recall" dropdown.
+// Lets the user reference what they wrote on prior days/weeks/trades
+// without leaving the current editor.
+//
+//	?scope=day|week|trade|group  (required)
+//	?exclude_id=<int64>          (optional — skip the entry we're editing)
+//	?limit=<int>                 (default 10, max 30)
+func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
+	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
+	switch scope {
+	case "day", "week", "trade", "group":
+	default:
+		writeJSONError(w, http.StatusBadRequest, "scope must be one of: day, week, trade, group")
+		return
+	}
+	limit := 10
+	if v := r.URL.Query().Get("limit"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 && n <= 30 {
+			limit = n
+		}
+	}
+	excludeID := int64(0)
+	if v := r.URL.Query().Get("exclude_id"); v != "" {
+		if n, err := strconv.ParseInt(v, 10, 64); err == nil {
+			excludeID = n
+		}
+	}
+	q := `SELECT id, entry_date, body, tag FROM journal_entries
+	      WHERE scope = ? AND id != ?
+	      ORDER BY entry_date DESC, id DESC
+	      LIMIT ?`
+	rows, err := h.DB.QueryContext(r.Context(), q, scope, excludeID, limit)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list recent: %w", err))
+		return
+	}
+	defer rows.Close()
+
+	type recent struct {
+		ID        int64  `json:"id"`
+		EntryDate string `json:"entry_date"` // YYYY-MM-DD in trading TZ
+		DateLabel string `json:"date_label"` // human-friendly
+		Snippet   string `json:"snippet"`    // first ~140 chars
+		Body      string `json:"body"`       // full body for preview
+		Tag       string `json:"tag,omitempty"`
+	}
+	var out []recent
+	tz := h.localTZ()
+	for rows.Next() {
+		var (
+			id    int64
+			date  time.Time
+			body  string
+			tag   *string
+		)
+		if err := rows.Scan(&id, &date, &body, &tag); err != nil {
+			h.serverError(w, fmt.Errorf("scan recent: %w", err))
+			return
+		}
+		d := date.In(tz)
+		snip := strings.TrimSpace(body)
+		if r := []rune(snip); len(r) > 140 {
+			snip = string(r[:140]) + "…"
+		}
+		entry := recent{
+			ID:        id,
+			EntryDate: d.Format("2006-01-02"),
+			DateLabel: d.Format("Mon, 2 Jan 2006"),
+			Snippet:   snip,
+			Body:      body,
+		}
+		if tag != nil {
+			entry.Tag = *tag
+		}
+		out = append(out, entry)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": out})
 }
 
 // JournalTemplatesList handles GET /journal/templates — returns the

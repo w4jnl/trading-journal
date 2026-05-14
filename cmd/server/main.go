@@ -108,6 +108,7 @@ func run() error {
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)
 	mux.HandleFunc("GET /journal/templates", h.JournalTemplatesList)
+	mux.HandleFunc("GET /journal/recent", h.JournalRecentList)
 	mux.HandleFunc("POST /journal/preview", h.JournalPreview)
 	mux.HandleFunc("POST /journal/attachments", h.JournalAttachmentUpload)
 	mux.HandleFunc("GET /journal/attachments/{id}", h.JournalAttachmentServe)
