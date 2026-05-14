@@ -146,12 +146,15 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 // 0) baseline point so the curve starts at zero and ramps to the first trade's
 // P&L — matches the visual in exportData/performance.jpg.
 func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64, ys []float64, title string, total float64, err error) {
-	userPickedRange := f.From != nil && f.To != nil
-	// If the user hasn't picked an explicit range, anchor on the most recent
-	// exit_time and walk back 60 days. Doing it relative-to-latest-trade
-	// (rather than to "now") keeps the chart populated even when no fresh
-	// trades have been imported in a while.
-	if !userPickedRange {
+	// "No filter engaged" means no date range AND no account/symbol/direction
+	// restriction — in that pristine state we default the chart to the last
+	// 60 days from the most recent exit so the page is never empty. The
+	// moment the user engages ANY filter, the chart respects whatever
+	// buildWhere produces (full span of matching trades).
+	anyFilter := f.From != nil || f.To != nil ||
+		f.Account.Active || f.SymbolRoot != nil || f.Direction != nil
+	syntheticRange := false
+	if !anyFilter {
 		// Use ORDER BY ... LIMIT 1 instead of MAX() so the driver keeps the
 		// column's TIMESTAMP type and scans cleanly into time.Time.
 		// (modernc.org/sqlite returns MAX() as a string and refuses the
@@ -168,6 +171,7 @@ func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64
 		start := end.Add(-60 * 24 * time.Hour)
 		f.From = &start
 		f.To = &end
+		syntheticRange = true
 	}
 	where, args := buildWhere(f)
 	q := `SELECT t.exit_time, t.net_pnl
@@ -214,9 +218,10 @@ func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64
 	}
 	total = cum
 
-	if !userPickedRange {
+	switch {
+	case syntheticRange:
 		title = "Last 60 days"
-	} else {
+	case f.From != nil && f.To != nil:
 		fromStr := f.From.Format("2006-01-02")
 		toStr := f.To.Add(-24 * time.Hour).Format("2006-01-02") // To is exclusive +24h; restore the user-facing day
 		if fromStr == toStr {
@@ -224,6 +229,13 @@ func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64
 		} else {
 			title = "Range Performance · " + fromStr + " – " + toStr
 		}
+	case f.From != nil:
+		title = "Performance from " + f.From.Format("2006-01-02")
+	case f.To != nil:
+		title = "Performance through " + f.To.Add(-24*time.Hour).Format("2006-01-02")
+	default:
+		// Filter active but no date — chart covers the full matching span.
+		title = "Filtered performance"
 	}
 	return xs, ys, title, total, nil
 }

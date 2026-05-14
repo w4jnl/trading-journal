@@ -399,6 +399,15 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Trades that closed on this day — surfaced in a "Trades · summary" block
+	// so the day view matches the unified content shape of week/group entries.
+	dayTrades, err := loadDayTrades(ctx, h.DB, date)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load day trades: %w", err))
+		return
+	}
+	daySummary := summarizeTradeRows(dayTrades)
+
 	h.renderPage(w, "journal.html", map[string]any{
 		"NavActive": "journal",
 		"BackHref":  backHref,
@@ -414,6 +423,8 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Rendered":  rendered,
 		"Recent":    recent,
 		"Flash":     flash,
+		"Trades":    dayTrades,
+		"Summary":   daySummary,
 	})
 }
 
@@ -586,6 +597,13 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 	ny, nw := next.ISOWeek()
 	sunday := monday.AddDate(0, 0, 6)
 
+	weekTrades, err := loadWeekTrades(ctx, h.DB, monday)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load week trades: %w", err))
+		return
+	}
+	weekSummary := summarizeTradeRows(weekTrades)
+
 	h.renderPage(w, "journal_week.html", map[string]any{
 		"NavActive":  "journal",
 		"BackHref":   validBackHref(r),
@@ -599,6 +617,8 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		"Tag":        tag,
 		"Rendered":   rendered,
 		"Flash":      r.URL.Query().Get("flash"),
+		"Trades":     weekTrades,
+		"Summary":    weekSummary,
 	})
 }
 
@@ -775,6 +795,34 @@ func (h *Handlers) localTZ() *time.Location {
 	return time.UTC
 }
 
+// tradesForEntry returns the trades relevant to a feed-row's entry, in the
+// shared linkedTrade shape. Dispatches based on scope so every entry in the
+// export can show the same "context-trades" block under its body:
+//   day   → trades closed on that local-tz day
+//   week  → trades closed within the ISO week starting at entry_date
+//   trade → the single trade pointed to by trade_id
+//   group → linked trades via journal_entry_trades
+// Returns (nil, nil) when there's nothing to show — the caller suppresses
+// the section entirely in that case.
+func (h *Handlers) tradesForEntry(ctx context.Context, row feedRow, tz *time.Location) ([]linkedTrade, error) {
+	entryDate := row.EntryDate.In(tz)
+	day := time.Date(entryDate.Year(), entryDate.Month(), entryDate.Day(), 0, 0, 0, 0, tz)
+	switch row.Scope {
+	case "group":
+		return loadLinkedTrades(ctx, h.DB, row.ID)
+	case "day":
+		return loadDayTrades(ctx, h.DB, day)
+	case "week":
+		return loadWeekTrades(ctx, h.DB, day)
+	case "trade":
+		if row.TradeID == nil {
+			return nil, nil
+		}
+		return loadOneTrade(ctx, h.DB, *row.TradeID)
+	}
+	return nil, nil
+}
+
 // JournalExportMarkdown serves GET /journal/export.md — a text/markdown
 // attachment built from the same filter parameters as the journal feed. The
 // body of each entry is emitted verbatim (it's already markdown); the wrapper
@@ -789,29 +837,6 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("export feed: %w", err))
 		return
-	}
-
-	// Pre-load group summaries + linked trades once per export so we render
-	// the bullet lists without a per-entry round trip.
-	var groupIDs []int64
-	for _, row := range rows {
-		if row.Scope == "group" {
-			groupIDs = append(groupIDs, row.ID)
-		}
-	}
-	groupSummaries, err := loadGroupSummaries(ctx, h.DB, groupIDs)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("group summaries: %w", err))
-		return
-	}
-	groupTrades := map[int64][]linkedTrade{}
-	for _, gid := range groupIDs {
-		lt, err := loadLinkedTrades(ctx, h.DB, gid)
-		if err != nil {
-			h.serverError(w, fmt.Errorf("group trades: %w", err))
-			return
-		}
-		groupTrades[gid] = lt
 	}
 
 	var b strings.Builder
@@ -831,6 +856,15 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 
 	for _, row := range rows {
 		entryDate := row.EntryDate.In(tz)
+		// Load the trades that contextualize this entry — day / week /
+		// trade / group all use the same shape now.
+		trades, err := h.tradesForEntry(ctx, row, tz)
+		if err != nil {
+			h.serverError(w, fmt.Errorf("export trades for entry %d: %w", row.ID, err))
+			return
+		}
+		summary := summarizeTradeRows(trades)
+
 		switch row.Scope {
 		case "week":
 			_, wk := entryDate.ISOWeek()
@@ -840,44 +874,34 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 		case "trade":
 			fmt.Fprintf(&b, "## %s — **trade**\n\n", entryDate.Format("Mon, 2 Jan 2006"))
 		case "group":
-			s := groupSummaries[row.ID]
 			fmt.Fprintf(&b, "## Group · %d trade%s · %s — **group**\n\n",
-				s.N, plural(s.N), entryDate.Format("Mon, 2 Jan 2006"))
+				summary.N, plural(summary.N), entryDate.Format("Mon, 2 Jan 2006"))
 		default:
 			fmt.Fprintf(&b, "## %s — **day**\n\n", entryDate.Format("Mon, 2 Jan 2006"))
 		}
 
-		if row.Scope == "group" {
-			s := groupSummaries[row.ID]
-			fmt.Fprintf(&b, "**Net** %s · **Gross** %s · **Comm** %s · **%dW/%dL**\n\n",
-				signedMoney(s.Net), signedMoney(s.Gross), fmt.Sprintf("%.2f", s.Commission), s.Wins, s.Losses)
-			for _, lt := range groupTrades[row.ID] {
+		if row.Tag != nil && *row.Tag != "" {
+			fmt.Fprintf(&b, "- **Tag:** %s\n\n", *row.Tag)
+		}
+
+		// Summary + per-trade bullet list — same for every scope so the
+		// export is uniform regardless of how the user organized the entries.
+		if summary.N > 0 {
+			fmt.Fprintf(&b, "**Net** %s · **Gross** %s · **Comm** %s · **%dW/%dL** · %d trade%s\n\n",
+				signedMoney(summary.Net), signedMoney(summary.Gross),
+				fmt.Sprintf("%.2f", summary.Commission),
+				summary.Wins, summary.Losses, summary.N, plural(summary.N))
+			for _, lt := range trades {
 				net := "—"
 				if lt.NetPnl != nil {
 					net = signedMoney(*lt.NetPnl)
 				}
-				fmt.Fprintf(&b, "- %s · %s %s · %s\n", lt.AccountName, lt.Symbol, lt.Direction, net)
+				fmt.Fprintf(&b, "- %s · %s %s · qty %s · %s\n",
+					lt.AccountName, lt.Symbol, lt.Direction, formatQty(lt.Qty), net)
 			}
 			b.WriteString("\n")
 		}
 
-		if row.AccountName != nil && *row.AccountName != "" && row.Scope != "group" {
-			fmt.Fprintf(&b, "- **Account:** %s\n", *row.AccountName)
-		}
-		if row.TradeSymbol != nil {
-			meta := *row.TradeSymbol
-			if row.TradeDirection != nil {
-				meta += " " + *row.TradeDirection
-			}
-			if row.TradeNetPnl != nil {
-				meta += fmt.Sprintf(" · $%.2f", *row.TradeNetPnl)
-			}
-			fmt.Fprintf(&b, "- **Trade:** %s\n", meta)
-		}
-		if row.Tag != nil && *row.Tag != "" {
-			fmt.Fprintf(&b, "- **Tag:** %s\n", *row.Tag)
-		}
-		b.WriteString("\n")
 		b.WriteString(strings.TrimRight(row.Body, "\n"))
 		b.WriteString("\n\n---\n\n")
 	}
@@ -904,24 +928,24 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Pre-load group summaries so PDF rendering doesn't issue a SQL trip per
-	// entry — same approach as the markdown exporter.
-	var pdfGroupIDs []int64
-	for _, row := range rows {
-		if row.Scope == "group" {
-			pdfGroupIDs = append(pdfGroupIDs, row.ID)
-		}
-	}
-	pdfGroupSummaries, err := loadGroupSummaries(ctx, h.DB, pdfGroupIDs)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("group summaries (pdf): %w", err))
-		return
-	}
-
 	entries := make([]pdfEntry, 0, len(rows))
 	for _, row := range rows {
 		entryDate := row.EntryDate.In(tz)
-		e := pdfEntry{Scope: row.Scope, Body: row.Body}
+		// Pull related trades for every entry — day/week/trade/group all
+		// share the same shape in the PDF now.
+		trades, err := h.tradesForEntry(ctx, row, tz)
+		if err != nil {
+			h.serverError(w, fmt.Errorf("export trades (pdf) for entry %d: %w", row.ID, err))
+			return
+		}
+		summary := summarizeTradeRows(trades)
+
+		e := pdfEntry{
+			Scope:   row.Scope,
+			Body:    row.Body,
+			Summary: summary,
+			Trades:  trades,
+		}
 		switch row.Scope {
 		case "week":
 			_, wk := entryDate.ISOWeek()
@@ -929,28 +953,13 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 			e.Title = fmt.Sprintf("Week %d · %s – %s",
 				wk, entryDate.Format("Jan 2"), sunday.Format("Jan 2, 2006"))
 		case "group":
-			s := pdfGroupSummaries[row.ID]
 			e.Title = fmt.Sprintf("Group · %d trade%s · %s",
-				s.N, plural(s.N), entryDate.Format("Mon, 2 Jan 2006"))
-			// Pack the summary into the Trade slot — the existing PDF
-			// renderer already prints it below the title chip.
-			e.Trade = fmt.Sprintf("Net %s · Gross %s · Comm %.2f · %dW/%dL",
-				signedMoney(s.Net), signedMoney(s.Gross), s.Commission, s.Wins, s.Losses)
+				summary.N, plural(summary.N), entryDate.Format("Mon, 2 Jan 2006"))
 		default:
 			e.Title = entryDate.Format("Mon, 2 Jan 2006")
 		}
 		if row.AccountName != nil && row.Scope != "group" {
 			e.Account = *row.AccountName
-		}
-		if row.TradeSymbol != nil {
-			meta := *row.TradeSymbol
-			if row.TradeDirection != nil {
-				meta += " " + *row.TradeDirection
-			}
-			if row.TradeNetPnl != nil {
-				meta += fmt.Sprintf(" · $%.2f", *row.TradeNetPnl)
-			}
-			e.Trade = meta
 		}
 		if row.Tag != nil {
 			e.Tag = *row.Tag

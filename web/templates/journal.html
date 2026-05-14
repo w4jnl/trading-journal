@@ -57,6 +57,16 @@
   </form>
 </section>
 
+{{template "journal_summary" (dict
+  "Summary"      .Summary
+  "Trades"       .Trades
+  "AllowUnlink"  false
+  "EntryID"      0
+  "EmptyMessage" "No trades closed on this day."
+)}}
+
+{{template "trade_sheet" .}}
+
 <section class="recent-section">
   <h3>Recent entries</h3>
   <ul class="recent-list">

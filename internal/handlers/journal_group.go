@@ -26,6 +26,16 @@ func plural(n int64) string {
 
 // signedMoney formats a P&L value with an explicit sign — used by the
 // markdown and PDF group renderers so "+$42.50" / "-$13.00" reads cleanly.
+// formatQty renders a trade quantity without trailing zeros — futures
+// quantities are integer in our world, so "%.0f" reads better than "%g"
+// or the full float form.
+func formatQty(q float64) string {
+	if q == float64(int64(q)) {
+		return fmt.Sprintf("%d", int64(q))
+	}
+	return fmt.Sprintf("%.2f", q)
+}
+
 func signedMoney(v float64) string {
 	if v < 0 {
 		return fmt.Sprintf("-$%.2f", -v)
@@ -47,7 +57,10 @@ type GroupSummary struct {
 }
 
 // linkedTrade is the per-row projection used by the group-entry editor's
-// linked-trade table. Exported fields so html/template can read them.
+// linked-trade table. Day/week journal views also reuse this shape to
+// render their own trades-in-scope lists, so it carries gross/commission
+// even though the table itself only displays net.
+// Exported fields so html/template can read them.
 type linkedTrade struct {
 	ID          int64
 	Symbol      string
@@ -57,7 +70,110 @@ type linkedTrade struct {
 	AccountName string
 	EntryTime   time.Time
 	ExitTime    *time.Time
+	GrossPnl    *float64
+	Commission  *float64
 	NetPnl      *float64
+}
+
+// summarizeTradeRows folds a slice of linkedTrade into the same shape as
+// summarizeGroupTrades — wins/losses/net/gross/commission — so day, week,
+// and group views can render an identical summary card from any source
+// of trades.
+func summarizeTradeRows(trades []linkedTrade) GroupSummary {
+	var s GroupSummary
+	for _, t := range trades {
+		s.N++
+		if t.GrossPnl != nil {
+			s.Gross += *t.GrossPnl
+		}
+		if t.Commission != nil {
+			s.Commission += *t.Commission
+		}
+		if t.NetPnl != nil {
+			s.Net += *t.NetPnl
+			switch {
+			case *t.NetPnl > 0:
+				s.Wins++
+			case *t.NetPnl < 0:
+				s.Losses++
+			}
+		}
+		if t.ExitTime != nil && t.ExitTime.After(s.LastExit) {
+			s.LastExit = *t.ExitTime
+		}
+	}
+	return s
+}
+
+// loadDayTrades returns all closed trades exiting on the given local
+// trading day, ordered by exit_time ASC. Used by the day journal view so
+// the page shows the same "context-trades" panel as the group view.
+func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTrade, error) {
+	end := date.AddDate(0, 0, 1)
+	return scanLinkedTrades(ctx, db, `
+		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		FROM trades t
+		JOIN accounts a ON a.id = t.account_id
+		WHERE t.exit_time IS NOT NULL
+		  AND t.exit_time >= ? AND t.exit_time < ?
+		ORDER BY t.exit_time ASC, t.id ASC
+	`, date, end)
+}
+
+// loadOneTrade returns a one-element slice for the given trade id, in the
+// shared linkedTrade shape. Used by the exporters so a trade-scope entry
+// can list its (single) underlying trade with the same formatting as
+// day/week/group entries.
+func loadOneTrade(ctx context.Context, db *sql.DB, tradeID int64) ([]linkedTrade, error) {
+	return scanLinkedTrades(ctx, db, `
+		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		FROM trades t
+		JOIN accounts a ON a.id = t.account_id
+		WHERE t.id = ?
+	`, tradeID)
+}
+
+// loadWeekTrades returns all closed trades exiting within the ISO week that
+// starts at `monday` (Monday..Sunday inclusive).
+func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linkedTrade, error) {
+	end := monday.AddDate(0, 0, 7)
+	return scanLinkedTrades(ctx, db, `
+		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		FROM trades t
+		JOIN accounts a ON a.id = t.account_id
+		WHERE t.exit_time IS NOT NULL
+		  AND t.exit_time >= ? AND t.exit_time < ?
+		ORDER BY t.exit_time ASC, t.id ASC
+	`, monday, end)
+}
+
+// scanLinkedTrades is the shared scan path for loadDayTrades / loadWeekTrades
+// / loadLinkedTrades. Same column order in all three queries.
+func scanLinkedTrades(ctx context.Context, db *sql.DB, query string, args ...any) ([]linkedTrade, error) {
+	rows, err := db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []linkedTrade
+	for rows.Next() {
+		var lt linkedTrade
+		var exit sql.NullTime
+		if err := rows.Scan(&lt.ID, &lt.Symbol, &lt.SymbolRoot, &lt.Direction, &lt.Qty,
+			&lt.AccountName, &lt.EntryTime, &exit,
+			&lt.GrossPnl, &lt.Commission, &lt.NetPnl); err != nil {
+			return nil, err
+		}
+		if exit.Valid {
+			t := exit.Time
+			lt.ExitTime = &t
+		}
+		out = append(out, lt)
+	}
+	return out, rows.Err()
 }
 
 // summarizeGroupTrades aggregates trades linked to a single group entry.
@@ -161,36 +277,18 @@ func loadGroupSummaries(ctx context.Context, db *sql.DB, entryIDs []int64) (map[
 }
 
 // loadLinkedTrades returns the trades linked to a group entry, ordered by
-// exit_time ASC.
+// exit_time ASC. Uses the shared scanLinkedTrades path so day, week, and
+// group views all hydrate the same struct shape.
 func loadLinkedTrades(ctx context.Context, db *sql.DB, journalEntryID int64) ([]linkedTrade, error) {
-	rows, err := db.QueryContext(ctx, `
+	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
 		FROM journal_entry_trades jet
 		JOIN trades t   ON t.id = jet.trade_id
 		JOIN accounts a ON a.id = t.account_id
 		WHERE jet.journal_entry_id = ?
 		ORDER BY t.exit_time ASC, t.id ASC
 	`, journalEntryID)
-	if err != nil {
-		return nil, fmt.Errorf("list linked trades: %w", err)
-	}
-	defer rows.Close()
-	var out []linkedTrade
-	for rows.Next() {
-		var lt linkedTrade
-		var exit sql.NullTime
-		if err := rows.Scan(&lt.ID, &lt.Symbol, &lt.SymbolRoot, &lt.Direction, &lt.Qty,
-			&lt.AccountName, &lt.EntryTime, &exit, &lt.NetPnl); err != nil {
-			return nil, fmt.Errorf("scan trade: %w", err)
-		}
-		if exit.Valid {
-			t := exit.Time
-			lt.ExitTime = &t
-		}
-		out = append(out, lt)
-	}
-	return out, rows.Err()
 }
 
 // GroupJournalCreate handles POST /journal/group/new — creates a new
@@ -317,11 +415,10 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, err)
 		return
 	}
-	summary, err := summarizeGroupTrades(ctx, h.DB, id)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("summarize: %w", err))
-		return
-	}
+	// Compute the summary in Go from the already-loaded trades so day,
+	// week, and group views all run through the same summarizeTradeRows
+	// path (one source of truth for Net / Gross / Comm / W-L).
+	summary := summarizeTradeRows(trades)
 
 	var rendered template.HTML
 	if entry.Body != "" {

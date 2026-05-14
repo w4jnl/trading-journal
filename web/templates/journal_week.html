@@ -51,4 +51,14 @@
     {{end}}
   </div>
 </form>
+
+{{template "journal_summary" (dict
+  "Summary"      .Summary
+  "Trades"       .Trades
+  "AllowUnlink"  false
+  "EntryID"      0
+  "EmptyMessage" "No trades closed in this week."
+)}}
+
+{{template "trade_sheet" .}}
 {{end}}

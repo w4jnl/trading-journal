@@ -32,9 +32,12 @@ type pdfHeader struct {
 
 // pdfEntry is one journal entry as the renderer consumes it.
 //   - Title is the date/week heading line.
-//   - Scope is "day" | "trade" | "week" — drives chip colour.
+//   - Scope is "day" | "trade" | "week" | "group" — drives chip colour.
 //   - Account / Trade / Tag are optional metadata; empty strings hide.
 //   - Body is RAW markdown; the renderer parses it.
+//   - Summary + Trades are the related-trades panel rendered above the body
+//     so every entry — regardless of scope — shows the trades it was
+//     written about.
 type pdfEntry struct {
 	Title   string
 	Scope   string
@@ -42,6 +45,8 @@ type pdfEntry struct {
 	Trade   string
 	Tag     string
 	Body    string
+	Summary GroupSummary
+	Trades  []linkedTrade
 }
 
 // page geometry, in mm.
@@ -203,8 +208,44 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 		pdf.MultiCell(r.contentWidth, 5, r.tr(meta), "", "L", false)
 	}
 
+	// Trades block — same look for day / week / group / trade entries.
+	r.renderTradesBlock(e)
+
 	pdf.Ln(2)
 	r.renderMarkdownBody(e.Body)
+}
+
+// renderTradesBlock prints the per-entry trades summary + bullet list.
+// Suppressed entirely when the entry has no associated trades, so day
+// entries with zero closed trades on that date stay clean.
+func (r *pdfRenderer) renderTradesBlock(e pdfEntry) {
+	if e.Summary.N == 0 {
+		return
+	}
+	pdf := r.pdf
+	pdf.Ln(2)
+
+	pdf.SetFont("Helvetica", "B", smallFontSize)
+	pdf.SetTextColor(24, 24, 27)
+	summary := fmt.Sprintf("Trades · %d · Net %s · Gross %s · Comm %.2f · %dW/%dL",
+		e.Summary.N,
+		signedMoney(e.Summary.Net),
+		signedMoney(e.Summary.Gross),
+		e.Summary.Commission,
+		e.Summary.Wins, e.Summary.Losses)
+	pdf.MultiCell(r.contentWidth, 5, r.tr(summary), "", "L", false)
+
+	pdf.SetFont("Helvetica", "", smallFontSize)
+	pdf.SetTextColor(82, 82, 91)
+	for _, lt := range e.Trades {
+		net := "—"
+		if lt.NetPnl != nil {
+			net = signedMoney(*lt.NetPnl)
+		}
+		line := fmt.Sprintf("  •  %s · %s %s · qty %s · %s",
+			lt.AccountName, lt.Symbol, lt.Direction, formatQty(lt.Qty), net)
+		pdf.MultiCell(r.contentWidth, 4.6, r.tr(line), "", "L", false)
+	}
 }
 
 // renderMarkdownBody parses the body as markdown and walks the AST,

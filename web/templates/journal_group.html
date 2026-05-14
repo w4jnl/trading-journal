@@ -19,35 +19,6 @@
 </div>
 {{end}}
 
-<!-- P&L summary strip -->
-{{with .Summary}}
-<div class="card" style="margin-bottom: 16px;">
-  <div class="card-title">Linked trades · <span class="num">{{.N}}</span></div>
-  {{if gt .N 0}}
-  <div class="grid-auto" style="--min: 130px;">
-    <div>
-      <div class="label">Net</div>
-      <div class="value-lg num {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</div>
-    </div>
-    <div>
-      <div class="label">Gross</div>
-      <div class="value num">{{printf "%.2f" .Gross}}</div>
-    </div>
-    <div>
-      <div class="label">Commission</div>
-      <div class="value num">{{printf "%.2f" .Commission}}</div>
-    </div>
-    <div>
-      <div class="label">W / L</div>
-      <div class="value num"><span class="pnl-pos">{{.Wins}}W</span> <span class="muted">/</span> <span class="pnl-neg">{{.Losses}}L</span></div>
-    </div>
-  </div>
-  {{else}}
-    <div class="muted">No trades linked yet — add one below.</div>
-  {{end}}
-</div>
-{{end}}
-
 <!-- Body / tag editor — primary action of the page, sits above the
      linked-trades list so the eye lands on the writing surface first. -->
 <form method="post" action="/journal/group/{{.EntryID}}">
@@ -78,49 +49,15 @@
   </div>
 </form>
 
-<!-- Linked-trades table with per-row remove. Lives below the editor so the
-     write-first flow stays unblocked; user can scroll down to review or
-     adjust the set without losing typing focus. -->
-<h3 style="margin-top: 32px;">Linked trades</h3>
-{{if .Trades}}
-<div class="table-scroll" style="margin-bottom: 16px;">
-  <table>
-    <thead>
-      <tr>
-        <th>Entry (UTC)</th>
-        <th>Account</th>
-        <th>Symbol</th>
-        <th>Dir</th>
-        <th class="tabular">Qty</th>
-        <th class="tabular">Net P&amp;L</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>
-      {{range .Trades}}
-      <tr>
-        <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
-        <td>{{.AccountName}}</td>
-        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
-        <td>{{if eq .Direction "long"}}<span class="pill dir-long">long</span>{{else}}<span class="pill dir-short">short</span>{{end}}</td>
-        <td class="tabular num">{{.Qty}}</td>
-        <td class="tabular num">{{pnlClass .NetPnl}}</td>
-        <td style="text-align: right;">
-          <form method="post" action="/journal/group/{{$.EntryID}}/unlink"
-                onsubmit="return confirm('Remove trade {{.ID}} from this group note?');"
-                style="display: inline;">
-            <input type="hidden" name="trade_id" value="{{.ID}}">
-            <button type="submit" class="btn btn--ghost btn--sm" title="Remove from group">×</button>
-          </form>
-        </td>
-      </tr>
-      {{end}}
-    </tbody>
-  </table>
-</div>
-{{end}}
+{{template "journal_summary" (dict
+  "Summary"      .Summary
+  "Trades"       .Trades
+  "AllowUnlink"  true
+  "EntryID"      .EntryID
+  "EmptyMessage" "No trades linked yet — add one below."
+)}}
 
-<details class="disclose" style="margin-bottom: 16px;">
+<details class="disclose" style="margin-top: 16px; margin-bottom: 16px;">
   <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add another trade</summary>
   <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" style="margin-top: 8px;">
     <div class="row">
@@ -134,10 +71,7 @@
   </form>
 </details>
 
-{{if .Rendered}}
-<h3 style="margin-top: 24px;">Preview</h3>
-<div class="card markdown-preview">{{.Rendered}}</div>
-{{end}}
+{{template "trade_sheet" .}}
 
 <style>
   .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }

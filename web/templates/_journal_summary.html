@@ -1,0 +1,83 @@
+{{/*
+  Shared trades + summary block for journal entry views.
+  Used by /journal/{date}, /journal/week/{week}, /journal/group/{id} so the
+  three views render identical content under their editors.
+
+  Expects a dict with:
+    Summary       GroupSummary  (Net/Gross/Comm/Wins/Losses/N)
+    Trades        []linkedTrade
+    AllowUnlink   bool          (true for group scope — adds × buttons)
+    EntryID       int64         (only used when AllowUnlink is true)
+    EmptyMessage  string        (text when no trades, e.g. "No trades on this day")
+*/}}
+{{define "journal_summary"}}
+<div class="card" style="margin-top: 16px;">
+  <div class="card-title">Trades · <span class="num">{{.Summary.N}}</span></div>
+  {{if gt .Summary.N 0}}
+  <div class="grid-auto" style="--min: 130px;">
+    <div>
+      <div class="label">Net</div>
+      <div class="value-lg num {{if gt .Summary.Net 0.0}}pnl-pos{{else if lt .Summary.Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Summary.Net}}</div>
+    </div>
+    <div>
+      <div class="label">Gross</div>
+      <div class="value num">{{printf "%.2f" .Summary.Gross}}</div>
+    </div>
+    <div>
+      <div class="label">Commission</div>
+      <div class="value num">{{printf "%.2f" .Summary.Commission}}</div>
+    </div>
+    <div>
+      <div class="label">W / L</div>
+      <div class="value num"><span class="pnl-pos">{{.Summary.Wins}}W</span> <span class="muted">/</span> <span class="pnl-neg">{{.Summary.Losses}}L</span></div>
+    </div>
+  </div>
+  {{else}}
+    <div class="muted">{{.EmptyMessage}}</div>
+  {{end}}
+</div>
+
+{{if .Trades}}
+{{$entryID := .EntryID}}{{$allowUnlink := .AllowUnlink}}
+<div class="table-scroll" style="margin-top: 12px;">
+  <table>
+    <thead>
+      <tr>
+        <th>Entry (UTC)</th>
+        <th>Account</th>
+        <th>Symbol</th>
+        <th>Dir</th>
+        <th class="tabular">Qty</th>
+        <th class="tabular">Net P&amp;L</th>
+        {{if $allowUnlink}}<th></th>{{end}}
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Trades}}
+      <tr class="trade-row" data-trade-id="{{.ID}}"
+          hx-get="/trades/{{.ID}}"
+          hx-target="#trade-sheet-content"
+          hx-swap="innerHTML">
+        <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
+        <td>{{.AccountName}}</td>
+        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+        <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td class="tabular num">{{.Qty}}</td>
+        <td class="tabular num">{{pnlChip .NetPnl}}</td>
+        {{if $allowUnlink}}
+        <td style="text-align: right;" onclick="event.stopPropagation();">
+          <form method="post" action="/journal/group/{{$entryID}}/unlink"
+                onsubmit="return confirm('Remove trade {{.ID}} from this group note?');"
+                style="display: inline;">
+            <input type="hidden" name="trade_id" value="{{.ID}}">
+            <button type="submit" class="btn btn--ghost btn--sm" title="Remove from group">×</button>
+          </form>
+        </td>
+        {{end}}
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}

@@ -29,9 +29,11 @@
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
 </head>
 <body>
-  {{/* CSS-only mobile drawer: a hidden checkbox toggles the sidebar via :checked. */}}
-  <input type="checkbox" id="nav-open" class="nav-toggle-input" aria-hidden="true">
   <div class="app-shell">
+    {{/* CSS-only mobile drawer: the hidden checkbox must live INSIDE .app-shell
+         so the `:checked ~ .sidebar` / `:checked ~ .nav-backdrop` selectors
+         match — both rely on the shared .app-shell parent. */}}
+    <input type="checkbox" id="nav-open" class="nav-toggle-input" aria-hidden="true">
     <label for="nav-open" class="nav-toggle" aria-label="Toggle navigation">
       <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <line x1="3" y1="6"  x2="21" y2="6"/>
