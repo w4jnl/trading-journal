@@ -17,7 +17,7 @@
   on Save — the JS only enhances; nothing breaks without it.
 */}}
 {{define "journal_editor"}}
-{{- $mode := .Mode -}}{{if eq $mode ""}}{{$mode = "split"}}{{end -}}
+{{- $mode := .Mode -}}{{if eq $mode ""}}{{$mode = "single"}}{{end -}}
 {{- $minH := .MinHeight -}}{{if eq $minH ""}}{{$minH = "360px"}}{{end -}}
 <div class="journal-editor {{if eq $mode "single"}}journal-editor--single{{end}}"
      data-je
