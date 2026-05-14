@@ -5,9 +5,191 @@
 
 <h1>Dashboard <span class="muted" style="font-weight:400;">· {{.DateLabel}}</span></h1>
 
+{{if .IsStale}}
+<div class="flash warn">No trades today yet. Showing the most recent day with activity.</div>
+{{end}}
+
+<!-- HERO ROW: 60-day cumulative P&L curve + Today panel ---------------------- -->
+<div class="grid-12 dash-hero">
+  <section class="card col-span-8 dash-hero__curve">
+    <div class="card-title-row">
+      <span class="card-title">Cumulative net P&amp;L · 60 days</span>
+      <a class="card-title__action" href="/trades">All trades →</a>
+    </div>
+    {{if .CurveHasData}}
+      <div id="dash-curve" data-total="{{.CurveTotal}}" style="height: 220px; width: 100%;"></div>
+      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+      <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+      <script>
+        window.__dashCurve = {
+          xs: [{{range $i, $v := .CurveXs}}{{if $i}},{{end}}{{$v}}{{end}}],
+          ys: [{{range $i, $v := .CurveYs}}{{if $i}},{{end}}{{$v}}{{end}}],
+          total: {{.CurveTotal}},
+        };
+        (function () {
+          var inst = null;
+          function colors() {
+            var cs = getComputedStyle(document.documentElement);
+            return {
+              pos:   cs.getPropertyValue('--pos').trim()       || '#16a34a',
+              neg:   cs.getPropertyValue('--neg').trim()       || '#dc2626',
+              grid:  cs.getPropertyValue('--border').trim()    || '#e4e4e7',
+              label: cs.getPropertyValue('--fg-muted').trim()  || '#71717a',
+            };
+          }
+          function rgba(hex, a) {
+            if (hex.startsWith('rgb')) return hex;
+            var h = hex.replace('#', '');
+            if (h.length === 3) h = h.split('').map(function (x) { return x + x; }).join('');
+            var n = parseInt(h, 16);
+            return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+          }
+          function build() {
+            if (inst) { inst.destroy(); inst = null; }
+            var el = document.getElementById('dash-curve');
+            if (!el || !window.__dashCurve.xs.length) return;
+            var c = colors();
+            var stroke = window.__dashCurve.total >= 0 ? c.pos : c.neg;
+            inst = new uPlot({
+              width: el.clientWidth,
+              height: el.clientHeight,
+              scales: { x: { time: true } },
+              series: [
+                {},
+                {
+                  label: 'Cumulative P&L',
+                  stroke: stroke,
+                  fill:   rgba(stroke, 0.16),
+                  width:  1.8,
+                  value:  function (u, v) { return v == null ? '' : v.toFixed(2); },
+                },
+              ],
+              axes: [
+                { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+                { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+              ],
+            }, [window.__dashCurve.xs, window.__dashCurve.ys], el);
+          }
+          build();
+          window.addEventListener('themechange', function () { setTimeout(build, 50); });
+          window.addEventListener('resize',      function () { setTimeout(build, 50); });
+        })();
+      </script>
+    {{else}}
+      <div class="empty-state" style="border: 0; padding: 60px 0;">
+        <div class="empty-title">No closed trades yet</div>
+        <div class="empty-sub">Drop a CSV at <a href="/import">/import</a> or into <code>imports/inbox/</code>.</div>
+      </div>
+    {{end}}
+  </section>
+
+  <section class="card card--hero col-span-4 dash-hero__today">
+    <div class="card-title">Today · {{.DateLabel}}</div>
+    {{with .Stats}}
+    {{if .HasTrades}}
+      <div class="dash-today__pnl">
+        <span class="pnl-chip pnl-chip--hero {{if ge .NetPnl 0.0}}pnl-chip--pos{{else}}pnl-chip--neg{{end}}">
+          {{if ge .NetPnl 0.0}}+{{else}}−{{end}}{{printf "%.2f" (abs .NetPnl)}}
+        </span>
+      </div>
+      <div class="dash-today__sub muted">
+        <span class="num">{{.Trades}}</span> trade{{if ne .Trades 1}}s{{end}} ·
+        <span class="pnl-pos num">{{.Wins}}W</span> /
+        <span class="pnl-neg num">{{.Losses}}L</span>
+        {{if gt .Trades 0}}
+          · <span class="num">{{printf "%.0f%%" (mul .WinRate 100.0)}}</span> win
+        {{end}}
+      </div>
+      <div class="dash-today__bw">
+        <div>
+          <div class="label">Best</div>
+          <div class="num pnl-pos">+{{printf "%.2f" .BestNetPnl}}</div>
+        </div>
+        <div>
+          <div class="label">Worst</div>
+          <div class="num pnl-neg">{{printf "%.2f" .WorstNetPnl}}</div>
+        </div>
+      </div>
+    {{else}}
+      <div class="empty-state" style="border: 0; padding: 16px 0;">
+        <div class="empty-sub">No closed trades on {{$.DateLabel}}.</div>
+      </div>
+    {{end}}
+    {{end}}
+  </section>
+</div>
+
+<!-- STAT STRIP: 30-day trailing tiles with inline-SVG sparklines -------------- -->
+{{with .Trailing}}
+{{if .HasData}}
+<div class="stat-strip">
+  <div class="card stat-tile">
+    <div class="label">30d Net P&amp;L</div>
+    <div class="num--lg {{if ge .NetPnl 0.0}}pnl-pos{{else}}pnl-neg{{end}}">{{if ge .NetPnl 0.0}}+{{end}}{{printf "%.2f" .NetPnl}}</div>
+    {{with sparkPolyline .NetSpark}}
+    <svg class="spark {{if ge $.Trailing.NetPnl 0.0}}spark--pos{{else}}spark--neg{{end}}" viewBox="0 0 60 20" preserveAspectRatio="none">
+      <polyline points="{{.}}" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    </svg>
+    {{end}}
+  </div>
+  <div class="card stat-tile">
+    <div class="label">30d trades</div>
+    <div class="num--lg">{{.Trades}}</div>
+    {{with sparkPolyline .TradesSpark}}
+    <svg class="spark spark--accent" viewBox="0 0 60 20" preserveAspectRatio="none">
+      <polyline points="{{.}}" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    </svg>
+    {{end}}
+  </div>
+  <div class="card stat-tile">
+    <div class="label">30d win rate</div>
+    <div class="num--lg">{{printf "%.0f%%" (mul .WinRate 100.0)}}</div>
+    {{with sparkPolyline .WinRateSpark}}
+    <svg class="spark {{if ge $.Trailing.WinRate 0.5}}spark--pos{{else}}spark--neg{{end}}" viewBox="0 0 60 20" preserveAspectRatio="none">
+      <polyline points="{{.}}" fill="none" stroke="currentColor" stroke-width="1.4"/>
+    </svg>
+    {{end}}
+  </div>
+  <div class="card stat-tile">
+    <div class="label">Avg win / avg loss</div>
+    <div class="num--md">
+      <span class="pnl-pos">+{{printf "%.2f" .AvgWin}}</span>
+      <span class="muted" style="font-weight:400;"> · </span>
+      <span class="pnl-neg">{{printf "%.2f" .AvgLoss}}</span>
+    </div>
+    <div class="sub">
+      Ratio
+      {{if lt .AvgLoss 0.0}}
+        <span class="num">{{printf "%.2f" (div .AvgWin (abs .AvgLoss))}}</span>
+      {{else}}
+        <span class="num">∞</span>
+      {{end}}
+    </div>
+  </div>
+  <div class="card stat-tile">
+    <div class="label">Current streak</div>
+    {{if eq .StreakDir "win"}}
+      <div class="num--lg pnl-pos">+{{.Streak}}</div>
+      <div class="sub">winning day{{if ne .Streak 1}}s{{end}} in a row</div>
+    {{else if eq .StreakDir "loss"}}
+      <div class="num--lg pnl-neg">−{{.Streak}}</div>
+      <div class="sub">losing day{{if ne .Streak 1}}s{{end}} in a row</div>
+    {{else}}
+      <div class="num--lg muted">—</div>
+      <div class="sub">no current streak</div>
+    {{end}}
+  </div>
+</div>
+{{end}}
+{{end}}
+
+<!-- EQUITY BREAKDOWN ---------------------------------------------------------- -->
 {{with .Equity}}
-<div class="card" style="margin-bottom: 16px;">
-  <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· as of {{.AsOf}}</span></div>
+<div class="card" style="margin-bottom: 24px;">
+  <div class="card-title-row">
+    <span class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· as of {{.AsOf}}</span></span>
+    {{if .Known}}<a class="card-title__action" href="/accounts">Manage →</a>{{end}}
+  </div>
   {{if .Known}}
     <table class="equity-breakdown">
       <tbody>
@@ -29,57 +211,14 @@
     <div class="muted">No balance anchors yet — <a href="/accounts">set one on /accounts</a></div>
   {{end}}
 </div>
-<style>
-  table.equity-breakdown { width: 100%; max-width: 480px; border-collapse: collapse; margin-top: 4px; }
-  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
-  table.equity-breakdown td.lbl { color: var(--fg-muted); }
-  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
-  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
-  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
-</style>
 {{end}}
 
-{{if .IsStale}}
-<div class="flash warn">No trades today yet. Showing the most recent day with activity.</div>
-{{end}}
-
-{{with .Stats}}
-{{if .HasTrades}}
-<div class="grid-auto" style="--min: 200px; margin-bottom: 24px;">
-  <div class="card">
-    <div class="label">Net P&amp;L</div>
-    <div class="value-lg num {{if gt .NetPnl 0.0}}pnl-pos{{else if lt .NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" .NetPnl}}</div>
-    <div class="sub">Gross <span class="num">{{printf "%.2f" .GrossPnl}}</span> · comm <span class="num">{{printf "%.2f" .Commission}}</span></div>
-  </div>
-  <div class="card">
-    <div class="label">Trades</div>
-    <div class="value-lg num">{{.Trades}}</div>
-    <div class="sub"><span class="pnl-pos num">{{.Wins}}W</span> / <span class="pnl-neg num">{{.Losses}}L</span> · <span class="num">{{printf "%.0f%%" (mul .WinRate 100.0)}}</span> win rate</div>
-  </div>
-  <div class="card">
-    <div class="label">Best / Worst</div>
-    <div class="value-lg num pnl-pos">{{printf "%.2f" .BestNetPnl}}</div>
-    <div class="sub"><span class="pnl-neg num">{{printf "%.2f" .WorstNetPnl}}</span> worst</div>
-  </div>
-  <div class="card">
-    <div class="label">Direction split</div>
-    <div class="value-lg num">{{.Longs}}L <span class="muted" style="font-weight:400;">/</span> {{.Shorts}}S</div>
-    <div class="sub">{{if eq .Trades 0}}—{{else}}<span class="num">{{printf "%.0f%%" (mul (div (i64ToFloat .Longs) (i64ToFloat .Trades)) 100.0)}}</span> long{{end}}</div>
-  </div>
-</div>
-{{else}}
-<div class="empty-state">
-  <div class="empty-title">No closed trades yet</div>
-  <div class="empty-sub">Drop a CSV at <a href="/import">/import</a> or into <code>imports/inbox/</code>.</div>
-</div>
-{{end}}
-{{end}}
-
-<div class="dash-grid">
-  <section>
-    <div class="row-between" style="margin-bottom: 12px;">
+<!-- RECENT TRADES + LAST IMPORTS --------------------------------------------- -->
+<div class="grid-12">
+  <section class="col-span-8">
+    <div class="card-title-row">
       <h2 style="margin: 0;">Recent trades</h2>
-      <a href="/trades" class="btn btn--ghost btn--sm">All trades →</a>
+      <a href="/trades" class="card-title__action">All trades →</a>
     </div>
     {{if .RecentTrades}}
     <div class="table-scroll">
@@ -93,8 +232,8 @@
             <td class="num muted">{{if .ExitTime}}{{.ExitTime.UTC.Format "2006-01-02 15:04"}}{{end}}</td>
             <td>{{.AccountName}}</td>
             <td class="num">{{.Symbol}}</td>
-            <td>{{if eq .Direction "long"}}<span class="pill dir-long">long</span>{{else}}<span class="pill dir-short">short</span>{{end}}</td>
-            <td class="tabular num">{{pnlClass .NetPnl}}</td>
+            <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+            <td class="tabular num">{{pnlChip .NetPnl}}</td>
           </tr>
           {{end}}
         </tbody>
@@ -107,7 +246,7 @@
     {{end}}
   </section>
 
-  <aside>
+  <aside class="col-span-4">
     <div class="card">
       <div class="card-title">Last imports</div>
       <ul class="sync-list">
@@ -128,8 +267,58 @@
 </div>
 
 <style>
-  .dash-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 24px; margin-top: 24px; }
-  @media (max-width: 900px) { .dash-grid { grid-template-columns: 1fr; } }
+  /* Hero row spacing under H1 */
+  .dash-hero { margin-bottom: 24px; }
+  .dash-hero__today {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .dash-today__pnl { display: flex; }
+  .dash-today__sub { font-size: 12px; }
+  .dash-today__bw {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Stat strip — 5 tiles auto-fitting to the row. Each tile is a compact
+     card with a label, a primary value, and (when applicable) a sparkline. */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
+
+  .stat-tile {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-tile .label   { margin-bottom: 2px; }
+  .stat-tile .spark   { margin-top: 6px; width: 100%; height: 20px; opacity: 0.85; }
+  .stat-tile .spark--pos    { color: var(--pos); }
+  .stat-tile .spark--neg    { color: var(--neg); }
+  .stat-tile .spark--accent { color: var(--accent); }
+
+  /* Equity breakdown — same look as before, slightly polished. */
+  table.equity-breakdown { width: 100%; max-width: 560px; border-collapse: collapse; margin-top: 4px; }
+  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
+  table.equity-breakdown td.lbl { color: var(--fg-muted); }
+  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
+  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
+  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
+
+  /* Recent + imports section spacing */
+  .grid-12 + .grid-12 { margin-top: 24px; }
   .sync-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
   .sync-list li { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
   .sync-list li:last-child { padding-bottom: 0; border-bottom: 0; }

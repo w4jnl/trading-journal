@@ -27,6 +27,38 @@ type dashboardStats struct {
 	HasTrades   bool
 }
 
+// dashboardTrailing holds the 30-day trailing stats shown in the dashboard's
+// stat strip. Each Spark* field is a 30-element series scaled to the tile's
+// own min/max so weak signals still register visually.
+type dashboardTrailing struct {
+	HasData bool
+
+	NetPnl     float64
+	NetSpark   []float64 // daily cumulative net P&L, 30 entries
+
+	Trades     int64
+	TradesSpark []float64 // daily trade count, 30 entries
+
+	WinRate     float64 // 0..1
+	WinRateSpark []float64 // 7-day rolling win rate, 30 entries
+
+	AvgWin  float64
+	AvgLoss float64 // signed (negative)
+
+	Streak    int    // consecutive same-sign trading days from latest backward
+	StreakDir string // "win" | "loss" | "flat"
+}
+
+// dailyPnL is one trading day inside the 60-day window. Used both for the
+// hero equity-curve series and for computing the trailing stat strip.
+type dailyPnL struct {
+	Date    time.Time
+	Net     float64
+	Trades  int64
+	Wins    int64
+	Losses  int64
+}
+
 // dashboardEquity is the at-a-glance equity tile shown atop the dashboard.
 // Known is true only when at least one active account has a balance anchor;
 // otherwise the tile renders the empty-state link to /accounts.
@@ -107,6 +139,14 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	daily, err := h.dashboardDaily(ctx, tz, 60)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("dashboard daily: %w", err))
+		return
+	}
+	curveXs, curveYs, curveTotal := buildEquityCurve(daily)
+	trailing := buildTrailingStrip(daily)
+
 	today := todayLocal(tz)
 	isStale := stats.HasTrades && !stats.Date.Equal(today)
 
@@ -119,7 +159,179 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		"IsStale":      isStale,
 		"LastSyncs":    lastSyncs,
 		"RecentTrades": recent,
+		"Trailing":     trailing,
+		"CurveXs":      curveXs,
+		"CurveYs":      curveYs,
+		"CurveTotal":   curveTotal,
+		"CurveHasData": len(curveXs) > 0,
 	})
+}
+
+// dashboardDaily returns one row per trading day in the last `days` days,
+// ordered by date ASC. Buckets are grouped in Go on the trading TZ so
+// midnight boundaries line up with the user's day — SQLite's date() runs
+// in UTC and would split a late-session NY trade onto the next day.
+// (It also dodges a driver quirk where date() over Go's time.Time storage
+// occasionally returned NULL.) Days with no closed trades are omitted.
+func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days int) ([]dailyPnL, error) {
+	end := todayLocal(tz).AddDate(0, 0, 1)
+	start := end.AddDate(0, 0, -days)
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT exit_time, net_pnl
+		FROM trades
+		WHERE status='closed' AND exit_time IS NOT NULL AND net_pnl IS NOT NULL
+		  AND exit_time >= ? AND exit_time < ?
+		ORDER BY exit_time ASC
+	`, start, end)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	bucket := map[time.Time]*dailyPnL{}
+	for rows.Next() {
+		var t time.Time
+		var net float64
+		if err := rows.Scan(&t, &net); err != nil {
+			return nil, err
+		}
+		local := t.In(tz)
+		day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, tz)
+		row, ok := bucket[day]
+		if !ok {
+			row = &dailyPnL{Date: day}
+			bucket[day] = row
+		}
+		row.Net += net
+		row.Trades++
+		switch {
+		case net > 0:
+			row.Wins++
+		case net < 0:
+			row.Losses++
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	out := make([]dailyPnL, 0, len(bucket))
+	for _, row := range bucket {
+		out = append(out, *row)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Date.Before(out[j].Date) })
+	return out, nil
+}
+
+// buildEquityCurve turns the dense per-day P&L list into the cumulative-net
+// series used by the hero chart. Returns parallel xs (unix-seconds) and ys
+// (cumulative floats), prepended with a zero baseline so the curve starts
+// at zero. total is the final cumulative value (drives stroke color in JS).
+func buildEquityCurve(daily []dailyPnL) (xs []int64, ys []float64, total float64) {
+	if len(daily) == 0 {
+		return nil, nil, 0
+	}
+	xs = make([]int64, 0, len(daily)+1)
+	ys = make([]float64, 0, len(daily)+1)
+	xs = append(xs, daily[0].Date.Add(-12*time.Hour).Unix())
+	ys = append(ys, 0)
+	cum := 0.0
+	for _, d := range daily {
+		cum += d.Net
+		xs = append(xs, d.Date.Add(12*time.Hour).Unix())
+		ys = append(ys, cum)
+	}
+	return xs, ys, cum
+}
+
+// buildTrailingStrip extracts the 30-day-trailing tiles + sparkline series
+// from the dense per-day list. Sparklines are min-max normalized later by
+// the template helper; this function just packs the raw daily values.
+func buildTrailingStrip(daily []dailyPnL) dashboardTrailing {
+	t := dashboardTrailing{}
+	if len(daily) == 0 {
+		return t
+	}
+	// Anchor on the latest day in the series; walk back up to 30 trading
+	// days. Calendar days without trades are intentionally skipped — that's
+	// how traders naturally count.
+	window := 30
+	if len(daily) < window {
+		window = len(daily)
+	}
+	tail := daily[len(daily)-window:]
+	t.HasData = true
+
+	cum := 0.0
+	cumSeries := make([]float64, 0, len(tail))
+	tradesSeries := make([]float64, 0, len(tail))
+	winRateSeries := make([]float64, 0, len(tail))
+	var wins, losses int64
+	var grossWin, grossLoss float64
+	for _, d := range tail {
+		cum += d.Net
+		cumSeries = append(cumSeries, cum)
+		tradesSeries = append(tradesSeries, float64(d.Trades))
+		wins += d.Wins
+		losses += d.Losses
+		if d.Net > 0 {
+			grossWin += d.Net
+		} else if d.Net < 0 {
+			grossLoss += d.Net
+		}
+		t.Trades += d.Trades
+
+		// 7-day rolling win rate, anchored at the end of each daily slice.
+		// Without this the sparkline of "win rate" is too jittery to read.
+		var rw, rl int64
+		look := len(tradesSeries) // index into tail
+		from := look - 7
+		if from < 0 {
+			from = 0
+		}
+		for i := from; i < look; i++ {
+			rw += tail[i].Wins
+			rl += tail[i].Losses
+		}
+		rate := 0.0
+		if rw+rl > 0 {
+			rate = float64(rw) / float64(rw+rl)
+		}
+		winRateSeries = append(winRateSeries, rate)
+	}
+	t.NetPnl = cum
+	t.NetSpark = cumSeries
+	t.TradesSpark = tradesSeries
+	t.WinRateSpark = winRateSeries
+	if wins+losses > 0 {
+		t.WinRate = float64(wins) / float64(wins+losses)
+	}
+	if wins > 0 {
+		t.AvgWin = grossWin / float64(wins)
+	}
+	if losses > 0 {
+		t.AvgLoss = grossLoss / float64(losses)
+	}
+
+	// Streak: walk backward from the latest day, count consecutive same-sign
+	// days. Zero-P&L days break the streak.
+	last := tail[len(tail)-1].Net
+	switch {
+	case last > 0:
+		t.StreakDir = "win"
+	case last < 0:
+		t.StreakDir = "loss"
+	default:
+		t.StreakDir = "flat"
+	}
+	for i := len(tail) - 1; i >= 0; i-- {
+		v := tail[i].Net
+		if (t.StreakDir == "win" && v > 0) || (t.StreakDir == "loss" && v < 0) {
+			t.Streak++
+			continue
+		}
+		break
+	}
+	return t
 }
 
 // pickDashboardDate returns today (in trading TZ) if there are closed trades

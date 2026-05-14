@@ -117,6 +117,44 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return template.HTML(fmt.Sprintf(`<span class="%s">%.2f</span>`, cls, *p))
 		},
+		// sparkPolyline scales a []float64 into the `points="x,y x,y …"` string
+		// for an inline <svg><polyline></svg> sparkline. Coordinates fit a
+		// fixed viewBox (default 60×20). Min-max normalized per series so
+		// small absolute moves still render with full vertical range. Empty
+		// or single-point series return an empty string (template `{{if}}` can
+		// then suppress the SVG cleanly).
+		"sparkPolyline": func(ys []float64) string {
+			if len(ys) < 2 {
+				return ""
+			}
+			const w, hgt = 60.0, 20.0
+			min, max := ys[0], ys[0]
+			for _, v := range ys {
+				if v < min {
+					min = v
+				}
+				if v > max {
+					max = v
+				}
+			}
+			span := max - min
+			if span == 0 {
+				span = 1 // flat line drawn at mid-height
+			}
+			step := w / float64(len(ys)-1)
+			var b strings.Builder
+			for i, v := range ys {
+				x := float64(i) * step
+				// Invert Y so larger values render higher; 1px padding inset
+				// keeps the stroke from clipping at the viewbox edge.
+				y := hgt - 1 - ((v-min)/span)*(hgt-2)
+				if i > 0 {
+					b.WriteByte(' ')
+				}
+				fmt.Fprintf(&b, "%.1f,%.1f", x, y)
+			}
+			return b.String()
+		},
 		// pnlChip renders a tinted-background P&L chip with an explicit +/−
 		// sign so winners and losers pop in long lists. Use on the Net P&L
 		// column in tables; pnlClass is still right for inline text.
@@ -204,6 +242,7 @@ func (h *Handlers) funcMap() template.FuncMap {
 		},
 		"mul":         func(a, b float64) float64 { return a * b },
 		"div":         func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
+		"abs":         func(f float64) float64 { if f < 0 { return -f }; return f },
 		"i64ToFloat":  func(i int64) float64 { return float64(i) },
 		"i64ToInt":    func(i int64) int { return int(i) },
 		"intToFloat":  func(i int) float64 { return float64(i) },
