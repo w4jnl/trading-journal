@@ -53,12 +53,14 @@
     <span class="je-status" data-je-status></span>
   </div>
   <div class="journal-editor__write">
+    {{/* Height comes from --je-min-h on the wrapper above; the CSS rule
+         for .journal-editor__textarea reads var(--je-min-h, 360px) so no
+         per-textarea inline style is needed. */}}
     <textarea name="{{.Name}}"
               class="journal-editor__textarea"
               data-je-input
               spellcheck="true"
-              placeholder="{{.Placeholder}}"
-              style="min-height: {{$minH}};">{{.Body}}</textarea>
+              placeholder="{{.Placeholder}}">{{.Body}}</textarea>
   </div>
   <div class="journal-editor__preview" data-je-preview aria-live="polite">
     {{if .Body}}<p class="journal-editor__preview-empty">Loading preview…</p>{{else}}<p class="journal-editor__preview-empty">Nothing to preview yet.</p>{{end}}
