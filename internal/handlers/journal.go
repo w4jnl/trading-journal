@@ -38,15 +38,36 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Collect the group-entry IDs for a single batch summary query — keeps
+	// the feed render O(1 SQL trip) regardless of how many group entries
+	// exist on the page.
+	var groupIDs []int64
+	for _, r := range rows {
+		if r.Scope == "group" {
+			groupIDs = append(groupIDs, r.ID)
+		}
+	}
+	groupSummaries, err := loadGroupSummaries(ctx, h.DB, groupIDs)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load group summaries: %w", err))
+		return
+	}
+
 	type feedItem struct {
 		ID        int64
-		Scope     string // day | trade | week
+		Scope     string // day | trade | week | group
 		Date      time.Time
 		DateLabel string
 		MetaLabel string // "APEX-1 / MESM6 long · $42.50" for trade, "May 4–10" for week
 		Tag       string
 		Body      string
 		EditURL   string // where to navigate when the row is clicked
+		// Group-only — populated when Scope == "group", zero otherwise.
+		GroupN      int64
+		GroupNet    float64
+		GroupWins   int64
+		GroupLosses int64
+		GroupHasPnl bool // true when at least one linked trade has net_pnl set
 	}
 	items := make([]feedItem, 0, len(rows))
 	for _, row := range rows {
@@ -94,6 +115,21 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 			fi.DateLabel = fmt.Sprintf("Week %d", w)
 			fi.MetaLabel = fmt.Sprintf("%s – %s", fi.Date.Format("Jan 2"), sunday.Format("Jan 2"))
 			fi.EditURL = fmt.Sprintf("/journal/week/%d-W%02d?back=/journal", y, w)
+		case "group":
+			fi.DateLabel = fi.Date.Format("Mon, 2 Jan 2006")
+			fi.EditURL = fmt.Sprintf("/journal/group/%d?back=/journal", row.ID)
+			if s, ok := groupSummaries[row.ID]; ok {
+				fi.GroupN = s.N
+				fi.GroupNet = s.Net
+				fi.GroupWins = s.Wins
+				fi.GroupLosses = s.Losses
+				fi.GroupHasPnl = s.Wins+s.Losses > 0
+				if s.LastExit.After(fi.Date) {
+					// Prefer the latest exit's date as the displayed label
+					// (entry_date may have been overridden by the user).
+					fi.DateLabel = s.LastExit.In(tz).Format("Mon, 2 Jan 2006")
+				}
+			}
 		}
 		items = append(items, fi)
 	}
@@ -175,7 +211,7 @@ func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
 	}
 	for _, v := range r.URL.Query()["scope"] {
 		switch v {
-		case "day", "trade", "week":
+		case "day", "trade", "week", "group":
 			if !f.scopeSet[v] {
 				f.scopes = append(f.scopes, v)
 				f.scopeSet[v] = true
@@ -448,6 +484,25 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	mood := parseMood(r.FormValue("mood"))
 	tag := parseTag(r.FormValue("tag"))
 
+	// Explicit delete signal from the editor's Delete button. We piggyback on
+	// the save endpoint instead of a /journal/{date}/delete route because that
+	// 3-segment path conflicts with /journal/week/{week} under Go 1.22 mux
+	// pattern matching (neither pattern is uniformly more specific).
+	if r.FormValue("_action") == "delete" {
+		existing, err := h.Queries.GetDayJournalEntry(ctx, date)
+		if err == nil {
+			if delErr := h.Queries.DeleteJournalEntry(ctx, existing.ID); delErr != nil {
+				h.serverError(w, fmt.Errorf("delete day journal: %w", delErr))
+				return
+			}
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			h.serverError(w, fmt.Errorf("get day journal: %w", err))
+			return
+		}
+		http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
+		return
+	}
+
 	existing, err := h.Queries.GetDayJournalEntry(ctx, date)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -616,6 +671,46 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
 }
 
+// WeekJournalDelete handles POST /journal/week/{week}/delete — explicit
+// delete from the week-entry editor's Delete button.
+func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	weekID := r.PathValue("week")
+	monday, _, _, err := parseISOWeek(weekID, h.localTZ())
+	if err != nil {
+		http.Error(w, "bad week id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	existing, err := h.Queries.GetWeekJournalEntry(ctx, monday)
+	if err == nil {
+		if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+			h.serverError(w, fmt.Errorf("delete week journal: %w", err))
+			return
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		h.serverError(w, fmt.Errorf("get week journal: %w", err))
+		return
+	}
+	q := url.Values{}
+	q.Set("flash", "deleted")
+	target := "/journal"
+	if v := r.FormValue("back"); v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
+		target = v
+		sep := "?"
+		if strings.Contains(target, "?") {
+			sep = "&"
+		}
+		target += sep + q.Encode()
+	} else {
+		target += "?" + q.Encode()
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
+}
+
 // parseISOWeek parses "YYYY-Www" and returns the Monday of that ISO week
 // (in tz, at midnight), plus the ISO year/week components for re-formatting.
 // The algorithm anchors on Jan 4 — which is always in ISO week 1 — then walks
@@ -678,6 +773,29 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	// Pre-load group summaries + linked trades once per export so we render
+	// the bullet lists without a per-entry round trip.
+	var groupIDs []int64
+	for _, row := range rows {
+		if row.Scope == "group" {
+			groupIDs = append(groupIDs, row.ID)
+		}
+	}
+	groupSummaries, err := loadGroupSummaries(ctx, h.DB, groupIDs)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("group summaries: %w", err))
+		return
+	}
+	groupTrades := map[int64][]linkedTrade{}
+	for _, gid := range groupIDs {
+		lt, err := loadLinkedTrades(ctx, h.DB, gid)
+		if err != nil {
+			h.serverError(w, fmt.Errorf("group trades: %w", err))
+			return
+		}
+		groupTrades[gid] = lt
+	}
+
 	var b strings.Builder
 	now := time.Now().In(tz)
 	b.WriteString("# Journal Export\n\n")
@@ -703,11 +821,29 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 				wk, entryDate.Format("Jan 2"), sunday.Format("Jan 2, 2006"))
 		case "trade":
 			fmt.Fprintf(&b, "## %s — **trade**\n\n", entryDate.Format("Mon, 2 Jan 2006"))
+		case "group":
+			s := groupSummaries[row.ID]
+			fmt.Fprintf(&b, "## Group · %d trade%s · %s — **group**\n\n",
+				s.N, plural(s.N), entryDate.Format("Mon, 2 Jan 2006"))
 		default:
 			fmt.Fprintf(&b, "## %s — **day**\n\n", entryDate.Format("Mon, 2 Jan 2006"))
 		}
 
-		if row.AccountName != nil && *row.AccountName != "" {
+		if row.Scope == "group" {
+			s := groupSummaries[row.ID]
+			fmt.Fprintf(&b, "**Net** %s · **Gross** %s · **Comm** %s · **%dW/%dL**\n\n",
+				signedMoney(s.Net), signedMoney(s.Gross), fmt.Sprintf("%.2f", s.Commission), s.Wins, s.Losses)
+			for _, lt := range groupTrades[row.ID] {
+				net := "—"
+				if lt.NetPnl != nil {
+					net = signedMoney(*lt.NetPnl)
+				}
+				fmt.Fprintf(&b, "- %s · %s %s · %s\n", lt.AccountName, lt.Symbol, lt.Direction, net)
+			}
+			b.WriteString("\n")
+		}
+
+		if row.AccountName != nil && *row.AccountName != "" && row.Scope != "group" {
 			fmt.Fprintf(&b, "- **Account:** %s\n", *row.AccountName)
 		}
 		if row.TradeSymbol != nil {
@@ -750,6 +886,20 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Pre-load group summaries so PDF rendering doesn't issue a SQL trip per
+	// entry — same approach as the markdown exporter.
+	var pdfGroupIDs []int64
+	for _, row := range rows {
+		if row.Scope == "group" {
+			pdfGroupIDs = append(pdfGroupIDs, row.ID)
+		}
+	}
+	pdfGroupSummaries, err := loadGroupSummaries(ctx, h.DB, pdfGroupIDs)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("group summaries (pdf): %w", err))
+		return
+	}
+
 	entries := make([]pdfEntry, 0, len(rows))
 	for _, row := range rows {
 		entryDate := row.EntryDate.In(tz)
@@ -760,10 +910,18 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 			sunday := entryDate.AddDate(0, 0, 6)
 			e.Title = fmt.Sprintf("Week %d · %s – %s",
 				wk, entryDate.Format("Jan 2"), sunday.Format("Jan 2, 2006"))
+		case "group":
+			s := pdfGroupSummaries[row.ID]
+			e.Title = fmt.Sprintf("Group · %d trade%s · %s",
+				s.N, plural(s.N), entryDate.Format("Mon, 2 Jan 2006"))
+			// Pack the summary into the Trade slot — the existing PDF
+			// renderer already prints it below the title chip.
+			e.Trade = fmt.Sprintf("Net %s · Gross %s · Comm %.2f · %dW/%dL",
+				signedMoney(s.Net), signedMoney(s.Gross), s.Commission, s.Wins, s.Losses)
 		default:
 			e.Title = entryDate.Format("Mon, 2 Jan 2006")
 		}
-		if row.AccountName != nil {
+		if row.AccountName != nil && row.Scope != "group" {
 			e.Account = *row.AccountName
 		}
 		if row.TradeSymbol != nil {

@@ -42,6 +42,7 @@
         <label class="chip scope-day"><input type="checkbox" name="scope" value="day"   {{if index $.ScopeSelected "day"}}checked{{end}}>Day</label>
         <label class="chip scope-trade"><input type="checkbox" name="scope" value="trade" {{if index $.ScopeSelected "trade"}}checked{{end}}>Trade</label>
         <label class="chip scope-week"><input type="checkbox" name="scope" value="week"  {{if index $.ScopeSelected "week"}}checked{{end}}>Week</label>
+        <label class="chip scope-group"><input type="checkbox" name="scope" value="group" {{if index $.ScopeSelected "group"}}checked{{end}}>Group</label>
       </div>
     </div>
     <div>
@@ -72,11 +73,21 @@
         <span class="scope-badge scope-{{.Scope}}">
           {{if eq .Scope "day"}}Day
           {{else if eq .Scope "trade"}}Trade
-          {{else}}Week{{end}}
+          {{else if eq .Scope "week"}}Week
+          {{else}}Group{{end}}
         </span>
         <span class="entry-main">
           <span class="date">{{.DateLabel}}</span>
           {{if .MetaLabel}}<span class="meta">{{.MetaLabel}}</span>{{end}}
+          {{if eq .Scope "group"}}
+            <span class="meta">
+              <span class="num">{{.GroupN}}</span> trade{{if ne .GroupN 1}}s{{end}}
+              {{if .GroupHasPnl}}
+                · net <span class="num {{if gt .GroupNet 0.0}}pnl-pos{{else if lt .GroupNet 0.0}}pnl-neg{{end}}">{{printf "%.2f" .GroupNet}}</span>
+                · <span class="num">{{.GroupWins}}W</span>/<span class="num">{{.GroupLosses}}L</span>
+              {{end}}
+            </span>
+          {{end}}
           <div class="entry-preview">{{snippet .Body 180}}</div>
         </span>
         {{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}
@@ -112,6 +123,7 @@
   .chip:has(:checked).scope-day   { background: var(--info-soft);   border-color: var(--info);   color: var(--info); }
   .chip:has(:checked).scope-trade { background: var(--warn-soft);   border-color: var(--warn);   color: var(--warn); }
   .chip:has(:checked).scope-week  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .chip:has(:checked).scope-group { background: rgba(168, 85, 247, 0.12); border-color: #a855f7; color: #a855f7; }
   .chip:has(:checked).tag-good    { background: var(--pos-soft);    border-color: var(--pos);    color: var(--pos); }
   .chip:has(:checked).tag-neutral { background: var(--bg-sunken);   border-color: var(--fg-muted); color: var(--fg); }
   .chip:has(:checked).tag-bad     { background: var(--neg-soft);    border-color: var(--neg);    color: var(--neg); }
@@ -131,6 +143,7 @@
   .scope-badge.scope-day   { background: var(--info-soft);   color: var(--info); }
   .scope-badge.scope-trade { background: var(--warn-soft);   color: var(--warn); }
   .scope-badge.scope-week  { background: var(--accent-soft); color: var(--accent); }
+  .scope-badge.scope-group { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
   .entry-main .date { font-weight: 600; color: var(--fg); }
   .entry-main .meta { color: var(--fg-muted); font-size: 13px; margin-left: 6px; }
   .entry-preview { color: var(--fg-muted); font-size: 13px; margin-top: 4px;

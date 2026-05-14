@@ -106,6 +106,7 @@
   <table>
     <thead>
       <tr>
+        <th class="col-sel"><input type="checkbox" id="sel-all" title="Select all on this page"></th>
         <th></th>
         <th>Entry (UTC)</th>
         <th>Account</th>
@@ -123,12 +124,16 @@
     <tbody>
     {{range .Trades}}
       <tr class="trade-row"
+          data-trade-id="{{.ID}}"
           hx-get="/trades/{{.ID}}"
           hx-target="#modal-content"
           hx-swap="innerHTML"
           onclick="document.getElementById('modal-backdrop').classList.add('show')">
+        <td class="col-sel" onclick="event.stopPropagation();">
+          <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
+        </td>
         <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
-          {{template "journal_icon" (journalState .HasJournal .JournalTag)}}
+          {{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
         <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
         <td>{{.AccountName}}</td>
@@ -143,7 +148,7 @@
         <td class="tabular num">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="12" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+      <tr><td colspan="13" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
     {{end}}
     </tbody>
   </table>
@@ -154,6 +159,18 @@
   <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
   <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
+
+<!-- Sticky selection action bar — appears when ≥1 trade is ticked. The form
+     POSTs the selected IDs to /journal/group/new which creates the entry and
+     redirects to the editor. -->
+<form id="group-form" method="post" action="/journal/group/new" class="sel-bar">
+  <input type="hidden" name="back" value="/trades{{if .Filters}}{{end}}">
+  <span class="muted"><strong id="sel-count" class="num">0</strong> trade(s) selected.</span>
+  <div class="row-sm" style="margin-left: auto;">
+    <button type="button" id="sel-clear" class="btn btn--ghost btn--sm">Clear</button>
+    <button type="submit" class="btn btn--primary btn--sm">Journal selected →</button>
+  </div>
+</form>
 
 {{template "trade_modal" .}}
 <script>
@@ -191,5 +208,93 @@
         .then(() => document.getElementById('modal-backdrop').classList.add('show'));
     });
   })();
+
+  // Multi-select + group-journal action bar.
+  //
+  // - Per-row .trade-sel checkboxes; #sel-all in the header toggles every
+  //   row on the current page.
+  // - The action bar appears once any checkbox is ticked and shows the
+  //   running count.
+  // - On submit, we synthesize hidden trade_id inputs in #group-form for
+  //   every ticked row (avoiding any per-row hx-include plumbing).
+  // - Clicking a checkbox stops propagation so the row-click → modal flow
+  //   stays untouched.
+  (function () {
+    const bar = document.querySelector('.sel-bar');
+    const count = document.getElementById('sel-count');
+    const all = document.getElementById('sel-all');
+    const form = document.getElementById('group-form');
+    if (!bar || !form) return;
+    const boxes = () => Array.from(document.querySelectorAll('input.trade-sel'));
+    function refresh() {
+      const ticked = boxes().filter((b) => b.checked);
+      count.textContent = ticked.length;
+      bar.classList.toggle('active', ticked.length > 0);
+    }
+    document.addEventListener('change', (e) => {
+      if (!e.target.classList || !e.target.classList.contains('trade-sel')) return;
+      refresh();
+    });
+    if (all) {
+      all.addEventListener('change', () => {
+        boxes().forEach((b) => { b.checked = all.checked; });
+        refresh();
+      });
+    }
+    document.getElementById('sel-clear').addEventListener('click', () => {
+      boxes().forEach((b) => { b.checked = false; });
+      if (all) all.checked = false;
+      refresh();
+    });
+    form.addEventListener('submit', (e) => {
+      // Build hidden trade_id inputs immediately before submit so the form
+      // doesn't carry stale entries from a previous interaction.
+      form.querySelectorAll('input[name="trade_id"]').forEach((n) => n.remove());
+      const ticked = boxes().filter((b) => b.checked);
+      if (ticked.length === 0) { e.preventDefault(); return; }
+      ticked.forEach((b) => {
+        const hidden = document.createElement('input');
+        hidden.type = 'hidden';
+        hidden.name = 'trade_id';
+        hidden.value = b.value;
+        form.appendChild(hidden);
+      });
+    });
+    refresh();
+  })();
 </script>
+
+<style>
+  /* Selection column — narrow, neutral. */
+  .trades-wrapper table .col-sel { width: 28px; text-align: center; }
+  .trade-sel { cursor: pointer; }
+  /* Small purple badge next to the journal icon when a trade is in any group entry. */
+  .group-badge {
+    display: inline-block;
+    margin-left: 4px;
+    padding: 0 5px;
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 14px;
+    border-radius: 7px;
+    background: rgba(168, 85, 247, 0.16);
+    color: #a855f7;
+    vertical-align: middle;
+  }
+  /* Sticky action bar — hidden until any row is ticked. */
+  .sel-bar {
+    position: sticky;
+    bottom: 0;
+    background: var(--bg-elev);
+    padding: 10px 16px;
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+    box-shadow: var(--shadow-2);
+    display: none;
+    align-items: center;
+    gap: 12px;
+    margin-top: 16px;
+  }
+  .sel-bar.active { display: flex; }
+</style>
 {{end}}

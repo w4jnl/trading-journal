@@ -54,6 +54,7 @@ type tradeRow struct {
 	AccountFirm *string
 	HasJournal  bool
 	JournalTag  string // "" if no entry or no tag set
+	GroupCount  int64  // number of group-journal entries that include this trade
 }
 
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
@@ -343,7 +344,8 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
 	             t.gross_pnl, t.commission, t.net_pnl, t.status,
 	             a.name, a.firm,
-	             je.id, je.tag
+	             je.id, je.tag,
+	             (SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count
 	      FROM trades t
 	      JOIN accounts a ON a.id = t.account_id
 	      LEFT JOIN journal_entries je ON je.trade_id = t.id
@@ -368,6 +370,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.Status,
 			&r.AccountName, &r.AccountFirm,
 			&journalID, &journalTag,
+			&r.GroupCount,
 		); err != nil {
 			return nil, err
 		}

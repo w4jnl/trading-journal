@@ -33,7 +33,13 @@
 
   <div class="row" style="margin-top: 12px;">
     <button type="submit" class="btn btn--primary">Save</button>
-    <span class="muted">Empty body deletes the entry.</span>
+    {{if .HasEntry}}
+      <button type="submit" formaction="/journal/week/{{.WeekID}}/delete" formnovalidate
+              onclick="return confirm('Delete this week note for {{.WeekLabel}}?');"
+              class="btn btn--danger btn--sm" style="margin-left: auto;">
+        Delete entry
+      </button>
+    {{end}}
   </div>
 </form>
 

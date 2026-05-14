@@ -569,6 +569,8 @@ func scopeColor(scope string) chipColor {
 		return chipColor{238, 242, 255, 67, 56, 202} // indigo soft / indigo
 	case "week":
 		return chipColor{254, 243, 199, 146, 64, 14} // amber soft / amber
+	case "group":
+		return chipColor{245, 230, 255, 126, 34, 206} // purple soft / purple
 	default: // "day"
 		return chipColor{244, 244, 245, 82, 82, 91}
 	}

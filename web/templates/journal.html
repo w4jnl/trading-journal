@@ -33,7 +33,17 @@
 
     <div class="row" style="margin-top: 12px;">
       <button type="submit" class="btn btn--primary">Save</button>
-      <span class="muted">Empty body deletes the entry.</span>
+      {{if .HasEntry}}
+        {{/* Same endpoint as Save; the _action flag routes to delete in the
+             handler. Done this way because the obvious URL pattern
+             /journal/{date}/delete clashes with /journal/week/{week} in
+             Go 1.22 ServeMux ambiguity resolution. */}}
+        <button type="submit" name="_action" value="delete" formnovalidate
+                onclick="return confirm('Delete this journal entry for {{.DateNice}}?');"
+                class="btn btn--danger btn--sm" style="margin-left: auto;">
+          Delete entry
+        </button>
+      {{end}}
     </div>
   </form>
 
