@@ -6,14 +6,14 @@
 <h1>Import CSV</h1>
 
 <div class="card" style="margin-bottom: 24px;">
-  <p class="muted">Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row.</p>
+  <p class="muted" style="margin-bottom: 16px;">Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row.</p>
   <form id="import-form" hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
     <div id="drop-zone" class="drop-zone">
-      <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--fg-subtle); margin-bottom: 8px;">
+      <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--fg-subtle); margin-bottom: 14px;">
         <path d="M12 3 L12 16"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/>
       </svg>
-      <div style="font-weight: 600; margin-bottom: 4px;">Drop a .csv file here</div>
-      <div class="muted" style="margin-bottom: 12px;">or pick from disk</div>
+      <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">Drop a .csv file here</div>
+      <div class="muted" style="margin-bottom: 18px;">or pick from disk</div>
       <div class="row" style="justify-content: center;">
         <input type="file" name="file" accept=".csv" required>
         <button type="submit" class="btn btn--primary">Import</button>
@@ -25,10 +25,27 @@
 </div>
 
 <style>
-  .drop-zone { padding: 28px 24px; border: 1.5px dashed var(--border-strong); border-radius: var(--r-md);
-               text-align: center; transition: border-color var(--t-fast), background var(--t-fast); }
-  .drop-zone.dragover { border-color: var(--accent); background: var(--accent-soft); }
+  /* Drop zone is the page's primary action — give it real visual weight. */
+  .drop-zone {
+    padding: 56px 32px;
+    min-height: 240px;
+    border: 2px dashed var(--border-strong);
+    border-radius: var(--r-lg);
+    text-align: center;
+    transition: border-color var(--t-fast), background var(--t-fast);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+  .drop-zone.dragover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+  }
   .drop-zone input[type=file] { font-size: 12px; }
+  @media (max-width: 600px) {
+    .drop-zone { padding: 36px 16px; min-height: 200px; }
+  }
 </style>
 <script>
   (function () {

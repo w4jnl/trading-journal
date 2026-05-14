@@ -294,6 +294,17 @@
       inputs.forEach((el) => setVal(el, snapshot.get(el)));
       refresh();
     });
+
+    // ⌘S / Ctrl-S submits the bulk save form when the dirty bar is visible.
+    document.addEventListener('keydown', (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta || (e.key !== 's' && e.key !== 'S')) return;
+      if (!saveBar.classList.contains('dirty')) return;
+      const t = e.target;
+      if (t && t.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      form.requestSubmit ? form.requestSubmit() : form.submit();
+    });
   })();
 </script>
 {{end}}

@@ -146,8 +146,8 @@
             {{else}}
               <div class="balance-val muted">—</div>
             {{end}}
-            <details class="reassign">
-              <summary>{{if $bal.Known}}Adjust…{{else}}Set balance…{{end}}</summary>
+            <details class="reassign {{if not $bal.Known}}needs-anchor{{end}}">
+              <summary>{{if $bal.Known}}Adjust…{{else}}Set balance →{{end}}</summary>
               <form method="post" action="/accounts/{{$a.ID}}/balances" class="balance-form" style="margin-top: 8px;">
                 <div class="row" style="align-items: flex-end;">
                   <label class="field"><span class="field-label">Date</span>
@@ -236,6 +236,15 @@
   details.reassign > summary { cursor: pointer; user-select: none; font-size: 11px; color: var(--accent); list-style: none; }
   details.reassign > summary::-webkit-details-marker { display: none; }
   details.reassign[open] > summary { color: var(--fg-muted); }
+  /* When an account has no anchor yet, surface the "Set balance" link more
+     prominently — it's effectively the first action the user needs to take. */
+  details.reassign.needs-anchor > summary {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    margin-top: 4px;
+  }
+  details.reassign.needs-anchor > summary:hover { text-decoration: underline; }
 
   /* "+ New account" disclosure */
   details.disclose > summary { list-style: none; }
@@ -292,6 +301,19 @@
     document.getElementById('reset-btn').addEventListener('click', () => {
       inputs.forEach((el) => setVal(el, snapshot.get(el)));
       refresh();
+    });
+
+    // ⌘S / Ctrl-S submits the bulk save form when the dirty bar is visible.
+    // Suppressed if focus is in a multi-line context (no <textarea> here today,
+    // but defensive against future template changes).
+    document.addEventListener('keydown', (e) => {
+      const meta = e.metaKey || e.ctrlKey;
+      if (!meta || (e.key !== 's' && e.key !== 'S')) return;
+      if (!saveBar.classList.contains('dirty')) return;
+      const t = e.target;
+      if (t && t.tagName === 'TEXTAREA') return;
+      e.preventDefault();
+      form.requestSubmit ? form.requestSubmit() : form.submit();
     });
   })();
 
