@@ -1,55 +1,60 @@
 {{define "trade_detail"}}
 {{with .Trade}}
-<h2>
-  <span class="num">{{.Symbol}}</span> <span class="muted" style="font-size:14px;">({{.SymbolRoot}})</span>
-  {{if eq .Direction "long"}}<span class="pill dir-long">long</span>{{else}}<span class="pill dir-short">short</span>{{end}}
-</h2>
-<div class="muted" style="margin-bottom:12px;">
-  {{.AccountName}}
-  {{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
-  · entered <span class="num">{{.EntryTime.UTC.Format "2006-01-02 15:04:05"}}</span> UTC
-  {{if .ExitTime}} · exited <span class="num">{{.ExitTime.UTC.Format "2006-01-02 15:04:05"}}</span> UTC{{end}}
+<div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
+  <span class="num" style="font-size: 18px; font-weight: 600;">{{.Symbol}}</span>
+  <span class="muted">({{.SymbolRoot}})</span>
+  {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
+</div>
+<div class="muted" style="margin-bottom: 12px; font-size: 12px;">
+  {{.AccountName}}{{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
+  · {{.EntryTime.UTC.Format "2006-01-02 15:04"}}{{if .ExitTime}} → {{.ExitTime.UTC.Format "15:04"}} UTC{{end}}
 </div>
 
-<div class="grid-auto" style="--min: 140px; margin-bottom: 16px;">
-  <div class="card card--compact">
+<div class="trade-stat-strip">
+  <div>
     <div class="label">Qty</div>
-    <div class="value num">{{.Qty}}</div>
+    <div class="num">{{.Qty}}</div>
   </div>
-  <div class="card card--compact">
-    <div class="label">Entry (avg)</div>
-    <div class="value num">{{printf "%.2f" .EntryPrice}}</div>
+  <div>
+    <div class="label">Entry</div>
+    <div class="num">{{printf "%.2f" .EntryPrice}}</div>
   </div>
-  <div class="card card--compact">
-    <div class="label">Exit (avg)</div>
-    <div class="value num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</div>
+  <div>
+    <div class="label">Exit</div>
+    <div class="num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</div>
   </div>
-  <div class="card card--compact">
-    <div class="label">Gross P&amp;L</div>
-    <div class="value num">{{pnlClass .GrossPnl}}</div>
+  <div>
+    <div class="label">Gross</div>
+    <div class="num">{{pnlClass .GrossPnl}}</div>
   </div>
-  <div class="card card--compact">
-    <div class="label">Commission</div>
-    <div class="value num">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</div>
+  <div>
+    <div class="label">Comm</div>
+    <div class="num">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</div>
   </div>
-  <div class="card card--compact">
-    <div class="label">Net P&amp;L</div>
-    <div class="value num">{{pnlClass .NetPnl}}</div>
+  <div>
+    <div class="label">Net</div>
+    <div class="num">{{pnlClass .NetPnl}}</div>
   </div>
 </div>
 {{end}}
 
-<section style="margin-bottom: 16px;">
-  <h3 style="margin-bottom: 8px;">Journal</h3>
+<section data-trade-journal>
+  <div class="row-sm" style="justify-content: space-between; margin-bottom: 8px;">
+    <h3 style="margin: 0;">Journal</h3>
+    <span class="muted" style="font-size: 11px;">Empty body deletes the entry.</span>
+  </div>
   {{if eq $.Flash "saved"}}<div class="flash saved">Saved.</div>{{end}}
   {{if eq $.Flash "deleted"}}<div class="flash deleted">Entry deleted (body was empty).</div>{{end}}
   {{if eq $.Flash "empty"}}<div class="flash empty">Nothing to save — body was empty.</div>{{end}}
 
   <form hx-post="/trades/{{$.TradeID}}/journal"
-        hx-target="#modal-content"
+        hx-target="#trade-sheet-content"
         hx-swap="innerHTML"
         hx-encoding="application/x-www-form-urlencoded">
-    {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+    <div class="row-sm" style="margin-bottom: 8px;">
+      <span class="label" style="margin-right: 4px;">Tag</span>
+      {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+    </div>
     {{template "journal_editor" (dict
       "Body"        $.JournalBody
       "Name"        "body"
@@ -58,54 +63,68 @@
       "Placeholder" "What did you see, do, feel about this trade? Paste a chart screenshot or apply a template."
       "Templates"   true
       "Mode"        "single"
-      "MinHeight"   "220px"
+      "MinHeight"   "260px"
     )}}
     <div class="row" style="margin-top: 8px;">
       <button type="submit" class="btn btn--primary">Save</button>
-      <span class="muted">Empty body deletes the entry.</span>
+      <span class="muted" style="font-size: 11px;">⌘S to save</span>
     </div>
   </form>
 
   {{if or (eq $.Flash "saved") (eq $.Flash "deleted")}}
   <script>window.__journalChanged = true;</script>
   {{end}}
-
-  {{if $.JournalRendered}}
-  <div class="card card--compact" style="margin-top:12px;">
-    {{$.JournalRendered}}
-  </div>
-  {{end}}
 </section>
 
-<h3>Executions (<span class="num">{{len .Executions}}</span>)</h3>
-<div class="table-scroll">
-  <table>
-    <thead>
-      <tr>
-        <th>Time (UTC)</th>
-        <th>Role</th>
-        <th>Side</th>
-        <th class="tabular">Price</th>
-        <th class="tabular">Qty</th>
-        <th class="tabular">Qty used</th>
-        <th>Broker exec id</th>
-      </tr>
-    </thead>
-    <tbody>
-    {{range .Executions}}
-      <tr>
-        <td class="num muted">{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
-        <td><code>{{.Role}}</code></td>
-        <td>{{.Side}}</td>
-        <td class="tabular num">{{printf "%.2f" .Price}}</td>
-        <td class="tabular num">{{.Qty}}</td>
-        <td class="tabular num">{{.QtyUsed}}</td>
-        <td><span class="muted num">{{.BrokerExecID}}</span></td>
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-</div>
+{{with .Trade}}
+<details style="margin-top: 20px;">
+  <summary style="cursor: pointer; font-weight: 600; font-size: 13px; color: var(--fg-muted); user-select: none;">
+    Executions (<span class="num">{{len .Executions}}</span>)
+  </summary>
+  <div class="table-scroll" style="margin-top: 10px;">
+    <table>
+      <thead>
+        <tr>
+          <th>Time (UTC)</th>
+          <th>Role</th>
+          <th>Side</th>
+          <th class="tabular">Price</th>
+          <th class="tabular">Qty</th>
+          <th class="tabular">Used</th>
+          <th>Exec id</th>
+        </tr>
+      </thead>
+      <tbody>
+      {{range .Executions}}
+        <tr>
+          <td class="num muted">{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
+          <td><code>{{.Role}}</code></td>
+          <td>{{.Side}}</td>
+          <td class="tabular num">{{printf "%.2f" .Price}}</td>
+          <td class="tabular num">{{.Qty}}</td>
+          <td class="tabular num">{{.QtyUsed}}</td>
+          <td><span class="muted num">{{.BrokerExecID}}</span></td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</details>
+{{end}}
+
+{{/* When this partial is swapped in via HTMX (e.g., from /trades/journal POST),
+     update the sheet title to reflect the trade. The host page can listen for
+     htmx:afterSwap to keep its sidebar state in sync. */}}
+{{with .Trade}}
+<script>
+  (function () {
+    var t = document.getElementById('trade-sheet-title');
+    if (t) {
+      t.textContent = '{{.Symbol}} · {{if eq .Direction "long"}}↑{{else}}↓{{end}} {{.Qty}}';
+    }
+  })();
+</script>
+{{end}}
 {{end}}
 
 {{/* Reusable tag picker — used by trade-detail and the day-journal form. */}}

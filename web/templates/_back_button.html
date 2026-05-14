@@ -19,10 +19,10 @@ collide on a shared `back` variable.
     if (!back) return;
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
-      // Don't hijack Esc while a modal is open — the modal owns its own close
-      // path and reads __journalChanged before reloading.
-      const modal = document.getElementById('modal-backdrop');
-      if (modal && modal.classList.contains('show')) return;
+      // Don't hijack Esc while the trade sheet is open — the sheet owns its
+      // own close path and reads __journalChanged before reloading.
+      const sheet = document.getElementById('trade-sheet-backdrop');
+      if (sheet && sheet.classList.contains('show')) return;
       e.preventDefault();
       window.location.href = back;
     });

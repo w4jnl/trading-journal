@@ -179,9 +179,9 @@
     <div class="label">Best Trade</div>
     {{with $.Dash.Best}}
       <div class="value-lg pnl-pos num">
-        <a class="trade-link" href="#"
-           hx-get="/trades/{{.ID}}" hx-target="#modal-content" hx-swap="innerHTML"
-           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;">{{printf "%.2f" .NetPnl}}</a>
+        <a class="trade-link" href="#" data-trade-id="{{.ID}}"
+           hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
+           onclick="return false;">{{printf "%.2f" .NetPnl}}</a>
       </div>
       <div class="blurb">
         <span class="pair">{{.Direction}} <span class="num">{{printf "%.0f" .Qty}}</span> <code>{{.Symbol}}</code> @ <span class="num">{{printf "%.2f" .EntryPrice}}</span></span>
@@ -195,9 +195,9 @@
     <div class="label">Worst Trade</div>
     {{with $.Dash.Worst}}
       <div class="value-lg pnl-neg num">
-        <a class="trade-link" href="#"
-           hx-get="/trades/{{.ID}}" hx-target="#modal-content" hx-swap="innerHTML"
-           onclick="document.getElementById('modal-backdrop').classList.add('show'); return false;">{{printf "%.2f" .NetPnl}}</a>
+        <a class="trade-link" href="#" data-trade-id="{{.ID}}"
+           hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
+           onclick="return false;">{{printf "%.2f" .NetPnl}}</a>
       </div>
       <div class="blurb">
         <span class="pair">{{.Direction}} <span class="num">{{printf "%.0f" .Qty}}</span> <code>{{.Symbol}}</code> @ <span class="num">{{printf "%.2f" .EntryPrice}}</span></span>
@@ -274,7 +274,7 @@
   </section>
 </div>
 
-{{template "trade_modal" .}}
+{{template "trade_sheet" .}}
 
 <style>
   .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
@@ -308,18 +308,6 @@
 
 <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
 <script>
-  function closeTradeModal() {
-    document.getElementById('modal-backdrop').classList.remove('show');
-  }
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    const m = document.getElementById('modal-backdrop');
-    if (m && m.classList.contains('show')) {
-      e.preventDefault();
-      closeTradeModal();
-    }
-  });
-
   // Date-range preset buttons
   (function () {
     const form = document.getElementById('analytics-filter');

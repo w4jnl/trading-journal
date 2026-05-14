@@ -1,0 +1,29 @@
+{{/*
+  Trade-detail sheet — right-side panel that replaces the centered modal.
+  Pages include via {{template "trade_sheet" .}}. JS lives in
+  /static/js/trade_sheet.js and looks for this container by id.
+
+  The host page is expected to define a `window.tradeSheetClose` callback
+  (for page-specific reload-on-journal-save semantics on /trades), and to
+  populate window.__tradeIds when the sheet opens (so j/k can navigate).
+*/}}
+{{define "trade_sheet"}}
+<div id="trade-sheet-backdrop" data-trade-sheet aria-hidden="true">
+  <aside class="trade-sheet" role="dialog" aria-modal="true" aria-labelledby="trade-sheet-title" tabindex="-1">
+    <div class="trade-sheet__header">
+      <span id="trade-sheet-title" class="num" style="font-weight:600;">Trade</span>
+      <span class="trade-sheet__keyhint">
+        <kbd>j</kbd>/<kbd>k</kbd> next · <kbd>g</kbd>/<kbd>n</kbd>/<kbd>b</kbd> tag · <kbd>esc</kbd>
+      </span>
+      <div class="trade-sheet__nav">
+        <button type="button" class="btn btn--secondary btn--sm" data-trade-sheet-prev title="Previous trade (k)">‹</button>
+        <button type="button" class="btn btn--secondary btn--sm" data-trade-sheet-next title="Next trade (j)">›</button>
+        <button type="button" class="trade-sheet__close" data-trade-sheet-close aria-label="Close (Esc)">×</button>
+      </div>
+    </div>
+    <div class="trade-sheet__body" id="trade-sheet-content">
+      <span class="spinner"></span> loading…
+    </div>
+  </aside>
+</div>
+{{end}}

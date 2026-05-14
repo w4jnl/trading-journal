@@ -126,9 +126,8 @@
       <tr class="trade-row"
           data-trade-id="{{.ID}}"
           hx-get="/trades/{{.ID}}"
-          hx-target="#modal-content"
-          hx-swap="innerHTML"
-          onclick="document.getElementById('modal-backdrop').classList.add('show')">
+          hx-target="#trade-sheet-content"
+          hx-swap="innerHTML">
         <td class="col-sel" onclick="event.stopPropagation();">
           <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
         </td>
@@ -172,42 +171,28 @@
   </div>
 </form>
 
-{{template "trade_modal" .}}
+{{template "trade_sheet" .}}
 <script>
-  // Close the trade-detail modal on /trades:
-  //   - If the journal was saved/deleted inside the modal, reload the page
-  //     so the row pictogram reflects the change.
-  //   - If we got here via /trades?modal=N&back=URL from a different page
-  //     for the sole purpose of showing this trade, fall back to the URL —
-  //     legacy path; /analytics now opens the modal inline instead.
-  //   - Otherwise, plain hide.
-  function closeTradeModal() {
-    document.getElementById('modal-backdrop').classList.remove('show');
+  // Trade-sheet integration for /trades — most of the behavior lives in
+  // trade_sheet.js. This hook decides what to do on close:
+  //   - If the journal was saved/deleted inside the sheet, reload the page
+  //     so the row's journal icon reflects the change.
+  //   - If we got here via /trades?sheet=N&back=URL (or legacy ?modal=N)
+  //     from a different page just to show one trade, fall back to that URL.
+  //   - Otherwise let trade_sheet.js perform a plain hide (return undefined).
+  window.tradeSheetOnClose = function () {
     const params = new URLSearchParams(location.search);
-    if (params.get('modal') && params.get('back') && !window.__journalChanged) {
-      setTimeout(() => { location.href = params.get('back'); }, 30);
-      return;
+    const back = params.get('back');
+    const deepLinked = params.get('sheet') || params.get('modal');
+    if (deepLinked && back && !window.__journalChanged) {
+      setTimeout(() => { location.href = back; }, 30);
+      return; // let the sheet hide; navigation will replace the page anyway
     }
     if (window.__journalChanged) {
       window.__journalChanged = false;
       setTimeout(() => location.reload(), 30);
     }
-  }
-  document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    if (document.getElementById('modal-backdrop').classList.contains('show')) {
-      e.preventDefault();
-      closeTradeModal();
-    }
-  });
-  (function () {
-    const modalID = new URLSearchParams(location.search).get('modal');
-    if (!modalID) return;
-    window.addEventListener('DOMContentLoaded', () => {
-      htmx.ajax('GET', '/trades/' + modalID, '#modal-content')
-        .then(() => document.getElementById('modal-backdrop').classList.add('show'));
-    });
-  })();
+  };
 
   // Multi-select + group-journal action bar.
   //
