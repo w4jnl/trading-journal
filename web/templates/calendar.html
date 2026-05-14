@@ -53,7 +53,8 @@
     {{$wt := index $.WeeklyTotals $wi}}
     <tr>
       {{range $di, $day := $week}}
-        <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}">
+        <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}"
+            {{if $day.InMonth}}data-date="{{$day.Date.Format "2006-01-02"}}"{{end}}>
           {{if and $day.InMonth (ne $di 6) (not $day.InFuture)}}
             <a class="j-cell-icon"
                href="/journal/{{$day.Date.Format "2006-01-02"}}?back={{$.CalendarBack}}"
@@ -111,11 +112,19 @@
   .calendar td { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); padding: 8px; vertical-align: top; height: 92px; width: 14.28%; position: relative; transition: border-color var(--t-fast), background var(--t-fast); }
   .calendar td:hover:not(.out-of-month) { border-color: var(--border-strong); }
   .calendar td.out-of-month { background: transparent; border-color: transparent; }
-  /* Use linear-gradient with token colors; works in both themes. */
-  .calendar td.has-pnl-pos        { background: linear-gradient(135deg, var(--cal-pos-1), var(--cal-pos-2)); border-color: transparent; }
-  .calendar td.has-pnl-pos-strong { background: linear-gradient(135deg, var(--cal-pos-3), var(--cal-pos-4)); border-color: transparent; }
-  .calendar td.has-pnl-neg        { background: linear-gradient(135deg, var(--cal-neg-1), var(--cal-neg-2)); border-color: transparent; }
-  .calendar td.has-pnl-neg-strong { background: linear-gradient(135deg, var(--cal-neg-3), var(--cal-neg-4)); border-color: transparent; }
+  /* Solid sentiment fills for day cells — gradients made the magnitude
+     harder to read at a glance. Saturday summary cells keep their gradient
+     below so they stay visually distinct from the row of day cells. */
+  .calendar td.has-pnl-pos        { background: var(--cal-pos-2); border-color: transparent; }
+  .calendar td.has-pnl-pos-strong { background: var(--cal-pos-4); border-color: transparent; }
+  .calendar td.has-pnl-neg        { background: var(--cal-neg-2); border-color: transparent; }
+  .calendar td.has-pnl-neg-strong { background: var(--cal-neg-4); border-color: transparent; }
+  /* Today: 2px accent ring + slight lift so the user always knows where
+     "right now" is. Renders on top of the sentiment fill. */
+  .calendar td.is-today {
+    box-shadow: inset 0 0 0 2px var(--accent);
+    border-color: transparent;
+  }
   /* Visual separation of the weekly summary column (column 7) from Friday so it
      reads as a roll-up, not another day. nth-child applies to every row, including
      spillover weeks where the Saturday cell is rendered as out-of-month. */
@@ -164,8 +173,25 @@
   .calendar td.sat-cell.week-neg        .week-trades,
   .calendar td.sat-cell.week-neg-strong .week-trades { color: var(--cal-meta-on-tint); }
   @media (max-width: 600px) {
-    .calendar td { height: 70px; padding: 4px; font-size: 11px; }
-    .day-pnl { font-size: 12px; }
+    .calendar { border-spacing: 3px; }
+    .calendar td { height: 76px; padding: 5px 4px; font-size: 11px; }
+    .calendar td:nth-child(7) { border-left-width: 6px; }
+    .day-pnl { font-size: 13px; }
+    .week-pnl-val { font-size: 16px; }
+    .j-cell-icon { top: 2px; right: 3px; }
   }
 </style>
+<script>
+  // Highlight today's cell with the accent ring. Done in JS so the template
+  // doesn't have to thread a "today" flag through every day struct; the cell
+  // already carries its date via data-date.
+  (function () {
+    var d = new Date();
+    var iso = d.getFullYear() + '-' +
+      String(d.getMonth() + 1).padStart(2, '0') + '-' +
+      String(d.getDate()).padStart(2, '0');
+    var cell = document.querySelector('.calendar td[data-date="' + iso + '"]');
+    if (cell) cell.classList.add('is-today');
+  })();
+</script>
 {{end}}
