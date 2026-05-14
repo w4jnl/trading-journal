@@ -265,9 +265,15 @@
 </script>
 
 <style>
-  /* Selection column — narrow, neutral. */
-  .trades-wrapper table .col-sel { width: 28px; text-align: center; }
-  .trade-sel { cursor: pointer; }
+  /* Selection column — narrow, neutral. 36px on touch screens to clear
+     Apple's HIG and Material's 44dp recommendations for tappable targets. */
+  .trades-wrapper table .col-sel,
+  table .col-sel { width: 36px; text-align: center; }
+  .trade-sel { cursor: pointer; width: 18px; height: 18px; }
+  @media (max-width: 600px) {
+    table .col-sel { width: 44px; }
+    .trade-sel { width: 20px; height: 20px; }
+  }
   /* Small purple badge next to the journal icon when a trade is in any group entry. */
   .group-badge {
     display: inline-block;

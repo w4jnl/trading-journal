@@ -791,6 +791,13 @@ tbody tr:hover { background: var(--bg-hover); }
 /* ---- Sketch icons (preserved) -------------------------------------------- */
 
 .icon { display: inline-block; vertical-align: -3px; }
+
+/* Journal icon — bump padding on touch screens so the 18×18 SVG has a
+   clearable target. Click area extends without changing the visual. */
+@media (hover: none) and (pointer: coarse) {
+  .icon-journal { padding: 4px; }
+  a:has(> .icon-journal), .j-cell-icon { padding: 2px; }
+}
 /* Empty stays a low-contrast outline with a faint plus-glyph; the three
    filled states each take their own colour so a row/day with notes is
    obvious without reading the tag. Neutral (entry exists, no sentiment

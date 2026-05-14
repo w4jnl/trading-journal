@@ -128,9 +128,12 @@
 {{end}}
 {{end}}
 
-{{/* Reusable tag picker — used by trade-detail and the day-journal form. */}}
+{{/* Reusable tag picker — used by trade-detail and the day-journal form.
+     Wrapper carries role="radiogroup" + aria-label so screen readers announce
+     the field; the per-chip <input type=radio> elements provide the actual
+     radio semantics. */}}
 {{define "tag_picker"}}
-<div class="tag-picker">
+<div class="tag-picker" role="radiogroup" aria-label="Trade tag">
   <label class="chip tag-good {{if eq .Tag "good"}}chip-on{{end}}">
     <input type="radio" name="tag" value="good" {{if eq .Tag "good"}}checked{{end}}>
     {{template "thumb_up"}}<span>good</span>

@@ -73,6 +73,9 @@
   // when HTMX (or another mechanism) will deliver the content separately.
   function revealSheet(state, id) {
     state.currentId = String(id);
+    if (!state.backdrop.classList.contains("show")) {
+      state.previouslyFocused = document.activeElement;
+    }
     show(state);
     refreshNavButtons(state);
     focusSheet(state);
@@ -104,6 +107,14 @@
     state.backdrop.setAttribute("aria-hidden", "true");
     document.body.style.overflow = "";
     state.currentId = null;
+    // Restore focus to the element that opened the sheet (the trade row, or
+    // whatever the user activated). Falls through silently if that element
+    // is gone from the DOM (e.g., after a paginate / filter).
+    var prev = state.previouslyFocused;
+    state.previouslyFocused = null;
+    if (prev && typeof prev.focus === "function" && document.contains(prev)) {
+      try { prev.focus({ preventScroll: true }); } catch (_) { prev.focus(); }
+    }
   }
 
   // ---------- Prev / next / close buttons ----------
@@ -142,6 +153,25 @@
       if (e.key === "Escape") {
         e.preventDefault();
         close(state);
+        return;
+      }
+
+      // Focus trap: keep Tab within the sheet while it claims aria-modal=true.
+      if (e.key === "Tab") {
+        var focusables = state.sheet.querySelectorAll(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusables.length === 0) return;
+        var first = focusables[0];
+        var last = focusables[focusables.length - 1];
+        var active = document.activeElement;
+        if (e.shiftKey && (active === first || !state.sheet.contains(active))) {
+          last.focus();
+          e.preventDefault();
+        } else if (!e.shiftKey && active === last) {
+          first.focus();
+          e.preventDefault();
+        }
         return;
       }
 
