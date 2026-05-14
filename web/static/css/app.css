@@ -1234,19 +1234,26 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .journal-editor__write,
 .journal-editor__preview {
   /* Honor the partial's --je-min-h override so trade-detail (160px) and
-     standalone journal pages (360px) can each set their own height
-     without the wrapper bloating beyond the textarea. */
+     standalone journal pages (360px) can each set their own height. The
+     wrapper is the only place that owns this dimension — the textarea
+     stretches to fill via flex. */
   min-height: var(--je-min-h, 360px);
   max-height: 60vh;
   overflow-y: auto;
 }
-.journal-editor__write { position: relative; border-right: 1px solid var(--border); }
+.journal-editor__write {
+  position: relative;
+  border-right: 1px solid var(--border);
+  /* Flex column so the textarea below can flex: 1 to fill all available
+     height without needing its own min-height duplicate. */
+  display: flex;
+  flex-direction: column;
+}
 .journal-editor--single .journal-editor__write { border-right: 0; }
 
 .journal-editor__textarea {
+  flex: 1 1 auto;
   width: 100%;
-  height: 100%;
-  min-height: var(--je-min-h, 360px);
   padding: 14px 16px;
   border: 0;
   background: transparent;
