@@ -1,0 +1,66 @@
+{{define "title"}}Journal · Trade {{with .Trade}}{{.Symbol}}{{end}} — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+
+{{with .Trade}}
+<h1>Trade journal <span class="muted" style="font-weight:400; font-size: 14px;">· {{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></span></h1>
+
+<div class="muted" style="margin-bottom: 16px; font-size: 12px;">
+  {{.AccountName}}
+  {{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
+  · {{.EntryTime.UTC.Format "2006-01-02 15:04"}}{{if .ExitTime}} → {{.ExitTime.UTC.Format "15:04"}} UTC{{end}}
+  · {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
+  · Qty <span class="num">{{.Qty}}</span>
+</div>
+{{end}}
+
+{{if .Flash}}
+<div class="flash {{.Flash}}">
+  {{if eq .Flash "saved"}}Entry saved.
+  {{else if eq .Flash "deleted"}}Entry deleted (body was empty).
+  {{else if eq .Flash "empty"}}Nothing to save — body was empty.
+  {{end}}
+</div>
+{{end}}
+
+<form method="post" action="/trades/{{.TradeID}}/journal">
+  {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
+  <div class="row-sm" style="margin-bottom: 12px;">
+    <span class="label" style="margin-right: 4px;">Tag</span>
+    {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+  </div>
+
+  {{template "journal_editor" (dict
+    "Body"        .JournalBody
+    "Name"        "body"
+    "Scope"       "trade"
+    "EntryID"     .JournalEntryID
+    "Placeholder" "What did you see, do, feel about this trade? Paste a chart screenshot or apply a template."
+    "Templates"   true
+    "Mode"        "single"
+    "MinHeight"   "360px"
+  )}}
+
+  <div class="row" style="margin-top: 12px;">
+    <button type="submit" class="btn btn--primary">Save</button>
+    {{if .HasJournal}}
+      <button type="submit" name="_action" value="delete" formnovalidate
+              onclick="return confirm('Delete this trade journal entry?');"
+              class="btn btn--danger btn--sm" style="margin-left: auto;">
+        Delete entry
+      </button>
+    {{end}}
+  </div>
+</form>
+
+{{template "journal_summary" (dict
+  "Summary"      .Summary
+  "Trades"       .Trades
+  "AllowUnlink"  false
+  "EntryID"      0
+  "EmptyMessage" "Trade not found."
+)}}
+
+{{template "trade_sheet" .}}
+{{end}}

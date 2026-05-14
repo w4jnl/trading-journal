@@ -115,6 +115,7 @@ func run() error {
 	mux.HandleFunc("GET /journal/week/{week}", h.WeekJournalPage)
 	mux.HandleFunc("POST /journal/week/{week}", h.WeekJournalSave)
 	mux.HandleFunc("POST /journal/week/{week}/delete", h.WeekJournalDelete)
+	mux.HandleFunc("GET /journal/trade/{id}", h.JournalTradePage)
 	mux.HandleFunc("POST /journal/group/new", h.GroupJournalCreate)
 	mux.HandleFunc("GET /journal/group/{id}", h.GroupJournalPage)
 	mux.HandleFunc("POST /journal/group/{id}", h.GroupJournalSave)

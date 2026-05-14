@@ -300,9 +300,13 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 	})
 }
 
-// TradeJournalSave handles POST /trades/{id}/journal. Empty body deletes the
-// entry. On success it returns the refreshed trade detail partial so the
-// HTMX-swapped modal updates in place.
+// TradeJournalSave handles POST /trades/{id}/journal. Empty body deletes
+// the entry (matching the day/week save flow). Submissions with the
+// HX-Request header return the refreshed trade-detail partial so the
+// centered modal on /trades and /analytics updates in place; plain form
+// submits from the standalone /journal/trade/{id} page get a 303 redirect
+// back to that page with a flash, matching how day/week/group editors
+// behave.
 func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	idStr := r.PathValue("id")
@@ -318,6 +322,11 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
+	// Explicit Delete button — sets _action=delete so an empty body isn't
+	// the only way to remove an entry. Matches the day/week/group flow.
+	if r.FormValue("_action") == "delete" {
+		body = ""
+	}
 
 	// Use the trade's exit date (or entry date if still open) so day-by-date
 	// queries pick this up alongside the trade.
@@ -374,7 +383,22 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.renderTradeDetail(w, r, flash)
+	// HTMX path (centered modal on /trades or /analytics) wants the updated
+	// detail partial so the modal refreshes in place. A plain form submit
+	// from /journal/trade/{id} wants a 303 back to the same page.
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderTradeDetail(w, r, flash)
+		return
+	}
+	target := fmt.Sprintf("/journal/trade/%d?flash=%s", tradeID, flash)
+	if v := r.FormValue("back"); v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
+		sep := "?"
+		if strings.Contains(v, "?") {
+			sep = "&"
+		}
+		target = v + sep + "flash=" + flash
+	}
+	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
 // listTradesFiltered + countTradesFiltered build a SQL WHERE clause from

@@ -107,7 +107,11 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 			}
 			fi.MetaLabel = meta
 			if row.TradeID != nil {
-				fi.EditURL = fmt.Sprintf("/trades?modal=%d&back=/journal", *row.TradeID)
+				// Open the standalone trade-journal page so the feed → entry
+				// experience is identical to day/week/group entries. The
+				// centered modal on /trades is still available when the user
+				// arrives at the trade list directly.
+				fi.EditURL = fmt.Sprintf("/journal/trade/%d?back=/journal", *row.TradeID)
 			}
 		case "week":
 			y, w := fi.Date.ISOWeek()
@@ -559,6 +563,62 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
+}
+
+// JournalTradePage renders /journal/trade/{id} — the standalone trade-level
+// entry editor. Mirrors the day/week/group view shape: header, tag picker,
+// editor, then a Summary + Trades block (a single linked trade in this
+// case). The form posts to the existing /trades/{id}/journal endpoint;
+// when that endpoint sees no HX-Request header it redirects back here.
+func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := r.PathValue("id")
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	trade, err := h.Queries.GetTradeByID(ctx, id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	var journalBody, journalTag string
+	var hasJournal bool
+	var journalEntryID int64
+	if entry, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
+		hasJournal = true
+		journalBody = entry.Body
+		journalEntryID = entry.ID
+		if entry.Tag != nil {
+			journalTag = *entry.Tag
+		}
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
+		return
+	}
+
+	trades, err := loadOneTrade(ctx, h.DB, id)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load trade for journal: %w", err))
+		return
+	}
+	summary := summarizeTradeRows(trades)
+
+	h.renderPage(w, "journal_trade.html", map[string]any{
+		"NavActive":      "journal",
+		"BackHref":       validBackHref(r),
+		"Trade":          trade,
+		"TradeID":        id,
+		"HasJournal":     hasJournal,
+		"JournalBody":    journalBody,
+		"JournalTag":     journalTag,
+		"JournalEntryID": journalEntryID,
+		"Summary":        summary,
+		"Trades":         trades,
+		"Flash":          r.URL.Query().Get("flash"),
+	})
 }
 
 // WeekJournalPage renders /journal/week/{2026-W19} — the week-level entry
