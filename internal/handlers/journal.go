@@ -855,6 +855,12 @@ func (h *Handlers) localTZ() *time.Location {
 	return time.UTC
 }
 
+// exportTradeListCap is the maximum number of trades printed as a bullet
+// list under a single journal entry in the .md and .pdf exports. Above
+// this, the export shows only the summary count — keeps a 73-fill day
+// from drowning the document.
+const exportTradeListCap = 5
+
 // tradesForEntry returns the trades relevant to a feed-row's entry, in the
 // shared linkedTrade shape. Dispatches based on scope so every entry in the
 // export can show the same "context-trades" block under its body:
@@ -946,18 +952,26 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 
 		// Summary + per-trade bullet list — same for every scope so the
 		// export is uniform regardless of how the user organized the entries.
+		// Cap the bullet list at exportTradeListCap; the summary already
+		// carries the full count, so a day with 73 fills doesn't drown the
+		// document in single-fill lines.
 		if summary.N > 0 {
 			fmt.Fprintf(&b, "**Net** %s · **Gross** %s · **Comm** %s · **%dW/%dL** · %d trade%s\n\n",
 				signedMoney(summary.Net), signedMoney(summary.Gross),
 				fmt.Sprintf("%.2f", summary.Commission),
 				summary.Wins, summary.Losses, summary.N, plural(summary.N))
-			for _, lt := range trades {
-				net := "—"
-				if lt.NetPnl != nil {
-					net = signedMoney(*lt.NetPnl)
+			if len(trades) <= exportTradeListCap {
+				for _, lt := range trades {
+					net := "—"
+					if lt.NetPnl != nil {
+						net = signedMoney(*lt.NetPnl)
+					}
+					fmt.Fprintf(&b, "- %s · %s %s · qty %s · %s\n",
+						lt.AccountName, lt.Symbol, lt.Direction, formatQty(lt.Qty), net)
 				}
-				fmt.Fprintf(&b, "- %s · %s %s · qty %s · %s\n",
-					lt.AccountName, lt.Symbol, lt.Direction, formatQty(lt.Qty), net)
+			} else {
+				fmt.Fprintf(&b, "_%d trades not listed individually — see counts above._\n",
+					len(trades))
 			}
 			b.WriteString("\n")
 		}

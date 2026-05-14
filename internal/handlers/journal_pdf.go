@@ -217,7 +217,9 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 
 // renderTradesBlock prints the per-entry trades summary + bullet list.
 // Suppressed entirely when the entry has no associated trades, so day
-// entries with zero closed trades on that date stay clean.
+// entries with zero closed trades on that date stay clean. The bullet
+// list itself is capped at exportTradeListCap; above that, only the
+// summary line is shown so a 70-fill day doesn't blow the page count.
 func (r *pdfRenderer) renderTradesBlock(e pdfEntry) {
 	if e.Summary.N == 0 {
 		return
@@ -237,6 +239,11 @@ func (r *pdfRenderer) renderTradesBlock(e pdfEntry) {
 
 	pdf.SetFont("Helvetica", "", smallFontSize)
 	pdf.SetTextColor(82, 82, 91)
+	if len(e.Trades) > exportTradeListCap {
+		note := fmt.Sprintf("  %d trades not listed individually — see counts above.", len(e.Trades))
+		pdf.MultiCell(r.contentWidth, 4.6, r.tr(note), "", "L", false)
+		return
+	}
 	for _, lt := range e.Trades {
 		net := "—"
 		if lt.NetPnl != nil {
