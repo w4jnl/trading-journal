@@ -42,8 +42,113 @@ entry today". No server-side search.
       { kind: 'Go to', label: 'Accounts',   href: '/accounts'   },
       { kind: 'Go to', label: 'Commissions', href: '/commissions' },
       { kind: 'Action', label: 'New journal entry for today', action: function () { window.location.href = '/journal/' + today(); } },
+      { kind: 'Action', label: 'Apply daily review template', action: function () { window.location.href = '/journal/' + today() + '?template=daily'; } },
+      { kind: 'Action', label: 'Trades this week', action: function () {
+          var m = startOfWeek(new Date());
+          var s = new Date(m); s.setDate(s.getDate() + 6);
+          window.location.href = '/trades?from=' + iso(m) + '&to=' + iso(s);
+      }},
+      { kind: 'Action', label: 'Trades last week', action: function () {
+          var m = startOfWeek(new Date()); m.setDate(m.getDate() - 7);
+          var s = new Date(m); s.setDate(s.getDate() + 6);
+          window.location.href = '/trades?from=' + iso(m) + '&to=' + iso(s);
+      }},
       { kind: 'Action', label: 'Toggle theme', action: function () { document.getElementById('theme-toggle').click(); } },
     ];
+
+    /* iso → YYYY-MM-DD for a Date. */
+    function iso(d) {
+      var m = String(d.getMonth() + 1).padStart(2, '0');
+      var dd = String(d.getDate()).padStart(2, '0');
+      return d.getFullYear() + '-' + m + '-' + dd;
+    }
+    /* startOfWeek → the Monday of the given date's ISO week. */
+    function startOfWeek(d) {
+      var copy = new Date(d);
+      var day = copy.getDay(); // 0 = Sun
+      var diff = day === 0 ? -6 : 1 - day;
+      copy.setDate(copy.getDate() + diff);
+      copy.setHours(0, 0, 0, 0);
+      return copy;
+    }
+
+    /* Recent items, sourced from localStorage and updated on every page load.
+       Capped at 5 entries; the current page is filtered out so the user
+       always sees "where else I've been". */
+    function loadRecent() {
+      try {
+        var raw = localStorage.getItem('cmdk-recent') || '[]';
+        var arr = JSON.parse(raw);
+        var here = location.pathname + location.search;
+        return arr
+          .filter(function (r) { return r.href && r.href !== here; })
+          .slice(0, 5)
+          .map(function (r) { return { kind: 'Recent', label: r.label, href: r.href }; });
+      } catch (_) { return []; }
+    }
+
+    /* trackPage records the current page so it appears in next-session recents.
+       Skips trivial paths and pages that obviously aren't worth recalling. */
+    function trackPage() {
+      try {
+        var path = location.pathname + location.search;
+        if (path === '/' || path === '/dashboard') return;
+        var title = (document.title || '').replace(/\s*[—–-]\s*Trading Journal\s*$/, '').trim();
+        if (!title) return;
+        var raw = localStorage.getItem('cmdk-recent') || '[]';
+        var arr = JSON.parse(raw);
+        arr = arr.filter(function (r) { return r && r.href !== path; });
+        arr.unshift({ label: title, href: path });
+        if (arr.length > 8) arr = arr.slice(0, 8);
+        localStorage.setItem('cmdk-recent', JSON.stringify(arr));
+      } catch (_) { /* localStorage blocked — silently no-op */ }
+    }
+    trackPage();
+
+    /* dynamicItems generates context-aware results from the current query:
+         "MNQ"        → Filter trades by symbol MNQ
+         "2026-05-10" → Journal / trades for that date
+         "today"|"yesterday"|"this week"|"last week"|"last month"
+                      → matching journal/trades shortcuts */
+    function dynamicItems(q) {
+      var out = [];
+      var t = q.trim();
+      if (!t) return out;
+      /* Symbol root: 2–5 alphanumeric upper-only. Cheap signal. */
+      if (/^[A-Z][A-Z0-9]{1,4}$/.test(t)) {
+        out.push({ kind: 'Trades', label: 'Trades · symbol = ' + t, href: '/trades?symbol_root=' + encodeURIComponent(t) });
+      }
+      /* Date jump */
+      if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
+        out.push({ kind: 'Open', label: 'Journal for ' + t, href: '/journal/' + t });
+        out.push({ kind: 'Open', label: 'Trades on ' + t, href: '/trades?from=' + t + '&to=' + t });
+      }
+      var lower = t.toLowerCase();
+      var now = new Date();
+      if (lower === 'today') {
+        var d = iso(now);
+        out.push({ kind: 'Open', label: 'Journal for today (' + d + ')', href: '/journal/' + d });
+        out.push({ kind: 'Open', label: 'Trades today (' + d + ')', href: '/trades?from=' + d + '&to=' + d });
+      } else if (lower === 'yesterday') {
+        var y = new Date(now); y.setDate(y.getDate() - 1);
+        var ys = iso(y);
+        out.push({ kind: 'Open', label: 'Journal for yesterday (' + ys + ')', href: '/journal/' + ys });
+        out.push({ kind: 'Open', label: 'Trades yesterday (' + ys + ')', href: '/trades?from=' + ys + '&to=' + ys });
+      } else if (lower === 'this week') {
+        var m = startOfWeek(now);
+        var s = new Date(m); s.setDate(s.getDate() + 6);
+        out.push({ kind: 'Open', label: 'Trades this week', href: '/trades?from=' + iso(m) + '&to=' + iso(s) });
+      } else if (lower === 'last week') {
+        var m = startOfWeek(now); m.setDate(m.getDate() - 7);
+        var s = new Date(m); s.setDate(s.getDate() + 6);
+        out.push({ kind: 'Open', label: 'Trades last week', href: '/trades?from=' + iso(m) + '&to=' + iso(s) });
+      } else if (lower === 'last month' || lower === '30d' || lower === 'last 30') {
+        var to = new Date(now);
+        var from = new Date(now); from.setDate(from.getDate() - 30);
+        out.push({ kind: 'Open', label: 'Trades last 30 days', href: '/trades?from=' + iso(from) + '&to=' + iso(to) });
+      }
+      return out;
+    }
 
     var sel = 0;
     var filtered = items.slice();
@@ -68,10 +173,13 @@ entry today". No server-side search.
     }
 
     function filter() {
-      var q = input.value.trim().toLowerCase();
-      filtered = !q ? items.slice() : items.filter(function (it) {
-        return it.label.toLowerCase().indexOf(q) !== -1 || it.kind.toLowerCase().indexOf(q) !== -1;
+      var q = input.value.trim();
+      var lq = q.toLowerCase();
+      var dyn = dynamicItems(q);
+      var base = items.filter(function (it) {
+        return it.label.toLowerCase().indexOf(lq) !== -1 || it.kind.toLowerCase().indexOf(lq) !== -1;
       });
+      filtered = dyn.concat(base);
       sel = 0;
       render();
     }
@@ -79,7 +187,8 @@ entry today". No server-side search.
     function open() {
       backdrop.classList.add('show');
       input.value = '';
-      filtered = items.slice();
+      /* Empty-query state: recent items on top, then full static catalog. */
+      filtered = loadRecent().concat(items);
       sel = 0;
       render();
       setTimeout(function () { input.focus(); }, 0);
