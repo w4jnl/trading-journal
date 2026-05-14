@@ -29,7 +29,16 @@
       {{template "tag_picker" (dict "Tag" $.Tag)}}
     </div>
 
-    <textarea name="body" class="textarea-mono" style="min-height: 280px;" placeholder="What happened today? Markdown supported: headings, lists, **bold**, code, blockquotes.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
+    {{template "journal_editor" (dict
+      "Body"        .Entry.Body
+      "Name"        "body"
+      "Scope"       "day"
+      "EntryID"     .Entry.ID
+      "Placeholder" "What happened today? Markdown supported. Paste a chart screenshot, or use Templates."
+      "Templates"   true
+      "Mode"        "split"
+      "MinHeight"   "360px"
+    )}}
 
     <div class="row" style="margin-top: 12px;">
       <button type="submit" class="btn btn--primary">Save</button>
@@ -46,11 +55,6 @@
       {{end}}
     </div>
   </form>
-
-  {{if .Rendered}}
-  <h3 style="margin-top: 24px;">Preview</h3>
-  <div class="card markdown-preview">{{.Rendered}}</div>
-  {{end}}
 </section>
 
 <section class="recent-section">

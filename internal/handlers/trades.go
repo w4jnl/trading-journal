@@ -228,13 +228,17 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		return
 	}
 
-	// Trade-level journal entry, if one exists.
+	// Trade-level journal entry, if one exists. JournalEntryID is passed to
+	// the editor so image uploads can be associated with the entry; 0 means
+	// "no entry yet" and the attachment endpoint accepts that.
 	var journalBody, journalTag string
 	var hasJournal bool
+	var journalEntryID int64
 	var journalRendered template.HTML
 	if entry, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
 		hasJournal = true
 		journalBody = entry.Body
+		journalEntryID = entry.ID
 		if entry.Tag != nil {
 			journalTag = *entry.Tag
 		}
@@ -251,6 +255,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"HasJournal":      hasJournal,
 		"JournalBody":     journalBody,
 		"JournalTag":      journalTag,
+		"JournalEntryID":  journalEntryID,
 		"JournalRendered": journalRendered,
 		"Flash":           flash,
 	})

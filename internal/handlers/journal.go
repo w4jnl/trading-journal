@@ -736,6 +736,24 @@ func parseISOWeek(s string, tz *time.Location) (monday time.Time, isoYear, isoWe
 	return monday, y, w, nil
 }
 
+// JournalPreview handles POST /journal/preview — accepts a markdown body in
+// form field `body` and returns the rendered HTML. Used by the editor's live
+// preview pane (debounced) so the rendered output matches what `Save` will
+// produce, byte-for-byte.
+func (h *Handlers) JournalPreview(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	body := r.FormValue("body")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if strings.TrimSpace(body) == "" {
+		_, _ = w.Write([]byte(`<p class="journal-editor__preview-empty">Nothing to preview yet.</p>`))
+		return
+	}
+	_, _ = w.Write([]byte(renderMarkdown(body)))
+}
+
 // renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown
 // with default extensions (CommonMark + tables, fenced code blocks). The
 // output is sanitized via html/template's auto-escape further up — but we

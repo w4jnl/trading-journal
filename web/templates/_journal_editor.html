@@ -1,0 +1,65 @@
+{{/*
+  journal_editor — shared rich-markdown editor used by /journal/{date},
+  /journal/week/{week}, /journal/group/{id}, and the trade-detail sheet.
+
+  Expects a dict with:
+    Body          — initial body (string), may be empty
+    Name          — form field name (almost always "body")
+    Scope         — "day" | "week" | "trade" | "group" (used for templates)
+    Placeholder   — placeholder text (string)
+    Mode          — "split" (default) | "single"
+    EntryID       — optional entry ID (int64) — used as default attachment scope
+    Templates     — bool — show templates dropdown
+    MinHeight     — px string, e.g. "360px" (default)
+
+  Renders a wrapper that journal_editor.js looks for via [data-je]. The
+  contained <textarea name="Name"> is what the surrounding <form> submits
+  on Save — the JS only enhances; nothing breaks without it.
+*/}}
+{{define "journal_editor"}}
+{{- $mode := .Mode -}}{{if eq $mode ""}}{{$mode = "split"}}{{end -}}
+{{- $minH := .MinHeight -}}{{if eq $minH ""}}{{$minH = "360px"}}{{end -}}
+<div class="journal-editor {{if eq $mode "single"}}journal-editor--single{{end}}"
+     data-je
+     data-scope="{{.Scope}}"
+     data-entry-id="{{.EntryID}}"
+     data-templates="{{if .Templates}}1{{else}}0{{end}}"
+     data-preview-url="/journal/preview"
+     data-attach-url="/journal/attachments"
+     style="--je-min-h: {{$minH}};">
+  <div class="journal-editor__toolbar">
+    <button type="button" class="je-btn" data-je-action="toggle-preview"
+            aria-pressed="{{if eq $mode "split"}}true{{else}}false{{end}}"
+            title="Toggle preview pane (⌘P)">Preview</button>
+    <button type="button" class="je-btn" data-je-action="insert"
+            data-je-template="## " title="Heading">H</button>
+    <button type="button" class="je-btn" data-je-action="wrap"
+            data-je-before="**" data-je-after="**" title="Bold (⌘B)"><strong>B</strong></button>
+    <button type="button" class="je-btn" data-je-action="wrap"
+            data-je-before="_" data-je-after="_" title="Italic (⌘I)"><em>i</em></button>
+    <button type="button" class="je-btn" data-je-action="insert"
+            data-je-template="- " title="Bullet list">•</button>
+    <button type="button" class="je-btn" data-je-action="wrap"
+            data-je-before="`" data-je-after="`" title="Inline code">&lt;/&gt;</button>
+    <button type="button" class="je-btn" data-je-action="image"
+            title="Insert image (or paste/drop one)">img</button>
+    {{if .Templates}}
+    <button type="button" class="je-btn" data-je-action="templates" style="position:relative;"
+            title="Apply template">Templates ▾</button>
+    {{end}}
+    <div class="je-spacer"></div>
+    <span class="je-status" data-je-status></span>
+  </div>
+  <div class="journal-editor__write">
+    <textarea name="{{.Name}}"
+              class="journal-editor__textarea"
+              data-je-input
+              spellcheck="true"
+              placeholder="{{.Placeholder}}"
+              style="min-height: {{$minH}};">{{.Body}}</textarea>
+  </div>
+  <div class="journal-editor__preview" data-je-preview aria-live="polite">
+    {{if .Body}}<p class="journal-editor__preview-empty">Loading preview…</p>{{else}}<p class="journal-editor__preview-empty">Nothing to preview yet.</p>{{end}}
+  </div>
+</div>
+{{end}}

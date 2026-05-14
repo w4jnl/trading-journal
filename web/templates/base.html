@@ -107,6 +107,10 @@
 
   {{template "command_palette" .}}
 
+  {{/* Toast notification stack. JS appends .toast elements here; CSS handles
+       animation and dismissal. Pre-rendered so toast.js can fire on any page. */}}
+  <div id="toast-stack" aria-live="polite" aria-atomic="false"></div>
+
   <style>
     /* Show only the icon that matches the active theme. */
     .theme-icon-light, .theme-icon-dark { display: none; }
@@ -128,7 +132,22 @@
         window.dispatchEvent(new CustomEvent('themechange', { detail: next }));
       });
     })();
+
+    /* Mobile drawer: close on link tap (sidebar stays open without this) and
+       on Esc. Tap-outside is already handled by the .nav-backdrop label. */
+    (function () {
+      var input = document.getElementById('nav-open');
+      if (!input) return;
+      document.querySelectorAll('.sidebar a').forEach(function (a) {
+        a.addEventListener('click', function () { input.checked = false; });
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && input.checked) { input.checked = false; }
+      });
+    })();
   </script>
+  <script src="/static/js/toast.js" defer></script>
+  <script src="/static/js/journal_editor.js" defer></script>
 </body>
 </html>
 {{end}}

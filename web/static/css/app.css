@@ -30,6 +30,7 @@
   /* Surface */
   --bg:         #fafafa;
   --bg-elev:    #ffffff;
+  --bg-raised:  #ffffff;
   --bg-sunken:  #f4f4f5;
   --bg-hover:   #f4f4f5;
   --backdrop:   rgba(15, 23, 42, 0.45);
@@ -55,9 +56,12 @@
   --pos:        #16a34a;
   --pos-soft:   #f0fdf4;
   --pos-border: #bbf7d0;
+  --pos-strong: #15803d;
   --neg:        #dc2626;
   --neg-soft:   #fef2f2;
   --neg-border: #fecaca;
+  --neg-strong: #b91c1c;
+  --neg-muted:  #9b3434; /* losses-in-context (calendar history) vs active warning */
   --warn:       #d97706;
   --warn-soft:  #fffbeb;
   --warn-border:#fde68a;
@@ -98,13 +102,25 @@
   --t-fast: 120ms ease-out;
   --t-med:  180ms ease-out;
 
+  /* Spacing scale */
+  --gap-xs:  4px;
+  --gap-sm:  8px;
+  --gap:    12px;
+  --gap-lg: 24px;
+  --gap-xl: 32px;
+  --gap-2xl: 48px;
+
   /* Layout */
   --sidebar-w: 220px;
-  --content-max: 1200px;
+  --content-max: 1320px;
 
   /* Type */
   --font-sans: 'Inter', -apple-system, system-ui, 'Segoe UI', Roboto, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font-display-size: 36px;
+
+  /* Safe-area inset (iOS home indicator). Stays 0 on non-notched devices. */
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
 
 /* ---- Tokens — dark -------------------------------------------------------- */
@@ -112,6 +128,7 @@
 [data-theme="dark"] {
   --bg:         #0a0a0b;
   --bg-elev:    #131316;
+  --bg-raised:  #1c1c20;
   --bg-sunken:  #18181b;
   --bg-hover:   #1f1f23;
   --backdrop:   rgba(0, 0, 0, 0.65);
@@ -133,9 +150,12 @@
   --pos:        #22c55e;
   --pos-soft:   rgba(34, 197, 94, 0.12);
   --pos-border: rgba(34, 197, 94, 0.30);
+  --pos-strong: #16a34a;
   --neg:        #ef4444;
   --neg-soft:   rgba(239, 68, 68, 0.12);
   --neg-border: rgba(239, 68, 68, 0.30);
+  --neg-strong: #dc2626;
+  --neg-muted:  #c45a5a;
   --warn:       #f59e0b;
   --warn-soft:  rgba(245, 158, 11, 0.12);
   --warn-border:rgba(245, 158, 11, 0.30);
@@ -924,3 +944,481 @@ a:hover > .icon-journal,
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 5px; border: 2px solid var(--bg); }
 ::-webkit-scrollbar-thumb:hover { background: var(--border-strong); }
+
+/* ============================================================================
+   v2 design-system additions
+   New tokens and primitives layered on top of v1. Existing classes are
+   untouched so pages render the same until they opt in. See
+   /Users/trader/.claude/plans/perform-deep-and-detailed-smooth-finch.md.
+   ============================================================================ */
+
+/* ---- Numeric scale -------------------------------------------------------- */
+
+/* Hero/lg/md/sm numbers — use on KPI tiles and trade-detail strips so
+   primary values stand out from supporting metadata. .num is the existing
+   tabular-nums class; these add weight + size. */
+.num--hero {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: var(--font-display-size);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+.num--lg {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.15;
+}
+.num--md {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+.num--sm {
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* ---- Card variants (v2) --------------------------------------------------- */
+
+.card--hero {
+  background: var(--bg-raised);
+  padding: 24px;
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-2);
+  border: 1px solid var(--border);
+}
+.card--sm { padding: 8px 12px; }
+.card--lg { padding: 20px; }
+
+/* Card title with trailing action slot (e.g. "All trades →").
+   Use as: <div class="card-title-row"><span class="card-title">…</span><a class="card-title__action">…</a></div> */
+.card-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 8px;
+}
+.card-title-row .card-title { margin: 0; }
+.card-title__action {
+  font-size: 12px;
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-weight: 500;
+  transition: color var(--t-fast);
+}
+.card-title__action:hover { color: var(--accent); }
+
+/* ---- Filled P&L chips ---------------------------------------------------- */
+
+/* For hero numbers where the colored text doesn't pop enough.
+   Background carries the sentiment; text is on-color. */
+.pnl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: var(--r-md);
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+  line-height: 1.2;
+}
+.pnl-chip--pos { background: var(--pos); color: var(--accent-fg); }
+.pnl-chip--neg { background: var(--neg); color: var(--accent-fg); }
+.pnl-chip--flat {
+  background: var(--bg-sunken);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+}
+/* Hero-sized variant for dashboards */
+.pnl-chip--lg { padding: 8px 14px; font-size: 28px; letter-spacing: -0.015em; }
+.pnl-chip--hero { padding: 12px 18px; font-size: var(--font-display-size); letter-spacing: -0.02em; }
+
+/* Soft variants — same hue family, less aggressive. Use for table cells. */
+.pnl-chip--soft-pos {
+  background: var(--pos-soft);
+  color: var(--pos-strong);
+  border: 1px solid var(--pos-border);
+}
+.pnl-chip--soft-neg {
+  background: var(--neg-soft);
+  color: var(--neg-strong);
+  border: 1px solid var(--neg-border);
+}
+
+/* ---- Direction glyphs ---------------------------------------------------- */
+
+/* Pair the existing .dir-long/.dir-short pills with an arrow glyph so
+   color isn't the only signal (color-blind users + faster skimming). */
+.dir-glyph {
+  display: inline-block;
+  width: 0;
+  height: 0;
+  margin-right: 4px;
+  vertical-align: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+}
+.dir-glyph--long  { border-bottom: 6px solid currentColor; }
+.dir-glyph--short { border-top:    6px solid currentColor; }
+
+/* ---- Toast notifications -------------------------------------------------- */
+
+/* Stacked top-right. Replaces inline .flash banners over time. */
+#toast-stack {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 300;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+  max-width: min(360px, calc(100vw - 32px));
+}
+.toast {
+  pointer-events: auto;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--info);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--fg);
+  box-shadow: var(--shadow-2);
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  animation: toast-in var(--t-med);
+  cursor: pointer;
+}
+.toast.toast--success { border-left-color: var(--pos); }
+.toast.toast--error   { border-left-color: var(--neg); }
+.toast.toast--warn    { border-left-color: var(--warn); }
+.toast.toast--info    { border-left-color: var(--info); }
+.toast.toast--leaving { animation: toast-out 180ms ease-in forwards; }
+.toast-close {
+  background: transparent;
+  border: 0;
+  color: var(--fg-subtle);
+  padding: 0;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  margin-left: auto;
+  height: auto;
+}
+.toast-close:hover { color: var(--fg); background: transparent; border-color: transparent; }
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(-6px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
+@keyframes toast-out {
+  from { opacity: 1; transform: translateY(0);    }
+  to   { opacity: 0; transform: translateY(-6px); }
+}
+
+/* ---- Skeleton loaders ----------------------------------------------------- */
+
+.skeleton {
+  background: linear-gradient(90deg, var(--bg-sunken) 0%, var(--bg-hover) 50%, var(--bg-sunken) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+  border-radius: var(--r-md);
+  display: block;
+  min-height: 14px;
+}
+.skeleton--text  { height: 14px; border-radius: var(--r-sm); margin: 4px 0; }
+.skeleton--title { height: 22px; width: 60%; }
+.skeleton--row   { height: 32px; }
+.skeleton--chart { height: 240px; }
+@keyframes shimmer {
+  from { background-position: 200% 0; }
+  to   { background-position: -200% 0; }
+}
+
+/* ---- Sticky action bar (safe-area-aware) --------------------------------- */
+
+.sticky-action-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 14px;
+  padding-bottom: calc(10px + var(--safe-bottom));
+  box-shadow: var(--shadow-2);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* ---- 12-column grid utility ---------------------------------------------- */
+
+.grid-12 {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: var(--gap-lg);
+}
+.col-span-3  { grid-column: span 3; }
+.col-span-4  { grid-column: span 4; }
+.col-span-6  { grid-column: span 6; }
+.col-span-8  { grid-column: span 8; }
+.col-span-9  { grid-column: span 9; }
+.col-span-12 { grid-column: span 12; }
+@media (max-width: 900px) {
+  .grid-12 { gap: var(--gap); }
+  .col-span-3, .col-span-4 { grid-column: span 6; }
+  .col-span-6, .col-span-8, .col-span-9 { grid-column: span 12; }
+}
+@media (max-width: 600px) {
+  .col-span-3, .col-span-4, .col-span-6, .col-span-8, .col-span-9 { grid-column: span 12; }
+}
+
+/* ---- Sentiment row-tint (table rows) ------------------------------------- */
+
+/* Subtle left-edge tint so the eye picks out winners/losers in long lists
+   without dyeing the whole row. Apply on <tr class="row-tint--pos"> etc. */
+tbody tr.row-tint--pos td:first-child { box-shadow: inset 3px 0 0 var(--pos); }
+tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
+
+/* ---- Reduced motion ------------------------------------------------------- */
+
+/* Respect user preference: collapse durations to 0 and disable the playful
+   icon micro-interaction. Chart re-init on themechange is JS-driven so it
+   stays instant naturally. */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --t-fast: 0ms;
+    --t-med:  0ms;
+  }
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+  .icon-journal { transition: none; }
+  a:hover > .icon-journal,
+  .trade-row:hover .icon-journal { transform: none; }
+  .skeleton { animation: none; }
+}
+
+/* ---- Journal editor (v2) -------------------------------------------------- */
+
+/* Two-pane editor: textarea on left, live markdown preview on right.
+   ⌘P toggles to single-pane. Wraps to a stack on narrow viewports. */
+.journal-editor {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-elev);
+  overflow: hidden;
+  position: relative;
+}
+.journal-editor--single { grid-template-columns: 1fr; }
+.journal-editor--single .journal-editor__preview { display: none; }
+
+.journal-editor__toolbar {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+  min-height: 36px;
+}
+.journal-editor__toolbar .je-spacer { flex: 1 1 auto; }
+.journal-editor__toolbar .je-status {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.journal-editor__toolbar .je-status--saving { color: var(--warn); }
+.journal-editor__toolbar .je-status--saved  { color: var(--pos); }
+.journal-editor__toolbar .je-status--error  { color: var(--neg); }
+.je-btn {
+  height: 26px;
+  padding: 0 8px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  background: var(--bg-elev);
+  color: var(--fg-muted);
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-sans);
+}
+.je-btn:hover { background: var(--bg-hover); color: var(--fg); }
+.je-btn.je-btn--active { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+
+.journal-editor__write,
+.journal-editor__preview {
+  min-height: 360px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.journal-editor__write { position: relative; border-right: 1px solid var(--border); }
+.journal-editor--single .journal-editor__write { border-right: 0; }
+
+.journal-editor__textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 360px;
+  padding: 14px 16px;
+  border: 0;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  line-height: 1.6;
+  resize: none;
+  outline: none;
+  border-radius: 0;
+  box-sizing: border-box;
+}
+.journal-editor__textarea:focus { box-shadow: none; border: 0; }
+
+.journal-editor__preview {
+  padding: 14px 18px;
+  background: var(--bg-elev);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.journal-editor__preview h1 { font-size: 20px; margin: 12px 0 8px; }
+.journal-editor__preview h2 { font-size: 17px; margin: 12px 0 6px; }
+.journal-editor__preview h3 { font-size: 14px; margin: 10px 0 4px; }
+.journal-editor__preview p  { margin: 0 0 10px; }
+.journal-editor__preview pre {
+  background: var(--bg-sunken);
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  font-size: 12px;
+}
+.journal-editor__preview code {
+  background: var(--bg-sunken);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  font-size: 12px;
+}
+.journal-editor__preview blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 12px;
+  color: var(--fg-muted);
+  margin: 8px 0;
+}
+.journal-editor__preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  margin: 8px 0;
+  display: block;
+}
+.journal-editor__preview ul, .journal-editor__preview ol { padding-left: 24px; margin: 4px 0 10px; }
+.journal-editor__preview hr { margin: 14px 0; }
+.journal-editor__preview-empty { color: var(--fg-subtle); font-style: italic; }
+
+/* Drag-over feedback when dropping an image onto the editor. */
+.journal-editor.is-dragover { box-shadow: inset 0 0 0 2px var(--accent); }
+.journal-editor.is-dragover::after {
+  content: "Drop image to upload";
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* Slash menu popup */
+.je-slash {
+  position: absolute;
+  z-index: 5;
+  min-width: 200px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+  padding: 4px;
+  font-size: 13px;
+}
+.je-slash-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--fg);
+  white-space: nowrap;
+}
+.je-slash-item[aria-selected="true"],
+.je-slash-item:hover { background: var(--accent-soft); color: var(--accent); }
+.je-slash-item .je-slash-kind {
+  font-size: 11px;
+  color: var(--fg-subtle);
+  margin-left: auto;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* Templates dropdown */
+.je-templates {
+  position: absolute;
+  right: 0;
+  top: 32px;
+  z-index: 5;
+  min-width: 200px;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-3);
+  padding: 4px;
+  font-size: 13px;
+}
+.je-templates-item {
+  display: block;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  color: var(--fg);
+  white-space: nowrap;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 0;
+  height: auto;
+}
+.je-templates-item:hover { background: var(--accent-soft); color: var(--accent); }
+
+/* Stack panes on narrow viewports. */
+@media (max-width: 800px) {
+  .journal-editor { grid-template-columns: 1fr; }
+  .journal-editor__write { border-right: 0; border-bottom: 1px solid var(--border); }
+  .journal-editor__write,
+  .journal-editor__preview { min-height: 200px; max-height: none; }
+}

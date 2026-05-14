@@ -24,13 +24,14 @@ import (
 // Handlers groups every HTTP handler with its shared deps. main.go injects
 // concrete values; tests can swap any field.
 type Handlers struct {
-	Templates  fs.FS // embedded template tree; pages live at templates/<name>
-	DB         *sql.DB // raw connection for hand-written dynamic queries
-	ImportSvc  *importer.ImportService
-	Queries    *models.Queries
-	UploadsDir string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
-	Timezone   *time.Location
-	Logger     *slog.Logger
+	Templates      fs.FS // embedded template tree; pages live at templates/<name>
+	DB             *sql.DB // raw connection for hand-written dynamic queries
+	ImportSvc      *importer.ImportService
+	Queries        *models.Queries
+	UploadsDir     string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
+	AttachmentsDir string // where journal-attached images are stored on disk
+	Timezone       *time.Location
+	Logger         *slog.Logger
 }
 
 // renderPage parses base.html + the named page + every _*.html partial in the
@@ -58,12 +59,18 @@ func (h *Handlers) renderPage(w http.ResponseWriter, page string, data any) {
 }
 
 // renderPartial renders a single named template — no base wrap. Used for
-// HTMX fragment responses. We bundle templates/_icons.html so the partial can
-// reference shared icon sub-templates without each partial enumerating them.
+// HTMX fragment responses. We bundle every `_*.html` partial (same as
+// renderPage) so a partial can reference any shared sub-template
+// (tag_picker, journal_editor, sketch icons, etc.) without listing them.
 func (h *Handlers) renderPartial(w http.ResponseWriter, partial, name string, data any) {
 	files := []string{"templates/" + partial}
-	if _, err := fs.Stat(h.Templates, "templates/_icons.html"); err == nil && partial != "_icons.html" {
-		files = append(files, "templates/_icons.html")
+	if siblings, err := fs.Glob(h.Templates, "templates/_*.html"); err == nil {
+		for _, sib := range siblings {
+			if sib == "templates/"+partial {
+				continue
+			}
+			files = append(files, sib)
+		}
 	}
 	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
 	if err != nil {

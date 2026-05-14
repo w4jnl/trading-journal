@@ -57,6 +57,9 @@ func run() error {
 	processed := filepath.Join(cfg.Imports.Root, "processed")
 	failed := filepath.Join(cfg.Imports.Root, "failed")
 	uploads := filepath.Join(cfg.Imports.Root, "uploads") // same-filesystem staging for UI uploads
+	// Attachments live next to the database file so a single backup of the
+	// data/ dir captures everything the user has authored.
+	attachments := filepath.Join(filepath.Dir(cfg.Database.Path), "attachments")
 
 	importSvc := &importer.ImportService{
 		DB:           conn,
@@ -67,12 +70,13 @@ func run() error {
 	}
 
 	h := &handlers.Handlers{
-		Templates:  web.TemplatesFS,
-		DB:         conn,
-		ImportSvc:  importSvc,
-		Queries:    queries,
-		UploadsDir: uploads,
-		Timezone:   tz,
+		Templates:      web.TemplatesFS,
+		DB:             conn,
+		ImportSvc:      importSvc,
+		Queries:        queries,
+		UploadsDir:     uploads,
+		AttachmentsDir: attachments,
+		Timezone:       tz,
 	}
 
 	mux := http.NewServeMux()
@@ -103,6 +107,10 @@ func run() error {
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)
+	mux.HandleFunc("GET /journal/templates", h.JournalTemplatesList)
+	mux.HandleFunc("POST /journal/preview", h.JournalPreview)
+	mux.HandleFunc("POST /journal/attachments", h.JournalAttachmentUpload)
+	mux.HandleFunc("GET /journal/attachments/{id}", h.JournalAttachmentServe)
 	mux.HandleFunc("GET /journal/week/{week}", h.WeekJournalPage)
 	mux.HandleFunc("POST /journal/week/{week}", h.WeekJournalSave)
 	mux.HandleFunc("POST /journal/week/{week}/delete", h.WeekJournalDelete)

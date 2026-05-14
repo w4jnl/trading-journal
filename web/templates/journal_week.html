@@ -29,7 +29,16 @@
     {{template "tag_picker" (dict "Tag" $.Tag)}}
   </div>
 
-  <textarea name="body" class="textarea-mono" style="min-height: 280px;" placeholder="What happened this week? Themes, recurring mistakes, plan adjustments. Markdown supported.">{{if .HasEntry}}{{.Entry.Body}}{{end}}</textarea>
+  {{template "journal_editor" (dict
+    "Body"        .Entry.Body
+    "Name"        "body"
+    "Scope"       "week"
+    "EntryID"     .Entry.ID
+    "Placeholder" "What happened this week? Themes, recurring mistakes, plan adjustments. Paste a screenshot, or use Templates."
+    "Templates"   true
+    "Mode"        "split"
+    "MinHeight"   "360px"
+  )}}
 
   <div class="row" style="margin-top: 12px;">
     <button type="submit" class="btn btn--primary">Save</button>
@@ -42,16 +51,4 @@
     {{end}}
   </div>
 </form>
-
-{{if .Rendered}}
-<h3 style="margin-top: 24px;">Preview</h3>
-<div class="card markdown-preview">{{.Rendered}}</div>
-{{end}}
-
-<style>
-  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
-  .markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
-  .markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
-  .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
-</style>
 {{end}}

@@ -57,8 +57,16 @@
     {{template "tag_picker" (dict "Tag" $.Tag)}}
   </div>
 
-  <textarea name="body" class="textarea-mono" style="min-height: 280px;"
-            placeholder="What's the thesis across these trades? What worked, what didn't. Markdown supported.">{{.Entry.Body}}</textarea>
+  {{template "journal_editor" (dict
+    "Body"        .Entry.Body
+    "Name"        "body"
+    "Scope"       "group"
+    "EntryID"     .Entry.ID
+    "Placeholder" "What's the thesis across these trades? What worked, what didn't. Paste a screenshot, or use Templates."
+    "Templates"   true
+    "Mode"        "split"
+    "MinHeight"   "360px"
+  )}}
 
   <div class="row" style="margin-top: 12px;">
     <button type="submit" class="btn btn--primary">Save</button>
