@@ -10,7 +10,7 @@ import (
 )
 
 const getCommissionRate = `-- name: GetCommissionRate :one
-SELECT asset_class, firm, size_class, per_contract_rt FROM commission_rates
+SELECT asset_class, firm, size_class, per_contract_per_side FROM commission_rates
 WHERE asset_class = ? AND firm = ? AND size_class = ?
 `
 
@@ -27,7 +27,7 @@ func (q *Queries) GetCommissionRate(ctx context.Context, arg GetCommissionRatePa
 		&i.AssetClass,
 		&i.Firm,
 		&i.SizeClass,
-		&i.PerContractRt,
+		&i.PerContractPerSide,
 	)
 	return i, err
 }

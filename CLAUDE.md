@@ -46,7 +46,7 @@ The design doc's tables stand, but these are required for correctness:
   - Unique constraint: `(import_source, account_ref)`.
 - **`instruments`** — `symbol_root PK, exchange?, tick_size?, tick_value?, multiplier?, currency, needs_setup`. Tick specs are **nullable** so the importer can auto-create a stub row for any unknown `symbol_root` (e.g. a new MGC/GC) and continue ingesting executions. Stubs have `needs_setup=1` and NULL tick specs; user fills them via the instruments UI later. Seeded via migration with full specs for ES, MES, NQ, MNQ, CL, MCL.
 - **`instrument_aliases`** — `broker, broker_symbol, instrument_id`. Empty in v1 (MotiveWave/TopstepX symbols are uniform), but the indirection means CQG/Rithmic/IBKR symbol-format differences are a data change, not a schema change, when live sync arrives.
-- **`commission_rates`** — `firm, symbol_root, per_contract_rt`. Round-turn rate (covers both legs of a trade). Position builder applies `rate × qty` once at trade close. Seeded with user-provided rates for Apex / Lucid / TopStep / AMP / IBKR.
+- **`commission_rates`** — `(asset_class, firm, size_class) -> per_contract_per_side`. Per-side rate (what the broker charges per contract, per leg). Position builder charges both legs of the round-turn at trade close: `commission = per_contract_per_side × qty × 2`. Seeded with user-provided per-side rates for Apex / Lucid / TopStep / AMP / IBKR. The column was originally misnamed `per_contract_rt`; renamed in migration `20260515130000`.
 
 ### Firm guessing rules (used by importer when auto-creating accounts)
 

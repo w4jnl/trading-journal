@@ -170,7 +170,7 @@ func (q *Queries) ListAssetClasses(ctx context.Context) ([]AssetClass, error) {
 }
 
 const listCommissionRates = `-- name: ListCommissionRates :many
-SELECT asset_class, firm, size_class, per_contract_rt FROM commission_rates ORDER BY asset_class, firm, size_class
+SELECT asset_class, firm, size_class, per_contract_per_side FROM commission_rates ORDER BY asset_class, firm, size_class
 `
 
 func (q *Queries) ListCommissionRates(ctx context.Context) ([]CommissionRate, error) {
@@ -186,7 +186,7 @@ func (q *Queries) ListCommissionRates(ctx context.Context) ([]CommissionRate, er
 			&i.AssetClass,
 			&i.Firm,
 			&i.SizeClass,
-			&i.PerContractRt,
+			&i.PerContractPerSide,
 		); err != nil {
 			return nil, err
 		}
@@ -221,7 +221,7 @@ WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
   AND a.commission_source = 'rate'
-  AND cr.per_contract_rt IS NULL
+  AND cr.per_contract_per_side IS NULL
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root
 `
@@ -329,16 +329,16 @@ func (q *Queries) UpdateInstrumentSetup(ctx context.Context, arg UpdateInstrumen
 }
 
 const upsertCommissionRate = `-- name: UpsertCommissionRate :exec
-INSERT INTO commission_rates (asset_class, firm, size_class, per_contract_rt)
+INSERT INTO commission_rates (asset_class, firm, size_class, per_contract_per_side)
 VALUES (?, ?, ?, ?)
-ON CONFLICT(asset_class, firm, size_class) DO UPDATE SET per_contract_rt = excluded.per_contract_rt
+ON CONFLICT(asset_class, firm, size_class) DO UPDATE SET per_contract_per_side = excluded.per_contract_per_side
 `
 
 type UpsertCommissionRateParams struct {
-	AssetClass    string  `json:"asset_class"`
-	Firm          string  `json:"firm"`
-	SizeClass     string  `json:"size_class"`
-	PerContractRt float64 `json:"per_contract_rt"`
+	AssetClass         string  `json:"asset_class"`
+	Firm               string  `json:"firm"`
+	SizeClass          string  `json:"size_class"`
+	PerContractPerSide float64 `json:"per_contract_per_side"`
 }
 
 func (q *Queries) UpsertCommissionRate(ctx context.Context, arg UpsertCommissionRateParams) error {
@@ -346,7 +346,7 @@ func (q *Queries) UpsertCommissionRate(ctx context.Context, arg UpsertCommission
 		arg.AssetClass,
 		arg.Firm,
 		arg.SizeClass,
-		arg.PerContractRt,
+		arg.PerContractPerSide,
 	)
 	return err
 }

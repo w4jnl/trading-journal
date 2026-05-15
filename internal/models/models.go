@@ -38,10 +38,10 @@ type BalanceAnchor struct {
 }
 
 type CommissionRate struct {
-	AssetClass    string  `json:"asset_class"`
-	Firm          string  `json:"firm"`
-	SizeClass     string  `json:"size_class"`
-	PerContractRt float64 `json:"per_contract_rt"`
+	AssetClass         string  `json:"asset_class"`
+	Firm               string  `json:"firm"`
+	SizeClass          string  `json:"size_class"`
+	PerContractPerSide float64 `json:"per_contract_per_side"`
 }
 
 type DailyStat struct {

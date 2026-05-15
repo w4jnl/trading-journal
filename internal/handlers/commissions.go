@@ -67,7 +67,7 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Bucket orphans by reason. A single (account, symbol) row can only fall
-	// into one bucket — the LEFT JOIN with `cr.per_contract_rt IS NULL` filter
+	// into one bucket — the LEFT JOIN with `cr.per_contract_per_side IS NULL` filter
 	// already excludes trades that have a matching rate row.
 	symAccum := map[string]int64{}              // symbol_root -> count (uncategorized symbol)
 	firmAccum := map[int64]*orphanReason{}      // account_id -> entry (missing firm)
@@ -171,8 +171,9 @@ func (h *Handlers) CommissionsClassCreate(w http.ResponseWriter, r *http.Request
 
 // CommissionsBulkSave handles POST /commissions/save. One submission carries
 // edits to both rates and instrument categorization. The handler:
-//   1. Parses form fields keyed "rate.<asset_class>|<firm>|<size_class>.per_contract_rt"
-//      and "instrument.<symbol_root>.<field>".
+//   1. Parses form fields keyed "rate.<asset_class>|<firm>|<size_class>.per_contract_per_side"
+//      (legacy "per_contract_rt" still accepted for in-flight tabs) and
+//      "instrument.<symbol_root>.<field>".
 //   2. Diffs each against the current DB value.
 //   3. For changed rates, upserts and queues a per-cell rebuild.
 //   4. For changed instrument categorizations, upserts and queues a per-symbol
@@ -193,7 +194,7 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 	}
 	rateBefore := make(map[string]float64, len(currentRates))
 	for _, rt := range currentRates {
-		rateBefore[rateKey(rt.AssetClass, rt.Firm, rt.SizeClass)] = rt.PerContractRt
+		rateBefore[rateKey(rt.AssetClass, rt.Firm, rt.SizeClass)] = rt.PerContractPerSide
 	}
 
 	currentInstruments, err := h.Queries.ListInstruments(ctx)
@@ -238,7 +239,9 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 				continue
 			}
 			cell, field := rest[:dot], rest[dot+1:]
-			if field != "per_contract_rt" {
+			// Accept the legacy "per_contract_rt" name too so a tab opened
+			// before the rename still saves cleanly.
+			if field != "per_contract_per_side" && field != "per_contract_rt" {
 				continue
 			}
 			rateInputs[cell] = strings.TrimSpace(values[0])
@@ -285,10 +288,10 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		if err := h.Queries.UpsertCommissionRate(ctx, models.UpsertCommissionRateParams{
-			AssetClass:    ac,
-			Firm:          firm,
-			SizeClass:     sc,
-			PerContractRt: newVal,
+			AssetClass:         ac,
+			Firm:               firm,
+			SizeClass:          sc,
+			PerContractPerSide: newVal,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("upsert rate %s: %w", cell, err))
 			return
@@ -371,18 +374,22 @@ func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request)
 	ac := strings.TrimSpace(r.FormValue("asset_class"))
 	firm := strings.TrimSpace(r.FormValue("firm"))
 	sc := strings.TrimSpace(r.FormValue("size_class"))
-	rateStr := strings.TrimSpace(r.FormValue("per_contract_rt"))
+	// Accept both names so a tab opened before the rename still posts cleanly.
+	rateStr := strings.TrimSpace(r.FormValue("per_contract_per_side"))
+	if rateStr == "" {
+		rateStr = strings.TrimSpace(r.FormValue("per_contract_rt"))
+	}
 	if ac == "" || firm == "" || sc == "" || rateStr == "" {
-		http.Error(w, "asset_class, firm, size_class, per_contract_rt are required", http.StatusBadRequest)
+		http.Error(w, "asset_class, firm, size_class, per_contract_per_side are required", http.StatusBadRequest)
 		return
 	}
 	rate, err := strconv.ParseFloat(rateStr, 64)
 	if err != nil {
-		http.Error(w, "per_contract_rt must be a number", http.StatusBadRequest)
+		http.Error(w, "per_contract_per_side must be a number", http.StatusBadRequest)
 		return
 	}
 	if err := h.Queries.UpsertCommissionRate(ctx, models.UpsertCommissionRateParams{
-		AssetClass: ac, Firm: firm, SizeClass: sc, PerContractRt: rate,
+		AssetClass: ac, Firm: firm, SizeClass: sc, PerContractPerSide: rate,
 	}); err != nil {
 		h.serverError(w, fmt.Errorf("upsert rate: %w", err))
 		return
@@ -391,7 +398,7 @@ func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request)
 		h.logger().Warn("rebuild after rate create", "err", err)
 	}
 	h.renderPartial(w, "_commission_rate_row.html", "commission_rate_row", map[string]any{
-		"Rate":  models.CommissionRate{AssetClass: ac, Firm: firm, SizeClass: sc, PerContractRt: rate},
+		"Rate":  models.CommissionRate{AssetClass: ac, Firm: firm, SizeClass: sc, PerContractPerSide: rate},
 		"Firms": firmsForCommissions,
 	})
 }

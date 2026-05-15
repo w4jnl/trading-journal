@@ -98,8 +98,10 @@ func at(min int) time.Time {
 // ES tick specs from the seeded migration: tick=0.25, value=12.50, multiplier=50.
 const esMultiplier = 50.0
 
-// Apex commission for ES is $1.99 RT.
-const apexESRate = 1.99
+// Apex commission for ES is $1.99 per side, so a 1-contract round-turn
+// costs $3.98.
+const apexESPerSide = 1.99
+const apexESRoundTurn = apexESPerSide * 2
 
 func TestRebuild_SimpleLongClose(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
@@ -137,13 +139,34 @@ func TestRebuild_SimpleLongClose(t *testing.T) {
 	if tr.GrossPnl == nil || *tr.GrossPnl != wantGross {
 		t.Errorf("gross_pnl = %v, want %v", tr.GrossPnl, wantGross)
 	}
-	wantComm := apexESRate * 1
+	wantComm := apexESRoundTurn * 1 // 1 contract × per-side × 2 legs
 	if tr.Commission == nil || *tr.Commission != wantComm {
 		t.Errorf("commission = %v, want %v", tr.Commission, wantComm)
 	}
 	wantNet := wantGross - wantComm
 	if tr.NetPnl == nil || *tr.NetPnl != wantNet {
 		t.Errorf("net_pnl = %v, want %v", tr.NetPnl, wantNet)
+	}
+}
+
+// Confirms commission_rates.per_contract_per_side is treated as per-side
+// (charged twice per closed trade), not as a round-turn rate.
+func TestRebuild_PerSideCommissionScalesWithQty(t *testing.T) {
+	b, q, _, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 3, 7250, at(0)},
+		{"sell", 3, 7252, at(5)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("len(trades) = %d, want 1", len(trades))
+	}
+	want := apexESPerSide * 3 * 2 // 3 contracts × per-side × 2 legs
+	if trades[0].Commission == nil || *trades[0].Commission != want {
+		t.Errorf("commission = %v, want %v (per-side × qty × 2)", trades[0].Commission, want)
 	}
 }
 
@@ -307,8 +330,8 @@ func TestRebuild_DailyStats(t *testing.T) {
 		return time.Date(2026, 5, 10, h, 0, 0, 0, time.UTC)
 	}
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, day(14)}, {"sell", 1, 7252, day(15)}, // gross 100, net ~98.01
-		{"buy", 1, 7253, day(16)}, {"sell", 1, 7251, day(17)}, // gross -100, net ~-101.99
+		{"buy", 1, 7250, day(14)}, {"sell", 1, 7252, day(15)}, // gross 100, net ~96.02
+		{"buy", 1, 7253, day(16)}, {"sell", 1, 7251, day(17)}, // gross -100, net ~-103.98
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -327,11 +350,11 @@ func TestRebuild_DailyStats(t *testing.T) {
 	if !approxEqual(s.GrossPnl, 0) {
 		t.Errorf("gross_pnl = %v, want 0", s.GrossPnl)
 	}
-	wantNet := -2 * apexESRate
+	wantNet := -2 * apexESRoundTurn // gross 0 minus 2 trades worth of round-turn commission
 	if !approxEqual(s.NetPnl, wantNet) {
 		t.Errorf("net_pnl = %v, want %v", s.NetPnl, wantNet)
 	}
-	wantComm := 2 * apexESRate
+	wantComm := 2 * apexESRoundTurn
 	if !approxEqual(s.Commission, wantComm) {
 		t.Errorf("commission = %v, want %v", s.Commission, wantComm)
 	}

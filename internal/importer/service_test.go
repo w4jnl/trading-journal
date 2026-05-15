@@ -133,11 +133,13 @@ func TestImportFile_MotiveWaveFixture(t *testing.T) {
 	if apexFirst.GrossPnl == nil || !approxEq(*apexFirst.GrossPnl, wantGross) {
 		t.Errorf("gross_pnl = %v, want %v", apexFirst.GrossPnl, wantGross)
 	}
-	if apexFirst.Commission == nil || !approxEq(*apexFirst.Commission, 1.99) {
-		t.Errorf("commission = %v, want 1.99 (apex ES rate)", apexFirst.Commission)
+	// Apex ES is $1.99 per side; round-turn for 1 contract is $3.98.
+	wantComm := 1.99 * 2
+	if apexFirst.Commission == nil || !approxEq(*apexFirst.Commission, wantComm) {
+		t.Errorf("commission = %v, want %v (apex ES round-turn)", apexFirst.Commission, wantComm)
 	}
-	if apexFirst.NetPnl == nil || !approxEq(*apexFirst.NetPnl, wantGross-1.99) {
-		t.Errorf("net_pnl = %v, want %v", apexFirst.NetPnl, wantGross-1.99)
+	if apexFirst.NetPnl == nil || !approxEq(*apexFirst.NetPnl, wantGross-wantComm) {
+		t.Errorf("net_pnl = %v, want %v", apexFirst.NetPnl, wantGross-wantComm)
 	}
 }
 

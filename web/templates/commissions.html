@@ -9,12 +9,13 @@
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 <div class="card card--warn" style="margin-bottom: 16px;">
-  Commission rates are keyed by <strong>asset class × firm × size</strong>.
-  Set each contract's asset class and size in the lower table — the system
-  then looks up <em>(equity_futures, apex, mini)</em> instead of per-symbol
-  rates. TopstepX accounts imported from the trades CSV use the per-trade
-  Fees+Commissions in the file and skip this lookup; accounts imported from
-  the orders CSV use the topstep rates below.
+  Commission rates are <strong>per side, per contract</strong>, keyed by
+  <strong>asset class × firm × size</strong>. Set each contract's asset
+  class and size in the lower table — the system then looks up
+  <em>(equity_futures, apex, mini)</em> and charges that rate twice per
+  closed trade (once per leg of the round-turn). TopstepX accounts imported
+  from the trades CSV use the per-trade Fees+Commissions in the file and
+  skip this lookup; accounts imported from the orders CSV use the rates below.
 </div>
 
 {{if .Orphans}}
@@ -53,7 +54,7 @@
         <th>Asset class</th>
         <th>Firm</th>
         <th>Size</th>
-        <th style="text-align: right;">Per-contract RT (USD)</th>
+        <th style="text-align: right;">Per-contract per side (USD)</th>
         <th></th>
       </tr>
     </thead>
@@ -92,8 +93,8 @@
           {{range .SizeClasses}}<option value="{{.Code}}">{{.Label}}</option>{{end}}
         </select>
       </label>
-      <label class="field"><span class="field-label">Rate (USD RT)</span>
-        <input type="number" name="per_contract_rt" step="0.01" min="0" required placeholder="1.99" style="width: 110px;">
+      <label class="field"><span class="field-label">Rate (USD per side)</span>
+        <input type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;">
       </label>
       <button type="submit" class="btn btn--primary">Add</button>
     </div>

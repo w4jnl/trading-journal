@@ -31,9 +31,9 @@ SELECT * FROM size_classes ORDER BY sort_order, code;
 SELECT * FROM commission_rates ORDER BY asset_class, firm, size_class;
 
 -- name: UpsertCommissionRate :exec
-INSERT INTO commission_rates (asset_class, firm, size_class, per_contract_rt)
+INSERT INTO commission_rates (asset_class, firm, size_class, per_contract_per_side)
 VALUES (?, ?, ?, ?)
-ON CONFLICT(asset_class, firm, size_class) DO UPDATE SET per_contract_rt = excluded.per_contract_rt;
+ON CONFLICT(asset_class, firm, size_class) DO UPDATE SET per_contract_per_side = excluded.per_contract_per_side;
 
 -- name: DeleteCommissionRate :exec
 DELETE FROM commission_rates
@@ -65,7 +65,7 @@ WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
   AND a.commission_source = 'rate'
-  AND cr.per_contract_rt IS NULL
+  AND cr.per_contract_per_side IS NULL
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root;
 

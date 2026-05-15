@@ -11,9 +11,11 @@
 //     (stub instrument awaiting setup), gross_pnl stays NULL — we never silently
 //     substitute a price-difference shortcut.
 //   - Commission lookups go (instrument.asset_class, account.firm, instrument.size_class)
-//     → commission_rates. Missing firm, uncategorized instrument, or no matching
-//     rate row → commission NULL. net_pnl = gross_pnl minus commission-or-zero,
-//     but stays NULL if gross_pnl is NULL.
+//     -> commission_rates.per_contract_per_side. The stored value is the broker's
+//     per-side rate, so the builder charges both legs of the round-turn:
+//     commission = perSideRate * qty * 2. Missing firm, uncategorized
+//     instrument, or no matching rate row -> commission NULL.
+//     net_pnl = gross_pnl minus commission-or-zero, but stays NULL if gross_pnl is NULL.
 //   - daily_stats is keyed on the trade exit date in the configured trading
 //     timezone, not UTC, so a US trader's session doesn't get split at UTC midnight.
 package positions
@@ -203,7 +205,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	// inputs (asset_class, firm, size_class) are constant across every trade
 	// we'll emit, so looking them up per-trade in computePnl was a wasted
 	// round-trip per closed trade.
-	rate, rateOK, err := b.resolveRate(ctx, account, inst)
+	perSideRate, rateOK, err := b.resolveRate(ctx, account, inst)
 	if err != nil {
 		return 0, err
 	}
@@ -269,7 +271,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 		}
 
 		if len(openLots) == 0 {
-			if err := b.emitTrade(ctx, k, trade, inst, rate, rateOK); err != nil {
+			if err := b.emitTrade(ctx, k, trade, inst, perSideRate, rateOK); err != nil {
 				return closed, err
 			}
 			closed++
@@ -288,9 +290,10 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	return closed, nil
 }
 
-// resolveRate looks up the commission rate that applies to this (account,
-// instrument) pair. rateOK=false means "no rate row matched" — net_pnl will
-// fall back to gross_pnl. err is non-nil only for unexpected DB failures.
+// resolveRate looks up the per-side commission rate that applies to this
+// (account, instrument) pair. rateOK=false means "no rate row matched" -
+// net_pnl will fall back to gross_pnl. err is non-nil only for unexpected
+// DB failures.
 func (b *Builder) resolveRate(ctx context.Context, account models.Account, inst models.Instrument) (float64, bool, error) {
 	if account.Firm == nil || inst.AssetClass == nil || inst.SizeClass == nil {
 		return 0, false, nil
@@ -302,7 +305,7 @@ func (b *Builder) resolveRate(ctx context.Context, account models.Account, inst 
 	})
 	switch {
 	case err == nil:
-		return r.PerContractRt, true, nil
+		return r.PerContractPerSide, true, nil
 	case errors.Is(err, sql.ErrNoRows):
 		return 0, false, nil
 	default:
@@ -310,7 +313,7 @@ func (b *Builder) resolveRate(ctx context.Context, account models.Account, inst 
 	}
 }
 
-func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst models.Instrument, rate float64, rateOK bool) error {
+func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst models.Instrument, perSideRate float64, rateOK bool) error {
 	entryAgg := aggregateByExec(ta.entries)
 	exitAgg := aggregateByExec(ta.exits)
 
@@ -319,7 +322,7 @@ func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst mod
 	avgEntry := entryWeighted / entryTotal
 	avgExit := exitWeighted / exitTotal
 
-	grossPnl, commission, netPnl := computePnl(ta.direction, avgEntry, avgExit, exitTotal, inst, rate, rateOK)
+	grossPnl, commission, netPnl := computePnl(ta.direction, avgEntry, avgExit, exitTotal, inst, perSideRate, rateOK)
 
 	exitTimePtr := exitLast
 	exitPricePtr := avgExit
@@ -393,11 +396,12 @@ func summarize(uses []fillUse, wantFirst bool) (totalQty, weighted float64, t ti
 	return
 }
 
-// computePnl applies the pre-resolved commission rate to a closed trade. The
-// rate lookup is hoisted out of the per-trade path so a replay over many
-// closed trades does at most one GetCommissionRate round-trip instead of one
-// per trade.
-func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.Instrument, rate float64, rateOK bool) (gross, comm, net *float64) {
+// computePnl applies the pre-resolved per-side commission rate to a closed
+// trade. The rate lookup is hoisted out of the per-trade path so a replay
+// over many closed trades does at most one GetCommissionRate round-trip
+// instead of one per trade. perSideRate is what the broker charges per
+// contract per leg, so the round-turn cost is rate * qty * 2.
+func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.Instrument, perSideRate float64, rateOK bool) (gross, comm, net *float64) {
 	if inst.Multiplier == nil {
 		return nil, nil, nil
 	}
@@ -410,7 +414,7 @@ func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.In
 	}
 	gross = &g
 	if rateOK {
-		c := rate * qty
+		c := perSideRate * qty * 2 // both legs of the round-turn
 		comm = &c
 		n := g - c
 		net = &n
