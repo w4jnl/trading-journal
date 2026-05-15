@@ -446,7 +446,7 @@ func upsertExecutionReturningID(ctx context.Context, q *models.Queries, p models
 // trades export and the legacy orders export converge on the same row when
 // they're for the same broker account.
 func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Queries, srcPath string) (int64, bool, error) {
-	ref := extractTopstepAccountRef(srcPath)
+	ref := ExtractTopstepAccountRef(srcPath)
 
 	// Pull the candidate set: any TopStep-import-sourced account, plus any
 	// account whose firm is explicitly topstep (covers user-renamed cases).
@@ -516,14 +516,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 	return created.ID, true, nil
 }
 
-// ExtractTopstepAccountRef is the public entry point so callers outside the
-// importer package (the /import upload handler) can run the same recognition
-// logic before deciding whether to prompt the user for an account.
-func ExtractTopstepAccountRef(srcPath string) string {
-	return extractTopstepAccountRef(srcPath)
-}
-
-// extractTopstepAccountRef recovers a TopstepX account_ref from a filename
+// ExtractTopstepAccountRef recovers a TopstepX account_ref from a filename
 // when the user explicitly signaled one. Two recognized conventions:
 //
 //   1. Prefix: "topstep_<ref>[_trades].csv" or "topstepx_<ref>[_trades].csv"
@@ -533,7 +526,7 @@ func ExtractTopstepAccountRef(srcPath string) string {
 //
 // Anything else returns "" — we don't try to guess so a generic filename
 // like `topstepTrades.csv` doesn't accidentally invent a phantom account.
-func extractTopstepAccountRef(srcPath string) string {
+func ExtractTopstepAccountRef(srcPath string) string {
 	base := filepath.Base(srcPath)
 	base = strings.TrimSuffix(base, filepath.Ext(base))
 

@@ -41,6 +41,11 @@ func (h *Handlers) ImportPage(w http.ResponseWriter, r *http.Request) {
 //
 // Response is HTMX-swapped into the page's #outcome target.
 func (h *Handlers) ImportUpload(w http.ResponseWriter, r *http.Request) {
+	// Cap the request body. A CSV import is text; even a year of fills sits
+	// well under 64 MiB. Without this an oversized upload would buffer to
+	// disk via the form parser before the handler ever ran.
+	const maxImportBytes = 64 * 1024 * 1024
+	r.Body = http.MaxBytesReader(w, r.Body, maxImportBytes)
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
 		http.Error(w, "bad multipart form: "+err.Error(), http.StatusBadRequest)
 		return

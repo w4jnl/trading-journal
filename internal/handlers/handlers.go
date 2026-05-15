@@ -16,6 +16,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/importer"
@@ -33,22 +34,21 @@ type Handlers struct {
 	AttachmentsDir string // where journal-attached images are stored on disk
 	Timezone       *time.Location
 	Logger         *slog.Logger
+
+	// templateCache memoizes parsed template sets so renderPage / renderPartial
+	// don't re-glob and re-parse the templates fs on every request. Keys
+	// distinguish page renders ("page:<name>") from partial renders
+	// ("partial:<name>") since the file sets differ.
+	templateCache sync.Map
 }
 
 // renderPage parses base.html + the named page + every _*.html partial in the
 // templates dir, and executes the base. Bundling the partials means a page
 // can reference any sibling partial via {{template "name" .}} without the
-// caller listing it explicitly.
+// caller listing it explicitly. The parsed set is cached after first use —
+// templates ship in embed.FS so they never change at runtime.
 func (h *Handlers) renderPage(w http.ResponseWriter, page string, data any) {
-	files := []string{"templates/base.html", "templates/" + page}
-	partials, err := fs.Glob(h.Templates, "templates/_*.html")
-	if err != nil {
-		h.serverError(w, fmt.Errorf("glob partials: %w", err))
-		return
-	}
-	files = append(files, partials...)
-
-	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
+	t, err := h.parsedPage(page)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse %s: %w", page, err))
 		return
@@ -64,16 +64,7 @@ func (h *Handlers) renderPage(w http.ResponseWriter, page string, data any) {
 // renderPage) so a partial can reference any shared sub-template
 // (tag_picker, journal_editor, sketch icons, etc.) without listing them.
 func (h *Handlers) renderPartial(w http.ResponseWriter, partial, name string, data any) {
-	files := []string{"templates/" + partial}
-	if siblings, err := fs.Glob(h.Templates, "templates/_*.html"); err == nil {
-		for _, sib := range siblings {
-			if sib == "templates/"+partial {
-				continue
-			}
-			files = append(files, sib)
-		}
-	}
-	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
+	t, err := h.parsedPartial(partial)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse %s: %w", partial, err))
 		return
@@ -82,6 +73,53 @@ func (h *Handlers) renderPartial(w http.ResponseWriter, partial, name string, da
 	if err := t.ExecuteTemplate(w, name, data); err != nil {
 		h.logger().Error("render partial", "name", name, "err", err)
 	}
+}
+
+// parsedPage returns the cached template set for a page render (base + page
+// + every partial). First call for a given page parses; subsequent calls hit
+// the cache.
+func (h *Handlers) parsedPage(page string) (*template.Template, error) {
+	key := "page:" + page
+	if v, ok := h.templateCache.Load(key); ok {
+		return v.(*template.Template), nil
+	}
+	partials, err := fs.Glob(h.Templates, "templates/_*.html")
+	if err != nil {
+		return nil, fmt.Errorf("glob partials: %w", err)
+	}
+	files := append([]string{"templates/base.html", "templates/" + page}, partials...)
+	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := h.templateCache.LoadOrStore(key, t)
+	return actual.(*template.Template), nil
+}
+
+// parsedPartial returns the cached template set for a partial render (the
+// requested partial + every other partial as siblings).
+func (h *Handlers) parsedPartial(partial string) (*template.Template, error) {
+	key := "partial:" + partial
+	if v, ok := h.templateCache.Load(key); ok {
+		return v.(*template.Template), nil
+	}
+	files := []string{"templates/" + partial}
+	siblings, err := fs.Glob(h.Templates, "templates/_*.html")
+	if err != nil {
+		return nil, fmt.Errorf("glob partials: %w", err)
+	}
+	for _, sib := range siblings {
+		if sib == "templates/"+partial {
+			continue
+		}
+		files = append(files, sib)
+	}
+	t, err := template.New("").Funcs(h.funcMap()).ParseFS(h.Templates, files...)
+	if err != nil {
+		return nil, err
+	}
+	actual, _ := h.templateCache.LoadOrStore(key, t)
+	return actual.(*template.Template), nil
 }
 
 func (h *Handlers) funcMap() template.FuncMap {
@@ -358,7 +396,7 @@ func accountsForFilter(accounts []models.Account, includeRetired bool) []models.
 	if includeRetired {
 		return accounts
 	}
-	out := accounts[:0:0]
+	out := make([]models.Account, 0, len(accounts))
 	for _, a := range accounts {
 		if a.Active != 1 {
 			continue

@@ -193,10 +193,25 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	var openLots []lot
 	var trade *tradeAccum
 	closed := 0
+	// openQty mirrors sum(openLots[*].qtyRemaining) — kept in sync as lots
+	// are added/consumed so the same-direction branch doesn't need to scan
+	// every lot on every fill (was O(n^2) for positions built up over many
+	// same-side fills).
+	var openQty float64
+
+	// Resolve the commission rate once for this (account, symbol) replay. The
+	// inputs (asset_class, firm, size_class) are constant across every trade
+	// we'll emit, so looking them up per-trade in computePnl was a wasted
+	// round-trip per closed trade.
+	rate, rateOK, err := b.resolveRate(ctx, account, inst)
+	if err != nil {
+		return 0, err
+	}
 
 	openTrade := func(fill models.Execution, dir string, qty float64) {
 		trade = &tradeAccum{direction: dir, maxQty: qty}
 		openLots = []lot{{qtyRemaining: qty, price: fill.Price, time: fill.ExecTime, execID: fill.ID}}
+		openQty = qty
 		trade.entries = append(trade.entries, fillUse{
 			execID: fill.ID, qty: qty, price: fill.Price, time: fill.ExecTime,
 		})
@@ -220,8 +235,9 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 			trade.entries = append(trade.entries, fillUse{
 				execID: fill.ID, qty: fill.Qty, price: fill.Price, time: fill.ExecTime,
 			})
-			if total := totalLotQty(openLots); total > trade.maxQty {
-				trade.maxQty = total
+			openQty += fill.Qty
+			if openQty > trade.maxQty {
+				trade.maxQty = openQty
 			}
 			continue
 		}
@@ -242,6 +258,10 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 				openLots = openLots[1:]
 			}
 		}
+		openQty -= consumedTotal
+		if openQty < 0 {
+			openQty = 0
+		}
 		if consumedTotal > 0 {
 			trade.exits = append(trade.exits, fillUse{
 				execID: fill.ID, qty: consumedTotal, price: fill.Price, time: fill.ExecTime,
@@ -249,7 +269,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 		}
 
 		if len(openLots) == 0 {
-			if err := b.emitTrade(ctx, k, trade, account, inst); err != nil {
+			if err := b.emitTrade(ctx, k, trade, inst, rate, rateOK); err != nil {
 				return closed, err
 			}
 			closed++
@@ -268,15 +288,29 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	return closed, nil
 }
 
-func totalLotQty(lots []lot) float64 {
-	t := 0.0
-	for _, l := range lots {
-		t += l.qtyRemaining
+// resolveRate looks up the commission rate that applies to this (account,
+// instrument) pair. rateOK=false means "no rate row matched" — net_pnl will
+// fall back to gross_pnl. err is non-nil only for unexpected DB failures.
+func (b *Builder) resolveRate(ctx context.Context, account models.Account, inst models.Instrument) (float64, bool, error) {
+	if account.Firm == nil || inst.AssetClass == nil || inst.SizeClass == nil {
+		return 0, false, nil
 	}
-	return t
+	r, err := b.Queries.GetCommissionRate(ctx, models.GetCommissionRateParams{
+		AssetClass: *inst.AssetClass,
+		Firm:       *account.Firm,
+		SizeClass:  *inst.SizeClass,
+	})
+	switch {
+	case err == nil:
+		return r.PerContractRt, true, nil
+	case errors.Is(err, sql.ErrNoRows):
+		return 0, false, nil
+	default:
+		return 0, false, fmt.Errorf("commission lookup: %w", err)
+	}
 }
 
-func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, account models.Account, inst models.Instrument) error {
+func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst models.Instrument, rate float64, rateOK bool) error {
 	entryAgg := aggregateByExec(ta.entries)
 	exitAgg := aggregateByExec(ta.exits)
 
@@ -285,10 +319,7 @@ func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, account 
 	avgEntry := entryWeighted / entryTotal
 	avgExit := exitWeighted / exitTotal
 
-	grossPnl, commission, netPnl, err := b.computePnl(ctx, ta.direction, avgEntry, avgExit, exitTotal, account, inst)
-	if err != nil {
-		return err
-	}
+	grossPnl, commission, netPnl := computePnl(ta.direction, avgEntry, avgExit, exitTotal, inst, rate, rateOK)
 
 	exitTimePtr := exitLast
 	exitPricePtr := avgExit
@@ -362,9 +393,13 @@ func summarize(uses []fillUse, wantFirst bool) (totalQty, weighted float64, t ti
 	return
 }
 
-func (b *Builder) computePnl(ctx context.Context, direction string, avgEntry, avgExit, qty float64, account models.Account, inst models.Instrument) (gross, comm, net *float64, err error) {
+// computePnl applies the pre-resolved commission rate to a closed trade. The
+// rate lookup is hoisted out of the per-trade path so a replay over many
+// closed trades does at most one GetCommissionRate round-trip instead of one
+// per trade.
+func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.Instrument, rate float64, rateOK bool) (gross, comm, net *float64) {
 	if inst.Multiplier == nil {
-		return nil, nil, nil, nil
+		return nil, nil, nil
 	}
 	mult := *inst.Multiplier
 	g := 0.0
@@ -374,34 +409,18 @@ func (b *Builder) computePnl(ctx context.Context, direction string, avgEntry, av
 		g = (avgEntry - avgExit) * mult * qty
 	}
 	gross = &g
-
-	if account.Firm != nil && inst.AssetClass != nil && inst.SizeClass != nil {
-		rate, lookupErr := b.Queries.GetCommissionRate(ctx, models.GetCommissionRateParams{
-			AssetClass: *inst.AssetClass,
-			Firm:       *account.Firm,
-			SizeClass:  *inst.SizeClass,
-		})
-		switch {
-		case lookupErr == nil:
-			c := rate.PerContractRt * qty
-			comm = &c
-			n := g - c
-			net = &n
-		case errors.Is(lookupErr, sql.ErrNoRows):
-			// No rate row for this (asset_class, firm, size_class): leave commission
-			// NULL, net_pnl = gross_pnl. User fixes via /commissions.
-			n := g
-			net = &n
-		default:
-			return nil, nil, nil, fmt.Errorf("commission lookup: %w", lookupErr)
-		}
+	if rateOK {
+		c := rate * qty
+		comm = &c
+		n := g - c
+		net = &n
 	} else {
-		// Firm unknown or instrument uncategorized: no commission charged.
-		// net_pnl = gross_pnl until the user sets things up.
+		// No rate row, firm unknown, or instrument uncategorized: leave commission
+		// NULL, net_pnl = gross_pnl. User fixes via /commissions.
 		n := g
 		net = &n
 	}
-	return gross, comm, net, nil
+	return gross, comm, net
 }
 
 func (b *Builder) rebuildDailyStats(ctx context.Context, accountID int64) error {

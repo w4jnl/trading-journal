@@ -834,6 +834,13 @@ func (h *Handlers) JournalPreview(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(renderMarkdown(body)))
 }
 
+// markdownRenderer is shared across renderMarkdown calls. The HTML renderer
+// only carries config (the Flags above), no per-render state, so reuse is safe.
+// Parsers, by contrast, hold internal state and must be created per parse.
+var markdownRenderer = mdHtml.NewRenderer(mdHtml.RendererOptions{
+	Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
+})
+
 // renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown
 // with default extensions (CommonMark + tables, fenced code blocks). The
 // output is sanitized via html/template's auto-escape further up — but we
@@ -842,10 +849,7 @@ func (h *Handlers) JournalPreview(w http.ResponseWriter, r *http.Request) {
 func renderMarkdown(src string) string {
 	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
 	doc := p.Parse([]byte(src))
-	renderer := mdHtml.NewRenderer(mdHtml.RendererOptions{
-		Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
-	})
-	return string(markdown.Render(doc, renderer))
+	return string(markdown.Render(doc, markdownRenderer))
 }
 
 func (h *Handlers) localTZ() *time.Location {

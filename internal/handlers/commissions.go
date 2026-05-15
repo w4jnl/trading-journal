@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -124,11 +125,7 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 // sortOrphansByCount sorts orphan reasons descending by trade_count so the
 // most impactful problem appears first in the banner.
 func sortOrphansByCount(rs []orphanReason) {
-	for i := 1; i < len(rs); i++ {
-		for j := i; j > 0 && rs[j].TradeCount > rs[j-1].TradeCount; j-- {
-			rs[j], rs[j-1] = rs[j-1], rs[j]
-		}
-	}
+	sort.Slice(rs, func(i, j int) bool { return rs[i].TradeCount > rs[j].TradeCount })
 }
 
 // CommissionsClassCreate handles POST /commissions/classes/new. Supports both

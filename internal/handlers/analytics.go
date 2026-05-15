@@ -705,7 +705,6 @@ func computeHeadline(trades []analyticsTrade) headlineMetrics {
 		return m
 	}
 	var sumWins, sumLosses float64 // sumLosses stored as positive magnitude
-	first := true
 	for _, t := range trades {
 		m.Trades++
 		if t.GrossPnl != nil {
@@ -734,9 +733,7 @@ func computeHeadline(trades []analyticsTrade) headlineMetrics {
 				m.LargestLossTradeID = t.ID
 			}
 		}
-		first = false
 	}
-	_ = first // retained for future shape-of-edge-case checks
 	decided := m.Wins + m.Losses
 	if decided > 0 {
 		m.WinRate = float64(m.Wins) / float64(decided)

@@ -58,24 +58,24 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 	}
 
 	type tradeDelta struct {
-		AccountID int64
-		ExitDate  time.Time // local-tz midnight
-		NetPnL    float64
+		ExitDate time.Time // local-tz midnight
+		NetPnL   float64
 	}
 	tradeRows, err := h.Queries.ListClosedTradeDeltasOrdered(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list trades: %w", err)
 	}
-	deltas := make([]tradeDelta, 0, len(tradeRows))
+	// Bucket deltas by account so the per-account loop below is O(n) in that
+	// account's deltas, not in all deltas across every account.
+	deltasByAccount := map[int64][]tradeDelta{}
 	for _, r := range tradeRows {
 		if r.ExitTime == nil {
 			continue
 		}
 		y, m, d := r.ExitTime.In(tz).Date()
-		deltas = append(deltas, tradeDelta{
-			AccountID: r.AccountID,
-			ExitDate:  time.Date(y, m, d, 0, 0, 0, 0, tz),
-			NetPnL:    r.NetPnl,
+		deltasByAccount[r.AccountID] = append(deltasByAccount[r.AccountID], tradeDelta{
+			ExitDate: time.Date(y, m, d, 0, 0, 0, 0, tz),
+			NetPnL:   r.NetPnl,
 		})
 	}
 
@@ -100,10 +100,7 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 		anchorDay := dayStart(anchor.AnchorDate, tz)
 
 		var delta float64
-		for _, td := range deltas {
-			if td.AccountID != accountID {
-				continue
-			}
+		for _, td := range deltasByAccount[accountID] {
 			if forward {
 				// Trades exited strictly after the anchor date, up to and
 				// including today, add to the running balance.
