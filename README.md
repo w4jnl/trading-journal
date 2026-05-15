@@ -81,7 +81,7 @@ docker compose up -d
 ```
 
 See **[Docker/README.md](Docker/README.md)** for the multi-arch
-build+push flow against `registry.example.com`, the buildx bootstrap, and
+build+push flow against `ghcr.io/w4jnl/trading-journal`, the buildx bootstrap, and
 the chown step explained in detail.
 
 ## Stack

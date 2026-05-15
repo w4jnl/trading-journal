@@ -66,7 +66,7 @@ COPY --from=builder /out/trading-journal /app/trading-journal
 # Open port matches the example config.
 EXPOSE 8080
 
-# Image labels — registries (incl. registry.example.com) surface these.
+# Image labels — registries (incl. ghcr.io) surface these.
 LABEL org.opencontainers.image.title="Trading Journal" \
       org.opencontainers.image.description="Server-rendered trading journal app (Go + HTMX + SQLite)." \
       org.opencontainers.image.source="https://github.com/w4jnl/trading-journal" \

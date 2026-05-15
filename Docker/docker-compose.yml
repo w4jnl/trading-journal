@@ -1,5 +1,5 @@
 # Deployment recipe — pulls the published multi-arch image from
-# registry.example.com and mounts the host paths that need to persist.
+# ghcr.io/w4jnl/trading-journal and mounts the host paths that need to persist.
 #
 # First-run setup:
 #   cd Docker/
@@ -13,7 +13,7 @@
 
 services:
   trading-journal:
-    image: registry.example.com/trading-journal:latest
+    image: ghcr.io/w4jnl/trading-journal:latest
     container_name: trading-journal
     restart: unless-stopped
 

@@ -10,7 +10,7 @@ Silicon, and Raspberry Pi 4/5 alike.
 | File                  | Purpose                                                   |
 | --------------------- | --------------------------------------------------------- |
 | `Dockerfile`          | Multi-stage, multi-arch image definition                  |
-| `docker-compose.yml`  | Deploy recipe — pulls `registry.example.com/trading-journal`   |
+| `docker-compose.yml`  | Deploy recipe — pulls `ghcr.io/w4jnl/trading-journal`   |
 | `config.example.yaml` | Container-path config; copy to `config.yaml` and edit     |
 | `README.md`           | This file                                                 |
 
@@ -24,8 +24,8 @@ docker buildx version
 #    (skip if you already have one; check with `docker buildx ls`)
 docker buildx create --name multiarch --use --bootstrap
 
-# 3) Log in to the private registry
-docker login registry.example.com
+# 3) Log in to GHCR (use a PAT with write:packages)
+echo "$GHCR_PAT" | docker login ghcr.io -u w4jnl --password-stdin
 ```
 
 ## Build + push (release)
@@ -41,8 +41,8 @@ docker buildx build \
   --platform linux/amd64,linux/arm64 \
   --file Docker/Dockerfile \
   --build-arg VERSION="$GIT_SHA" \
-  --tag registry.example.com/trading-journal:latest \
-  --tag registry.example.com/trading-journal:"$GIT_SHA" \
+  --tag ghcr.io/w4jnl/trading-journal:latest \
+  --tag ghcr.io/w4jnl/trading-journal:"$GIT_SHA" \
   --push \
   .
 ```
@@ -54,7 +54,7 @@ Don't substitute it.
 If you want to inspect what's in the registry afterwards:
 
 ```bash
-docker buildx imagetools inspect registry.example.com/trading-journal:latest
+docker buildx imagetools inspect ghcr.io/w4jnl/trading-journal:latest
 ```
 
 You should see a `manifest list` with one entry per platform.
