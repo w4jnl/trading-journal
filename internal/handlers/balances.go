@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // BalanceAnchor is a user-stated balance at a specific date. Running balance
@@ -39,60 +41,42 @@ type AccountBalance struct {
 func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64]AccountBalance, error) {
 	tz := h.localTZ()
 
-	// Anchors per account.
-	anchorRows, err := h.DB.QueryContext(ctx, `
-		SELECT id, account_id, anchor_date, balance, COALESCE(note, '')
-		FROM balance_anchors
-		ORDER BY account_id, anchor_date ASC, id ASC
-	`)
+	anchorRows, err := h.Queries.ListBalanceAnchors(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list balance_anchors: %w", err)
 	}
 	byAccount := map[int64][]BalanceAnchor{}
-	for anchorRows.Next() {
-		var a BalanceAnchor
-		if err := anchorRows.Scan(&a.ID, &a.AccountID, &a.AnchorDate, &a.Balance, &a.Note); err != nil {
-			anchorRows.Close()
-			return nil, fmt.Errorf("scan anchor: %w", err)
+	for _, r := range anchorRows {
+		a := BalanceAnchor{
+			ID:         r.ID,
+			AccountID:  r.AccountID,
+			AnchorDate: r.AnchorDate,
+			Balance:    r.Balance,
+			Note:       r.Note,
 		}
 		byAccount[a.AccountID] = append(byAccount[a.AccountID], a)
 	}
-	if err := anchorRows.Close(); err != nil {
-		return nil, err
-	}
 
-	// Closed-trade net_pnl per (account, exit-date-in-tz).
 	type tradeDelta struct {
 		AccountID int64
 		ExitDate  time.Time // local-tz midnight
 		NetPnL    float64
 	}
-	tradeRows, err := h.DB.QueryContext(ctx, `
-		SELECT account_id, exit_time, COALESCE(net_pnl, 0)
-		FROM trades
-		WHERE status = 'closed' AND exit_time IS NOT NULL
-	`)
+	tradeRows, err := h.Queries.ListClosedTradeDeltasOrdered(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list trades: %w", err)
 	}
-	var deltas []tradeDelta
-	for tradeRows.Next() {
-		var accountID int64
-		var exitT time.Time
-		var net float64
-		if err := tradeRows.Scan(&accountID, &exitT, &net); err != nil {
-			tradeRows.Close()
-			return nil, fmt.Errorf("scan trade: %w", err)
+	deltas := make([]tradeDelta, 0, len(tradeRows))
+	for _, r := range tradeRows {
+		if r.ExitTime == nil {
+			continue
 		}
-		y, m, d := exitT.In(tz).Date()
+		y, m, d := r.ExitTime.In(tz).Date()
 		deltas = append(deltas, tradeDelta{
-			AccountID: accountID,
+			AccountID: r.AccountID,
 			ExitDate:  time.Date(y, m, d, 0, 0, 0, 0, tz),
-			NetPnL:    net,
+			NetPnL:    r.NetPnl,
 		})
-	}
-	if err := tradeRows.Close(); err != nil {
-		return nil, err
 	}
 
 	todayDay := dayStart(today, tz)
@@ -174,72 +158,44 @@ func dayStart(t time.Time, tz *time.Location) time.Time {
 func (h *Handlers) loadTradeBalances(ctx context.Context) (map[int64]*float64, error) {
 	tz := h.localTZ()
 
-	// Anchors per account, sorted by date ASC.
 	type anchorRow struct {
 		Date    time.Time
 		Balance float64
 	}
 	anchorsByAccount := map[int64][]anchorRow{}
-	{
-		rows, err := h.DB.QueryContext(ctx, `
-			SELECT account_id, anchor_date, balance
-			FROM balance_anchors
-			ORDER BY account_id, anchor_date ASC
-		`)
-		if err != nil {
-			return nil, fmt.Errorf("anchors: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var aid int64
-			var d time.Time
-			var b float64
-			if err := rows.Scan(&aid, &d, &b); err != nil {
-				return nil, fmt.Errorf("scan anchor: %w", err)
-			}
-			anchorsByAccount[aid] = append(anchorsByAccount[aid], anchorRow{Date: d, Balance: b})
-		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+	anchors, err := h.Queries.ListBalanceAnchors(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("anchors: %w", err)
+	}
+	for _, a := range anchors {
+		anchorsByAccount[a.AccountID] = append(anchorsByAccount[a.AccountID], anchorRow{Date: a.AnchorDate, Balance: a.Balance})
 	}
 	if len(anchorsByAccount) == 0 {
 		return map[int64]*float64{}, nil
 	}
 
-	// Closed trades for every anchored account, ordered globally by exit_time
-	// so we can group + walk per-account in one pass.
 	type tradeRow struct {
 		ID       int64
 		ExitTime time.Time
 		NetPnl   float64
 	}
 	tradesByAccount := map[int64][]tradeRow{}
-	{
-		rows, err := h.DB.QueryContext(ctx, `
-			SELECT id, account_id, exit_time, COALESCE(net_pnl, 0)
-			FROM trades
-			WHERE status='closed' AND exit_time IS NOT NULL
-			ORDER BY exit_time ASC
-		`)
-		if err != nil {
-			return nil, fmt.Errorf("trades: %w", err)
+	tradeDeltas, err := h.Queries.ListClosedTradeDeltasOrdered(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("trades: %w", err)
+	}
+	for _, r := range tradeDeltas {
+		if r.ExitTime == nil {
+			continue
 		}
-		defer rows.Close()
-		for rows.Next() {
-			var aid int64
-			var tr tradeRow
-			if err := rows.Scan(&tr.ID, &aid, &tr.ExitTime, &tr.NetPnl); err != nil {
-				return nil, fmt.Errorf("scan trade: %w", err)
-			}
-			if _, anchored := anchorsByAccount[aid]; !anchored {
-				continue
-			}
-			tradesByAccount[aid] = append(tradesByAccount[aid], tr)
+		if _, anchored := anchorsByAccount[r.AccountID]; !anchored {
+			continue
 		}
-		if err := rows.Err(); err != nil {
-			return nil, err
-		}
+		tradesByAccount[r.AccountID] = append(tradesByAccount[r.AccountID], tradeRow{
+			ID:       r.ID,
+			ExitTime: *r.ExitTime,
+			NetPnl:   r.NetPnl,
+		})
 	}
 
 	out := make(map[int64]*float64, 256)
@@ -355,14 +311,12 @@ func (h *Handlers) AccountsAddBalance(w http.ResponseWriter, r *http.Request) {
 	// Upsert: if an anchor already exists for this (account, date) pair the
 	// new value wins. Lets the user fix a same-day typo without first having
 	// to delete the old row.
-	_, err = h.DB.ExecContext(ctx, `
-		INSERT INTO balance_anchors (account_id, anchor_date, balance, note)
-		VALUES (?1, ?2, ?3, ?4)
-		ON CONFLICT (account_id, anchor_date) DO UPDATE SET
-			balance = excluded.balance,
-			note = excluded.note
-	`, accountID, anchorDate, balance, notePtr)
-	if err != nil {
+	if err := h.Queries.UpsertBalanceAnchor(ctx, models.UpsertBalanceAnchorParams{
+		AccountID:  accountID,
+		AnchorDate: anchorDate,
+		Balance:    balance,
+		Note:       notePtr,
+	}); err != nil {
 		h.serverError(w, fmt.Errorf("upsert anchor: %w", err))
 		return
 	}
@@ -378,7 +332,7 @@ func (h *Handlers) BalanceDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.DB.ExecContext(ctx, `DELETE FROM balance_anchors WHERE id = ?`, anchorID); err != nil {
+	if err := h.Queries.DeleteBalanceAnchor(ctx, anchorID); err != nil {
 		h.serverError(w, fmt.Errorf("delete anchor: %w", err))
 		return
 	}

@@ -20,3 +20,9 @@ UPDATE accounts
 SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
 WHERE id = ?
 RETURNING *;
+
+-- name: ListRetiredAccountIDs :many
+-- IDs of retired accounts (active = 0). Used by handlers that need a quick
+-- set lookup to skip retired-account rows in already-fetched daily_stats
+-- or accounts lists.
+SELECT id FROM accounts WHERE active = 0;

@@ -368,24 +368,20 @@ func accountsForFilter(accounts []models.Account, includeRetired bool) []models.
 	return out
 }
 
-// retiredAccountSet returns the IDs of every retired account (active = 0).
-// Cheap query; callers use the set to skip rows in already-fetched daily_stats
-// or accounts lists without a re-query.
+// retiredAccountSet returns the IDs of every retired account (active = 0)
+// as a set for cheap membership tests. Backed by the sqlc-generated
+// ListRetiredAccountIDs query — callers use the set to skip retired rows
+// in already-fetched daily_stats or accounts lists without a re-query.
 func (h *Handlers) retiredAccountSet(ctx context.Context) (map[int64]bool, error) {
-	rows, err := h.DB.QueryContext(ctx, `SELECT id FROM accounts WHERE active = 0`)
+	ids, err := h.Queries.ListRetiredAccountIDs(ctx)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	out := map[int64]bool{}
-	for rows.Next() {
-		var id int64
-		if err := rows.Scan(&id); err != nil {
-			return nil, err
-		}
+	out := make(map[int64]bool, len(ids))
+	for _, id := range ids {
 		out[id] = true
 	}
-	return out, rows.Err()
+	return out, nil
 }
 
 // accountFilter holds the parsed multi-select filter shared by /trades,

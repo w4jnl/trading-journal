@@ -86,9 +86,35 @@ WHERE t.id = ?;
 -- name: ListDistinctSymbolRoots :many
 SELECT DISTINCT symbol_root FROM trades ORDER BY symbol_root;
 
+-- name: MostRecentNetPnLExitTime :one
+-- Latest exit_time across closed-with-P&L trades, excluding retired accounts.
+-- Used by /trades' default perf-chart fallback range. Same ORDER BY ... LIMIT
+-- workaround as MostRecentClosedExitTime in dashboard.sql.
+SELECT exit_time FROM trades
+WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL
+  AND account_id IN (SELECT id FROM accounts WHERE active = 1)
+ORDER BY exit_time DESC LIMIT 1;
+
+-- name: MostRecentNetPnLExitTimeIncludingRetired :one
+-- Same as MostRecentNetPnLExitTime but for /trades?show_retired=1 -- retired
+-- accounts are part of the visible set, so the fallback range must consider
+-- them too.
+SELECT exit_time FROM trades
+WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL
+ORDER BY exit_time DESC LIMIT 1;
+
+-- name: ListClosedTradeDeltasOrdered :many
+-- Every closed trade's (id, account_id, exit_time, net_pnl) for the balance
+-- recomputation paths (loadBalances + loadTradeBalances). Ordered globally
+-- by exit_time so callers can group per-account in one pass.
+SELECT id, account_id, exit_time, COALESCE(net_pnl, 0) AS net_pnl
+FROM trades
+WHERE status='closed' AND exit_time IS NOT NULL
+ORDER BY exit_time ASC;
+
 -- ListTradesFiltered + CountTradesFiltered are intentionally NOT defined here.
 -- Their dynamic WHERE clauses (account, symbol, direction, date range) are
--- built in Go and run via *sql.DB — see internal/handlers/trades.go. sqlc's
+-- built in Go and run via *sql.DB -- see internal/handlers/trades.go. sqlc's
 -- sqlc.narg pattern produces broken positional indexing for SQLite (each narg
 -- becomes ?N which doesn't line up with the 1-based variadic args), so we
 -- skip sqlc for these two queries.

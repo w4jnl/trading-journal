@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"sort"
 	"time"
+
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // dashboardStats summarizes the trades for a single trading day.
@@ -176,44 +178,34 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days int) ([]dailyPnL, error) {
 	end := todayLocal(tz).AddDate(0, 0, 1)
 	start := end.AddDate(0, 0, -days)
-	rows, err := h.DB.QueryContext(ctx, `
-		SELECT exit_time, net_pnl
-		FROM trades
-		WHERE status='closed' AND exit_time IS NOT NULL AND net_pnl IS NOT NULL
-		  AND exit_time >= ? AND exit_time < ?
-		  AND `+retiredAccountFilterSQL+`
-		ORDER BY exit_time ASC
-	`, start, end)
+	rows, err := h.Queries.DashboardDailyNetPnL(ctx, models.DashboardDailyNetPnLParams{
+		ExitTime:   &start,
+		ExitTime_2: &end,
+	})
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 
 	bucket := map[time.Time]*dailyPnL{}
-	for rows.Next() {
-		var t time.Time
-		var net float64
-		if err := rows.Scan(&t, &net); err != nil {
-			return nil, err
+	for _, r := range rows {
+		if r.ExitTime == nil || r.NetPnl == nil {
+			continue
 		}
-		local := t.In(tz)
+		local := r.ExitTime.In(tz)
 		day := time.Date(local.Year(), local.Month(), local.Day(), 0, 0, 0, 0, tz)
 		row, ok := bucket[day]
 		if !ok {
 			row = &dailyPnL{Date: day}
 			bucket[day] = row
 		}
-		row.Net += net
+		row.Net += *r.NetPnl
 		row.Trades++
 		switch {
-		case net > 0:
+		case *r.NetPnl > 0:
 			row.Wins++
-		case net < 0:
+		case *r.NetPnl < 0:
 			row.Losses++
 		}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
 	}
 	out := make([]dailyPnL, 0, len(bucket))
 	for _, row := range bucket {
@@ -341,26 +333,19 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 	today := todayLocal(tz)
 	tomorrow := today.AddDate(0, 0, 1)
 
-	var hasToday int
-	err := h.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM trades WHERE status='closed' AND exit_time >= ? AND exit_time < ? AND `+retiredAccountFilterSQL,
-		today, tomorrow,
-	).Scan(&hasToday)
+	n, err := h.Queries.CountClosedTradesInRange(ctx, models.CountClosedTradesInRangeParams{
+		ExitTime:   &today,
+		ExitTime_2: &tomorrow,
+	})
 	if err != nil {
 		return time.Time{}, err
 	}
-	if hasToday > 0 {
+	if n > 0 {
 		return today, nil
 	}
 
-	// MAX(exit_time) loses the column type and the driver can't scan an
-	// aggregate string back into time.Time. ORDER BY ... LIMIT 1 keeps the
-	// column-typed scan path.
-	var mostRecent time.Time
-	err = h.DB.QueryRowContext(ctx,
-		`SELECT exit_time FROM trades WHERE status='closed' AND exit_time IS NOT NULL AND `+retiredAccountFilterSQL+` ORDER BY exit_time DESC LIMIT 1`,
-	).Scan(&mostRecent)
-	if errors.Is(err, sql.ErrNoRows) {
+	mostRecent, err := h.Queries.MostRecentClosedExitTime(ctx)
+	if errors.Is(err, sql.ErrNoRows) || (err == nil && mostRecent == nil) {
 		return today, nil
 	}
 	if err != nil {
@@ -374,53 +359,43 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 // and aggregates them into the summary the dashboard renders.
 func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *time.Location) (dashboardStats, error) {
 	end := date.AddDate(0, 0, 1)
-	rows, err := h.DB.QueryContext(ctx, `
-		SELECT direction, qty, gross_pnl, commission, net_pnl
-		FROM trades
-		WHERE status='closed' AND exit_time IS NOT NULL
-		  AND exit_time >= ? AND exit_time < ?
-		  AND `+retiredAccountFilterSQL+`
-	`, date, end)
+	rows, err := h.Queries.ListClosedTradesInRange(ctx, models.ListClosedTradesInRangeParams{
+		ExitTime:   &date,
+		ExitTime_2: &end,
+	})
 	if err != nil {
 		return dashboardStats{}, err
 	}
-	defer rows.Close()
 
 	stats := dashboardStats{Date: date}
 	first := true
-	for rows.Next() {
-		var direction string
-		var qty float64
-		var gross, comm, net *float64
-		if err := rows.Scan(&direction, &qty, &gross, &comm, &net); err != nil {
-			return dashboardStats{}, err
-		}
+	for _, r := range rows {
 		stats.Trades++
 		stats.HasTrades = true
-		if direction == "long" {
+		if r.Direction == "long" {
 			stats.Longs++
 		} else {
 			stats.Shorts++
 		}
-		if gross != nil {
-			stats.GrossPnl += *gross
+		if r.GrossPnl != nil {
+			stats.GrossPnl += *r.GrossPnl
 		}
-		if comm != nil {
-			stats.Commission += *comm
+		if r.Commission != nil {
+			stats.Commission += *r.Commission
 		}
-		if net != nil {
-			stats.NetPnl += *net
+		if r.NetPnl != nil {
+			stats.NetPnl += *r.NetPnl
 			switch {
-			case *net > 0:
+			case *r.NetPnl > 0:
 				stats.Wins++
-			case *net < 0:
+			case *r.NetPnl < 0:
 				stats.Losses++
 			}
-			if first || *net > stats.BestNetPnl {
-				stats.BestNetPnl = *net
+			if first || *r.NetPnl > stats.BestNetPnl {
+				stats.BestNetPnl = *r.NetPnl
 			}
-			if first || *net < stats.WorstNetPnl {
-				stats.WorstNetPnl = *net
+			if first || *r.NetPnl < stats.WorstNetPnl {
+				stats.WorstNetPnl = *r.NetPnl
 			}
 			first = false
 		}
@@ -428,7 +403,7 @@ func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *ti
 	if stats.Wins+stats.Losses > 0 {
 		stats.WinRate = float64(stats.Wins) / float64(stats.Wins+stats.Losses)
 	}
-	return stats, rows.Err()
+	return stats, nil
 }
 
 func todayLocal(tz *time.Location) time.Time {

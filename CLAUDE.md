@@ -116,6 +116,12 @@ These are easy to violate by accident:
 - **Account auto-create:** when an importer sees an unknown `(import_source, account_ref)` pair, create an `accounts` row, guess `firm` from the account-string prefix, and mark `needs_setup=1` if anything is unresolved (firm couldn't be guessed, type unknown). User clears the flag via the accounts UI.
 - **`daily_stats` is a cache**, rebuilt from `trades` after each import. Never the source of truth.
 
+## sqlc gotcha: ASCII-only in `.sql` comments
+
+sqlc 1.26 and 1.31 mis-account for multi-byte UTF-8 characters when computing query boundaries — a single em-dash (`—`, U+2014) inside a `--` comment in `internal/db/queries/*.sql` shifts the parser by 2 bytes, which silently truncates the *next* query in the file (last 1–2 chars get dropped, and the dropped bytes get prepended to the constant after that). Symptoms are runtime "incomplete input" / "syntax error" from modernc.org/sqlite.
+
+Keep `.sql` comments ASCII-only. Use `--` (two hyphens) or `-` in place of em / en dashes, and avoid smart quotes / non-breaking spaces. The constraint is comments only — query bodies are fine, since they hit the SQLite parser directly. (Generated Go is unaffected for queries whose bodies and preceding comments are clean.)
+
 ## Migration tooling
 
 Migration files use dbmate format (`-- migrate:up` / `-- migrate:down` markers) and live in `internal/db/migrations/*.sql`. They are embedded into the binary via `embed.FS` and applied at startup by a small runner in `internal/db/migrations.go` — no external `dbmate` binary required at runtime. The dbmate CLI (when installed) can be used as a dev tool for rollbacks since the file format matches.

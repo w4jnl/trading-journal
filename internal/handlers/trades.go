@@ -123,7 +123,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	// day cell, Saturday week link, or hand-set from/to). Outside that case
 	// the page is the global trade log — a cumulative curve over hundreds of
 	// trades is not useful, so we skip rendering the chart entirely.
-	chartXs, chartYs, chartTitle, chartTotal, err := buildPerfChart(ctx, h.DB, filters)
+	chartXs, chartYs, chartTitle, chartTotal, err := buildPerfChart(ctx, h.DB, h.Queries, filters)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("perf chart: %w", err))
 		return
@@ -209,7 +209,7 @@ func retiredToggleQuery(r *http.Request, on bool) string {
 // page), ordered by exit_time ASC. The series prepends a (firstExitTime-1min,
 // 0) baseline point so the curve starts at zero and ramps to the first trade's
 // P&L — matches the visual in exportData/performance.jpg.
-func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64, ys []float64, title string, total float64, err error) {
+func buildPerfChart(ctx context.Context, db *sql.DB, queries *models.Queries, f tradeFilters) (xs []int64, ys []float64, title string, total float64, err error) {
 	// "No filter engaged" means no date range AND no account/symbol/direction
 	// restriction — in that pristine state we default the chart to the last
 	// 60 days from the most recent exit so the page is never empty. The
@@ -219,24 +219,28 @@ func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64
 		f.Account.Active || f.SymbolRoot != nil || f.Direction != nil
 	syntheticRange := false
 	if !anyFilter {
-		// Use ORDER BY ... LIMIT 1 instead of MAX() so the driver keeps the
-		// column's TIMESTAMP type and scans cleanly into time.Time.
-		// (modernc.org/sqlite returns MAX() as a string and refuses the
-		// implicit conversion otherwise.)
-		maxExitSQL := `SELECT exit_time FROM trades WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL`
-		if !f.IncludeRetired {
-			maxExitSQL += ` AND ` + retiredAccountFilterSQL
+		// ORDER BY exit_time DESC LIMIT 1 (rather than MAX()) so the driver
+		// keeps the column's TIMESTAMP type — modernc.org/sqlite returns
+		// MAX() as a string and refuses the implicit conversion back into
+		// time.Time. Two sqlc variants because the IN-subquery rule differs
+		// between the default view and the show_retired toggle.
+		var maxExitPtr *time.Time
+		var qerr error
+		if f.IncludeRetired {
+			maxExitPtr, qerr = queries.MostRecentNetPnLExitTimeIncludingRetired(ctx)
+		} else {
+			maxExitPtr, qerr = queries.MostRecentNetPnLExitTime(ctx)
 		}
-		maxExitSQL += ` ORDER BY exit_time DESC LIMIT 1`
-		var maxExit time.Time
-		row := db.QueryRowContext(ctx, maxExitSQL)
-		if err := row.Scan(&maxExit); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
+		if qerr != nil {
+			if errors.Is(qerr, sql.ErrNoRows) {
 				return nil, nil, "", 0, nil
 			}
-			return nil, nil, "", 0, err
+			return nil, nil, "", 0, qerr
 		}
-		end := maxExit.Add(24 * time.Hour)
+		if maxExitPtr == nil {
+			return nil, nil, "", 0, nil
+		}
+		end := maxExitPtr.Add(24 * time.Hour)
 		start := end.Add(-60 * 24 * time.Hour)
 		f.From = &start
 		f.To = &end
