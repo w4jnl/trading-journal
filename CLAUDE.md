@@ -78,7 +78,7 @@ CQG (and the AMP-CQG MotiveWave feed) uses `EP` for the E-mini S&P 500; everywhe
 - This is **order-level, not fill-level**. Importer must filter `Status = Filled` and treat each filled order as one execution.
 - Columns of interest: `Id, AccountName, ContractName, Status, Size, Side, FilledAt, ExecutePrice, PositionDisposition`.
 - Dedup key: `(account_id, Id)`.
-- `Side` mapping: `Ask` = BUY, `Bid` = SELL. Verified against `PositionDisposition`/`CreationDisposition` (Opening+Trader rows are Ask; Closing+StopLoss on a long position are Bid).
+- `Side` mapping: `Ask` = SELL, `Bid` = BUY. The field reflects which side of the position book the order participates in, not which side of the spread the trader crosses. Verified by joining the orders CSV against the trades CSV on (timestamp, price, contract): every `Limit|Ask|Opening|Trader` row matches a `Short` trade entry; every `Limit|Bid|Closing|TakeProfit` and `Stop|Bid|Closing|StopLoss` matches a short exit. An earlier `Ask=BUY` reading was based on a long-only assumption that didn't survive cross-reference - check `topstepxSide` if you ever doubt it.
 - Use `ExecutePrice` as fill price and `FilledAt` as fill time. Ignore `LimitPrice`/`StopPrice`/`TriggeredPrice` for execution records.
 - One file = one account.
 - **No commission column.**

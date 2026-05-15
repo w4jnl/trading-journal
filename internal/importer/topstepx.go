@@ -84,16 +84,23 @@ func ParseTopstepX(r io.Reader) ([]Fill, error) {
 	return fills, nil
 }
 
-// topstepxSide maps the TopstepX "Side" column to internal buy/sell.
-// Ask-side fills are buys (lifting the offer); Bid-side fills are sells (hitting the bid).
-// Verified against PositionDisposition/CreationDisposition: Opening+Trader rows are Ask
-// (going long), Closing+StopLoss on a long position is Bid (selling out).
+// topstepxSide maps the TopstepX "Side" column to internal buy/sell. The
+// field reflects which side of the position book the order participates in,
+// not which side of the spread the trader crosses:
+//   - Side="Ask" -> SELL execution (sell-to-open short, sell-to-close long)
+//   - Side="Bid" -> BUY  execution (buy-to-open long, buy-to-close short)
+//
+// Verified by joining the orders CSV against the trades CSV on (timestamp,
+// price, contract): every Limit|Ask|Opening|Trader row matches a Short trade
+// entry; every Limit|Bid|Closing|TakeProfit and Stop|Bid|Closing|StopLoss
+// matches a short exit. An earlier "Ask=BUY" reading was based on the
+// long-only assumption that didn't survive cross-reference.
 func topstepxSide(s string) (string, error) {
 	switch strings.ToLower(strings.TrimSpace(s)) {
 	case "ask":
-		return "buy", nil
-	case "bid":
 		return "sell", nil
+	case "bid":
+		return "buy", nil
 	default:
 		return "", fmt.Errorf("unknown Side %q", s)
 	}

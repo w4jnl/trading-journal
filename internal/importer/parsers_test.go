@@ -98,6 +98,55 @@ func TestParseTopstepXFixture(t *testing.T) {
 			break
 		}
 	}
+
+	// Pin the side mapping: BrokerExecID 2917364597 is a Limit|Ask|Opening fill
+	// on MESM6 @ 7273, which the trades CSV (Id 2539451779 on the same date /
+	// price / contract) records as a Short entry. So Side="Ask" must produce
+	// a SELL execution.
+	var pinned *Fill
+	for i := range fills {
+		if fills[i].BrokerExecID == "2917364597" {
+			pinned = &fills[i]
+			break
+		}
+	}
+	if pinned == nil {
+		t.Fatalf("fixture missing reference fill 2917364597")
+	}
+	if pinned.Side != "sell" {
+		t.Errorf("BrokerExecID 2917364597 (Ask|Opening, short entry): Side = %q, want %q",
+			pinned.Side, "sell")
+	}
+}
+
+func TestTopstepxSide(t *testing.T) {
+	cases := []struct {
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"Ask", "sell", true},
+		{"ask", "sell", true},
+		{" ASK ", "sell", true},
+		{"Bid", "buy", true},
+		{"bid", "buy", true},
+		{"Mid", "", false},
+		{"", "", false},
+	}
+	for _, c := range cases {
+		got, err := topstepxSide(c.in)
+		if c.wantOK {
+			if err != nil {
+				t.Errorf("topstepxSide(%q) err = %v, want nil", c.in, err)
+				continue
+			}
+			if got != c.want {
+				t.Errorf("topstepxSide(%q) = %q, want %q", c.in, got, c.want)
+			}
+		} else if err == nil {
+			t.Errorf("topstepxSide(%q) = %q, want error", c.in, got)
+		}
+	}
 }
 
 func distinct[T any](s []T, key func(T) string) []string {
