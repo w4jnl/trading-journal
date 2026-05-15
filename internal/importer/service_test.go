@@ -214,6 +214,119 @@ func TestImportFile_Idempotent(t *testing.T) {
 	assertExecCount(t, conn, 990)
 }
 
+// topstepTradesFixture is the trades-CSV sample used by the cross-format
+// collision tests. The orders-CSV sample (topstepxFixture) carries
+// AccountName=EXPRESS-V2-100000-42718837 throughout.
+const topstepTradesFixture = "../../exportData/topstepTrades.csv"
+
+// TestImportFile_OrdersThenTradesRejects verifies the per-account import
+// lock fires when an orders-imported account then receives a trades CSV.
+// The orders fixture creates exactly one TopStep account, so the
+// trades-CSV import (with no filename hint) resolves to that same account
+// via resolveTopstepAccount's "exactly one" branch.
+func TestImportFile_OrdersThenTradesRejects(t *testing.T) {
+	svc, _, tmp, _, failed := setupTestService(t)
+
+	// First: orders CSV, succeeds, claims the account as 'orders'.
+	orders := copyFixtureTo(t, topstepxFixture, filepath.Join(tmp, "inbox-orders"))
+	out1, err := svc.ImportFile(context.Background(), orders)
+	if err != nil || out1.ErrorMessage != "" {
+		t.Fatalf("orders import: err=%v outcome=%+v", err, out1)
+	}
+
+	// Then: trades CSV, must be rejected.
+	trades := copyFixtureTo(t, topstepTradesFixture, filepath.Join(tmp, "inbox-trades"))
+	out2, err := svc.ImportFile(context.Background(), trades)
+	if err != nil {
+		t.Fatalf("trades import returned hard error: %v", err)
+	}
+	if out2.ErrorMessage == "" {
+		t.Fatalf("expected ErrorMessage, got empty (outcome %+v)", out2)
+	}
+	if !contains(out2.ErrorMessage, "already orders-imported") {
+		t.Errorf("ErrorMessage = %q, want it to mention 'already orders-imported'", out2.ErrorMessage)
+	}
+	if filepath.Dir(out2.DestinationPath) != failed {
+		t.Errorf("DestinationPath = %q, want a file in %q", out2.DestinationPath, failed)
+	}
+}
+
+// TestImportFile_TradesThenOrdersRejects is the symmetric case. We hand-
+// craft a small orders CSV whose AccountName matches the trades-imported
+// account so resolveTopstepAccount returns the existing inline account
+// (otherwise the orders CSV would create a brand-new account and there'd
+// be no collision to test).
+func TestImportFile_TradesThenOrdersRejects(t *testing.T) {
+	svc, conn, tmp, _, failed := setupTestService(t)
+
+	// First: trades CSV. With no other TopStep accounts, resolveTopstepAccount
+	// creates TOPSTEP-DEFAULT and flips its commission_source to 'inline'.
+	trades := copyFixtureTo(t, topstepTradesFixture, filepath.Join(tmp, "inbox-trades"))
+	out1, err := svc.ImportFile(context.Background(), trades)
+	if err != nil || out1.ErrorMessage != "" {
+		t.Fatalf("trades import: err=%v outcome=%+v", err, out1)
+	}
+
+	// Recover the account_ref the trades importer settled on.
+	var accountRef string
+	if err := conn.QueryRow(`SELECT account_ref FROM accounts WHERE import_source = 'topstepx_csv' LIMIT 1`).Scan(&accountRef); err != nil {
+		t.Fatalf("query topstep account_ref: %v", err)
+	}
+
+	// Then: a tiny orders CSV that targets that exact account by name. The
+	// AccountName column is what findOrCreateAccount keys off (after the
+	// resolveTopstepAccount path is bypassed for FormatTopstepX - orders
+	// imports go through findOrCreateAccount directly per AccountRef).
+	ordersCSV := []byte("Id,AccountName,ContractName,Status,Type,Size,Side,CreatedAt,TradeDay,FilledAt,CancelledAt,TriggeredAt,StopPrice,LimitPrice,ExecutePrice,TriggeredPrice,PositionDisposition,CreationDisposition,RejectionReason,ExchangeOrderId,PlatformOrderId\n" +
+		"99999," + accountRef + ",MESM6,Filled,Limit,1,Ask,05/15/2026 10:00:00 +00:00,05/15/2026 00:00:00 +00:00,05/15/2026 10:00:00 +00:00,,,,,7300.0,,Opening,Trader,,,\n")
+	ordersPath := filepath.Join(tmp, "inbox-orders", "tiny-orders.csv")
+	if err := os.MkdirAll(filepath.Dir(ordersPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(ordersPath, ordersCSV, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out2, err := svc.ImportFile(context.Background(), ordersPath)
+	if err != nil {
+		t.Fatalf("orders import returned hard error: %v", err)
+	}
+	if out2.ErrorMessage == "" {
+		t.Fatalf("expected ErrorMessage, got empty (outcome %+v)", out2)
+	}
+	if !contains(out2.ErrorMessage, "already trades-imported") {
+		t.Errorf("ErrorMessage = %q, want it to mention 'already trades-imported'", out2.ErrorMessage)
+	}
+	if filepath.Dir(out2.DestinationPath) != failed {
+		t.Errorf("DestinationPath = %q, want a file in %q", out2.DestinationPath, failed)
+	}
+}
+
+// TestImportFile_FreshAccountAcceptsEither - regression - guards against
+// the claim check rejecting brand-new accounts.
+func TestImportFile_FreshAccountAcceptsEither(t *testing.T) {
+	svc, _, tmp, processed, _ := setupTestService(t)
+
+	// Orders CSV onto an empty DB should succeed.
+	src := copyFixtureTo(t, topstepxFixture, filepath.Join(tmp, "inbox"))
+	out, err := svc.ImportFile(context.Background(), src)
+	if err != nil || out.ErrorMessage != "" {
+		t.Fatalf("orders into fresh DB failed: err=%v outcome=%+v", err, out)
+	}
+	if filepath.Dir(out.DestinationPath) != processed {
+		t.Errorf("DestinationPath = %q, want a file in %q", out.DestinationPath, processed)
+	}
+}
+
+func contains(haystack, needle string) bool {
+	for i := 0; i+len(needle) <= len(haystack); i++ {
+		if haystack[i:i+len(needle)] == needle {
+			return true
+		}
+	}
+	return false
+}
+
 func TestImportFile_BadFormatGoesToFailed(t *testing.T) {
 	svc, _, tmp, _, failed := setupTestService(t)
 

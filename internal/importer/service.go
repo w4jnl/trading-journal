@@ -125,6 +125,29 @@ func dispatchParse(format Format, r io.Reader) ([]Fill, error) {
 	}
 }
 
+// ensureClaimCompatible aborts the import if the destination account has
+// already been claimed by the other TopStep CSV format. The two TopStep
+// CSVs (orders + trades) share import_source = "topstepx_csv" and are
+// dedup'd by separate id namespaces, so mixing them on one account would
+// double-count. The lock keys off accounts.commission_source ('inline' =
+// trades-CSV has run) and the existence of FIFO trades (broker_trade_id
+// IS NULL = orders-CSV has run); see GetAccountImportClaim. MotiveWave
+// imports never resolve to a topstepx_csv account, so they cannot trip
+// the check in practice - calling it uniformly is just defensive.
+func ensureClaimCompatible(ctx context.Context, q *models.Queries, accountID int64, accountName string, incoming Format) error {
+	claim, err := q.GetAccountImportClaim(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("read import claim: %w", err)
+	}
+	switch {
+	case incoming == FormatTopstepXTrades && claim == "orders":
+		return fmt.Errorf("account %q is already orders-imported; delete it from /accounts and re-import to switch to trades-CSV", accountName)
+	case (incoming == FormatTopstepX || incoming == FormatMotiveWave) && claim == "trades":
+		return fmt.Errorf("account %q is already trades-imported; delete it from /accounts and re-import to switch to orders-CSV", accountName)
+	}
+	return nil
+}
+
 // DetectFormat inspects the first line to identify the CSV source. A leading
 // UTF-8 BOM is tolerated (TopstepX exports include one).
 //
@@ -198,6 +221,9 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			}
 			if created {
 				out.AccountsCreated++
+			}
+			if err := ensureClaimCompatible(ctx, q, acct.ID, acct.Name, format); err != nil {
+				return err
 			}
 			accounts[f.AccountRef] = acct.ID
 			if acct.CommissionSource == "inline" {
@@ -298,6 +324,15 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 		if created {
 			out.AccountsCreated++
 		}
+	}
+	// Reject if the account is already orders-imported. Done before
+	// SetAccountCommissionSource so a rejected import doesn't mutate state.
+	acct, err := q.GetAccountByID(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("load account: %w", err)
+	}
+	if err := ensureClaimCompatible(ctx, q, accountID, acct.Name, FormatTopstepXTrades); err != nil {
+		return err
 	}
 	// Trades CSV is the only source that carries per-trade commissions inline,
 	// so the destination account must opt out of rate-based recompute. Idempotent.

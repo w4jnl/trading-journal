@@ -108,6 +108,31 @@ func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams
 	return i, err
 }
 
+const getAccountImportClaim = `-- name: GetAccountImportClaim :one
+SELECT
+    CASE
+        WHEN a.commission_source = 'inline' THEN 'trades'
+        WHEN EXISTS(SELECT 1 FROM trades t WHERE t.account_id = a.id AND t.broker_trade_id IS NULL) THEN 'orders'
+        ELSE 'none'
+    END AS claim
+FROM accounts a
+WHERE a.id = ?
+`
+
+// Returns the import format that has "claimed" the account:
+//
+//	'trades' - trades-CSV has run (commission_source flipped to 'inline')
+//	'orders' - orders-CSV has produced FIFO trades (broker_trade_id NULL)
+//	'none'   - no import has touched the account yet (or it was wiped)
+//
+// Used to reject mixed TopStep imports before they double-count.
+func (q *Queries) GetAccountImportClaim(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAccountImportClaim, id)
+	var claim string
+	err := row.Scan(&claim)
+	return claim, err
+}
+
 const listAccounts = `-- name: ListAccounts :many
 SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts ORDER BY name
 `
