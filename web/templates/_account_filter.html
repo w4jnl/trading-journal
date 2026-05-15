@@ -31,9 +31,9 @@ inline script so the user sees feedback before submitting.
     <fieldset>
       <legend>By account</legend>
       {{range .Accounts}}
-        <label>
+        <label{{if eq .Active 0}} class="filter-option--retired"{{end}}>
           <input type="checkbox" name="filter" value="acc:{{.ID}}" {{if index $.FilterSelections (printf "acc:%d" .ID)}}checked{{end}}>
-          <span class="filter-text">{{.Name}}{{if .Firm}} <span class="muted-inline">· {{derefStr .Firm}}</span>{{end}}</span>
+          <span class="filter-text">{{.Name}}{{if .Firm}} <span class="muted-inline">· {{derefStr .Firm}}</span>{{end}}{{if eq .Active 0}} <span class="muted-inline">· retired</span>{{end}}</span>
         </label>
       {{end}}
     </fieldset>
@@ -118,6 +118,8 @@ inline script so the user sees feedback before submitting.
     flex: 1;
   }
   .muted-inline { color: var(--fg-subtle); font-size: 11px; }
+  /* Retired account labels stay selectable but visually deprioritised. */
+  .filter-picker .filter-panel label.filter-option--retired { opacity: 0.7; }
 </style>
 <script>
   // Live-update the picker's summary count as the user toggles checkboxes.

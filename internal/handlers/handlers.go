@@ -6,6 +6,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"html/template"
@@ -340,6 +341,51 @@ func validBackHref(r *http.Request) string {
 		return ""
 	}
 	return s
+}
+
+// retiredAccountFilterSQL is the bare WHERE fragment that excludes trades from
+// retired accounts (accounts.active = 0). Use as `account_id IN (` + this + `)`
+// or join with " AND " to existing WHERE clauses. Kept as a constant so the
+// retirement rule lives in one place across dashboard/calendar/trades/analytics.
+const retiredAccountFilterSQL = "account_id IN (SELECT id FROM accounts WHERE active = 1)"
+
+// accountsForFilter returns the slice rendered in the account-filter dropdown
+// on /trades, /calendar, /analytics. When includeRetired is false, retired
+// accounts (active = 0) are dropped so the dropdown doesn't even hint at
+// them — matches the contract that retired accounts disappear from every
+// non-/trades view, and from /trades unless the reveal toggle is on.
+func accountsForFilter(accounts []models.Account, includeRetired bool) []models.Account {
+	if includeRetired {
+		return accounts
+	}
+	out := accounts[:0:0]
+	for _, a := range accounts {
+		if a.Active != 1 {
+			continue
+		}
+		out = append(out, a)
+	}
+	return out
+}
+
+// retiredAccountSet returns the IDs of every retired account (active = 0).
+// Cheap query; callers use the set to skip rows in already-fetched daily_stats
+// or accounts lists without a re-query.
+func (h *Handlers) retiredAccountSet(ctx context.Context) (map[int64]bool, error) {
+	rows, err := h.DB.QueryContext(ctx, `SELECT id FROM accounts WHERE active = 0`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int64]bool{}
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		out[id] = true
+	}
+	return out, rows.Err()
 }
 
 // accountFilter holds the parsed multi-select filter shared by /trades,

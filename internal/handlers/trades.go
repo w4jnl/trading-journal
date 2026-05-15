@@ -25,6 +25,11 @@ type tradeFilters struct {
 	From       *time.Time
 	To         *time.Time
 	Page       int
+	// IncludeRetired, when true, lets trades from retired accounts (accounts.active = 0)
+	// surface alongside the rest. Default false hides them — matches the
+	// retire-account contract: trades stay in the database but only the /trades
+	// view can reveal them, behind an opt-in toggle.
+	IncludeRetired bool
 }
 
 // tradeRow mirrors models.ListTradesFilteredRow, but we hand-scan it because
@@ -52,6 +57,7 @@ type tradeRow struct {
 	Status      string
 	AccountName string
 	AccountFirm *string
+	AccountRetired bool   // true when account.active = 0; renders a "retired" pill + dimmed row
 	HasJournal  bool
 	JournalTag  string // "" if no entry or no tag set
 	GroupCount  int64  // number of group-journal entries that include this trade
@@ -64,6 +70,26 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse filters: %w", err))
 		return
+	}
+
+	// If the account filter targets a retired account (e.g., a bookmarked URL
+	// from before the account was retired), auto-enable retired visibility so
+	// the page isn't empty. Without this the default `account_id IN (active)`
+	// clause intersects with `account_id IN (retired)` and returns zero rows.
+	retiredAutoOn := false
+	if filters.Account.Active && !filters.IncludeRetired {
+		retired, rerr := h.retiredAccountSet(ctx)
+		if rerr != nil {
+			h.serverError(w, fmt.Errorf("retired set: %w", rerr))
+			return
+		}
+		for _, id := range filters.Account.AccountIDs {
+			if retired[id] {
+				filters.IncludeRetired = true
+				retiredAutoOn = true
+				break
+			}
+		}
 	}
 
 	rows, err := listTradesFiltered(ctx, h.DB, filters)
@@ -111,6 +137,21 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Count how many retired-account trades match the rest of the filter so the
+	// reveal toggle can advertise "Show N retired" rather than a bare label.
+	retiredHidden := int64(0)
+	if !filters.IncludeRetired {
+		shadow := filters
+		shadow.IncludeRetired = true
+		shadow.Page = 1
+		if all, err := countTradesFiltered(ctx, h.DB, shadow); err == nil {
+			retiredHidden = all - total
+			if retiredHidden < 0 {
+				retiredHidden = 0
+			}
+		}
+	}
+
 	h.renderPage(w, "trades.html", map[string]any{
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
@@ -119,7 +160,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"Page":             filters.Page,
 		"Pages":            pages,
 		"PageSize":         tradesPageSize,
-		"Accounts":         accounts,
+		"Accounts":         accountsForFilter(accounts, filters.IncludeRetired),
 		"SymbolRoots":      roots,
 		"Filters":          filtersAsForm(filters),
 		"FilterSelections": filters.Account.Selected,
@@ -131,7 +172,30 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"ChartTitle":       chartTitle, // empty string when chart is suppressed
 		"ChartTotal":       chartTotal, // final cumulative — drives stroke colour
 		"TradeBalances":    tradeBalances, // map[trade_id]float64, missing = no anchor
+		"ShowRetired":      filters.IncludeRetired,
+		"RetiredAuto":      retiredAutoOn,
+		"RetiredHidden":    retiredHidden,
+		"RetiredQuery":     retiredToggleQuery(r, !filters.IncludeRetired),
 	})
+}
+
+// retiredToggleQuery returns a query string that flips the show_retired flag
+// while preserving the rest of the filter state. Used to render the reveal /
+// hide toggle's href on /trades. Drops the `page` param so the toggle always
+// lands on page 1 (the count under the toggle is the global, not paginated).
+func retiredToggleQuery(r *http.Request, on bool) string {
+	q := r.URL.Query()
+	q.Del("page")
+	if on {
+		q.Set("show_retired", "1")
+	} else {
+		q.Del("show_retired")
+	}
+	enc := q.Encode()
+	if enc == "" {
+		return ""
+	}
+	return "?" + enc
 }
 
 // buildPerfChart returns the cumulative-P&L curve points for the active
@@ -159,8 +223,13 @@ func buildPerfChart(ctx context.Context, db *sql.DB, f tradeFilters) (xs []int64
 		// column's TIMESTAMP type and scans cleanly into time.Time.
 		// (modernc.org/sqlite returns MAX() as a string and refuses the
 		// implicit conversion otherwise.)
+		maxExitSQL := `SELECT exit_time FROM trades WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL`
+		if !f.IncludeRetired {
+			maxExitSQL += ` AND ` + retiredAccountFilterSQL
+		}
+		maxExitSQL += ` ORDER BY exit_time DESC LIMIT 1`
 		var maxExit time.Time
-		row := db.QueryRowContext(ctx, `SELECT exit_time FROM trades WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL ORDER BY exit_time DESC LIMIT 1`)
+		row := db.QueryRowContext(ctx, maxExitSQL)
 		if err := row.Scan(&maxExit); err != nil {
 			if errors.Is(err, sql.ErrNoRows) {
 				return nil, nil, "", 0, nil
@@ -411,7 +480,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 	q := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
 	             t.gross_pnl, t.commission, t.net_pnl, t.status,
-	             a.name, a.firm,
+	             a.name, a.firm, a.active,
 	             je.id, je.tag,
 	             (SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count
 	      FROM trades t
@@ -432,16 +501,18 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 		var r tradeRow
 		var journalID sql.NullInt64
 		var journalTag sql.NullString
+		var accountActive int64
 		if err := rs.Scan(
 			&r.ID, &r.AccountID, &r.Symbol, &r.SymbolRoot, &r.Direction, &r.Qty,
 			&r.EntryPrice, &r.ExitPrice, &r.EntryTime, &r.ExitTime,
 			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.Status,
-			&r.AccountName, &r.AccountFirm,
+			&r.AccountName, &r.AccountFirm, &accountActive,
 			&journalID, &journalTag,
 			&r.GroupCount,
 		); err != nil {
 			return nil, err
 		}
+		r.AccountRetired = accountActive == 0
 		if journalID.Valid {
 			r.HasJournal = true
 		}
@@ -466,8 +537,13 @@ func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64
 // buildWhere returns the dynamic WHERE clause and the matching args slice.
 // Always includes status='closed' so open positions don't show up in the trade
 // log (open positions have no P&L and aren't a useful unit of analysis).
+// Retired accounts (accounts.active = 0) are hidden unless f.IncludeRetired
+// is true — the /trades reveal toggle is the one place that flips this.
 func buildWhere(f tradeFilters) (string, []any) {
 	clauses := []string{"t.status = 'closed'"}
+	if !f.IncludeRetired {
+		clauses = append(clauses, "t."+retiredAccountFilterSQL)
+	}
 	var args []any
 	if f.Account.Active {
 		if len(f.Account.AccountIDs) == 0 {
@@ -549,6 +625,9 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 		if p, err := strconv.Atoi(v); err == nil && p >= 1 {
 			f.Page = p
 		}
+	}
+	if v := strings.TrimSpace(q.Get("show_retired")); v == "1" || v == "on" || v == "true" {
+		f.IncludeRetired = true
 	}
 	return f, nil
 }

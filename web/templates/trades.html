@@ -100,7 +100,16 @@
   <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 
-<div class="muted" style="margin-bottom:8px;"><span class="num">{{.Total}}</span> closed trades.</div>
+<div class="muted retired-toggle-row" style="margin-bottom:8px;">
+  <span><span class="num">{{.Total}}</span> closed trades.</span>
+  {{if .RetiredAuto}}
+    <span class="retired-toggle-note">Retired accounts included because the filter targets them.</span>
+  {{else if .ShowRetired}}
+    <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Hide retired accounts</a>
+  {{else if .RetiredHidden}}
+    <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Show <span class="num">{{.RetiredHidden}}</span> trade{{if ne .RetiredHidden 1}}s{{end}} from retired accounts</a>
+  {{end}}
+</div>
 
 <div class="table-scroll">
   <table>
@@ -123,7 +132,7 @@
     </thead>
     <tbody>
     {{range .Trades}}
-      <tr class="trade-row"
+      <tr class="trade-row{{if .AccountRetired}} trade-row--retired{{end}}"
           data-trade-id="{{.ID}}"
           hx-get="/trades/{{.ID}}"
           hx-target="#trade-sheet-content"
@@ -135,7 +144,7 @@
           {{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
         <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
-        <td>{{.AccountName}}</td>
+        <td>{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
         <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
         <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
         <td class="tabular num">{{.Qty}}</td>
@@ -291,5 +300,23 @@
      (safe-area-aware sticky bottom); we only hide it until ≥1 row is ticked. */
   .sel-bar { display: none; margin-top: 16px; }
   .sel-bar.active { display: flex; }
+  /* Retired-toggle row sits where the bare "<N> closed trades" copy used to. */
+  .retired-toggle-row { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+  .retired-toggle { color: var(--accent); font-size: 12px; }
+  .retired-toggle:hover { text-decoration: underline; }
+  .retired-toggle-note { color: var(--fg-subtle); font-size: 12px; font-style: italic; }
+  /* Retired-row dimming + pill — keeps the row scannable but visually
+     deprioritized. The pill uses the warn token so it pops without colliding
+     with the dir/long-short pills. */
+  .trade-row--retired { opacity: 0.58; }
+  .trade-row--retired:hover { opacity: 1; }
+  .pill.retired-pill {
+    background: rgba(245, 158, 11, 0.18);
+    color: #b45309;
+    margin-left: 6px;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
 </style>
 {{end}}

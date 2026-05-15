@@ -165,7 +165,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"ByDirection":      byDirection,
 		"ByDOW":            byDOW,
 		"ByHour":           byHour,
-		"Accounts":         accounts,
+		"Accounts":         accountsForFilter(accounts, false),
 		"FilterSelections": accountFilt.Selected,
 		"FilterCount":      accountFilt.SelectedCount,
 		"From":             formFrom,
@@ -241,7 +241,13 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 			afSet[id] = true
 		}
 	} else {
+		// Implicit "all accounts" means all non-retired accounts. Retired
+		// accounts are excluded from the analytics equity curve so the chart
+		// reflects only capital actually being traded.
 		for _, a := range accounts {
+			if a.Active != 1 {
+				continue
+			}
 			afSet[a.ID] = true
 		}
 	}
@@ -347,7 +353,7 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 // the column type in modernc.org/sqlite and can't be scanned into time.Time.
 // Same workaround as pickDashboardDate.
 func (h *Handlers) earliestExitForFilter(ctx context.Context, af accountFilter) (time.Time, error) {
-	where := "status='closed' AND exit_time IS NOT NULL"
+	where := "status='closed' AND exit_time IS NOT NULL AND " + retiredAccountFilterSQL
 	var args []any
 	if af.Active {
 		if len(af.AccountIDs) == 0 {
@@ -393,6 +399,10 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 	if err != nil {
 		return nil
 	}
+	retired, err := h.retiredAccountSet(ctx)
+	if err != nil {
+		return nil
+	}
 	allowed := map[int64]bool{}
 	for _, id := range af.AccountIDs {
 		allowed[id] = true
@@ -401,6 +411,9 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 	bucket := map[key]float64{}
 	keys := []key{}
 	for _, r := range rows {
+		if retired[r.AccountID] {
+			continue
+		}
 		if af.Active && !allowed[r.AccountID] {
 			continue
 		}
@@ -436,8 +449,10 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 
 // fetchAnalyticsTrades pulls the slice with optional account / date filters
 // applied at the SQL level (cheaper than filtering 500+ trades in Go).
+// Trades from retired accounts (accounts.active = 0) are always excluded —
+// analytics is one of the surfaces the user asked us to keep clean.
 func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, from, to *time.Time) ([]analyticsTrade, error) {
-	clauses := []string{"status='closed'", "exit_time IS NOT NULL"}
+	clauses := []string{"status='closed'", "exit_time IS NOT NULL", "a.active = 1"}
 	var args []any
 	if af.Active {
 		if len(af.AccountIDs) == 0 {

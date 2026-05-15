@@ -74,6 +74,11 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	for _, id := range accountFilt.AccountIDs {
 		accountIDSet[id] = true
 	}
+	retired, err := h.retiredAccountSet(ctx)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("retired set: %w", err))
+		return
+	}
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		StatDate:   monthStart,
@@ -131,6 +136,9 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	// Aggregate per local-day key.
 	byDate := map[string]*dayCell{}
 	for _, row := range rows {
+		if retired[row.AccountID] {
+			continue
+		}
 		if accountFilt.Active && !accountIDSet[row.AccountID] {
 			continue
 		}
@@ -273,7 +281,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		"Trades":           monthTrades,
 		"WinDays":          winDays,
 		"LossDays":         lossDays,
-		"Accounts":         accounts,
+		"Accounts":         accountsForFilter(accounts, false),
 		"FilterSelections": accountFilt.Selected,
 		"FilterCount":      accountFilt.SelectedCount,
 		"FilterQS":         filterQS,

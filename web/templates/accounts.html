@@ -16,7 +16,7 @@
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 <div class="card card--warn" style="margin-bottom: 16px;">
-  Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades.
+  Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades. Uncheck <strong>Active</strong> to retire an account — its trades stay in the database but are hidden from the dashboard, calendar, and analytics. They can still be revealed on the <a href="/trades">trades</a> page behind a toggle.
 </div>
 
 <div class="row-sm" style="margin-bottom: 8px; gap: 8px;">
@@ -79,9 +79,9 @@
     <tbody>
       {{range .Accounts}}
         {{$a := .}}
-        <tr data-account-id="{{$a.ID}}">
+        <tr data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{end}}>
           <td>
-            <code class="num">{{$a.AccountRef}}</code><br>
+            <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
             <details class="reassign">
               <summary>Move trades…</summary>
@@ -249,6 +249,19 @@
   /* "+ New account" disclosure */
   details.disclose > summary { list-style: none; }
   details.disclose > summary::-webkit-details-marker { display: none; }
+
+  /* Retired marker — pill in the source/ref cell + slightly dimmed row so a
+     retired account is visually distinct without disappearing from the list. */
+  .pill.retired-pill {
+    background: rgba(245, 158, 11, 0.18);
+    color: #b45309;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    margin-left: 6px;
+  }
+  tr.account-row--retired td { opacity: 0.72; }
+  tr.account-row--retired td:first-child { opacity: 1; } /* keep "retired" pill at full strength */
 
   /* Balance column */
   td.balance-cell { min-width: 160px; }

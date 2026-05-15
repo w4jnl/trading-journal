@@ -181,6 +181,7 @@ func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days i
 		FROM trades
 		WHERE status='closed' AND exit_time IS NOT NULL AND net_pnl IS NOT NULL
 		  AND exit_time >= ? AND exit_time < ?
+		  AND `+retiredAccountFilterSQL+`
 		ORDER BY exit_time ASC
 	`, start, end)
 	if err != nil {
@@ -342,7 +343,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 
 	var hasToday int
 	err := h.DB.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM trades WHERE status='closed' AND exit_time >= ? AND exit_time < ?`,
+		`SELECT COUNT(*) FROM trades WHERE status='closed' AND exit_time >= ? AND exit_time < ? AND `+retiredAccountFilterSQL,
 		today, tomorrow,
 	).Scan(&hasToday)
 	if err != nil {
@@ -357,7 +358,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 	// column-typed scan path.
 	var mostRecent time.Time
 	err = h.DB.QueryRowContext(ctx,
-		`SELECT exit_time FROM trades WHERE status='closed' AND exit_time IS NOT NULL ORDER BY exit_time DESC LIMIT 1`,
+		`SELECT exit_time FROM trades WHERE status='closed' AND exit_time IS NOT NULL AND `+retiredAccountFilterSQL+` ORDER BY exit_time DESC LIMIT 1`,
 	).Scan(&mostRecent)
 	if errors.Is(err, sql.ErrNoRows) {
 		return today, nil
@@ -378,6 +379,7 @@ func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *ti
 		FROM trades
 		WHERE status='closed' AND exit_time IS NOT NULL
 		  AND exit_time >= ? AND exit_time < ?
+		  AND `+retiredAccountFilterSQL+`
 	`, date, end)
 	if err != nil {
 		return dashboardStats{}, err
