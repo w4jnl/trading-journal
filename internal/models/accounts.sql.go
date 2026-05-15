@@ -11,21 +11,22 @@ import (
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
-    name, firm, import_source, account_ref, type, currency, needs_setup
+    name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at
+RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source
 `
 
 type CreateAccountParams struct {
-	Name         string  `json:"name"`
-	Firm         *string `json:"firm"`
-	ImportSource string  `json:"import_source"`
-	AccountRef   string  `json:"account_ref"`
-	Type         *string `json:"type"`
-	Currency     string  `json:"currency"`
-	NeedsSetup   int64   `json:"needs_setup"`
+	Name             string  `json:"name"`
+	Firm             *string `json:"firm"`
+	ImportSource     string  `json:"import_source"`
+	AccountRef       string  `json:"account_ref"`
+	Type             *string `json:"type"`
+	Currency         string  `json:"currency"`
+	NeedsSetup       int64   `json:"needs_setup"`
+	CommissionSource string  `json:"commission_source"`
 }
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
@@ -37,6 +38,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		arg.Type,
 		arg.Currency,
 		arg.NeedsSetup,
+		arg.CommissionSource,
 	)
 	var i Account
 	err := row.Scan(
@@ -50,12 +52,13 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.NeedsSetup,
 		&i.Active,
 		&i.CreatedAt,
+		&i.CommissionSource,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at FROM accounts WHERE id = ?
+SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts WHERE id = ?
 `
 
 func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error) {
@@ -72,12 +75,13 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 		&i.NeedsSetup,
 		&i.Active,
 		&i.CreatedAt,
+		&i.CommissionSource,
 	)
 	return i, err
 }
 
 const getAccountByRef = `-- name: GetAccountByRef :one
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at FROM accounts WHERE import_source = ? AND account_ref = ?
+SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts WHERE import_source = ? AND account_ref = ?
 `
 
 type GetAccountByRefParams struct {
@@ -99,12 +103,13 @@ func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams
 		&i.NeedsSetup,
 		&i.Active,
 		&i.CreatedAt,
+		&i.CommissionSource,
 	)
 	return i, err
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at FROM accounts ORDER BY name
+SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts ORDER BY name
 `
 
 func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
@@ -127,6 +132,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 			&i.NeedsSetup,
 			&i.Active,
 			&i.CreatedAt,
+			&i.CommissionSource,
 		); err != nil {
 			return nil, err
 		}
@@ -171,11 +177,28 @@ func (q *Queries) ListRetiredAccountIDs(ctx context.Context) ([]int64, error) {
 	return items, nil
 }
 
+const setAccountCommissionSource = `-- name: SetAccountCommissionSource :exec
+UPDATE accounts SET commission_source = ? WHERE id = ?
+`
+
+type SetAccountCommissionSourceParams struct {
+	CommissionSource string `json:"commission_source"`
+	ID               int64  `json:"id"`
+}
+
+// Flips an account between rate-table lookup and CSV-inline commissions.
+// Called from the importer when a trades-shaped CSV (TopstepX trades) lands
+// so the FIFO rebuild path skips the account afterwards.
+func (q *Queries) SetAccountCommissionSource(ctx context.Context, arg SetAccountCommissionSourceParams) error {
+	_, err := q.db.ExecContext(ctx, setAccountCommissionSource, arg.CommissionSource, arg.ID)
+	return err
+}
+
 const updateAccount = `-- name: UpdateAccount :one
 UPDATE accounts
 SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
 WHERE id = ?
-RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at
+RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source
 `
 
 type UpdateAccountParams struct {
@@ -210,6 +233,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.NeedsSetup,
 		&i.Active,
 		&i.CreatedAt,
+		&i.CommissionSource,
 	)
 	return i, err
 }

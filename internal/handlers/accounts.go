@@ -297,13 +297,14 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		needsSetup = 1
 	}
 	if _, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
-		Name:         name,
-		Firm:         strPtrOrNil(firm),
-		ImportSource: importSrc,
-		AccountRef:   ref,
-		Type:         strPtrOrNil(typ),
-		Currency:     currency,
-		NeedsSetup:   needsSetup,
+		Name:             name,
+		Firm:             strPtrOrNil(firm),
+		ImportSource:     importSrc,
+		AccountRef:       ref,
+		Type:             strPtrOrNil(typ),
+		Currency:         currency,
+		NeedsSetup:       needsSetup,
+		CommissionSource: "rate",
 	}); err != nil {
 		// Most likely a unique-key collision on (import_source, account_ref).
 		// Surface it inline so the user sees the message.

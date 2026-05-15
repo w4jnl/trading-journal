@@ -16,8 +16,10 @@ func errToQuery(err error) string {
 }
 
 // firmsForCommissions are the firms that look up rates through the table.
-// Topstep is excluded — TopstepX CSV carries commissions inline per trade.
-var firmsForCommissions = []string{"apex", "lucid", "amp", "ibkr"}
+// Topstep is included for accounts imported from the orders CSV (no inline
+// commission column); accounts imported from the trades CSV are flagged
+// commission_source = 'inline' and bypass the rate lookup entirely.
+var firmsForCommissions = []string{"apex", "lucid", "topstep", "amp", "ibkr"}
 
 // orphanReason groups orphaned trades by why they're missing a commission,
 // so the diagnostics banner can show one row per fixable problem.

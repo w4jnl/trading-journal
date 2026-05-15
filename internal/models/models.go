@@ -9,16 +9,17 @@ import (
 )
 
 type Account struct {
-	ID           int64     `json:"id"`
-	Name         string    `json:"name"`
-	Firm         *string   `json:"firm"`
-	ImportSource string    `json:"import_source"`
-	AccountRef   string    `json:"account_ref"`
-	Type         *string   `json:"type"`
-	Currency     string    `json:"currency"`
-	NeedsSetup   int64     `json:"needs_setup"`
-	Active       int64     `json:"active"`
-	CreatedAt    time.Time `json:"created_at"`
+	ID               int64     `json:"id"`
+	Name             string    `json:"name"`
+	Firm             *string   `json:"firm"`
+	ImportSource     string    `json:"import_source"`
+	AccountRef       string    `json:"account_ref"`
+	Type             *string   `json:"type"`
+	Currency         string    `json:"currency"`
+	NeedsSetup       int64     `json:"needs_setup"`
+	Active           int64     `json:"active"`
+	CreatedAt        time.Time `json:"created_at"`
+	CommissionSource string    `json:"commission_source"`
 }
 
 type AssetClass struct {

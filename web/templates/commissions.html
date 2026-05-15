@@ -12,7 +12,9 @@
   Commission rates are keyed by <strong>asset class × firm × size</strong>.
   Set each contract's asset class and size in the lower table — the system
   then looks up <em>(equity_futures, apex, mini)</em> instead of per-symbol
-  rates. TopstepX is excluded; its CSV carries commissions inline.
+  rates. TopstepX accounts imported from the trades CSV use the per-trade
+  Fees+Commissions in the file and skip this lookup; accounts imported from
+  the orders CSV use the topstep rates below.
 </div>
 
 {{if .Orphans}}

@@ -245,13 +245,14 @@ func (h *Handlers) createAccountFromForm(ctx context.Context, r *http.Request) (
 		needsSetup = 1
 	}
 	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
-		Name:         name,
-		Firm:         strPtrOrNil(firm),
-		ImportSource: importSrc,
-		AccountRef:   ref,
-		Type:         strPtrOrNil(typ),
-		Currency:     currency,
-		NeedsSetup:   needsSetup,
+		Name:             name,
+		Firm:             strPtrOrNil(firm),
+		ImportSource:     importSrc,
+		AccountRef:       ref,
+		Type:             strPtrOrNil(typ),
+		Currency:         currency,
+		NeedsSetup:       needsSetup,
+		CommissionSource: "inline", // picker only fires for TopstepX trades CSV
 	})
 	if err != nil {
 		return 0, err

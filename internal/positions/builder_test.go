@@ -38,12 +38,13 @@ func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 	// Create a test account with firm=apex (so commission lookups have a match).
 	apex := "apex"
 	acct, err := q.CreateAccount(context.Background(), models.CreateAccountParams{
-		Name:         "test",
-		Firm:         &apex,
-		ImportSource: "motivewave_csv",
-		AccountRef:   "TEST",
-		Currency:     "USD",
-		NeedsSetup:   1,
+		Name:             "test",
+		Firm:             &apex,
+		ImportSource:     "motivewave_csv",
+		AccountRef:       "TEST",
+		Currency:         "USD",
+		NeedsSetup:       1,
+		CommissionSource: "rate",
 	})
 	if err != nil {
 		t.Fatalf("CreateAccount: %v", err)

@@ -1,10 +1,16 @@
 -- name: ListAccountSymbolKeysForRoot :many
+-- Inline-commission accounts (TopstepX trades CSV) are excluded: their trades
+-- are the source of truth, so a FIFO rebuild would clobber the CSV-provided
+-- commissions.
 SELECT DISTINCT e.account_id, e.symbol
 FROM executions e
+JOIN accounts a ON e.account_id = a.id
 WHERE e.symbol_root = ?
+  AND a.commission_source = 'rate'
 ORDER BY e.account_id, e.symbol;
 
 -- name: ListAccountSymbolKeysForCell :many
+-- Same inline-account exclusion as ListAccountSymbolKeysForRoot.
 SELECT DISTINCT e.account_id, e.symbol
 FROM executions e
 JOIN accounts a ON e.account_id = a.id
@@ -12,6 +18,7 @@ JOIN instruments i ON e.symbol_root = i.symbol_root
 WHERE a.firm = ?
   AND i.asset_class = ?
   AND i.size_class = ?
+  AND a.commission_source = 'rate'
 ORDER BY e.account_id, e.symbol;
 
 -- name: ListAssetClasses :many
@@ -57,7 +64,7 @@ LEFT JOIN commission_rates cr
 WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
-  AND (a.firm IS NULL OR a.firm <> 'topstep')
+  AND a.commission_source = 'rate'
   AND cr.per_contract_rt IS NULL
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root;

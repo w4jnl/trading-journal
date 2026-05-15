@@ -174,6 +174,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 	q := s.Queries.WithTx(tx)
 
 	accounts := map[string]int64{}
+	inlineAccounts := map[int64]bool{} // commission_source = 'inline' -> skip FIFO rebuild
 	instruments := map[string]bool{}
 	rebuildKeys := map[positions.Key]bool{}
 
@@ -191,15 +192,18 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 
 		accountID, ok := accounts[f.AccountRef]
 		if !ok {
-			id, created, err := s.findOrCreateAccount(ctx, q, format, f.AccountRef, f.Source)
+			acct, created, err := s.findOrCreateAccount(ctx, q, format, f.AccountRef, f.Source)
 			if err != nil {
 				return fmt.Errorf("account %s: %w", f.AccountRef, err)
 			}
 			if created {
 				out.AccountsCreated++
 			}
-			accounts[f.AccountRef] = id
-			accountID = id
+			accounts[f.AccountRef] = acct.ID
+			if acct.CommissionSource == "inline" {
+				inlineAccounts[acct.ID] = true
+			}
+			accountID = acct.ID
 		}
 
 		var raw *string
@@ -235,13 +239,21 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 		builder := &positions.Builder{Queries: q, Timezone: tz}
 		keys := make([]positions.Key, 0, len(rebuildKeys))
 		for k := range rebuildKeys {
+			// Inline accounts (TopstepX trades CSV) are the source of truth for
+			// their trades; running FIFO over the synthetic execs would replace
+			// the CSV-provided commissions with rate-table values.
+			if inlineAccounts[k.AccountID] {
+				continue
+			}
 			keys = append(keys, k)
 		}
-		res, err := builder.Rebuild(ctx, keys)
-		if err != nil {
-			return fmt.Errorf("position builder: %w", err)
+		if len(keys) > 0 {
+			res, err := builder.Rebuild(ctx, keys)
+			if err != nil {
+				return fmt.Errorf("position builder: %w", err)
+			}
+			out.TradesCreated = res.TradesCreated
 		}
-		out.TradesCreated = res.TradesCreated
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -286,6 +298,14 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 		if created {
 			out.AccountsCreated++
 		}
+	}
+	// Trades CSV is the only source that carries per-trade commissions inline,
+	// so the destination account must opt out of rate-based recompute. Idempotent.
+	if err := q.SetAccountCommissionSource(ctx, models.SetAccountCommissionSourceParams{
+		CommissionSource: "inline",
+		ID:               accountID,
+	}); err != nil {
+		return fmt.Errorf("mark account inline: %w", err)
 	}
 
 	instruments := map[string]bool{}
@@ -473,13 +493,14 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 			}
 		}
 		created, err := q.CreateAccount(ctx, models.CreateAccountParams{
-			Name:         ref,
-			Firm:         &firm,
-			ImportSource: string(FormatTopstepX),
-			AccountRef:   ref,
-			Type:         &defaultType,
-			Currency:     "USD",
-			NeedsSetup:   1,
+			Name:             ref,
+			Firm:             &firm,
+			ImportSource:     string(FormatTopstepX),
+			AccountRef:       ref,
+			Type:             &defaultType,
+			Currency:         "USD",
+			NeedsSetup:       1,
+			CommissionSource: "inline",
 		})
 		if err != nil {
 			return 0, false, err
@@ -502,13 +523,14 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 		}
 	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
-		Name:         "TOPSTEP-DEFAULT",
-		Firm:         &firm,
-		ImportSource: string(FormatTopstepX),
-		AccountRef:   "TOPSTEP-DEFAULT",
-		Type:         &defaultType,
-		Currency:     "USD",
-		NeedsSetup:   1,
+		Name:             "TOPSTEP-DEFAULT",
+		Firm:             &firm,
+		ImportSource:     string(FormatTopstepX),
+		AccountRef:       "TOPSTEP-DEFAULT",
+		Type:             &defaultType,
+		Currency:         "USD",
+		NeedsSetup:       1,
+		CommissionSource: "inline",
 	})
 	if err != nil {
 		return 0, false, err
@@ -684,20 +706,20 @@ func upsertInstrumentStub(ctx context.Context, tx *sql.Tx, q *models.Queries, f 
 	return true, nil
 }
 
-func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queries, format Format, ref, source string) (int64, bool, error) {
+func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queries, format Format, ref, source string) (models.Account, bool, error) {
 	existing, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
 		ImportSource: string(format),
 		AccountRef:   ref,
 	})
 	if err == nil {
-		return existing.ID, false, nil
+		return existing, false, nil
 	}
 	if !errors.Is(err, sql.ErrNoRows) {
-		return 0, false, fmt.Errorf("lookup: %w", err)
+		return models.Account{}, false, fmt.Errorf("lookup: %w", err)
 	}
 
 	firm := GuessFirm(format, ref, source)
-	// Default new accounts to Prop · Eval — most common starting state for a
+	// Default new accounts to Prop · Eval - most common starting state for a
 	// fresh prop-firm account. User can promote to funded/live or change
 	// entirely via /accounts. needs_setup clears when firm + type are both
 	// set (firm guess can still fail for unrecognized brokers).
@@ -707,18 +729,19 @@ func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queri
 		needsSetup = 1
 	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
-		Name:         ref,
-		Firm:         strPtrOrNil(firm),
-		ImportSource: string(format),
-		AccountRef:   ref,
-		Type:         &defaultType,
-		Currency:     "USD",
-		NeedsSetup:   needsSetup,
+		Name:             ref,
+		Firm:             strPtrOrNil(firm),
+		ImportSource:     string(format),
+		AccountRef:       ref,
+		Type:             &defaultType,
+		Currency:         "USD",
+		NeedsSetup:       needsSetup,
+		CommissionSource: "rate",
 	})
 	if err != nil {
-		return 0, false, fmt.Errorf("create: %w", err)
+		return models.Account{}, false, fmt.Errorf("create: %w", err)
 	}
-	return created.ID, true, nil
+	return created, true, nil
 }
 
 func strPtrOrNil(s string) *string {
@@ -881,7 +904,11 @@ func (s *ImportService) logger() *slog.Logger {
 
 // RebuildTradesForAccount re-runs the position builder for every (account_id,
 // symbol) pair the account has executions for. Called from the accounts UI
-// when the user changes firm — commissions need to refresh on existing trades.
+// when the user changes firm - commissions need to refresh on existing trades.
+//
+// Inline-commission accounts (TopstepX trades CSV) skip the FIFO rebuild so
+// the per-trade Fees+Commissions from the CSV are preserved; daily_stats is
+// still refreshed because firm or other tags may have changed.
 func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID int64) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -889,6 +916,17 @@ func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID i
 	}
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
+
+	acct, err := q.GetAccountByID(ctx, accountID)
+	if err != nil {
+		return fmt.Errorf("load account: %w", err)
+	}
+	if acct.CommissionSource == "inline" {
+		if err := RefreshDailyStatsForAccount(ctx, q, accountID, s.Timezone); err != nil {
+			return fmt.Errorf("refresh daily_stats: %w", err)
+		}
+		return tx.Commit()
+	}
 
 	symbols, err := q.ListDistinctSymbolsForAccount(ctx, accountID)
 	if err != nil {

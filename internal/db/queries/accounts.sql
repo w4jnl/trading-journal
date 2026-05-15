@@ -3,11 +3,17 @@ SELECT * FROM accounts WHERE import_source = ? AND account_ref = ?;
 
 -- name: CreateAccount :one
 INSERT INTO accounts (
-    name, firm, import_source, account_ref, type, currency, needs_setup
+    name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
+
+-- name: SetAccountCommissionSource :exec
+-- Flips an account between rate-table lookup and CSV-inline commissions.
+-- Called from the importer when a trades-shaped CSV (TopstepX trades) lands
+-- so the FIFO rebuild path skips the account afterwards.
+UPDATE accounts SET commission_source = ? WHERE id = ?;
 
 -- name: ListAccounts :many
 SELECT * FROM accounts ORDER BY name;
