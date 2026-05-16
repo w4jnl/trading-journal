@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  W4J Trading Journal - Open Graph share image (1200x630, light variant).
+  Tokens from exportData/design_handoff_w4j_trading_journal/README.md.
+  Text stays as <text> per the brand spec; renderers fall back to
+  system-ui if Outfit / JetBrains Mono aren't installed locally.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <rect width="1200" height="630" fill="#FAF8F3"/>
+
+  <!-- Faint ascending chart line in teal-soft, anchored to the lower third. -->
+  <g stroke="#A8DCDD" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.55">
+    <polyline points="60,520 200,495 320,505 460,470 580,455 700,420 840,395 960,360 1080,330 1140,310"/>
+    <circle cx="200" cy="495" r="5" fill="#A8DCDD" stroke="none"/>
+    <circle cx="460" cy="470" r="5" fill="#A8DCDD" stroke="none"/>
+    <circle cx="700" cy="420" r="5" fill="#A8DCDD" stroke="none"/>
+    <circle cx="960" cy="360" r="5" fill="#A8DCDD" stroke="none"/>
+    <circle cx="1140" cy="310" r="6" fill="#12999D" stroke="none"/>
+  </g>
+
+  <!-- Headline. -->
+  <g font-family="Outfit, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-weight="700" font-size="96" letter-spacing="-2">
+    <text x="80" y="210" fill="#0F1419">Your trading,</text>
+    <text x="80" y="320" fill="#12999D">journaled.</text>
+  </g>
+
+  <!-- Subhead. -->
+  <text x="82" y="378" font-family="Outfit, system-ui, sans-serif" font-weight="400" font-size="28" fill="#4A5560" letter-spacing="-0.2">
+    Imports, FIFO, calendar, analytics - one binary.
+  </text>
+
+  <!-- Bottom-left lockup: mark + wordmark, mirrors lockup-trading-journal.svg proportions. -->
+  <g transform="translate(80, 510)">
+    <g>
+      <rect x="0"  y="0"  width="50" height="50" rx="10" fill="#12999D"/>
+      <rect x="54" y="16" width="28" height="28" rx="6"  fill="#12999D"/>
+      <rect x="37" y="56" width="13" height="13" rx="3"  fill="#12999D"/>
+      <rect x="54" y="54" width="16" height="16" rx="3"  fill="#12999D"/>
+    </g>
+    <text x="100" y="55" font-family="Outfit, system-ui, sans-serif" font-weight="600" font-size="44" letter-spacing="-0.9" fill="#0F1419">
+      trading journal
+    </text>
+  </g>
+
+  <!-- Bottom-right meta. -->
+  <text x="1120" y="560" text-anchor="end" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="18" letter-spacing="1.2" fill="#4A5560">
+    example.com
+  </text>
+</svg>
