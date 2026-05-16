@@ -22,9 +22,13 @@ type tradeFilters struct {
 	Account    accountFilter
 	SymbolRoot *string
 	Direction  *string
-	From       *time.Time
-	To         *time.Time
-	Page       int
+	// Outcome filters by net P&L sign: "win" (net>0), "loss" (net<0),
+	// "breakeven" (net=0). nil = no filter. Trades with NULL net_pnl
+	// (stub instruments) are excluded by any non-nil outcome filter.
+	Outcome *string
+	From    *time.Time
+	To      *time.Time
+	Page    int
 	// IncludeRetired, when true, lets trades from retired accounts (accounts.active = 0)
 	// surface alongside the rest. Default false hides them — matches the
 	// retire-account contract: trades stay in the database but only the /trades
@@ -216,7 +220,8 @@ func buildPerfChart(ctx context.Context, db *sql.DB, queries *models.Queries, f 
 	// moment the user engages ANY filter, the chart respects whatever
 	// buildWhere produces (full span of matching trades).
 	anyFilter := f.From != nil || f.To != nil ||
-		f.Account.Active || f.SymbolRoot != nil || f.Direction != nil
+		f.Account.Active || f.SymbolRoot != nil || f.Direction != nil ||
+		f.Outcome != nil
 	syntheticRange := false
 	if !anyFilter {
 		// ORDER BY exit_time DESC LIMIT 1 (rather than MAX()) so the driver
@@ -570,6 +575,16 @@ func buildWhere(f tradeFilters) (string, []any) {
 		clauses = append(clauses, "t.direction = ?")
 		args = append(args, *f.Direction)
 	}
+	if f.Outcome != nil {
+		switch *f.Outcome {
+		case "win":
+			clauses = append(clauses, "t.net_pnl > 0")
+		case "loss":
+			clauses = append(clauses, "t.net_pnl < 0")
+		case "breakeven":
+			clauses = append(clauses, "t.net_pnl = 0")
+		}
+	}
 	if f.From != nil {
 		clauses = append(clauses, "t.exit_time >= ?")
 		args = append(args, *f.From)
@@ -614,6 +629,9 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	if v := strings.TrimSpace(q.Get("direction")); v == "long" || v == "short" {
 		f.Direction = &v
 	}
+	if v := strings.TrimSpace(q.Get("outcome")); v == "win" || v == "loss" || v == "breakeven" {
+		f.Outcome = &v
+	}
 	if v := strings.TrimSpace(q.Get("from")); v != "" {
 		if t, err := time.Parse("2006-01-02", v); err == nil {
 			f.From = &t
@@ -650,6 +668,9 @@ func filtersAsForm(f tradeFilters) map[string]string {
 	}
 	if f.Direction != nil {
 		out["Direction"] = *f.Direction
+	}
+	if f.Outcome != nil {
+		out["Outcome"] = *f.Outcome
 	}
 	if f.From != nil {
 		out["From"] = f.From.Format("2006-01-02")

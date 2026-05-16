@@ -318,6 +318,53 @@ func TestImportFile_FreshAccountAcceptsEither(t *testing.T) {
 	}
 }
 
+// TestImportFile_MotiveWaveNotBlockedByStaleInlineFlag - regression. A
+// MotiveWave (APEX) account can end up with commission_source='inline'
+// via the migration backfill after a user reassigned TopstepX trades
+// into it (see migration 20260515120000). The TopStep claim-lock must
+// not fire for the subsequent MotiveWave import, and the FIFO builder
+// must still run for that account so new fills produce trades.
+func TestImportFile_MotiveWaveNotBlockedByStaleInlineFlag(t *testing.T) {
+	svc, conn, tmp, processed, _ := setupTestService(t)
+
+	// Simulate the migration-leak state: a MotiveWave account with the
+	// stale 'inline' flag. We use one of the account_refs that appears in
+	// the MotiveWave fixture so the importer resolves to this exact row
+	// instead of creating a fresh one.
+	if _, err := conn.Exec(`
+		INSERT INTO accounts (name, firm, import_source, account_ref, type, currency, needs_setup, commission_source)
+		VALUES ('APEX-100001-28', 'apex', 'motivewave_csv', 'APEX-100001-28', 'prop_eval', 'USD', 0, 'inline')
+	`); err != nil {
+		t.Fatalf("seed inline APEX account: %v", err)
+	}
+
+	src := copyFixtureTo(t, motivewaveFixture, filepath.Join(tmp, "inbox"))
+	out, err := svc.ImportFile(context.Background(), src)
+	if err != nil {
+		t.Fatalf("ImportFile: %v (outcome %+v)", err, out)
+	}
+	if out.ErrorMessage != "" {
+		t.Fatalf("import rejected with %q, want success (stale inline flag must not block MotiveWave)", out.ErrorMessage)
+	}
+	if filepath.Dir(out.DestinationPath) != processed {
+		t.Errorf("DestinationPath = %q, want a file in %q", out.DestinationPath, processed)
+	}
+
+	// FIFO must have run for the inline-flagged account too - otherwise
+	// the import silently produces zero trades for it.
+	var apexTrades int
+	if err := conn.QueryRow(`
+		SELECT COUNT(*) FROM trades t
+		JOIN accounts a ON a.id = t.account_id
+		WHERE a.account_ref = 'APEX-100001-28'
+	`).Scan(&apexTrades); err != nil {
+		t.Fatalf("count APEX trades: %v", err)
+	}
+	if apexTrades == 0 {
+		t.Error("APEX-100001-28 has 0 trades after import, expected FIFO to run despite the stale inline flag")
+	}
+}
+
 func contains(haystack, needle string) bool {
 	for i := 0; i+len(needle) <= len(haystack); i++ {
 		if haystack[i:i+len(needle)] == needle {

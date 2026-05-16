@@ -38,6 +38,15 @@
       var r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
       return 'rgba(' + r + ', ' + g + ', ' + b + ', ' + a + ')';
     }
+    // Compact axis values so 4-7 digit P&L numbers fit the gutter without
+    // getting cropped by uPlot's default 50px Y-axis width.
+    function fmtMoneyShort(v) {
+      if (v == null || Number.isNaN(v)) return '';
+      var abs = Math.abs(v);
+      if (abs >= 1e6) return (v / 1e6).toFixed(2).replace(/\.0+$/, '') + 'M';
+      if (abs >= 1e5) return Math.round(v / 1e3) + 'K';
+      return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
+    }
     function build() {
       if (instance) { instance.destroy(); instance = null; }
       var el = document.getElementById('perf-chart');
@@ -60,7 +69,12 @@
         ],
         axes: [
           { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-          { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+          {
+            stroke: c.label,
+            grid: { stroke: c.grid, width: 1 },
+            size: 70,
+            values: function (u, splits) { return splits.map(fmtMoneyShort); },
+          },
         ],
       }, [window.__perfChart.xs, window.__perfChart.ys], el);
     }
@@ -88,6 +102,15 @@
       {{$selDir := index .Filters "Direction"}}
       <option value="long" {{if eq "long" $selDir}}selected{{end}}>Long</option>
       <option value="short" {{if eq "short" $selDir}}selected{{end}}>Short</option>
+    </select>
+  </label>
+  <label>Outcome
+    <select name="outcome">
+      <option value="">Any</option>
+      {{$selOut := index .Filters "Outcome"}}
+      <option value="win" {{if eq "win" $selOut}}selected{{end}}>Winners</option>
+      <option value="loss" {{if eq "loss" $selOut}}selected{{end}}>Losers</option>
+      <option value="breakeven" {{if eq "breakeven" $selOut}}selected{{end}}>Breakeven</option>
     </select>
   </label>
   <label>From

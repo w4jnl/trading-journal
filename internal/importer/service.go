@@ -131,9 +131,10 @@ func dispatchParse(format Format, r io.Reader) ([]Fill, error) {
 // dedup'd by separate id namespaces, so mixing them on one account would
 // double-count. The lock keys off accounts.commission_source ('inline' =
 // trades-CSV has run) and the existence of FIFO trades (broker_trade_id
-// IS NULL = orders-CSV has run); see GetAccountImportClaim. MotiveWave
-// imports never resolve to a topstepx_csv account, so they cannot trip
-// the check in practice - calling it uniformly is just defensive.
+// IS NULL = orders-CSV has run); see GetAccountImportClaim. The guard
+// only applies to the TopStep orders/trades pair - MotiveWave accounts
+// live in their own (import_source, account_ref) namespace and have no
+// equivalent collision risk, so MotiveWave imports skip the check.
 func ensureClaimCompatible(ctx context.Context, q *models.Queries, accountID int64, accountName string, incoming Format) error {
 	claim, err := q.GetAccountImportClaim(ctx, accountID)
 	if err != nil {
@@ -142,7 +143,7 @@ func ensureClaimCompatible(ctx context.Context, q *models.Queries, accountID int
 	switch {
 	case incoming == FormatTopstepXTrades && claim == "orders":
 		return fmt.Errorf("account %q is already orders-imported; delete it from /accounts and re-import to switch to trades-CSV", accountName)
-	case (incoming == FormatTopstepX || incoming == FormatMotiveWave) && claim == "trades":
+	case incoming == FormatTopstepX && claim == "trades":
 		return fmt.Errorf("account %q is already trades-imported; delete it from /accounts and re-import to switch to orders-CSV", accountName)
 	}
 	return nil
@@ -226,7 +227,14 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 				return err
 			}
 			accounts[f.AccountRef] = acct.ID
-			if acct.CommissionSource == "inline" {
+			// commission_source='inline' is only meaningful on TopStep
+			// accounts (set by the trades-CSV path to preserve per-trade
+			// commissions). On any other account it's a stale-state
+			// artifact - e.g., the migration backfill flipped the account
+			// after trades were reassigned in from a TopStep account. Don't
+			// let that artifact suppress FIFO rebuilds for non-TopStep
+			// accounts, or new fills would land with zero trades built.
+			if acct.CommissionSource == "inline" && acct.ImportSource == string(FormatTopstepX) {
 				inlineAccounts[acct.ID] = true
 			}
 			accountID = acct.ID
