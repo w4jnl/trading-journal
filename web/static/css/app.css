@@ -45,12 +45,16 @@
   --border:        #e4e4e7;
   --border-strong: #d4d4d8;
 
-  /* Brand accent (indigo) */
-  --accent:        #4f46e5;
+  /* Brand mark - keep the W4J teal exact even if --accent is later retuned. */
+  --brand-teal:    #12999D;
+
+  /* Brand accent (W4J teal). Hover/soft/strong derived from the
+     parent-brand palette: teal-deep #0B6063, mint #E5F4F4. */
+  --accent:        #12999D;
   --accent-fg:     #ffffff;
-  --accent-hover:  #4338ca;
-  --accent-soft:   #eef2ff;
-  --accent-strong: #3730a3;
+  --accent-hover:  #0B6063;
+  --accent-soft:   #E5F4F4;
+  --accent-strong: #0B6063;
 
   /* Sentiment */
   --pos:        #16a34a;
@@ -141,11 +145,11 @@
   --border:        #27272a;
   --border-strong: #3f3f46;
 
-  --accent:        #6366f1;
+  --accent:        #2EBABE;
   --accent-fg:     #ffffff;
-  --accent-hover:  #818cf8;
-  --accent-soft:   rgba(99, 102, 241, 0.14);
-  --accent-strong: #a5b4fc;
+  --accent-hover:  #A8DCDD;
+  --accent-soft:   rgba(46, 186, 190, 0.16);
+  --accent-strong: #A8DCDD;
 
   --pos:        #22c55e;
   --pos-soft:   rgba(34, 197, 94, 0.12);
@@ -182,7 +186,7 @@
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.30);
   --shadow-2: 0 4px 12px rgba(0, 0, 0, 0.40);
   --shadow-3: 0 12px 32px rgba(0, 0, 0, 0.60);
-  --focus-ring: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  --focus-ring: 0 0 0 3px rgba(46, 186, 190, 0.28);
 }
 
 /* ---- Reset & base --------------------------------------------------------- */
@@ -278,10 +282,12 @@ hr {
   letter-spacing: -0.01em;
 }
 .sidebar-brand .brand-mark {
-  width: 22px;
-  height: 22px;
-  color: var(--accent);
+  width: 24px;
+  height: 24px;
+  color: var(--brand-teal);
+  flex: 0 0 24px;
 }
+[data-theme="dark"] .sidebar-brand .brand-mark { color: #2EBABE; }
 
 .sidebar-section {
   font-size: 11px;

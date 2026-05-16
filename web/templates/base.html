@@ -26,6 +26,20 @@
   <link rel="preload" href="/static/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/JetBrainsMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
+
+  {{/* Brand chrome. SVG-only for now; see web/static/img/brand/README.md
+       for the rsvg-convert commands that produce .ico / .png fallbacks. */}}
+  <link rel="icon" href="/static/img/brand/favicon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/img/brand/apple-touch-icon.svg">
+  <meta name="theme-color" content="#12999D">
+
+  <meta property="og:type"        content="website">
+  <meta property="og:site_name"   content="W4J Trading Journal">
+  <meta property="og:title"       content="{{block "og_title" .}}Trading Journal{{end}}">
+  <meta property="og:description" content="{{block "og_description" .}}Personal futures trading journal — imports, FIFO, calendar, analytics.{{end}}">
+  <meta property="og:image"       content="/static/img/brand/og-image.svg">
+  <meta name="twitter:card"       content="summary_large_image">
+
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
 </head>
 <body>
@@ -45,8 +59,14 @@
 
     <aside class="sidebar">
       <a href="/" class="sidebar-brand">
-        <svg class="brand-mark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 12 L9 4 L21 4 L15 12 L21 20 L9 20 Z"/>
+        {{/* Four-square W4J mark - geometry from
+             exportData/design_handoff_w4j_trading_journal/assets/logo-mark.svg.
+             Inline so the fill follows currentColor / theme. */}}
+        <svg class="brand-mark" viewBox="0 0 256 256" aria-hidden="true">
+          <rect x="14"  y="14"  width="140" height="140" rx="28" fill="currentColor"/>
+          <rect x="166" y="60"  width="76"  height="76"  rx="16" fill="currentColor"/>
+          <rect x="118" y="170" width="36"  height="36"  rx="8"  fill="currentColor"/>
+          <rect x="166" y="166" width="44"  height="44"  rx="9"  fill="currentColor"/>
         </svg>
         <span>Trading Journal</span>
       </a>
