@@ -1,0 +1,71 @@
+{{define "balance_cell"}}
+{{/*
+  Per-account balance cell for /accounts.
+
+  Used in two places:
+    1. Inlined into the accounts table on the initial page render.
+    2. As the response body for HTMX-driven POSTs to
+       /accounts/{id}/balances and /balances/{anchor_id}/delete -
+       the form's hx-target is "#balance-cell-{id}" and the swap is
+       outerHTML, so the whole cell (this partial) gets re-rendered
+       in place without touching the rest of the page.
+
+  Data shape: { Account *models.Account, Balance handlers.AccountBalance,
+                Today string, Currency string }
+*/}}
+{{$a := .Account}}
+{{$bal := .Balance}}
+<td id="balance-cell-{{$a.ID}}" class="balance-cell">
+  {{if $bal.Known}}
+    <div class="balance-val num">{{printf "%.2f" $bal.Balance}}</div>
+    <div class="balance-sub muted">as of {{.Today}}</div>
+  {{else}}
+    <div class="balance-val muted">—</div>
+  {{end}}
+  <details class="reassign {{if not $bal.Known}}needs-anchor{{end}}">
+    <summary>{{if $bal.Known}}Adjust…{{else}}Set balance →{{end}}</summary>
+    <form hx-post="/accounts/{{$a.ID}}/balances"
+          hx-target="#balance-cell-{{$a.ID}}"
+          hx-swap="outerHTML"
+          class="balance-form" style="margin-top: 8px;">
+      <div class="row" style="align-items: flex-end;">
+        <label class="field"><span class="field-label">Date</span>
+          <input type="date" name="anchor_date" value="{{.Today}}" required></label>
+        <label class="field"><span class="field-label">{{.Currency}} balance</span>
+          <input type="text" name="balance" required inputmode="decimal" placeholder="50000.00" style="width: 110px;"></label>
+        <label class="field"><span class="field-label">Note</span>
+          <input type="text" name="note" placeholder="optional" style="width: 140px;"></label>
+        <button type="submit" class="btn btn--primary btn--sm">Save anchor</button>
+      </div>
+    </form>
+    {{if $bal.Anchors}}
+      <table class="anchors" style="margin-top: 10px; width: 100%; font-size: 11px;">
+        <thead>
+          <tr>
+            <th style="text-align: left;">Date</th>
+            <th style="text-align: right;">Balance</th>
+            <th style="text-align: left;">Note</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range $bal.Anchors}}
+            <tr>
+              <td class="num">{{localtime .AnchorDate "2006-01-02"}}</td>
+              <td class="num" style="text-align: right;">{{printf "%.2f" .Balance}}</td>
+              <td class="muted">{{.Note}}</td>
+              <td style="text-align: right;">
+                <button type="button" class="btn btn--ghost btn--sm"
+                        hx-post="/balances/{{.ID}}/delete"
+                        hx-target="#balance-cell-{{$a.ID}}"
+                        hx-swap="outerHTML"
+                        hx-confirm="Delete balance anchor for {{localtime .AnchorDate "2006-01-02"}}?">×</button>
+              </td>
+            </tr>
+          {{end}}
+        </tbody>
+      </table>
+    {{end}}
+  </details>
+</td>
+{{end}}

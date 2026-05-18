@@ -79,6 +79,7 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	flashRaw := r.URL.Query().Get("flash")
 	flashErr := r.URL.Query().Get("err")
+	clonedID := r.URL.Query().Get("id") // only meaningful when flash=cloned
 	movedCount := int64(0)
 	deletedName := ""
 	recomputedOK := int64(0)
@@ -122,6 +123,7 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"RecomputedFail": recomputedFail,
 		"Balances":       balances,
 		"Today":          time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"ClonedID":       clonedID,
 	})
 }
 
@@ -312,6 +314,111 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/accounts?flash=created", http.StatusSeeOther)
+}
+
+// AccountsClone handles POST /accounts/{id}/clone — creates a new account
+// that inherits firm/type/currency/import_source from the source account
+// and optionally upserts a balance anchor for today. The only required
+// field is the new account_ref; the user types that and (optionally) an
+// opening balance in the inline form on /accounts.
+//
+// On success: redirect to /accounts#row-{newID} so the browser scrolls
+// to the freshly created row. For HTMX submits we emit HX-Redirect with
+// the same URL — htmx performs a real navigation so the fragment scroll
+// fires naturally (a partial swap would require factoring the whole row
+// template into a partial, which is out of scope).
+func (h *Handlers) AccountsClone(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	idStr := r.PathValue("id")
+	srcID, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil {
+		http.Error(w, "bad source id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+
+	ref := strings.TrimSpace(r.FormValue("account_ref"))
+	if ref == "" {
+		respondClone(w, r, 0, "/accounts?flash=createfail&err="+url.QueryEscape("account ref is required"))
+		return
+	}
+	balStr := strings.TrimSpace(r.FormValue("balance"))
+	balStr = strings.ReplaceAll(balStr, ",", "")
+	var balance float64
+	hasBalance := false
+	if balStr != "" {
+		v, err := strconv.ParseFloat(balStr, 64)
+		if err != nil {
+			respondClone(w, r, 0, "/accounts?flash=createfail&err="+url.QueryEscape("opening balance must be a number"))
+			return
+		}
+		balance = v
+		hasBalance = true
+	}
+
+	src, err := h.Queries.GetAccountByID(ctx, srcID)
+	if err != nil {
+		http.Error(w, "source account not found", http.StatusNotFound)
+		return
+	}
+
+	// Inherit everything except the ref (and name, which gets " (copy)"
+	// appended). CommissionSource starts as "rate" — an inline-trades-CSV
+	// claim only makes sense once a trades CSV actually lands for this
+	// account, which is its own import flow.
+	needsSetup := int64(0)
+	if src.Firm == nil || src.Type == nil {
+		needsSetup = 1
+	}
+	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+		Name:             src.Name + " (copy)",
+		Firm:             src.Firm,
+		ImportSource:     src.ImportSource,
+		AccountRef:       ref,
+		Type:             src.Type,
+		Currency:         src.Currency,
+		NeedsSetup:       needsSetup,
+		CommissionSource: "rate",
+	})
+	if err != nil {
+		// Most likely a unique-key collision on (import_source, account_ref).
+		respondClone(w, r, 0, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()))
+		return
+	}
+
+	if hasBalance {
+		tz := h.localTZ()
+		today := time.Now().In(tz)
+		anchorDate := time.Date(today.Year(), today.Month(), today.Day(), 0, 0, 0, 0, tz)
+		if err := h.Queries.UpsertBalanceAnchor(ctx, models.UpsertBalanceAnchorParams{
+			AccountID:  created.ID,
+			AnchorDate: anchorDate,
+			Balance:    balance,
+			Note:       nil,
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("upsert anchor on clone: %w", err))
+			return
+		}
+	}
+
+	dest := fmt.Sprintf("/accounts?flash=cloned&id=%d#row-%d", created.ID, created.ID)
+	respondClone(w, r, created.ID, dest)
+}
+
+// respondClone unifies the HTMX vs plain-form response path for the
+// clone endpoint. HTMX gets HX-Redirect (htmx does a real browser
+// navigation, so URL fragments scroll-to-row). Non-HTMX gets the
+// classic 303.
+func respondClone(w http.ResponseWriter, r *http.Request, _ int64, dest string) {
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Redirect", dest)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // AccountsReassign handles POST /accounts/{id}/reassign with form field `to`

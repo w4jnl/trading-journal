@@ -97,6 +97,7 @@ func run() error {
 	mux.HandleFunc("POST /accounts/{id}/reassign", h.AccountsReassign)
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)
 	mux.HandleFunc("POST /accounts/{id}/balances", h.AccountsAddBalance)
+	mux.HandleFunc("POST /accounts/{id}/clone", h.AccountsClone)
 	mux.HandleFunc("POST /balances/{anchor_id}/delete", h.BalanceDelete)
 	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)
 	mux.HandleFunc("GET /commissions", h.CommissionsPage)
