@@ -78,8 +78,21 @@
       </tr>
     </thead>
     <tbody>
+      {{/*
+        Accounts are sorted active-first then retired (handler sort).
+        $sepShown is a one-shot flag so the divider row prints exactly
+        once at the active->retired transition. Stays unset if there
+        are no retired accounts, so the divider disappears entirely.
+      */}}
+      {{$sepShown := false}}
       {{range .Accounts}}
         {{$a := .}}
+        {{if and (eq $a.Active 0) (not $sepShown)}}
+          <tr class="retired-divider">
+            <td colspan="8">Retired accounts</td>
+          </tr>
+          {{$sepShown = true}}
+        {{end}}
         <tr id="row-{{$a.ID}}" data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{end}}>
           <td>
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
@@ -235,6 +248,18 @@
   }
   tr.account-row--retired td { opacity: 0.72; }
   tr.account-row--retired td:first-child { opacity: 1; } /* keep "retired" pill at full strength */
+
+  /* Section heading row between active and retired accounts. */
+  tr.retired-divider td {
+    padding: 14px 10px 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-subtle);
+    background: var(--bg-sunken);
+    border-top: 1px solid var(--border);
+  }
 
   /* Balance column */
   td.balance-cell { min-width: 160px; }

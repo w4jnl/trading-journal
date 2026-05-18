@@ -108,6 +108,11 @@ func summarizeTradeRows(trades []linkedTrade) GroupSummary {
 // loadDayTrades returns all closed trades exiting on the given local
 // trading day, ordered by exit_time ASC. Used by the day journal view so
 // the page shows the same "context-trades" panel as the group view.
+//
+// Retired accounts (accounts.active = 0) are excluded - the day summary
+// matches the calendar / analytics / dashboard convention of hiding
+// retired-account trades from stats. The /trades page retains its own
+// reveal toggle for explicit inspection.
 func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTrade, error) {
 	end := date.AddDate(0, 0, 1)
 	return scanLinkedTrades(ctx, db, `
@@ -116,6 +121,7 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
 		WHERE t.exit_time IS NOT NULL
+		  AND a.active = 1
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
 	`, date, end)
@@ -136,7 +142,8 @@ func loadOneTrade(ctx context.Context, db *sql.DB, tradeID int64) ([]linkedTrade
 }
 
 // loadWeekTrades returns all closed trades exiting within the ISO week that
-// starts at `monday` (Monday..Sunday inclusive).
+// starts at `monday` (Monday..Sunday inclusive). Excludes retired-account
+// trades for the same reason loadDayTrades does.
 func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linkedTrade, error) {
 	end := monday.AddDate(0, 0, 7)
 	return scanLinkedTrades(ctx, db, `
@@ -145,6 +152,7 @@ func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linked
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
 		WHERE t.exit_time IS NOT NULL
+		  AND a.active = 1
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
 	`, monday, end)
