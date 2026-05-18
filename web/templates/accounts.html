@@ -13,6 +13,7 @@
 {{if .DeletedName}}<div class="flash deleted">Deleted account <strong>{{.DeletedName}}</strong> and all of its trades, executions, and journal entries.</div>{{end}}
 {{if .RecomputedOK}}<div class="flash saved">Recomputed trades and daily stats for <span class="num">{{.RecomputedOK}}</span> account{{if ne .RecomputedOK 1}}s{{end}}{{if .RecomputedFail}} · <span class="num">{{.RecomputedFail}}</span> failed (see server log){{end}}.</div>{{end}}
 {{if eq .Flash "balanced"}}<div class="flash saved">Balance saved.</div>{{end}}
+{{if eq .Flash "cloned"}}<div class="flash created">Account cloned.</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 <div class="card card--warn" style="margin-bottom: 16px;">
@@ -79,7 +80,7 @@
     <tbody>
       {{range .Accounts}}
         {{$a := .}}
-        <tr data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{end}}>
+        <tr id="row-{{$a.ID}}" data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{end}}>
           <td>
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
@@ -120,6 +121,27 @@
                 </button>
               </div>
             </details>
+            <details class="reassign">
+              <summary>Clone…</summary>
+              {{/*
+                Inline clone form: only the two fields the user must
+                supply (new account_ref + optional opening balance).
+                Firm, type, currency, import_source are inherited from
+                this row server-side. POSTs via hx-post so the JS
+                listener picks up HX-Redirect with #row-{newID} and
+                the browser scrolls to the fresh row after navigation.
+              */}}
+              <form hx-post="/accounts/{{$a.ID}}/clone"
+                    class="row" style="margin-top: 8px; align-items: flex-end; flex-wrap: wrap;">
+                <label class="field"><span class="field-label">New ref</span>
+                  <input type="text" name="account_ref" required
+                         placeholder="e.g. APEX-100001-11" style="width: 200px;"></label>
+                <label class="field"><span class="field-label">Opening {{$a.Currency}} (optional)</span>
+                  <input type="text" name="balance" inputmode="decimal"
+                         placeholder="50000.00" style="width: 130px;"></label>
+                <button type="submit" class="btn btn--primary btn--sm">Clone</button>
+              </form>
+            </details>
           </td>
           <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
           <td>
@@ -138,56 +160,7 @@
             </select>
           </td>
           <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;"></td>
-          <td class="balance-cell">
-            {{$bal := index $.Balances $a.ID}}
-            {{if $bal.Known}}
-              <div class="balance-val num">{{printf "%.2f" $bal.Balance}}</div>
-              <div class="balance-sub muted">as of {{$.Today}}</div>
-            {{else}}
-              <div class="balance-val muted">—</div>
-            {{end}}
-            <details class="reassign {{if not $bal.Known}}needs-anchor{{end}}">
-              <summary>{{if $bal.Known}}Adjust…{{else}}Set balance →{{end}}</summary>
-              <form method="post" action="/accounts/{{$a.ID}}/balances" class="balance-form" style="margin-top: 8px;">
-                <div class="row" style="align-items: flex-end;">
-                  <label class="field"><span class="field-label">Date</span>
-                    <input type="date" name="anchor_date" value="{{$.Today}}" required></label>
-                  <label class="field"><span class="field-label">{{$a.Currency}} balance</span>
-                    <input type="text" name="balance" required inputmode="decimal" placeholder="50000.00" style="width: 110px;"></label>
-                  <label class="field"><span class="field-label">Note</span>
-                    <input type="text" name="note" placeholder="optional" style="width: 140px;"></label>
-                  <button type="submit" class="btn btn--primary btn--sm">Save anchor</button>
-                </div>
-              </form>
-              {{if $bal.Anchors}}
-                <table class="anchors" style="margin-top: 10px; width: 100%; font-size: 11px;">
-                  <thead>
-                    <tr>
-                      <th style="text-align: left;">Date</th>
-                      <th style="text-align: right;">Balance</th>
-                      <th style="text-align: left;">Note</th>
-                      <th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {{range $bal.Anchors}}
-                      <tr>
-                        <td class="num">{{localtime .AnchorDate "2006-01-02"}}</td>
-                        <td class="num" style="text-align: right;">{{printf "%.2f" .Balance}}</td>
-                        <td class="muted">{{.Note}}</td>
-                        <td style="text-align: right;">
-                          <button type="button" class="btn btn--ghost btn--sm"
-                                  data-action="del-anchor"
-                                  data-anchor-id="{{.ID}}"
-                                  data-anchor-date="{{localtime .AnchorDate "2006-01-02"}}">×</button>
-                        </td>
-                      </tr>
-                    {{end}}
-                  </tbody>
-                </table>
-              {{end}}
-            </details>
-          </td>
+          {{template "balance_cell" (dict "Account" $a "Balance" (index $.Balances $a.ID) "Today" $.Today "Currency" $a.Currency)}}
           <td style="text-align: center;"><input form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
           <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
         </tr>
@@ -379,13 +352,17 @@
         return;
       }
 
-      if (action === 'del-anchor') {
-        const anchorID = btn.dataset.anchorId;
-        const anchorDate = btn.dataset.anchorDate || '';
-        if (!confirm('Delete balance anchor for ' + anchorDate + '?')) return;
-        postForm('/balances/' + anchorID + '/delete', {});
-        return;
-      }
+    });
+  })();
+
+  /* HTMX -> toast bridge. Server responses set
+       HX-Trigger: {"toast": {"message": "...", "kind": "success"}}
+     and htmx fires a `toast` CustomEvent on document.body with detail =
+     the JSON value. Forward to the global window.toast helper. */
+  (function () {
+    document.body.addEventListener('toast', (e) => {
+      if (!e.detail || !e.detail.message || typeof window.toast !== 'function') return;
+      window.toast(e.detail.message, { kind: e.detail.kind || 'info' });
     });
   })();
 </script>

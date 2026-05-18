@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -320,6 +322,14 @@ func (h *Handlers) AccountsAddBalance(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("upsert anchor: %w", err))
 		return
 	}
+
+	// HTMX clients get an in-place re-render of the cell + a toast. Plain
+	// form submits (no JS, cURL) keep the 303 → flash redirect so the
+	// no-JS path still works.
+	if r.Header.Get("HX-Request") == "true" {
+		h.renderBalanceCell(w, r, accountID, "Balance saved.")
+		return
+	}
 	http.Redirect(w, r, "/accounts?flash=balanced", http.StatusSeeOther)
 }
 
@@ -332,10 +342,59 @@ func (h *Handlers) BalanceDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
+
+	// For an HTMX response we need to know which account this anchor
+	// belongs to so we can re-render that account's balance cell. Look
+	// it up before deleting (the row is gone afterwards).
+	var accountID int64
+	scanErr := h.DB.QueryRowContext(ctx,
+		`SELECT account_id FROM balance_anchors WHERE id = ?`, anchorID).Scan(&accountID)
+	if scanErr != nil && !errors.Is(scanErr, sql.ErrNoRows) {
+		h.serverError(w, fmt.Errorf("lookup anchor: %w", scanErr))
+		return
+	}
+
 	if err := h.Queries.DeleteBalanceAnchor(ctx, anchorID); err != nil {
 		h.serverError(w, fmt.Errorf("delete anchor: %w", err))
 		return
 	}
+
+	if r.Header.Get("HX-Request") == "true" && accountID != 0 {
+		h.renderBalanceCell(w, r, accountID, "Anchor deleted.")
+		return
+	}
 	http.Redirect(w, r, "/accounts?flash=balanced", http.StatusSeeOther)
+}
+
+// renderBalanceCell is the HTMX response body for AccountsAddBalance and
+// BalanceDelete. It re-renders the cell partial in place and emits a
+// toast event via HX-Trigger so the page can flash a success banner
+// without a full reload (which would wipe any unsaved dirty edits in
+// the bulk-edit form on the rest of the page).
+func (h *Handlers) renderBalanceCell(w http.ResponseWriter, r *http.Request, accountID int64, toastMsg string) {
+	ctx := r.Context()
+	acct, err := h.Queries.GetAccountByID(ctx, accountID)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load account: %w", err))
+		return
+	}
+	balances, err := h.loadBalances(ctx, time.Now())
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load balances: %w", err))
+		return
+	}
+	bal := balances[accountID] // zero-value AccountBalance is fine when no anchors
+
+	// HX-Trigger payload: htmx fires a `toast` CustomEvent on document.body
+	// with detail = the inner JSON value. The /accounts script bridges
+	// that to window.toast().
+	w.Header().Set("HX-Trigger", fmt.Sprintf(
+		`{"toast":{"message":%q,"kind":"success"}}`, toastMsg))
+	h.renderPartial(w, "_balance_cell.html", "balance_cell", map[string]any{
+		"Account":  acct,
+		"Balance":  bal,
+		"Today":    time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"Currency": acct.Currency,
+	})
 }
 
