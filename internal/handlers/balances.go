@@ -58,7 +58,7 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 	}
 
 	type tradeDelta struct {
-		ExitDate time.Time // local-tz midnight
+		ExitTime time.Time // raw UTC timestamp; compared directly so the result is tz-independent
 		NetPnL   float64
 	}
 	tradeRows, err := h.Queries.ListClosedTradeDeltasOrdered(ctx)
@@ -72,23 +72,24 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 		if r.ExitTime == nil {
 			continue
 		}
-		y, m, d := r.ExitTime.In(tz).Date()
 		deltasByAccount[r.AccountID] = append(deltasByAccount[r.AccountID], tradeDelta{
-			ExitDate: time.Date(y, m, d, 0, 0, 0, 0, tz),
+			ExitTime: *r.ExitTime,
 			NetPnL:   r.NetPnl,
 		})
 	}
 
-	todayDay := dayStart(today, tz)
+	// We pick "most recent anchor at or before now" without rounding to a
+	// calendar day. anchor_date was originally stored as midnight in the
+	// creator's tz, so a viewer in a different tz would round it to a
+	// different day and silently skip otherwise-valid trades on the
+	// boundary.
 	out := map[int64]AccountBalance{}
 	for accountID, anchors := range byAccount {
-		// Most recent anchor with anchor_date <= today. If none, fall back to
-		// the earliest future anchor and back-fill from there.
 		var anchor BalanceAnchor
 		forward := true
 		found := false
 		for _, a := range anchors {
-			if !dayStart(a.AnchorDate, tz).After(todayDay) {
+			if !a.AnchorDate.After(today) {
 				anchor = a
 				found = true
 			}
@@ -97,21 +98,23 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 			anchor = anchors[0]
 			forward = false
 		}
-		anchorDay := dayStart(anchor.AnchorDate, tz)
 
 		var delta float64
 		for _, td := range deltasByAccount[accountID] {
 			if forward {
-				// Trades exited strictly after the anchor date, up to and
-				// including today, add to the running balance.
-				if td.ExitDate.After(anchorDay) && !td.ExitDate.After(todayDay) {
+				// Sum every closed trade whose exit happened after the
+				// anchor's stored moment. Timestamp comparison only - no
+				// dayStart() round-trip, so the result is the same whether
+				// the viewer's tz is Chicago, Amsterdam, or UTC.
+				if td.ExitTime.After(anchor.AnchorDate) {
 					delta += td.NetPnL
 				}
 			} else {
-				// Anchor is in the future. To back-fill from there to today,
-				// subtract trades that exited strictly after today up to and
-				// including the anchor date.
-				if td.ExitDate.After(todayDay) && !td.ExitDate.After(anchorDay) {
+				// Anchor is in the future. Subtract trades whose exit time
+				// falls between now and the anchor's stored moment - this
+				// branch only matters if such trades exist (system clock
+				// vs stored exit_time), so in normal data it's a no-op.
+				if td.ExitTime.After(today) && !td.ExitTime.After(anchor.AnchorDate) {
 					delta -= td.NetPnL
 				}
 			}
@@ -120,8 +123,8 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 		out[accountID] = AccountBalance{
 			Known:       true,
 			Balance:     anchor.Balance + delta,
-			AsOf:        todayDay,
-			LatestDate:  anchorDay,
+			AsOf:        dayStart(today, tz),
+			LatestDate:  dayStart(anchor.AnchorDate, tz),
 			HasNoChange: delta == 0,
 			Anchors:     anchors,
 		}
