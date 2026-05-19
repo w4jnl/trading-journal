@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -72,6 +73,12 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
 	}
+	// Active accounts first, retired (active=0) at the bottom. The base
+	// query orders by name; this is a stable secondary sort, so within
+	// each group names stay alphabetical.
+	sort.SliceStable(accounts, func(i, j int) bool {
+		return accounts[i].Active > accounts[j].Active
+	})
 	balances, err := h.loadBalances(ctx, time.Now())
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load balances: %w", err))
