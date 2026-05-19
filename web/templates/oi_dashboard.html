@@ -1,0 +1,63 @@
+{{define "title"}}OI Dashboard{{if .Selected}} · {{.Selected}}{{end}} — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+
+<div class="row" style="align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+  <h1 style="margin: 0;">Open Interest{{if .Selected}} · {{.Selected}}{{end}}</h1>
+
+  {{if not .Empty}}
+    <div class="row-sm oi-toolbar">
+      <label for="oi-date-picker" class="oi-toolbar__label">Date</label>
+      <select id="oi-date-picker" class="oi-toolbar__select"
+              onchange="window.location.href='/oi/' + this.value">
+        {{range .All}}
+          <option value="{{.}}" {{if eq . $.Selected}}selected{{end}}>{{.}}</option>
+        {{end}}
+      </select>
+      {{if .HasPDF}}
+        <a href="{{.PDFPath}}" class="btn btn--secondary btn--sm" target="_blank" rel="noopener">View PDF</a>
+        <a href="{{.PDFPath}}?download=1" class="btn btn--ghost btn--sm">Download</a>
+      {{end}}
+    </div>
+  {{end}}
+</div>
+
+{{if .Empty}}
+  <div class="card card--warn" style="margin-top: 16px;">
+    <p style="margin: 0 0 8px 0;">No OI dashboards available yet.</p>
+    <p class="muted" style="margin: 0; font-size: 12px;">
+      Drop daily HTML + PDF pairs into
+      <code>{{.Root}}</code> using the naming convention
+      <code>dashboard-YYYY-MM-DD.html</code> /
+      <code>dashboard-YYYY-MM-DD.pdf</code>. Refresh this page to pick them up.
+    </p>
+  </div>
+{{else}}
+  {{/*
+    Iframe pulls the self-contained dashboard HTML directly from
+    /oi/file/{date}.html. sandbox allows same-origin so the page can
+    render its own assets, but blocks script execution that wasn't
+    explicitly allow-listed - current dashboards are inert HTML+CSS
+    so nothing breaks.
+  */}}
+  <style>
+    /* Inline toolbar: single-row label + select + buttons, all on a shared baseline. */
+    .oi-toolbar { align-items: center; }
+    .oi-toolbar__label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--fg-muted);
+    }
+    .oi-toolbar__select { height: 28px; padding: 4px 8px; font-size: 12px; }
+  </style>
+
+  <iframe id="oi-frame"
+          src="{{.HTMLPath}}"
+          sandbox="allow-same-origin"
+          title="OI Dashboard for {{.Selected}}"
+          style="display: block; width: 100%; min-height: calc(100vh - 180px); border: 1px solid var(--border); border-radius: var(--r-md); margin-top: 16px; background: #fff;"></iframe>
+{{end}}
+{{end}}

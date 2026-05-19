@@ -4,7 +4,7 @@
 # First-run setup:
 #   cd Docker/
 #   cp config.example.yaml config.yaml      # adjust timezone / port if needed
-#   mkdir -p data imports/{inbox,processed,failed,uploads}
+#   mkdir -p data imports/{inbox,processed,failed,uploads} oi_dashboard
 #   docker compose pull
 #   docker compose up -d
 #
@@ -28,6 +28,8 @@ services:
       - ./config.yaml:/etc/trading-journal/config.yaml:ro
       - ./data:/var/lib/trading-journal/data
       - ./imports:/var/lib/trading-journal/imports
+      # Daily OI dashboards (read-only) - external pipeline writes here on the host.
+      - ./oi_dashboard:/var/lib/trading-journal/oi_dashboard:ro
 
     # No healthcheck declared — the distroless/static base has no shell or
     # wget/curl to call /healthz from inside the container. If you need a

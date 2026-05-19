@@ -11,10 +11,11 @@ import (
 )
 
 type Config struct {
-	Server   Server   `yaml:"server"`
-	Database Database `yaml:"database"`
-	Imports  Imports  `yaml:"imports"`
-	Timezone string   `yaml:"timezone"`
+	Server       Server       `yaml:"server"`
+	Database     Database     `yaml:"database"`
+	Imports      Imports      `yaml:"imports"`
+	OIDashboards OIDashboards `yaml:"oi_dashboards"`
+	Timezone     string       `yaml:"timezone"`
 }
 
 type Server struct {
@@ -29,12 +30,21 @@ type Imports struct {
 	Root string `yaml:"root"`
 }
 
+// OIDashboards points at the folder where an external pipeline drops
+// daily Open Interest dashboards (HTML + PDF pairs named
+// "dashboard-YYYY-MM-DD.{html,pdf}"). The /oi view lists everything
+// in this folder and serves the latest by default.
+type OIDashboards struct {
+	Root string `yaml:"root"`
+}
+
 func defaults() Config {
 	return Config{
-		Server:   Server{Port: 8080},
-		Database: Database{Path: "./data/trading.db"},
-		Imports:  Imports{Root: "./imports"},
-		Timezone: "America/Chicago",
+		Server:       Server{Port: 8080},
+		Database:     Database{Path: "./data/trading.db"},
+		Imports:      Imports{Root: "./imports"},
+		OIDashboards: OIDashboards{Root: "./oi_dashboard"},
+		Timezone:     "America/Chicago",
 	}
 }
 

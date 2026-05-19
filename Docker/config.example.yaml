@@ -11,6 +11,11 @@ database:
 imports:
   root: "/var/lib/trading-journal/imports"
 
+# Daily Open Interest dashboards dropped by an external pipeline.
+# Bind-mounted read-only from the host (see docker-compose.yml).
+oi_dashboards:
+  root: "/var/lib/trading-journal/oi_dashboard"
+
 # Trading timezone — used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

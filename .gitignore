@@ -32,6 +32,10 @@ go.work.sum
 !/imports/processed/.gitkeep
 !/imports/failed/.gitkeep
 
+# OI dashboards — runtime data populated by an external pipeline.
+# The folder itself stays out of git; bind-mounted into the container.
+/oi_dashboard/
+
 # Local config / secrets
 config.yaml
 config.local.yaml
