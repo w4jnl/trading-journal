@@ -32,6 +32,7 @@ type Handlers struct {
 	Queries        *models.Queries
 	UploadsDir     string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
 	AttachmentsDir string // where journal-attached images are stored on disk
+	OIDashboardsDir string // root folder containing daily OI dashboards (dashboard-YYYY-MM-DD.{html,pdf})
 	Timezone       *time.Location
 	Logger         *slog.Logger
 

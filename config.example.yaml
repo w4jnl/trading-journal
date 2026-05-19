@@ -7,5 +7,11 @@ database:
 imports:
   root: "./imports"
 
+# Daily Open Interest dashboards (HTML + PDF pairs named
+# dashboard-YYYY-MM-DD.{html,pdf}) dropped by an external pipeline.
+# /oi lists everything in this folder and serves the latest by default.
+oi_dashboards:
+  root: "./oi_dashboard"
+
 # Trading timezone — used for day boundaries on calendar/dashboard. Storage is always UTC.
 timezone: "America/Chicago"

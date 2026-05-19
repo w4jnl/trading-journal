@@ -70,13 +70,14 @@ func run() error {
 	}
 
 	h := &handlers.Handlers{
-		Templates:      web.TemplatesFS,
-		DB:             conn,
-		ImportSvc:      importSvc,
-		Queries:        queries,
-		UploadsDir:     uploads,
-		AttachmentsDir: attachments,
-		Timezone:       tz,
+		Templates:       web.TemplatesFS,
+		DB:              conn,
+		ImportSvc:       importSvc,
+		Queries:         queries,
+		UploadsDir:      uploads,
+		AttachmentsDir:  attachments,
+		OIDashboardsDir: cfg.OIDashboards.Root,
+		Timezone:        tz,
 	}
 
 	mux := http.NewServeMux()
@@ -128,6 +129,9 @@ func run() error {
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)
+	mux.HandleFunc("GET /oi", h.OIDashboardPage)
+	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
+	mux.HandleFunc("GET /oi/file/{name}", h.OIDashboardFile)
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
