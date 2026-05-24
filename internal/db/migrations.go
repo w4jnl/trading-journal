@@ -13,10 +13,35 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// MigrationVars provides values substituted into migration SQL bodies before
+// exec. Currently only ${BOOTSTRAP_USERNAME} (the admin user assigned
+// ownership of pre-multiuser data) is supported. The value is validated as
+// SQL-safe (alphanumeric + a few separators) so the substitution can't be
+// used to inject statements via a malicious config.
+type MigrationVars struct {
+	BootstrapUsername string
+}
+
+func (v MigrationVars) apply(sql string) (string, error) {
+	if !strings.Contains(sql, "${BOOTSTRAP_USERNAME}") {
+		return sql, nil
+	}
+	if v.BootstrapUsername == "" {
+		return "", fmt.Errorf("migration references ${BOOTSTRAP_USERNAME} but no bootstrap username configured")
+	}
+	for _, r := range v.BootstrapUsername {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.'
+		if !ok {
+			return "", fmt.Errorf("bootstrap username %q contains unsafe character %q (allowed: A-Za-z0-9 _-.)", v.BootstrapUsername, r)
+		}
+	}
+	return strings.ReplaceAll(sql, "${BOOTSTRAP_USERNAME}", v.BootstrapUsername), nil
+}
+
 // RunMigrations applies any pending migrations from the embedded migrations/ dir.
 // Files use dbmate format (-- migrate:up / -- migrate:down). Only the up section
 // is executed at runtime; rollbacks are a manual / dev-tooling concern.
-func RunMigrations(conn *sql.DB) error {
+func RunMigrations(conn *sql.DB, vars MigrationVars) error {
 	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)`); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
@@ -46,6 +71,10 @@ func RunMigrations(conn *sql.DB) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 		upSQL, err := extractUp(string(raw))
+		if err != nil {
+			return fmt.Errorf("migration %s: %w", path, err)
+		}
+		upSQL, err = vars.apply(upSQL)
 		if err != nil {
 			return fmt.Errorf("migration %s: %w", path, err)
 		}

@@ -30,7 +30,7 @@ func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 		t.Fatalf("db.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.RunMigrations(conn); err != nil {
+	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: "test"}); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 	q := models.New(conn)

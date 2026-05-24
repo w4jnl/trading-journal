@@ -37,6 +37,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("load config: %w", err)
 	}
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("config: %w", err)
+	}
 	tz, err := time.LoadLocation(cfg.Timezone)
 	if err != nil {
 		return fmt.Errorf("load timezone %q: %w", cfg.Timezone, err)
@@ -47,7 +50,7 @@ func run() error {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer conn.Close()
-	if err := db.RunMigrations(conn); err != nil {
+	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: cfg.Auth.BootstrapUser}); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
 
