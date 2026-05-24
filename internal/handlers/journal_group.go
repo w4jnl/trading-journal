@@ -533,8 +533,15 @@ func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }
 
-// GroupJournalLink handles POST /journal/group/{id}/link — adds a trade to
-// the group. Idempotent via INSERT OR IGNORE on the composite PK.
+// GroupJournalLink handles POST /journal/group/{id}/link — adds one or
+// more trades to the group. Accepts one or many trade_id form values
+// (single-trade form on the group editor, bulk action bar on /trades).
+// Idempotent via INSERT OR IGNORE on the composite PK.
+//
+// An optional `back` form field (must be a /-rooted relative URL)
+// redirects the caller back to where they came from with a
+// `?flash=grouplinked=N&group=ID` annotation, so the /trades bulk
+// flow can stay in place rather than navigating into the editor.
 func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	entryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -546,16 +553,46 @@ func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	tradeID, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("trade_id")), 10, 64)
-	if err != nil {
-		http.Error(w, "bad trade_id", http.StatusBadRequest)
+	raw := r.Form["trade_id"]
+	ids := make([]int64, 0, len(raw))
+	for _, s := range raw {
+		if id, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) == 0 {
+		http.Error(w, "no trade_id", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.DB.ExecContext(ctx,
-		"INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)",
-		entryID, tradeID,
-	); err != nil {
-		h.serverError(w, fmt.Errorf("link: %w", err))
+
+	tx, err := h.DB.BeginTx(ctx, nil)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("begin: %w", err))
+		return
+	}
+	defer tx.Rollback()
+	for _, id := range ids {
+		if _, err := tx.ExecContext(ctx,
+			"INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)",
+			entryID, id,
+		); err != nil {
+			h.serverError(w, fmt.Errorf("link trade %d: %w", id, err))
+			return
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		h.serverError(w, fmt.Errorf("commit: %w", err))
+		return
+	}
+
+	if back := r.FormValue("back"); back != "" && strings.HasPrefix(back, "/") && !strings.HasPrefix(back, "//") {
+		sep := "?"
+		if strings.Contains(back, "?") {
+			sep = "&"
+		}
+		http.Redirect(w, r,
+			fmt.Sprintf("%s%sflash=grouplinked%%3D%d&group=%d", back, sep, len(ids), entryID),
+			http.StatusSeeOther)
 		return
 	}
 	http.Redirect(w, r, fmt.Sprintf("/journal/group/%d?flash=linked", entryID), http.StatusSeeOther)

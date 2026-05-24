@@ -58,6 +58,22 @@ LIMIT 1;
 -- name: RelinkJournalEntry :exec
 UPDATE journal_entries SET trade_id = ? WHERE id = ?;
 
+-- name: ListGroupLinksForAccountSymbol :many
+-- Group-journal links (journal_entry_trades M:N) pointing at trades
+-- for this (account, symbol). Captured before DeleteTradesForAccountSymbol
+-- runs so the FK ON DELETE CASCADE doesn't permanently lose them - we
+-- re-INSERT after the FIFO rebuild lands fresh trade rows with the same
+-- entry_time, mirroring the trade-scope relink dance above.
+SELECT jet.journal_entry_id, t.entry_time
+FROM journal_entry_trades jet
+JOIN trades t ON t.id = jet.trade_id
+WHERE t.account_id = ? AND t.symbol = ?;
+
+-- name: InsertGroupLink :exec
+-- Idempotent re-insert used by the position builder's relink path.
+INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id)
+VALUES (?, ?);
+
 -- name: ListTradesForAccount :many
 SELECT * FROM trades WHERE account_id = ? ORDER BY entry_time, id;
 

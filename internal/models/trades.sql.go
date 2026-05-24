@@ -292,6 +292,22 @@ func (q *Queries) GetTradeByID(ctx context.Context, id int64) (GetTradeByIDRow, 
 	return i, err
 }
 
+const insertGroupLink = `-- name: InsertGroupLink :exec
+INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id)
+VALUES (?, ?)
+`
+
+type InsertGroupLinkParams struct {
+	JournalEntryID int64 `json:"journal_entry_id"`
+	TradeID        int64 `json:"trade_id"`
+}
+
+// Idempotent re-insert used by the position builder's relink path.
+func (q *Queries) InsertGroupLink(ctx context.Context, arg InsertGroupLinkParams) error {
+	_, err := q.db.ExecContext(ctx, insertGroupLink, arg.JournalEntryID, arg.TradeID)
+	return err
+}
+
 const linkTradeExecution = `-- name: LinkTradeExecution :exec
 INSERT INTO trade_executions (trade_id, execution_id, role, qty_used)
 VALUES (?, ?, ?, ?)
@@ -434,6 +450,51 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 			&i.Role,
 			&i.QtyUsed,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listGroupLinksForAccountSymbol = `-- name: ListGroupLinksForAccountSymbol :many
+SELECT jet.journal_entry_id, t.entry_time
+FROM journal_entry_trades jet
+JOIN trades t ON t.id = jet.trade_id
+WHERE t.account_id = ? AND t.symbol = ?
+`
+
+type ListGroupLinksForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+type ListGroupLinksForAccountSymbolRow struct {
+	JournalEntryID int64     `json:"journal_entry_id"`
+	EntryTime      time.Time `json:"entry_time"`
+}
+
+// Group-journal links (journal_entry_trades M:N) pointing at trades
+// for this (account, symbol). Captured before DeleteTradesForAccountSymbol
+// runs so the FK ON DELETE CASCADE doesn't permanently lose them - we
+// re-INSERT after the FIFO rebuild lands fresh trade rows with the same
+// entry_time, mirroring the trade-scope relink dance above.
+func (q *Queries) ListGroupLinksForAccountSymbol(ctx context.Context, arg ListGroupLinksForAccountSymbolParams) ([]ListGroupLinksForAccountSymbolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listGroupLinksForAccountSymbol, arg.AccountID, arg.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListGroupLinksForAccountSymbolRow
+	for rows.Next() {
+		var i ListGroupLinksForAccountSymbolRow
+		if err := rows.Scan(&i.JournalEntryID, &i.EntryTime); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

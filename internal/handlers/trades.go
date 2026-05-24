@@ -141,6 +141,15 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Existing group-journal entries, surfaced in the bulk-action bar's
+	// "Add to existing group" picker. Labels combine date + first words of
+	// body so the user can recognize the entry without opening it.
+	groupOptions, err := listGroupOptions(ctx, h.DB)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list groups: %w", err))
+		return
+	}
+
 	// Count how many retired-account trades match the rest of the filter so the
 	// reveal toggle can advertise "Show N retired" rather than a bare label.
 	retiredHidden := int64(0)
@@ -180,7 +189,57 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"RetiredAuto":      retiredAutoOn,
 		"RetiredHidden":    retiredHidden,
 		"RetiredQuery":     retiredToggleQuery(r, !filters.IncludeRetired),
+		"GroupOptions":     groupOptions,
 	})
+}
+
+// groupOption is one row in the "Add to existing group" picker on
+// /trades. Label is "YYYY-MM-DD - first-words-of-body" or a fallback
+// when the entry has no body yet.
+type groupOption struct {
+	ID    int64
+	Label string
+}
+
+// listGroupOptions returns every group journal entry, newest first,
+// with a human-readable label for the picker. Done as a hand-rolled
+// query because sqlc's typed timestamp scan would require a stricter
+// shape than we need here.
+func listGroupOptions(ctx context.Context, db *sql.DB) ([]groupOption, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT id, entry_date, COALESCE(body, '')
+		FROM journal_entries
+		WHERE scope = 'group'
+		ORDER BY entry_date DESC, id DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []groupOption
+	for rows.Next() {
+		var id int64
+		var entryDate time.Time
+		var body string
+		if err := rows.Scan(&id, &entryDate, &body); err != nil {
+			return nil, err
+		}
+		label := entryDate.Format("2006-01-02")
+		excerpt := strings.TrimSpace(body)
+		if excerpt != "" {
+			// Single line, ≤48 chars. Newlines in the body become spaces.
+			excerpt = strings.ReplaceAll(excerpt, "\n", " ")
+			excerpt = strings.ReplaceAll(excerpt, "\r", " ")
+			if len(excerpt) > 48 {
+				excerpt = excerpt[:47] + "…"
+			}
+			label = label + " · " + excerpt
+		} else {
+			label = label + " · (empty)"
+		}
+		out = append(out, groupOption{ID: id, Label: label})
+	}
+	return out, rows.Err()
 }
 
 // retiredToggleQuery returns a query string that flips the show_retired flag
