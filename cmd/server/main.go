@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/config"
 	"github.com/w4jnl/trading-journal/internal/db"
 	"github.com/w4jnl/trading-journal/internal/handlers"
@@ -64,12 +65,21 @@ func run() error {
 	// data/ dir captures everything the user has authored.
 	attachments := filepath.Join(filepath.Dir(cfg.Database.Path), "attachments")
 
+	// Authenticator: phase 1b ships only the stub, which resolves every
+	// request to the configured bootstrap user. Real local/proxy modes plug
+	// into the same interface later.
+	authn, err := auth.NewStub(conn, cfg.Auth.BootstrapUser)
+	if err != nil {
+		return fmt.Errorf("init authenticator: %w", err)
+	}
+
 	importSvc := &importer.ImportService{
 		DB:           conn,
 		Queries:      queries,
 		ProcessedDir: processed,
 		FailedDir:    failed,
 		Timezone:     tz,
+		UserID:       authn.User.ID,
 	}
 
 	h := &handlers.Handlers{
@@ -147,9 +157,11 @@ func run() error {
 		http.Redirect(w, r, "/dashboard", http.StatusFound)
 	})
 
+	authn.Routes(mux)
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           mux,
+		Handler:           auth.RequireUser(authn, mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

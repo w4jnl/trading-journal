@@ -46,7 +46,7 @@ CREATE TABLE accounts_new (
     currency      TEXT NOT NULL DEFAULT 'USD',
     needs_setup   INTEGER NOT NULL DEFAULT 0,
     active        INTEGER NOT NULL DEFAULT 1,
-    commission_source TEXT,
+    commission_source TEXT NOT NULL DEFAULT 'rate' CHECK (commission_source IN ('rate', 'inline')),
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (user_id, import_source, account_ref)
 );
@@ -113,7 +113,7 @@ CREATE TABLE accounts (
     currency      TEXT NOT NULL DEFAULT 'USD',
     needs_setup   INTEGER NOT NULL DEFAULT 0,
     active        INTEGER NOT NULL DEFAULT 1,
-    commission_source TEXT,
+    commission_source TEXT NOT NULL DEFAULT 'rate' CHECK (commission_source IN ('rate', 'inline')),
     created_at    DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE (import_source, account_ref)
 );

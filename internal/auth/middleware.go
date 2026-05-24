@@ -1,0 +1,59 @@
+package auth
+
+import (
+	"log/slog"
+	"net/http"
+	"strings"
+)
+
+// PublicPrefixes are URL paths that skip authentication.
+var publicPrefixes = []string{
+	"/static/",
+	"/healthz",
+	"/login",
+	"/logout",
+}
+
+func isPublic(path string) bool {
+	for _, p := range publicPrefixes {
+		if path == p || strings.HasPrefix(path, p+"/") || (strings.HasSuffix(p, "/") && strings.HasPrefix(path, p)) {
+			return true
+		}
+	}
+	return false
+}
+
+// RequireUser wraps next with an auth check. Requests to public paths pass
+// straight through; everything else must resolve to a user, otherwise the
+// authenticator's HandleUnauthenticated decides the response shape.
+func RequireUser(a Authenticator, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if isPublic(r.URL.Path) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		u, err := a.ResolveUser(r)
+		if err != nil {
+			slog.Warn("auth resolve failed", "path", r.URL.Path, "err", err)
+			http.Error(w, "authentication error", http.StatusInternalServerError)
+			return
+		}
+		if u == nil {
+			a.HandleUnauthenticated(w, r)
+			return
+		}
+		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
+	})
+}
+
+// RequireAdmin layers on top of RequireUser and returns 403 to non-admins.
+func RequireAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		u := UserFrom(r.Context())
+		if u == nil || !u.IsAdmin {
+			http.Error(w, "admin only", http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}

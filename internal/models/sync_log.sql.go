@@ -11,14 +11,15 @@ import (
 
 const createSyncLog = `-- name: CreateSyncLog :one
 INSERT INTO sync_log (
-    account_id, sync_type, status, source_file, trades_added, execs_added, message
+    user_id, account_id, sync_type, status, source_file, trades_added, execs_added, message
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at
+RETURNING id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at, user_id
 `
 
 type CreateSyncLogParams struct {
+	UserID      *int64  `json:"user_id"`
 	AccountID   *int64  `json:"account_id"`
 	SyncType    string  `json:"sync_type"`
 	Status      string  `json:"status"`
@@ -30,6 +31,7 @@ type CreateSyncLogParams struct {
 
 func (q *Queries) CreateSyncLog(ctx context.Context, arg CreateSyncLogParams) (SyncLog, error) {
 	row := q.db.QueryRowContext(ctx, createSyncLog,
+		arg.UserID,
 		arg.AccountID,
 		arg.SyncType,
 		arg.Status,
@@ -49,12 +51,13 @@ func (q *Queries) CreateSyncLog(ctx context.Context, arg CreateSyncLogParams) (S
 		&i.ExecsAdded,
 		&i.Message,
 		&i.SyncedAt,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const listLastSyncByType = `-- name: ListLastSyncByType :many
-SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at FROM sync_log s1
+SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at, user_id FROM sync_log s1
 WHERE id = (SELECT MAX(id) FROM sync_log WHERE sync_type = s1.sync_type)
 ORDER BY synced_at DESC
 `
@@ -78,6 +81,7 @@ func (q *Queries) ListLastSyncByType(ctx context.Context) ([]SyncLog, error) {
 			&i.ExecsAdded,
 			&i.Message,
 			&i.SyncedAt,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -93,7 +97,7 @@ func (q *Queries) ListLastSyncByType(ctx context.Context) ([]SyncLog, error) {
 }
 
 const listSyncLogRecent = `-- name: ListSyncLogRecent :many
-SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at FROM sync_log ORDER BY synced_at DESC LIMIT ?
+SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at, user_id FROM sync_log ORDER BY synced_at DESC LIMIT ?
 `
 
 func (q *Queries) ListSyncLogRecent(ctx context.Context, limit int64) ([]SyncLog, error) {
@@ -115,6 +119,7 @@ func (q *Queries) ListSyncLogRecent(ctx context.Context, limit int64) ([]SyncLog
 			&i.ExecsAdded,
 			&i.Message,
 			&i.SyncedAt,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}

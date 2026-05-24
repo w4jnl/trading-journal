@@ -11,14 +11,15 @@ import (
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
-    name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
+    user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at
 `
 
 type CreateAccountParams struct {
+	UserID           int64   `json:"user_id"`
 	Name             string  `json:"name"`
 	Firm             *string `json:"firm"`
 	ImportSource     string  `json:"import_source"`
@@ -31,6 +32,7 @@ type CreateAccountParams struct {
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
 	row := q.db.QueryRowContext(ctx, createAccount,
+		arg.UserID,
 		arg.Name,
 		arg.Firm,
 		arg.ImportSource,
@@ -43,6 +45,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -51,14 +54,14 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts WHERE id = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at FROM accounts WHERE id = ?
 `
 
 func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error) {
@@ -66,6 +69,7 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -74,26 +78,31 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getAccountByRef = `-- name: GetAccountByRef :one
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts WHERE import_source = ? AND account_ref = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?
 `
 
 type GetAccountByRefParams struct {
+	UserID       int64  `json:"user_id"`
 	ImportSource string `json:"import_source"`
 	AccountRef   string `json:"account_ref"`
 }
 
+// Scoped by user_id so two users with the same broker account_ref under the
+// same import_source don't collide. Unique constraint is
+// (user_id, import_source, account_ref).
 func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams) (Account, error) {
-	row := q.db.QueryRowContext(ctx, getAccountByRef, arg.ImportSource, arg.AccountRef)
+	row := q.db.QueryRowContext(ctx, getAccountByRef, arg.UserID, arg.ImportSource, arg.AccountRef)
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -102,8 +111,8 @@ func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -134,7 +143,7 @@ func (q *Queries) GetAccountImportClaim(ctx context.Context, id int64) (string, 
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts ORDER BY name
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at FROM accounts ORDER BY name
 `
 
 func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
@@ -148,6 +157,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 		var i Account
 		if err := rows.Scan(
 			&i.ID,
+			&i.UserID,
 			&i.Name,
 			&i.Firm,
 			&i.ImportSource,
@@ -156,8 +166,8 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 			&i.Currency,
 			&i.NeedsSetup,
 			&i.Active,
-			&i.CreatedAt,
 			&i.CommissionSource,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -223,7 +233,7 @@ const updateAccount = `-- name: UpdateAccount :one
 UPDATE accounts
 SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
 WHERE id = ?
-RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at
 `
 
 type UpdateAccountParams struct {
@@ -249,6 +259,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -257,8 +268,8 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -306,6 +307,7 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		needsSetup = 1
 	}
 	if _, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           auth.MustUser(ctx).ID,
 		Name:             name,
 		Firm:             strPtrOrNil(firm),
 		ImportSource:     importSrc,
@@ -381,6 +383,7 @@ func (h *Handlers) AccountsClone(w http.ResponseWriter, r *http.Request) {
 		needsSetup = 1
 	}
 	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           auth.MustUser(ctx).ID,
 		Name:             src.Name + " (copy)",
 		Firm:             src.Firm,
 		ImportSource:     src.ImportSource,

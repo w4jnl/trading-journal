@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -245,6 +246,7 @@ func (h *Handlers) createAccountFromForm(ctx context.Context, r *http.Request) (
 		needsSetup = 1
 	}
 	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           auth.MustUser(ctx).ID,
 		Name:             name,
 		Firm:             strPtrOrNil(firm),
 		ImportSource:     importSrc,

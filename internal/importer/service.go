@@ -37,6 +37,12 @@ type ImportService struct {
 	FailedDir    string
 	Timezone     *time.Location // used by the position builder for daily_stats date bucketing
 	Logger       *slog.Logger
+
+	// UserID owns any account auto-created during import and is recorded
+	// on sync_log rows. Phase 1b: all imports are attributed to a single
+	// user (the stub authenticator's bootstrap user). Phase 1c will thread
+	// per-request / per-inbox-subdir ownership through Import* methods.
+	UserID int64
 }
 
 // Outcome summarizes what an ImportFile call did.
@@ -536,6 +542,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 			}
 		}
 		created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+			UserID:           s.UserID,
 			Name:             ref,
 			Firm:             &firm,
 			ImportSource:     string(FormatTopstepX),
@@ -566,6 +573,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 		}
 	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           s.UserID,
 		Name:             "TOPSTEP-DEFAULT",
 		Firm:             &firm,
 		ImportSource:     string(FormatTopstepX),
@@ -751,6 +759,7 @@ func upsertInstrumentStub(ctx context.Context, tx *sql.Tx, q *models.Queries, f 
 
 func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queries, format Format, ref, source string) (models.Account, bool, error) {
 	existing, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
+		UserID:       s.UserID,
 		ImportSource: string(format),
 		AccountRef:   ref,
 	})
@@ -772,6 +781,7 @@ func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queri
 		needsSetup = 1
 	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           s.UserID,
 		Name:             ref,
 		Firm:             strPtrOrNil(firm),
 		ImportSource:     string(format),
@@ -924,6 +934,7 @@ func timestampPrefixed(base string) string {
 func (s *ImportService) writeSyncLog(ctx context.Context, out Outcome, status, message string) (int64, error) {
 	source := out.SourcePath
 	row, err := s.Queries.CreateSyncLog(ctx, models.CreateSyncLogParams{
+		UserID:      &s.UserID,
 		AccountID:   nil,
 		SyncType:    string(out.Format),
 		Status:      status,

@@ -35,9 +35,16 @@ func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 	}
 	q := models.New(conn)
 
+	// Look up the bootstrap user the migration created.
+	var bootstrapID int64
+	if err := conn.QueryRow(`SELECT id FROM users WHERE username = 'test'`).Scan(&bootstrapID); err != nil {
+		t.Fatalf("load bootstrap user: %v", err)
+	}
+
 	// Create a test account with firm=apex (so commission lookups have a match).
 	apex := "apex"
 	acct, err := q.CreateAccount(context.Background(), models.CreateAccountParams{
+		UserID:           bootstrapID,
 		Name:             "test",
 		Firm:             &apex,
 		ImportSource:     "motivewave_csv",

@@ -1,11 +1,14 @@
 -- name: GetAccountByRef :one
-SELECT * FROM accounts WHERE import_source = ? AND account_ref = ?;
+-- Scoped by user_id so two users with the same broker account_ref under the
+-- same import_source don't collide. Unique constraint is
+-- (user_id, import_source, account_ref).
+SELECT * FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?;
 
 -- name: CreateAccount :one
 INSERT INTO accounts (
-    name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
+    user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
 

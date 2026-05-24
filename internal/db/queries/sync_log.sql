@@ -1,8 +1,8 @@
 -- name: CreateSyncLog :one
 INSERT INTO sync_log (
-    account_id, sync_type, status, source_file, trades_added, execs_added, message
+    user_id, account_id, sync_type, status, source_file, trades_added, execs_added, message
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
 
