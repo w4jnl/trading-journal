@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
 	"flag"
 	"fmt"
@@ -24,6 +26,32 @@ import (
 )
 
 func main() {
+	// Subcommands run before flag parsing so `./trading-journal users add ...`
+	// doesn't try to interpret subcommand args as global flags.
+	if len(os.Args) >= 2 && os.Args[1] == "users" {
+		// Allow `--config` to appear anywhere in the subcommand args.
+		cfgPath := "config.yaml"
+		var rest []string
+		args := os.Args[2:]
+		for i := 0; i < len(args); i++ {
+			a := args[i]
+			switch {
+			case a == "--config" && i+1 < len(args):
+				cfgPath = args[i+1]
+				i++
+			case len(a) > len("--config=") && a[:len("--config=")] == "--config=":
+				cfgPath = a[len("--config="):]
+			default:
+				rest = append(rest, a)
+			}
+		}
+		if err := runUsersCommand(rest, cfgPath); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	if err := run(); err != nil {
 		slog.Error("server failed", "err", err)
 		os.Exit(1)
@@ -65,12 +93,57 @@ func run() error {
 	// data/ dir captures everything the user has authored.
 	attachments := filepath.Join(filepath.Dir(cfg.Database.Path), "attachments")
 
-	// Authenticator: phase 1b ships only the stub, which resolves every
-	// request to the configured bootstrap user. Real local/proxy modes plug
-	// into the same interface later.
-	authn, err := auth.NewStub(conn, cfg.Auth.BootstrapUser)
+	// Session secret: HMAC key for CSRF tokens. Auto-generate (and warn)
+	// when empty so the app still boots on a fresh deploy; production should
+	// set this in config so tokens survive a restart.
+	sessionSecret := cfg.Auth.SessionSecret
+	if sessionSecret == "" {
+		buf := make([]byte, 32)
+		_, _ = rand.Read(buf)
+		sessionSecret = "base64:" + base64.StdEncoding.EncodeToString(buf)
+		slog.Warn("auth.session_secret not set; generated an ephemeral key — sessions will not survive restarts")
+	}
+	csrfSecret, err := auth.SecretFromString(sessionSecret)
 	if err != nil {
-		return fmt.Errorf("init authenticator: %w", err)
+		return fmt.Errorf("session secret: %w", err)
+	}
+	csrf := auth.NewCSRF(csrfSecret)
+
+	ttlHours := cfg.Auth.SessionTTLHours
+	if ttlHours <= 0 {
+		ttlHours = 168 // 7 days
+	}
+	sessions := &auth.SessionStore{
+		DB:      conn,
+		Queries: queries,
+		TTL:     time.Duration(ttlHours) * time.Hour,
+		Secure:  cfg.Auth.Mode == "proxy" || cfg.Auth.Mode == "local", // both expect TLS in prod; toggle off for local dev if needed
+	}
+
+	// Authenticator selection from cfg.Auth.Mode. Defaults to local.
+	var authn auth.Authenticator
+	var bootstrapUserID int64
+	switch cfg.Auth.Mode {
+	case "", "local":
+		la := &auth.LocalAuth{
+			DB:       conn,
+			Queries:  queries,
+			Sessions: sessions,
+		}
+		authn = la
+		// Importer / watcher need a user id to own auto-created accounts.
+		// In local mode we attribute filesystem-watcher imports to the
+		// bootstrap user; UI uploads will get the request-context user
+		// once that path is threaded (phase 4).
+		stub, err := auth.NewStub(conn, cfg.Auth.BootstrapUser)
+		if err != nil {
+			return fmt.Errorf("resolve bootstrap user: %w", err)
+		}
+		bootstrapUserID = stub.User.ID
+	case "proxy":
+		return fmt.Errorf("auth.mode=proxy is not implemented yet (phase 3)")
+	default:
+		return fmt.Errorf("unknown auth.mode %q", cfg.Auth.Mode)
 	}
 
 	importSvc := &importer.ImportService{
@@ -79,7 +152,7 @@ func run() error {
 		ProcessedDir: processed,
 		FailedDir:    failed,
 		Timezone:     tz,
-		UserID:       authn.User.ID,
+		UserID:       bootstrapUserID,
 	}
 
 	h := &handlers.Handlers{
@@ -91,6 +164,16 @@ func run() error {
 		AttachmentsDir:  attachments,
 		OIDashboardsDir: cfg.OIDashboards.Root,
 		Timezone:        tz,
+		CSRF:            csrf,
+	}
+
+	// LocalAuth's login template uses the existing renderPage pipeline so
+	// base.html / nav / theme machinery is reused. The login page itself
+	// also needs CSRF + CurrentUser=nil treatment; renderPage handles both.
+	if la, ok := authn.(*auth.LocalAuth); ok {
+		la.LoginTemplate = func(w http.ResponseWriter, data map[string]any) {
+			h.RenderLogin(w, data)
+		}
 	}
 
 	mux := http.NewServeMux()
@@ -159,9 +242,12 @@ func run() error {
 
 	authn.Routes(mux)
 
+	// Handler chain: CSRF -> RequireUser -> mux. CSRF runs first so even
+	// the auth-protected POSTs are token-checked; RequireUser then resolves
+	// the session into r.Context().
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           auth.RequireUser(authn, mux),
+		Handler:           csrf.Middleware(auth.RequireUser(authn, mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,
@@ -170,6 +256,9 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	// Background session sweep — purge expired rows every hour.
+	go sessions.StartJanitor(ctx, time.Hour)
 
 	// Start the inbox watcher. Errors during individual imports are logged
 	// inside the watcher; only setup errors come back here.
@@ -187,7 +276,7 @@ func run() error {
 	}()
 
 	go func() {
-		slog.Info("server listening", "addr", srv.Addr)
+		slog.Info("server listening", "addr", srv.Addr, "auth_mode", cfg.Auth.Mode)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("listen", "err", err)
 			stop()

@@ -117,7 +117,7 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		flash = ""
 	}
-	h.renderPage(w, "accounts.html", map[string]any{
+	h.renderPage(w, r, "accounts.html", map[string]any{
 		"NavActive":      "accounts",
 		"BackHref":       validBackHref(r),
 		"Accounts":       accounts,

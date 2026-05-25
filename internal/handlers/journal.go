@@ -143,7 +143,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	y, wk := now.ISOWeek()
 	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
 
-	h.renderPage(w, "journal_feed.html", map[string]any{
+	h.renderPage(w, r, "journal_feed.html", map[string]any{
 		"NavActive":     "journal",
 		"BackHref":      validBackHref(r),
 		"Items":         items,
@@ -412,7 +412,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	daySummary := summarizeTradeRows(dayTrades)
 
-	h.renderPage(w, "journal.html", map[string]any{
+	h.renderPage(w, r, "journal.html", map[string]any{
 		"NavActive": "journal",
 		"BackHref":  backHref,
 		"Date":      dateStr,
@@ -608,7 +608,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := summarizeTradeRows(trades)
 
-	h.renderPage(w, "journal_trade.html", map[string]any{
+	h.renderPage(w, r, "journal_trade.html", map[string]any{
 		"NavActive":      "journal",
 		"BackHref":       validBackHref(r),
 		"Trade":          trade,
@@ -666,7 +666,7 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	weekSummary := summarizeTradeRows(weekTrades)
 
-	h.renderPage(w, "journal_week.html", map[string]any{
+	h.renderPage(w, r, "journal_week.html", map[string]any{
 		"NavActive":  "journal",
 		"BackHref":   validBackHref(r),
 		"WeekID":     fmt.Sprintf("%d-W%02d", isoYear, isoWeek),

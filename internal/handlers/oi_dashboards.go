@@ -62,7 +62,7 @@ func (h *Handlers) OIDashboardPage(w http.ResponseWriter, r *http.Request) {
 
 	hasPDF := selected != "" && fileExists(filepath.Join(root, dashboardFilePrefix+selected+".pdf"))
 
-	h.renderPage(w, "oi_dashboard.html", map[string]any{
+	h.renderPage(w, r, "oi_dashboard.html", map[string]any{
 		"NavActive": "oi",
 		"BackHref":  validBackHref(r),
 		"Selected":  selected,

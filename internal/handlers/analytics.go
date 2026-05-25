@@ -155,7 +155,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		formTo = to.AddDate(0, 0, -1).Format("2006-01-02")
 	}
 
-	h.renderPage(w, "analytics.html", map[string]any{
+	h.renderPage(w, r, "analytics.html", map[string]any{
 		"NavActive":        "analytics",
 		"BackHref":         validBackHref(r),
 		"Headline":         headline,

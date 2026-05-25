@@ -23,7 +23,7 @@ func (h *Handlers) ImportPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list sync_log: %w", err))
 		return
 	}
-	h.renderPage(w, "import.html", map[string]any{
+	h.renderPage(w, r, "import.html", map[string]any{
 		"NavActive": "import",
 		"BackHref":  validBackHref(r),
 		"Recent":    recent,

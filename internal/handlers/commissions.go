@@ -110,7 +110,7 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	sortOrphansByCount(reasons)
 
-	h.renderPage(w, "commissions.html", map[string]any{
+	h.renderPage(w, r, "commissions.html", map[string]any{
 		"NavActive":    "commissions",
 		"BackHref":     validBackHref(r),
 		"AssetClasses": assetClasses,

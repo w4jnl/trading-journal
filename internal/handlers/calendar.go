@@ -267,7 +267,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 	filterQS := template.URL(filterOnly.Encode())
 
-	h.renderPage(w, "calendar.html", map[string]any{
+	h.renderPage(w, r, "calendar.html", map[string]any{
 		"NavActive":        "calendar",
 		"BackHref":         validBackHref(r),
 		"MonthLabel":       monthStart.Format("January 2006"),

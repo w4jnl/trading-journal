@@ -331,6 +331,40 @@ hr {
   font-size: 10px;
   padding: 1px 5px;
 }
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.sidebar-user-name {
+  flex: 1;
+  font-weight: 500;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-user-logout {
+  background: transparent;
+  border: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--r-sm);
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.sidebar-user-logout:hover {
+  color: var(--fg);
+  background: var(--bg-elevated);
+}
 
 .app-main {
   min-width: 0;

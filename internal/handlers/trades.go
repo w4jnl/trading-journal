@@ -166,7 +166,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.renderPage(w, "trades.html", map[string]any{
+	h.renderPage(w, r, "trades.html", map[string]any{
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
 		"Trades":           rows,

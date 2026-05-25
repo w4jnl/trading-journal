@@ -443,7 +443,7 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		tag = *entry.Tag
 	}
 
-	h.renderPage(w, "journal_group.html", map[string]any{
+	h.renderPage(w, r, "journal_group.html", map[string]any{
 		"NavActive":     "journal",
 		"BackHref":      validBackHref(r),
 		"EntryID":       id,
