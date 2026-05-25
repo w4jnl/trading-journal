@@ -73,6 +73,25 @@
           if (e.detail && e.detail.headers) e.detail.headers['X-CSRF-Token'] = token;
         });
       });
+      // Wrap window.fetch so same-origin mutating calls (journal preview,
+      // attachment uploads, etc.) get the token without per-call plumbing.
+      var origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        try {
+          init = init || {};
+          var method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+          if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            var sameOrigin = !/^https?:\/\//i.test(url) || url.indexOf(window.location.origin) === 0;
+            if (sameOrigin) {
+              var h = new Headers(init.headers || (typeof input === 'object' && input.headers) || {});
+              if (!h.has('X-CSRF-Token')) h.set('X-CSRF-Token', token);
+              init.headers = h;
+            }
+          }
+        } catch (e) { /* fall through to original fetch */ }
+        return origFetch(input, init);
+      };
     })();
   </script>
 </head>
