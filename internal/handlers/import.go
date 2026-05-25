@@ -86,7 +86,8 @@ func (h *Handlers) ImportUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer cleanup()
-	outcome, err := h.ImportSvc.ImportFile(ctx, staged)
+	u := auth.MustUser(ctx)
+	outcome, err := h.ImportSvc.ImportFileForUser(ctx, staged, u.ID, u.Username)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("import: %w", err))
 		return
@@ -131,7 +132,8 @@ func (h *Handlers) ImportAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outcome, err := h.ImportSvc.ImportFileToAccount(ctx, staged, accountID)
+	u := auth.MustUser(ctx)
+	outcome, err := h.ImportSvc.ImportFileToAccountForUser(ctx, staged, accountID, u.ID, u.Username)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("import: %w", err))
 		return

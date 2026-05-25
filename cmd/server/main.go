@@ -296,6 +296,7 @@ func run() error {
 	watcher := &importer.Watcher{
 		InboxDir: inbox,
 		Service:  importSvc,
+		DB:       conn, // resolves imports/inbox/<username>/ subdirs to user_ids
 	}
 	watcherDone := make(chan struct{})
 	go func() {

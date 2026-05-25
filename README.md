@@ -211,11 +211,37 @@ Two entry points, same code path:
    and it auto-imports.
 
 After processing, files move out of `inbox/`:
-- success → `imports/processed/<timestamp>_<filename>`
-- failure → `imports/failed/<filename>` plus a sibling
+- success → `imports/processed/<username>/<timestamp>_<filename>`
+- failure → `imports/failed/<username>/<filename>` plus a sibling
   `<filename>.error.txt`
 
 No file is silently lost.
+
+### Per-user inbox subdirectories
+
+The watcher recognizes `imports/inbox/<username>/` subdirs and routes
+each one's drops to that user. Subdir name must match a `users.username`
+in the DB and the user must be active (`is_active = 1`); subdirs that
+don't resolve are logged at startup and ignored. So:
+
+```
+imports/
+  inbox/
+    alice/   foo.csv          ← alice's account
+    bob/     bar.csv          ← bob's account
+    leftover.csv              ← still works → bootstrap user
+  processed/
+    alice/   2026-…_foo.csv
+    bob/     2026-…_bar.csv
+    2026-…_leftover.csv       ← flat path for flat drops
+  failed/    … (mirrors processed/<username>/ …)
+```
+
+Files dropped directly into `inbox/` (no subdir) still work for
+single-user compatibility — they get attributed to the bootstrap user
+and use the flat `processed/` / `failed/` paths. The UI upload at
+`/import` always uses the request's logged-in user, regardless of
+where the staged file ends up.
 
 ## Backup
 
