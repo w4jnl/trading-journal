@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"golang.org/x/term"
@@ -38,12 +39,16 @@ Subcommands:
   demote <username>
         Revoke admin.
   delete <username> [--yes]
-        Permanently delete the user and ALL their accounts, trades,
-        executions, journal entries, balance anchors, daily stats,
-        sessions, and custom journal templates. sync_log history is
-        anonymized (user_id set to NULL). Requires retyping the
-        username at the prompt unless --yes is passed. Refuses to
-        remove the last active admin.
+        Permanently delete the user and ALL their data:
+          - DB: accounts, trades, executions, journal entries (every
+            scope), balance anchors, daily stats, sessions, custom
+            journal templates, journal_entry links. sync_log history
+            is anonymized (user_id -> NULL).
+          - Files: journal attachment files, the user's
+            imports/inbox/<name>/, imports/processed/<name>/,
+            imports/failed/<name>/, and imports/uploads/<id>/.
+        Requires retyping the username at the prompt unless --yes is
+        passed. Refuses to remove the last active admin.
 
 Global flags (recognized anywhere in the args):
   --config=PATH   Path to config.yaml (default: ./config.yaml)
@@ -93,7 +98,7 @@ func runUsersCommand(args []string, cfgPath string) error {
 	case "demote":
 		return userSetAdmin(ctx, q, rest, false)
 	case "delete":
-		return userDelete(ctx, conn, q, rest)
+		return userDelete(ctx, conn, q, rest, cfg)
 	default:
 		fmt.Fprint(os.Stderr, usersHelp)
 		return fmt.Errorf("unknown users subcommand %q", sub)
@@ -288,7 +293,7 @@ func userSetAdmin(ctx context.Context, q *models.Queries, args []string, admin b
 	return nil
 }
 
-func userDelete(ctx context.Context, conn *sql.DB, q *models.Queries, args []string) error {
+func userDelete(ctx context.Context, conn *sql.DB, q *models.Queries, args []string, cfg config.Config) error {
 	confirmed := false
 	var username string
 	for _, a := range args {
@@ -343,12 +348,29 @@ func userDelete(ctx context.Context, conn *sql.DB, q *models.Queries, args []str
 		}
 	}
 
-	stats, err := auth.PurgeUser(ctx, conn, row.ID)
+	// Derive on-disk roots from cfg, matching the layout main.go uses
+	// at server startup so the per-user dirs line up.
+	importsRoot := cfg.Imports.Root
+	dbDir := filepath.Dir(cfg.Database.Path)
+	opts := auth.PurgeUserOptions{
+		Username:       username,
+		AttachmentsDir: filepath.Join(dbDir, "attachments"),
+		InboxDir:       filepath.Join(importsRoot, "inbox"),
+		ProcessedDir:   filepath.Join(importsRoot, "processed"),
+		FailedDir:      filepath.Join(importsRoot, "failed"),
+		UploadsDir:     filepath.Join(importsRoot, "uploads"),
+	}
+
+	stats, err := auth.PurgeUser(ctx, conn, row.ID, opts)
 	if err != nil {
 		return fmt.Errorf("purge: %w", err)
 	}
-	fmt.Printf("Deleted user %s (id=%d): removed %d accounts, %d trades\n",
-		username, row.ID, stats.Accounts, stats.Trades)
+	fmt.Printf("Deleted user %s (id=%d): %d accounts, %d trades, %d attachment files removed; %d user dirs cleaned\n",
+		username, row.ID, stats.Accounts, stats.Trades, stats.Attachments, stats.DirsRemoved)
+	if stats.FailedFiles > 0 || stats.FailedDirs > 0 {
+		fmt.Fprintf(os.Stderr, "warning: %d file(s) and %d dir(s) could not be removed; see logs\n",
+			stats.FailedFiles, stats.FailedDirs)
+	}
 	return nil
 }
 
