@@ -113,11 +113,18 @@ func run() error {
 	if ttlHours <= 0 {
 		ttlHours = 168 // 7 days
 	}
+	cookieSecure := true
+	if cfg.Auth.CookieSecure != nil {
+		cookieSecure = *cfg.Auth.CookieSecure
+	}
 	sessions := &auth.SessionStore{
 		DB:      conn,
 		Queries: queries,
 		TTL:     time.Duration(ttlHours) * time.Hour,
-		Secure:  cfg.Auth.Mode == "proxy" || cfg.Auth.Mode == "local", // both expect TLS in prod; toggle off for local dev if needed
+		Secure:  cookieSecure,
+	}
+	if !cookieSecure {
+		slog.Warn("auth.cookie_secure = false; session cookie will be sent over plain HTTP (only safe on a trusted private network)")
 	}
 
 	// Authenticator selection from cfg.Auth.Mode. Defaults to local.

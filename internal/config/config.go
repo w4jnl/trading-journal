@@ -30,7 +30,11 @@ type Auth struct {
 	BootstrapUser   string    `yaml:"bootstrap_user"`
 	SessionSecret   string    `yaml:"session_secret"`
 	SessionTTLHours int       `yaml:"session_ttl_hours"`
-	Proxy           ProxyAuth `yaml:"proxy"`
+	// CookieSecure marks the session cookie Secure (browser only sends it
+	// over HTTPS). Nil = default true. Set to false for plain-HTTP deploys
+	// on a trusted VPN where TLS isn't terminated in front of the app.
+	CookieSecure *bool     `yaml:"cookie_secure"`
+	Proxy        ProxyAuth `yaml:"proxy"`
 }
 
 type ProxyAuth struct {
