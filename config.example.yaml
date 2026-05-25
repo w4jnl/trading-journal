@@ -56,10 +56,12 @@ auth:
     # CIDR allowlist for r.RemoteAddr -- requests that don't originate
     # from a trusted proxy are rejected before any header is read.
     trusted_proxies: []
-    # Provision unknown users automatically on first sight. Off by
-    # default so a typo in your SSO config doesn't silently grow your
-    # user list.
-    auto_provision: false
+    # Provision unknown users automatically on first sight. Convenient
+    # for a single-tenant SSO where every authenticated identity should
+    # have a journal account; flip to false if your SSO covers a wider
+    # audience than the journal should serve, so a typo doesn't
+    # silently grow your user list.
+    auto_provision: true
     # Where /logout should redirect (your SSO logout URL). When unset,
     # /logout returns a stub page asking the user to sign out through
     # the SSO.
