@@ -1,5 +1,14 @@
 -- migrate:up
 
+-- Defer FK checks until COMMIT: the accounts and journal_templates table
+-- rebuilds below temporarily drop the original tables, which would otherwise
+-- trigger immediate FK violations from trades / executions / journal_entries
+-- / balance_anchors / daily_stats (all FK to accounts) and from
+-- journal_attachments (FK to journal_templates via name? - no, but defensive).
+-- defer_foreign_keys works inside an active transaction, unlike the global
+-- foreign_keys pragma.
+PRAGMA defer_foreign_keys = ON;
+
 -- Users + sessions. user_id is added to the ownership-root tables
 -- (accounts, journal_templates, sync_log); everything else reaches
 -- the user via FK chain through accounts.
