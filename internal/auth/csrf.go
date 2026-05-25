@@ -47,23 +47,36 @@ func (c *CSRF) Verify(sessionID, got string) bool {
 	return hmac.Equal([]byte(want), []byte(got))
 }
 
+// csrfExemptPaths bypass the CSRF check unconditionally. /login and /logout
+// are the only mutating endpoints reachable before an authenticated session
+// exists; they handle session fixation themselves (login regenerates the
+// session id, logout destroys it). A stale cookie from a prior session must
+// not be allowed to gate a fresh login.
+var csrfExemptPaths = map[string]bool{
+	"/login":  true,
+	"/logout": true,
+}
+
 // Middleware returns an http.Handler that enforces CSRF on mutating requests.
 // GET/HEAD/OPTIONS pass through; other methods must carry a matching token in
 // the "csrf_token" form field (or X-CSRF-Token header for HTMX requests).
-// Unauthenticated requests (no session cookie) skip the check too - they
-// can't carry the token until they log in, and the login form itself has
-// nothing to forge.
+// /login and /logout are exempt (see csrfExemptPaths). Unauthenticated
+// requests with no session cookie also skip the check - they can't have a
+// token yet and the auth middleware will reject them anyway.
 func (c *CSRF) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if c.PublicMethods[r.Method] {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if csrfExemptPaths[r.URL.Path] {
+			next.ServeHTTP(w, r)
+			return
+		}
 		sid := CookieFromRequest(r)
 		if sid == "" {
-			// No session cookie - either the login POST (which we want to
-			// allow) or an unauthenticated mutating call that the auth
-			// middleware will reject anyway.
+			// No session cookie - unauthenticated mutating call that the
+			// auth middleware will reject anyway.
 			next.ServeHTTP(w, r)
 			return
 		}
