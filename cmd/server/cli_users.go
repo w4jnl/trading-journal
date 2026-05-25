@@ -6,9 +6,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
-	"syscall"
 
 	"golang.org/x/term"
 
@@ -252,20 +252,28 @@ func userSetAdmin(ctx context.Context, q *models.Queries, args []string, admin b
 
 // promptPassword reads a password from stdin without echoing. Falls back to
 // echoing line read when stdin isn't a terminal (e.g., piped from a file).
+// stdinReader is a shared bufio reader so two successive promptPassword
+// calls drain the same buffered stream rather than each constructing a new
+// one and reading past the first line.
+var stdinReader = bufio.NewReader(os.Stdin)
+
 func promptPassword(prompt string) (string, error) {
 	fmt.Fprint(os.Stderr, prompt)
-	if term.IsTerminal(int(syscall.Stdin)) {
-		buf, err := term.ReadPassword(int(syscall.Stdin))
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		buf, err := term.ReadPassword(fd)
 		fmt.Fprintln(os.Stderr)
 		if err != nil {
 			return "", err
 		}
 		return strings.TrimRight(string(buf), "\r\n"), nil
 	}
-	br := bufio.NewReader(os.Stdin)
-	s, err := br.ReadString('\n')
+	s, err := stdinReader.ReadString('\n')
 	if err != nil {
-		return "", err
+		// EOF after some bytes is fine for the last line of input.
+		if err != io.EOF || s == "" {
+			return "", err
+		}
 	}
 	return strings.TrimRight(s, "\r\n"), nil
 }
