@@ -334,19 +334,19 @@ hr {
 .sidebar-user {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 6px 8px;
   margin-bottom: 8px;
   border-radius: var(--r-md);
   background: var(--bg-sunken);
   color: var(--fg);
   border: 1px solid var(--border);
-  min-width: 0; /* allow text ellipsis */
+  min-width: 0;
 }
 .sidebar-user-avatar {
   flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
+  width: 26px;
+  height: 26px;
   border-radius: 50%;
   background: var(--brand-teal, var(--accent));
   color: #fff;
@@ -363,7 +363,7 @@ hr {
   flex-direction: column;
   min-width: 0;
   flex: 1;
-  line-height: 1.15;
+  line-height: 1.2;
 }
 .sidebar-user-name {
   font-weight: 600;
@@ -374,30 +374,14 @@ hr {
   white-space: nowrap;
 }
 .sidebar-user-sub {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 2px;
-  font-size: 11px;
+  font-size: 10px;
   color: var(--fg-muted);
-  min-width: 0;
-}
-.sidebar-user-handle {
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.sidebar-user-badge {
-  display: inline-block;
-  padding: 1px 6px;
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--brand-teal, var(--accent)) 22%, transparent);
-  color: var(--brand-teal, var(--accent));
-  font-size: 10px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-  line-height: 1.5;
 }
 .sidebar-user-logout-form { margin: 0; flex: 0 0 auto; }
 .sidebar-user-logout {

@@ -167,13 +167,12 @@
 
       <div class="sidebar-footer">
         {{if .CurrentUser}}
-        <div class="sidebar-user" title="Signed in as {{.CurrentUser.Username}}">
+        <div class="sidebar-user" title="Signed in as {{.CurrentUser.Username}}{{if .CurrentUser.IsAdmin}} (admin){{end}}">
           <span class="sidebar-user-avatar" aria-hidden="true">{{slice .CurrentUser.DisplayName 0 1}}</span>
           <span class="sidebar-user-meta">
             <span class="sidebar-user-name">{{.CurrentUser.DisplayName}}</span>
             <span class="sidebar-user-sub">
-              {{if .CurrentUser.IsAdmin}}<span class="sidebar-user-badge">admin</span>{{end}}
-              <span class="sidebar-user-handle">@{{.CurrentUser.Username}}</span>
+              {{if .CurrentUser.IsAdmin}}admin{{else}}signed in{{end}}
             </span>
           </span>
           <form method="post" action="/logout" class="sidebar-user-logout-form">
