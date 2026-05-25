@@ -82,6 +82,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+		UserID:     userID(ctx),
 		StatDate:   monthStart,
 		StatDate_2: monthEnd,
 	})
@@ -92,6 +93,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 
 	// Day-level journal entries for the visible range so we can flag cells.
 	journals, err := h.Queries.ListDayJournalsInRange(ctx, models.ListDayJournalsInRangeParams{
+		UserID:      userIDPtr(ctx),
 		EntryDate:   monthStart,
 		EntryDate_2: monthEnd,
 	})
@@ -116,6 +118,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	weekJournalStart := monthStart.AddDate(0, 0, -7)
 	weekJournalEnd := monthEnd.AddDate(0, 0, 7)
 	weekJournals, err := h.Queries.ListWeekJournalsInRange(ctx, models.ListWeekJournalsInRangeParams{
+		UserID:      userIDPtr(ctx),
 		EntryDate:   weekJournalStart,
 		EntryDate_2: weekJournalEnd,
 	})

@@ -239,6 +239,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			Active:     boolToInt(ri.Active),
 			NeedsSetup: needsSetup,
 			ID:         acc.ID,
+			UserID:     auth.MustUser(ctx).ID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("update account %d: %w", acc.ID, err))
 			return
@@ -654,6 +655,7 @@ func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 		Active:     boolToInt(active),
 		NeedsSetup: needsSetup,
 		ID:         id,
+		UserID:     auth.MustUser(ctx).ID,
 	})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("update account: %w", err))

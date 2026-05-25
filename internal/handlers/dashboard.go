@@ -182,6 +182,7 @@ func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days i
 	rows, err := h.Queries.DashboardDailyNetPnL(ctx, models.DashboardDailyNetPnLParams{
 		ExitTime:   &start,
 		ExitTime_2: &end,
+		UserID:     userID(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -337,6 +338,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 	n, err := h.Queries.CountClosedTradesInRange(ctx, models.CountClosedTradesInRangeParams{
 		ExitTime:   &today,
 		ExitTime_2: &tomorrow,
+		UserID:     userID(ctx),
 	})
 	if err != nil {
 		return time.Time{}, err
@@ -363,6 +365,7 @@ func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *ti
 	rows, err := h.Queries.ListClosedTradesInRange(ctx, models.ListClosedTradesInRangeParams{
 		ExitTime:   &date,
 		ExitTime_2: &end,
+		UserID:     userID(ctx),
 	})
 	if err != nil {
 		return dashboardStats{}, err

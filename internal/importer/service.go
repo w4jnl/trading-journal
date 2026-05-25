@@ -359,6 +359,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	if err := q.SetAccountCommissionSource(ctx, models.SetAccountCommissionSourceParams{
 		CommissionSource: "inline",
 		ID:               accountID,
+		UserID:           s.UserID,
 	}); err != nil {
 		return fmt.Errorf("mark account inline: %w", err)
 	}

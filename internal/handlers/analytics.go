@@ -277,6 +277,7 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 	// Walk daily_stats inside [start, end). Group rows by date in trading tz;
 	// apply each day's deltas to the running balances, then snapshot the total.
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+		UserID:     userID(ctx),
 		StatDate:   startDay,
 		StatDate_2: end,
 	})
@@ -354,8 +355,8 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 // the column type in modernc.org/sqlite and can't be scanned into time.Time.
 // Same workaround as pickDashboardDate.
 func (h *Handlers) earliestExitForFilter(ctx context.Context, af accountFilter) (time.Time, error) {
-	where := "status='closed' AND exit_time IS NOT NULL AND " + retiredAccountFilterSQL
-	var args []any
+	where := "status='closed' AND exit_time IS NOT NULL AND " + retiredAccountFilterSQL + " AND account_id IN (SELECT id FROM accounts WHERE user_id = ?)"
+	args := []any{userID(ctx)}
 	if af.Active {
 		if len(af.AccountIDs) == 0 {
 			return time.Time{}, nil
@@ -394,6 +395,7 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 		end = *to
 	}
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+		UserID:     userID(ctx),
 		StatDate:   start,
 		StatDate_2: end,
 	})
@@ -453,8 +455,8 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 // Trades from retired accounts (accounts.active = 0) are always excluded —
 // analytics is one of the surfaces the user asked us to keep clean.
 func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, from, to *time.Time) ([]analyticsTrade, error) {
-	clauses := []string{"status='closed'", "exit_time IS NOT NULL", "a.active = 1"}
-	var args []any
+	clauses := []string{"status='closed'", "exit_time IS NOT NULL", "a.active = 1", "a.user_id = ?"}
+	args := []any{userID(ctx)}
 	if af.Active {
 		if len(af.AccountIDs) == 0 {
 			clauses = append(clauses, "1 = 0")
