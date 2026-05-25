@@ -238,8 +238,13 @@ const getTradeByID = `-- name: GetTradeByID :one
 SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, t.broker_trade_id, a.name AS account_name, a.firm AS account_firm
 FROM trades t
 JOIN accounts a ON a.id = t.account_id
-WHERE t.id = ?
+WHERE t.id = ? AND a.user_id = ?
 `
+
+type GetTradeByIDParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
 
 type GetTradeByIDRow struct {
 	ID            int64      `json:"id"`
@@ -264,8 +269,10 @@ type GetTradeByIDRow struct {
 	AccountFirm   *string    `json:"account_firm"`
 }
 
-func (q *Queries) GetTradeByID(ctx context.Context, id int64) (GetTradeByIDRow, error) {
-	row := q.db.QueryRowContext(ctx, getTradeByID, id)
+// Scoped by user_id via the accounts join - the user can only fetch trades
+// on accounts they own.
+func (q *Queries) GetTradeByID(ctx context.Context, arg GetTradeByIDParams) (GetTradeByIDRow, error) {
+	row := q.db.QueryRowContext(ctx, getTradeByID, arg.ID, arg.UserID)
 	var i GetTradeByIDRow
 	err := row.Scan(
 		&i.ID,
@@ -331,10 +338,11 @@ func (q *Queries) LinkTradeExecution(ctx context.Context, arg LinkTradeExecution
 }
 
 const listClosedTradeDeltasOrdered = `-- name: ListClosedTradeDeltasOrdered :many
-SELECT id, account_id, exit_time, COALESCE(net_pnl, 0) AS net_pnl
-FROM trades
-WHERE status='closed' AND exit_time IS NOT NULL
-ORDER BY exit_time ASC
+SELECT t.id, t.account_id, t.exit_time, COALESCE(t.net_pnl, 0) AS net_pnl
+FROM trades t
+JOIN accounts a ON a.id = t.account_id
+WHERE t.status='closed' AND t.exit_time IS NOT NULL AND a.user_id = ?
+ORDER BY t.exit_time ASC
 `
 
 type ListClosedTradeDeltasOrderedRow struct {
@@ -346,9 +354,9 @@ type ListClosedTradeDeltasOrderedRow struct {
 
 // Every closed trade's (id, account_id, exit_time, net_pnl) for the balance
 // recomputation paths (loadBalances + loadTradeBalances). Ordered globally
-// by exit_time so callers can group per-account in one pass.
-func (q *Queries) ListClosedTradeDeltasOrdered(ctx context.Context) ([]ListClosedTradeDeltasOrderedRow, error) {
-	rows, err := q.db.QueryContext(ctx, listClosedTradeDeltasOrdered)
+// by exit_time so callers can group per-account in one pass. Scoped by user.
+func (q *Queries) ListClosedTradeDeltasOrdered(ctx context.Context, userID int64) ([]ListClosedTradeDeltasOrderedRow, error) {
+	rows, err := q.db.QueryContext(ctx, listClosedTradeDeltasOrdered, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -376,11 +384,14 @@ func (q *Queries) ListClosedTradeDeltasOrdered(ctx context.Context) ([]ListClose
 }
 
 const listDistinctSymbolRoots = `-- name: ListDistinctSymbolRoots :many
-SELECT DISTINCT symbol_root FROM trades ORDER BY symbol_root
+SELECT DISTINCT t.symbol_root FROM trades t
+JOIN accounts a ON a.id = t.account_id
+WHERE a.user_id = ?
+ORDER BY t.symbol_root
 `
 
-func (q *Queries) ListDistinctSymbolRoots(ctx context.Context) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listDistinctSymbolRoots)
+func (q *Queries) ListDistinctSymbolRoots(ctx context.Context, userID int64) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctSymbolRoots, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -645,15 +656,15 @@ func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]
 const mostRecentNetPnLExitTime = `-- name: MostRecentNetPnLExitTime :one
 SELECT exit_time FROM trades
 WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL
-  AND account_id IN (SELECT id FROM accounts WHERE active = 1)
+  AND account_id IN (SELECT id FROM accounts WHERE user_id = ? AND active = 1)
 ORDER BY exit_time DESC LIMIT 1
 `
 
 // Latest exit_time across closed-with-P&L trades, excluding retired accounts.
 // Used by /trades' default perf-chart fallback range. Same ORDER BY ... LIMIT
 // workaround as MostRecentClosedExitTime in dashboard.sql.
-func (q *Queries) MostRecentNetPnLExitTime(ctx context.Context) (*time.Time, error) {
-	row := q.db.QueryRowContext(ctx, mostRecentNetPnLExitTime)
+func (q *Queries) MostRecentNetPnLExitTime(ctx context.Context, userID int64) (*time.Time, error) {
+	row := q.db.QueryRowContext(ctx, mostRecentNetPnLExitTime, userID)
 	var exit_time *time.Time
 	err := row.Scan(&exit_time)
 	return exit_time, err
@@ -662,14 +673,15 @@ func (q *Queries) MostRecentNetPnLExitTime(ctx context.Context) (*time.Time, err
 const mostRecentNetPnLExitTimeIncludingRetired = `-- name: MostRecentNetPnLExitTimeIncludingRetired :one
 SELECT exit_time FROM trades
 WHERE exit_time IS NOT NULL AND net_pnl IS NOT NULL
+  AND account_id IN (SELECT id FROM accounts WHERE user_id = ?)
 ORDER BY exit_time DESC LIMIT 1
 `
 
 // Same as MostRecentNetPnLExitTime but for /trades?show_retired=1 -- retired
 // accounts are part of the visible set, so the fallback range must consider
 // them too.
-func (q *Queries) MostRecentNetPnLExitTimeIncludingRetired(ctx context.Context) (*time.Time, error) {
-	row := q.db.QueryRowContext(ctx, mostRecentNetPnLExitTimeIncludingRetired)
+func (q *Queries) MostRecentNetPnLExitTimeIncludingRetired(ctx context.Context, userID int64) (*time.Time, error) {
+	row := q.db.QueryRowContext(ctx, mostRecentNetPnLExitTimeIncludingRetired, userID)
 	var exit_time *time.Time
 	err := row.Scan(&exit_time)
 	return exit_time, err

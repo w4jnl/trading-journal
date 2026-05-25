@@ -98,18 +98,23 @@ func (q *Queries) ListDailyStatsForAccount(ctx context.Context, accountID int64)
 }
 
 const listDailyStatsForRange = `-- name: ListDailyStatsForRange :many
-SELECT id, account_id, stat_date, trades_count, wins, losses, gross_pnl, net_pnl, commission, largest_win, largest_loss FROM daily_stats
-WHERE stat_date >= ? AND stat_date < ?
-ORDER BY stat_date, account_id
+SELECT ds.id, ds.account_id, ds.stat_date, ds.trades_count, ds.wins, ds.losses, ds.gross_pnl, ds.net_pnl, ds.commission, ds.largest_win, ds.largest_loss FROM daily_stats ds
+JOIN accounts a ON a.id = ds.account_id
+WHERE a.user_id = ? AND ds.stat_date >= ? AND ds.stat_date < ?
+ORDER BY ds.stat_date, ds.account_id
 `
 
 type ListDailyStatsForRangeParams struct {
+	UserID     int64     `json:"user_id"`
 	StatDate   time.Time `json:"stat_date"`
 	StatDate_2 time.Time `json:"stat_date_2"`
 }
 
+// Scoped to a single user by joining accounts.user_id. Used by the journal
+// day/week aggregators and any other view that walks "all my activity in
+// this date window".
 func (q *Queries) ListDailyStatsForRange(ctx context.Context, arg ListDailyStatsForRangeParams) ([]DailyStat, error) {
-	rows, err := q.db.QueryContext(ctx, listDailyStatsForRange, arg.StatDate, arg.StatDate_2)
+	rows, err := q.db.QueryContext(ctx, listDailyStatsForRange, arg.UserID, arg.StatDate, arg.StatDate_2)
 	if err != nil {
 		return nil, err
 	}

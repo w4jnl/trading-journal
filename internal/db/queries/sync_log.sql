@@ -7,9 +7,10 @@ INSERT INTO sync_log (
 RETURNING *;
 
 -- name: ListSyncLogRecent :many
-SELECT * FROM sync_log ORDER BY synced_at DESC LIMIT ?;
+SELECT * FROM sync_log WHERE user_id = ? ORDER BY synced_at DESC LIMIT ?;
 
 -- name: ListLastSyncByType :many
 SELECT * FROM sync_log s1
-WHERE id = (SELECT MAX(id) FROM sync_log WHERE sync_type = s1.sync_type)
-ORDER BY synced_at DESC;
+WHERE s1.user_id = ?
+  AND s1.id = (SELECT MAX(s2.id) FROM sync_log s2 WHERE s2.sync_type = s1.sync_type AND s2.user_id = s1.user_id)
+ORDER BY s1.synced_at DESC;

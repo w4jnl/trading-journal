@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -140,7 +141,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"balance":  balYs,
 	})
 
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
@@ -222,7 +223,7 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 
 	// Resolve account set in the filter and capture each account's type slug
 	// so we can break the end-of-range equity down per type at the end.
-	accounts, listErr := h.Queries.ListAccounts(ctx)
+	accounts, listErr := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if listErr != nil {
 		err = listErr
 		return

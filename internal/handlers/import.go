@@ -18,7 +18,7 @@ import (
 // ImportPage renders the /import page: an upload form and the recent-imports
 // list pulled from sync_log.
 func (h *Handlers) ImportPage(w http.ResponseWriter, r *http.Request) {
-	recent, err := h.Queries.ListSyncLogRecent(r.Context(), 20)
+	recent, err := h.Queries.ListSyncLogRecent(r.Context(), models.ListSyncLogRecentParams{UserID: userIDPtr(r.Context()), Limit: 20})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list sync_log: %w", err))
 		return
@@ -170,7 +170,7 @@ func (h *Handlers) detectNeedsAccountPicker(ctx context.Context, stagedPath stri
 		return false, nil, nil
 	}
 
-	all, err := h.Queries.ListAccounts(ctx)
+	all, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return false, nil, err
 	}

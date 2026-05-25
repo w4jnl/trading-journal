@@ -58,7 +58,7 @@ func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 	}
 
 	loc, _ := time.LoadLocation("America/Chicago")
-	return &Builder{Queries: q, Timezone: loc}, q, conn, acct.ID
+	return &Builder{Queries: q, Timezone: loc, UserID: bootstrapID}, q, conn, acct.ID
 }
 
 func insertSynthExecutions(t *testing.T, q *models.Queries, accountID int64, symbol, root string, fills []synthFill) {

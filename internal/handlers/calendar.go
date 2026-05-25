@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -240,7 +241,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		weeklyTotals[wi] = wt
 	}
 
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return

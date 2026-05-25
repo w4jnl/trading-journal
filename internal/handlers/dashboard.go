@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -120,7 +121,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lastSyncs, err := h.Queries.ListLastSyncByType(ctx)
+	lastSyncs, err := h.Queries.ListLastSyncByType(ctx, userIDPtr(ctx))
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list last syncs: %w", err))
 		return
@@ -344,7 +345,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 		return today, nil
 	}
 
-	mostRecent, err := h.Queries.MostRecentClosedExitTime(ctx)
+	mostRecent, err := h.Queries.MostRecentClosedExitTime(ctx, userID(ctx))
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && mostRecent == nil) {
 		return today, nil
 	}
@@ -423,7 +424,7 @@ func (h *Handlers) dashboardEquityNow(ctx context.Context, tz *time.Location) (d
 	if err != nil {
 		return dashboardEquity{}, err
 	}
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return dashboardEquity{}, err
 	}

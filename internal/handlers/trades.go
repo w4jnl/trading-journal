@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -107,12 +108,12 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
 	}
-	roots, err := h.Queries.ListDistinctSymbolRoots(ctx)
+	roots, err := h.Queries.ListDistinctSymbolRoots(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list roots: %w", err))
 		return
@@ -209,9 +210,9 @@ func listGroupOptions(ctx context.Context, db *sql.DB) ([]groupOption, error) {
 	rows, err := db.QueryContext(ctx, `
 		SELECT id, entry_date, COALESCE(body, '')
 		FROM journal_entries
-		WHERE scope = 'group'
+		WHERE scope = 'group' AND user_id = ?
 		ORDER BY entry_date DESC, id DESC
-	`)
+	`, userID(ctx))
 	if err != nil {
 		return nil, err
 	}
@@ -291,9 +292,9 @@ func buildPerfChart(ctx context.Context, db *sql.DB, queries *models.Queries, f 
 		var maxExitPtr *time.Time
 		var qerr error
 		if f.IncludeRetired {
-			maxExitPtr, qerr = queries.MostRecentNetPnLExitTimeIncludingRetired(ctx)
+			maxExitPtr, qerr = queries.MostRecentNetPnLExitTimeIncludingRetired(ctx, userID(ctx))
 		} else {
-			maxExitPtr, qerr = queries.MostRecentNetPnLExitTime(ctx)
+			maxExitPtr, qerr = queries.MostRecentNetPnLExitTime(ctx, userID(ctx))
 		}
 		if qerr != nil {
 			if errors.Is(qerr, sql.ErrNoRows) {
@@ -310,7 +311,7 @@ func buildPerfChart(ctx context.Context, db *sql.DB, queries *models.Queries, f 
 		f.To = &end
 		syntheticRange = true
 	}
-	where, args := buildWhere(f)
+	where, args := buildWhere(f, userID(ctx))
 	q := `SELECT t.exit_time, t.net_pnl
 	      FROM trades t
 	      WHERE ` + where + `
@@ -393,7 +394,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	trade, err := h.Queries.GetTradeByID(ctx, id)
+	trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)})
 	if err != nil {
 		http.Error(w, "trade not found", http.StatusNotFound)
 		return
@@ -467,7 +468,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 
 	// Use the trade's exit date (or entry date if still open) so day-by-date
 	// queries pick this up alongside the trade.
-	trade, err := h.Queries.GetTradeByID(ctx, tradeID)
+	trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: tradeID, UserID: userID(ctx)})
 	if err != nil {
 		http.Error(w, "trade not found", http.StatusNotFound)
 		return
@@ -486,6 +487,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+		UserID:    userIDPtr(ctx),
 			TradeID:   &tradeID,
 			AccountID: &trade.AccountID,
 			EntryDate: entryDate,
@@ -502,13 +504,14 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		if body == "" {
-			if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+			if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
 				h.serverError(w, fmt.Errorf("delete trade journal: %w", err))
 				return
 			}
 			flash = "deleted"
 		} else {
 			if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
+		UserID: userIDPtr(ctx),
 				Body: body,
 				Mood: existing.Mood, // preserve mood; trade entries don't expose it in v1
 				Tag:  tag,
@@ -542,7 +545,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 // optional filter fields. Each filter contributes a "AND col = ?" clause and
 // pushes its value onto the args slice — straightforward, no narg trickery.
 func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]tradeRow, error) {
-	where, args := buildWhere(f)
+	where, args := buildWhere(f, userID(ctx))
 	args = append(args, tradesPageSize, (f.Page-1)*tradesPageSize)
 
 	q := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
@@ -593,7 +596,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 }
 
 func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64, error) {
-	where, args := buildWhere(f)
+	where, args := buildWhere(f, userID(ctx))
 	q := `SELECT COUNT(*) FROM trades t WHERE ` + where
 	var n int64
 	if err := db.QueryRowContext(ctx, q, args...).Scan(&n); err != nil {
@@ -606,13 +609,16 @@ func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64
 // Always includes status='closed' so open positions don't show up in the trade
 // log (open positions have no P&L and aren't a useful unit of analysis).
 // Retired accounts (accounts.active = 0) are hidden unless f.IncludeRetired
-// is true — the /trades reveal toggle is the one place that flips this.
-func buildWhere(f tradeFilters) (string, []any) {
+// is true. The caller's user_id is ALWAYS included via a parent-account
+// subquery so the user can never see trades on someone else's accounts.
+func buildWhere(f tradeFilters, uid int64) (string, []any) {
 	clauses := []string{"t.status = 'closed'"}
+	// Scope to the user's accounts up front.
+	clauses = append(clauses, "t.account_id IN (SELECT id FROM accounts WHERE user_id = ?)")
+	args := []any{uid}
 	if !f.IncludeRetired {
 		clauses = append(clauses, "t."+retiredAccountFilterSQL)
 	}
-	var args []any
 	if f.Account.Active {
 		if len(f.Account.AccountIDs) == 0 {
 			// User requested a filter but no accounts match — return zero rows.

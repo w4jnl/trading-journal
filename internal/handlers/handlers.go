@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -412,7 +413,7 @@ func accountsForFilter(accounts []models.Account, includeRetired bool) []models.
 // ListRetiredAccountIDs query — callers use the set to skip retired rows
 // in already-fetched daily_stats or accounts lists without a re-query.
 func (h *Handlers) retiredAccountSet(ctx context.Context) (map[int64]bool, error) {
-	ids, err := h.Queries.ListRetiredAccountIDs(ctx)
+	ids, err := h.Queries.ListRetiredAccountIDs(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return nil, err
 	}

@@ -122,9 +122,10 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 		JOIN accounts a ON a.id = t.account_id
 		WHERE t.exit_time IS NOT NULL
 		  AND a.active = 1
+		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
-	`, date, end)
+	`, userID(ctx), date, end)
 }
 
 // loadOneTrade returns a one-element slice for the given trade id, in the
@@ -137,8 +138,8 @@ func loadOneTrade(ctx context.Context, db *sql.DB, tradeID int64) ([]linkedTrade
 		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
-		WHERE t.id = ?
-	`, tradeID)
+		WHERE t.id = ? AND a.user_id = ?
+	`, tradeID, userID(ctx))
 }
 
 // loadWeekTrades returns all closed trades exiting within the ISO week that
@@ -153,9 +154,10 @@ func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linked
 		JOIN accounts a ON a.id = t.account_id
 		WHERE t.exit_time IS NOT NULL
 		  AND a.active = 1
+		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
-	`, monday, end)
+	`, userID(ctx), monday, end)
 }
 
 // scanLinkedTrades is the shared scan path for loadDayTrades / loadWeekTrades
@@ -333,10 +335,13 @@ func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
 	for _, id := range ids {
 		args = append(args, id)
 	}
+	// Scope the trade lookup by user so the "find latest exit" query can't
+	// surface a trade the user doesn't own (the trade id came from the form).
+	scopedArgs := append([]any{userID(ctx)}, args...)
 	var maxExit time.Time
 	row := h.DB.QueryRowContext(ctx,
-		"SELECT exit_time FROM trades WHERE id IN ("+placeholders+") AND exit_time IS NOT NULL ORDER BY exit_time DESC LIMIT 1",
-		args...,
+		"SELECT t.exit_time FROM trades t JOIN accounts a ON a.id = t.account_id WHERE a.user_id = ? AND t.id IN ("+placeholders+") AND t.exit_time IS NOT NULL ORDER BY t.exit_time DESC LIMIT 1",
+		scopedArgs...,
 	)
 	if err := row.Scan(&maxExit); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -357,6 +362,7 @@ func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
 	defer tx.Rollback()
 	q := h.Queries.WithTx(tx)
 	entry, err := q.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+		UserID:    userIDPtr(ctx),
 		TradeID:   nil,
 		AccountID: nil,
 		EntryDate: entryDate,
@@ -406,8 +412,8 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 	var entry models.JournalEntry
 	row := h.DB.QueryRowContext(ctx, `
 		SELECT id, trade_id, account_id, entry_date, body, mood, tag, scope, created_at, updated_at
-		FROM journal_entries WHERE id = ? AND scope = 'group'
-	`, id)
+		FROM journal_entries WHERE id = ? AND scope = 'group' AND user_id = ?
+	`, id, userID(ctx))
 	if err := row.Scan(&entry.ID, &entry.TradeID, &entry.AccountID, &entry.EntryDate,
 		&entry.Body, &entry.Mood, &entry.Tag, &entry.Scope, &entry.CreatedAt, &entry.UpdatedAt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -480,7 +486,7 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
 	if body == "" {
-		if err := h.Queries.DeleteJournalEntry(ctx, id); err != nil {
+		if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: id, UserID: userIDPtr(ctx)}); err != nil {
 			h.serverError(w, fmt.Errorf("delete group: %w", err))
 			return
 		}
@@ -488,6 +494,7 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
+		UserID: userIDPtr(ctx),
 		Body: body,
 		Mood: nil,
 		Tag:  tag,
@@ -513,7 +520,7 @@ func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	if err := h.Queries.DeleteJournalEntry(ctx, entryID); err != nil {
+	if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: entryID, UserID: userIDPtr(ctx)}); err != nil {
 		h.serverError(w, fmt.Errorf("delete group: %w", err))
 		return
 	}

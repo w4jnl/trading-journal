@@ -141,8 +141,11 @@ func dispatchParse(format Format, r io.Reader) ([]Fill, error) {
 // only applies to the TopStep orders/trades pair - MotiveWave accounts
 // live in their own (import_source, account_ref) namespace and have no
 // equivalent collision risk, so MotiveWave imports skip the check.
-func ensureClaimCompatible(ctx context.Context, q *models.Queries, accountID int64, accountName string, incoming Format) error {
-	claim, err := q.GetAccountImportClaim(ctx, accountID)
+func ensureClaimCompatible(ctx context.Context, q *models.Queries, userID, accountID int64, accountName string, incoming Format) error {
+	claim, err := q.GetAccountImportClaim(ctx, models.GetAccountImportClaimParams{
+		ID:     accountID,
+		UserID: userID,
+	})
 	if err != nil {
 		return fmt.Errorf("read import claim: %w", err)
 	}
@@ -229,7 +232,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			if created {
 				out.AccountsCreated++
 			}
-			if err := ensureClaimCompatible(ctx, q, acct.ID, acct.Name, format); err != nil {
+			if err := ensureClaimCompatible(ctx, q, s.UserID, acct.ID, acct.Name, format); err != nil {
 				return err
 			}
 			accounts[f.AccountRef] = acct.ID
@@ -276,7 +279,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 		if tz == nil {
 			tz = time.UTC
 		}
-		builder := &positions.Builder{Queries: q, Timezone: tz}
+		builder := &positions.Builder{Queries: q, Timezone: tz, UserID: s.UserID}
 		keys := make([]positions.Key, 0, len(rebuildKeys))
 		for k := range rebuildKeys {
 			// Inline accounts (TopstepX trades CSV) are the source of truth for
@@ -341,11 +344,14 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	}
 	// Reject if the account is already orders-imported. Done before
 	// SetAccountCommissionSource so a rejected import doesn't mutate state.
-	acct, err := q.GetAccountByID(ctx, accountID)
+	acct, err := q.GetAccountByID(ctx, models.GetAccountByIDParams{
+		ID:     accountID,
+		UserID: s.UserID,
+	})
 	if err != nil {
 		return fmt.Errorf("load account: %w", err)
 	}
-	if err := ensureClaimCompatible(ctx, q, accountID, acct.Name, FormatTopstepXTrades); err != nil {
+	if err := ensureClaimCompatible(ctx, q, s.UserID, accountID, acct.Name, FormatTopstepXTrades); err != nil {
 		return err
 	}
 	// Trades CSV is the only source that carries per-trade commissions inline,
@@ -519,7 +525,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 
 	// Pull the candidate set: any TopStep-import-sourced account, plus any
 	// account whose firm is explicitly topstep (covers user-renamed cases).
-	all, err := q.ListAccounts(ctx)
+	all, err := q.ListAccounts(ctx, s.UserID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -971,7 +977,10 @@ func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID i
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	acct, err := q.GetAccountByID(ctx, accountID)
+	acct, err := q.GetAccountByID(ctx, models.GetAccountByIDParams{
+		ID:     accountID,
+		UserID: s.UserID,
+	})
 	if err != nil {
 		return fmt.Errorf("load account: %w", err)
 	}
@@ -1011,7 +1020,10 @@ func (s *ImportService) RebuildTradesForSymbol(ctx context.Context, symbolRoot s
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	rows, err := q.ListAccountSymbolKeysForRoot(ctx, symbolRoot)
+	rows, err := q.ListAccountSymbolKeysForRoot(ctx, models.ListAccountSymbolKeysForRootParams{
+		SymbolRoot: symbolRoot,
+		UserID:     s.UserID,
+	})
 	if err != nil {
 		return fmt.Errorf("list keys for root %s: %w", symbolRoot, err)
 	}
@@ -1044,6 +1056,7 @@ func (s *ImportService) RebuildTradesForCommissionCell(ctx context.Context, firm
 		Firm:       &firm,
 		AssetClass: &assetClass,
 		SizeClass:  &sizeClass,
+		UserID:     s.UserID,
 	})
 	if err != nil {
 		return fmt.Errorf("list keys for cell (%s,%s,%s): %w", firm, assetClass, sizeClass, err)
@@ -1068,7 +1081,7 @@ func (s *ImportService) runRebuild(ctx context.Context, q *models.Queries, keys 
 	if tz == nil {
 		tz = time.UTC
 	}
-	builder := &positions.Builder{Queries: q, Timezone: tz}
+	builder := &positions.Builder{Queries: q, Timezone: tz, UserID: s.UserID}
 	if _, err := builder.Rebuild(ctx, keys); err != nil {
 		return fmt.Errorf("rebuild: %w", err)
 	}

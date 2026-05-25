@@ -255,8 +255,8 @@ type feedRow struct {
 // can include scope/tag IN (...) and the date range. Same join shape as the
 // sqlc ListJournalFeed query, minus a couple of columns the feed doesn't need.
 func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, limit int) ([]feedRow, error) {
-	clauses := []string{"1=1"}
-	var args []any
+	clauses := []string{"je.user_id = ?"}
+	args := []any{userID(ctx)}
 	if f.from != nil {
 		clauses = append(clauses, "je.entry_date >= ?")
 		args = append(args, *f.from)
@@ -350,7 +350,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := h.Queries.GetDayJournalEntry(ctx, date)
+	entry, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date})
 	hasEntry := true
 	if errors.Is(err, sql.ErrNoRows) {
 		hasEntry = false
@@ -360,7 +360,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	recent, err := h.Queries.ListRecentJournalEntries(ctx, 30)
+	recent, err := h.Queries.ListRecentJournalEntries(ctx, models.ListRecentJournalEntriesParams{UserID: userIDPtr(ctx), Limit: 30})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list recent: %w", err))
 		return
@@ -504,9 +504,9 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	// 3-segment path conflicts with /journal/week/{week} under Go 1.22 mux
 	// pattern matching (neither pattern is uniformly more specific).
 	if r.FormValue("_action") == "delete" {
-		existing, err := h.Queries.GetDayJournalEntry(ctx, date)
+		existing, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date})
 		if err == nil {
-			if delErr := h.Queries.DeleteJournalEntry(ctx, existing.ID); delErr != nil {
+			if delErr := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); delErr != nil {
 				h.serverError(w, fmt.Errorf("delete day journal: %w", delErr))
 				return
 			}
@@ -518,7 +518,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	existing, err := h.Queries.GetDayJournalEntry(ctx, date)
+	existing, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date})
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if body == "" {
@@ -527,6 +527,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+		UserID:    userIDPtr(ctx),
 			TradeID:   nil,
 			AccountID: nil,
 			EntryDate: date,
@@ -544,7 +545,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	default:
 		if body == "" {
 			// Empty save = delete the entry.
-			if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+			if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
 				h.serverError(w, fmt.Errorf("delete journal: %w", err))
 				return
 			}
@@ -552,6 +553,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
+		UserID: userIDPtr(ctx),
 			Body: body,
 			Mood: mood,
 			Tag:  tag,
@@ -578,7 +580,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	trade, err := h.Queries.GetTradeByID(ctx, id)
+	trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)})
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -632,7 +634,7 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	entry, err := h.Queries.GetWeekJournalEntry(ctx, monday)
+	entry, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
 	hasEntry := true
 	if errors.Is(err, sql.ErrNoRows) {
 		hasEntry = false
@@ -707,7 +709,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
 
-	existing, err := h.Queries.GetWeekJournalEntry(ctx, monday)
+	existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		if body == "" {
@@ -715,6 +717,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+		UserID:    userIDPtr(ctx),
 			TradeID:   nil,
 			AccountID: nil,
 			EntryDate: monday,
@@ -731,7 +734,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 		return
 	default:
 		if body == "" {
-			if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+			if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
 				h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 				return
 			}
@@ -739,6 +742,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
+		UserID: userIDPtr(ctx),
 			Body: body,
 			Mood: existing.Mood,
 			Tag:  tag,
@@ -765,9 +769,9 @@ func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	existing, err := h.Queries.GetWeekJournalEntry(ctx, monday)
+	existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
 	if err == nil {
-		if err := h.Queries.DeleteJournalEntry(ctx, existing.ID); err != nil {
+		if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
 			h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 			return
 		}

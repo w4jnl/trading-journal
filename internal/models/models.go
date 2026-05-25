@@ -112,6 +112,7 @@ type JournalEntry struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Tag       *string   `json:"tag"`
 	Scope     string    `json:"scope"`
+	UserID    *int64    `json:"user_id"`
 }
 
 type JournalEntryTrade struct {

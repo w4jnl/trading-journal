@@ -154,8 +154,16 @@ func (h *Handlers) JournalAttachmentServe(w http.ResponseWriter, r *http.Request
 		filePath string
 		mt       string
 	)
+	// Scope by user_id via the parent entry. entry_id = 0 covers attachments
+	// uploaded before the entry was saved (paste-on-blank-page); those are
+	// only retrievable by the uploader because the URL was just minted.
 	row := h.DB.QueryRowContext(r.Context(),
-		`SELECT file_path, mime FROM journal_attachments WHERE id = ?`, id)
+		`SELECT a.file_path, a.mime
+		 FROM journal_attachments a
+		 LEFT JOIN journal_entries je ON je.id = a.entry_id
+		 WHERE a.id = ?
+		   AND (a.entry_id = 0 OR je.user_id = ?)`,
+		id, userID(r.Context()))
 	if err := row.Scan(&filePath, &mt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
@@ -235,10 +243,10 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	q := `SELECT id, entry_date, body, tag FROM journal_entries
-	      WHERE scope = ? AND id != ?
+	      WHERE scope = ? AND id != ? AND user_id = ?
 	      ORDER BY entry_date DESC, id DESC
 	      LIMIT ?`
-	rows, err := h.DB.QueryContext(r.Context(), q, scope, excludeID, limit)
+	rows, err := h.DB.QueryContext(r.Context(), q, scope, excludeID, userID(r.Context()), limit)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list recent: %w", err))
 		return
@@ -291,10 +299,14 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 // Templates dropdown is first opened. Scope filter is optional.
 func (h *Handlers) JournalTemplatesList(w http.ResponseWriter, r *http.Request) {
 	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
-	q := `SELECT id, name, scope, body, builtin FROM journal_templates`
-	var args []any
+	// Templates are global (builtin=1, user_id NULL) plus per-user customs
+	// (builtin=0, user_id = me). Build the WHERE around that ownership rule
+	// first; an optional scope filter narrows the list further.
+	q := `SELECT id, name, scope, body, builtin FROM journal_templates
+	      WHERE (builtin = 1 OR user_id = ?)`
+	args := []any{userID(r.Context())}
 	if scope != "" {
-		q += ` WHERE scope = ? OR scope = 'any'`
+		q += ` AND (scope = ? OR scope = 'any')`
 		args = append(args, scope)
 	}
 	q += ` ORDER BY builtin DESC, name`

@@ -13,17 +13,18 @@ import (
 const countClosedTradesInRange = `-- name: CountClosedTradesInRange :one
 SELECT COUNT(*) FROM trades
 WHERE status='closed' AND exit_time >= ? AND exit_time < ?
-  AND account_id IN (SELECT id FROM accounts WHERE active = 1)
+  AND account_id IN (SELECT id FROM accounts WHERE user_id = ? AND active = 1)
 `
 
 type CountClosedTradesInRangeParams struct {
 	ExitTime   *time.Time `json:"exit_time"`
 	ExitTime_2 *time.Time `json:"exit_time_2"`
+	UserID     int64      `json:"user_id"`
 }
 
 // Used by pickDashboardDate to decide whether today already has activity.
 func (q *Queries) CountClosedTradesInRange(ctx context.Context, arg CountClosedTradesInRangeParams) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countClosedTradesInRange, arg.ExitTime, arg.ExitTime_2)
+	row := q.db.QueryRowContext(ctx, countClosedTradesInRange, arg.ExitTime, arg.ExitTime_2, arg.UserID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -35,13 +36,14 @@ SELECT exit_time, net_pnl
 FROM trades
 WHERE status='closed' AND exit_time IS NOT NULL AND net_pnl IS NOT NULL
   AND exit_time >= ? AND exit_time < ?
-  AND account_id IN (SELECT id FROM accounts WHERE active = 1)
+  AND account_id IN (SELECT id FROM accounts WHERE user_id = ? AND active = 1)
 ORDER BY exit_time ASC
 `
 
 type DashboardDailyNetPnLParams struct {
 	ExitTime   *time.Time `json:"exit_time"`
 	ExitTime_2 *time.Time `json:"exit_time_2"`
+	UserID     int64      `json:"user_id"`
 }
 
 type DashboardDailyNetPnLRow struct {
@@ -52,10 +54,12 @@ type DashboardDailyNetPnLRow struct {
 // Queries powering the / dashboard. All four bake in the "retired accounts
 // are hidden" rule by joining `accounts.active = 1` via an IN-subquery, so
 // the rule lives next to the SQL rather than being glued in at the call site.
+// Each accounts subquery is also scoped by user_id so users see only their
+// own data.
 // Per-closed-trade exit_time + net_pnl within [from, to). Drives the 60-day
 // equity curve and the trailing-strip aggregates.
 func (q *Queries) DashboardDailyNetPnL(ctx context.Context, arg DashboardDailyNetPnLParams) ([]DashboardDailyNetPnLRow, error) {
-	rows, err := q.db.QueryContext(ctx, dashboardDailyNetPnL, arg.ExitTime, arg.ExitTime_2)
+	rows, err := q.db.QueryContext(ctx, dashboardDailyNetPnL, arg.ExitTime, arg.ExitTime_2, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -82,12 +86,13 @@ SELECT direction, qty, gross_pnl, commission, net_pnl
 FROM trades
 WHERE status='closed' AND exit_time IS NOT NULL
   AND exit_time >= ? AND exit_time < ?
-  AND account_id IN (SELECT id FROM accounts WHERE active = 1)
+  AND account_id IN (SELECT id FROM accounts WHERE user_id = ? AND active = 1)
 `
 
 type ListClosedTradesInRangeParams struct {
 	ExitTime   *time.Time `json:"exit_time"`
 	ExitTime_2 *time.Time `json:"exit_time_2"`
+	UserID     int64      `json:"user_id"`
 }
 
 type ListClosedTradesInRangeRow struct {
@@ -102,7 +107,7 @@ type ListClosedTradesInRangeRow struct {
 // dashboardStatsFor's aggregator: direction + qty for the long/short split,
 // gross/commission/net for the P&L tiles.
 func (q *Queries) ListClosedTradesInRange(ctx context.Context, arg ListClosedTradesInRangeParams) ([]ListClosedTradesInRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listClosedTradesInRange, arg.ExitTime, arg.ExitTime_2)
+	rows, err := q.db.QueryContext(ctx, listClosedTradesInRange, arg.ExitTime, arg.ExitTime_2, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +138,7 @@ func (q *Queries) ListClosedTradesInRange(ctx context.Context, arg ListClosedTra
 const mostRecentClosedExitTime = `-- name: MostRecentClosedExitTime :one
 SELECT exit_time FROM trades
 WHERE status='closed' AND exit_time IS NOT NULL
-  AND account_id IN (SELECT id FROM accounts WHERE active = 1)
+  AND account_id IN (SELECT id FROM accounts WHERE user_id = ? AND active = 1)
 ORDER BY exit_time DESC LIMIT 1
 `
 
@@ -141,8 +146,8 @@ ORDER BY exit_time DESC LIMIT 1
 // by pickDashboardDate when today has no activity. ORDER BY ... LIMIT 1 is
 // intentional -- MAX() loses the column's TIMESTAMP type under
 // modernc.org/sqlite and refuses to scan back into time.Time.
-func (q *Queries) MostRecentClosedExitTime(ctx context.Context) (*time.Time, error) {
-	row := q.db.QueryRowContext(ctx, mostRecentClosedExitTime)
+func (q *Queries) MostRecentClosedExitTime(ctx context.Context, userID int64) (*time.Time, error) {
+	row := q.db.QueryRowContext(ctx, mostRecentClosedExitTime, userID)
 	var exit_time *time.Time
 	err := row.Scan(&exit_time)
 	return exit_time, err

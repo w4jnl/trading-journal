@@ -69,7 +69,7 @@ func accountTypeOptions() []accountTypeOption {
 // back to /accounts/{id} to update the row in place via HTMX.
 func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
@@ -199,7 +199,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 	// Accounts whose `active` checkbox wasn't submitted (unchecked) are
 	// implicitly inactive — make sure we materialize their row too so we don't
 	// silently drop the toggle. Pull every account once, walk via the form map.
-	allAccounts, err := h.Queries.ListAccounts(ctx)
+	allAccounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
@@ -368,7 +368,7 @@ func (h *Handlers) AccountsClone(w http.ResponseWriter, r *http.Request) {
 		hasBalance = true
 	}
 
-	src, err := h.Queries.GetAccountByID(ctx, srcID)
+	src, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: srcID, UserID: auth.MustUser(ctx).ID})
 	if err != nil {
 		http.Error(w, "source account not found", http.StatusNotFound)
 		return
@@ -524,7 +524,7 @@ func (h *Handlers) AccountsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	acct, err := h.Queries.GetAccountByID(ctx, id)
+	acct, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: id, UserID: auth.MustUser(ctx).ID})
 	if err != nil {
 		http.Error(w, "account not found", http.StatusNotFound)
 		return
@@ -578,7 +578,7 @@ func (h *Handlers) AccountsDelete(w http.ResponseWriter, r *http.Request) {
 // analytics views need to re-bucket existing data.
 func (h *Handlers) AccountsRecomputeAll(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return

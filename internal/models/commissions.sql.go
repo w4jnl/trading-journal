@@ -63,6 +63,7 @@ JOIN instruments i ON e.symbol_root = i.symbol_root
 WHERE a.firm = ?
   AND i.asset_class = ?
   AND i.size_class = ?
+  AND a.user_id = ?
   AND a.commission_source = 'rate'
 ORDER BY e.account_id, e.symbol
 `
@@ -71,6 +72,7 @@ type ListAccountSymbolKeysForCellParams struct {
 	Firm       *string `json:"firm"`
 	AssetClass *string `json:"asset_class"`
 	SizeClass  *string `json:"size_class"`
+	UserID     int64   `json:"user_id"`
 }
 
 type ListAccountSymbolKeysForCellRow struct {
@@ -78,9 +80,14 @@ type ListAccountSymbolKeysForCellRow struct {
 	Symbol    string `json:"symbol"`
 }
 
-// Same inline-account exclusion as ListAccountSymbolKeysForRoot.
+// Same inline-account + user_id scoping as ListAccountSymbolKeysForRoot.
 func (q *Queries) ListAccountSymbolKeysForCell(ctx context.Context, arg ListAccountSymbolKeysForCellParams) ([]ListAccountSymbolKeysForCellRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAccountSymbolKeysForCell, arg.Firm, arg.AssetClass, arg.SizeClass)
+	rows, err := q.db.QueryContext(ctx, listAccountSymbolKeysForCell,
+		arg.Firm,
+		arg.AssetClass,
+		arg.SizeClass,
+		arg.UserID,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -107,9 +114,15 @@ SELECT DISTINCT e.account_id, e.symbol
 FROM executions e
 JOIN accounts a ON e.account_id = a.id
 WHERE e.symbol_root = ?
+  AND a.user_id = ?
   AND a.commission_source = 'rate'
 ORDER BY e.account_id, e.symbol
 `
+
+type ListAccountSymbolKeysForRootParams struct {
+	SymbolRoot string `json:"symbol_root"`
+	UserID     int64  `json:"user_id"`
+}
 
 type ListAccountSymbolKeysForRootRow struct {
 	AccountID int64  `json:"account_id"`
@@ -118,9 +131,10 @@ type ListAccountSymbolKeysForRootRow struct {
 
 // Inline-commission accounts (TopstepX trades CSV) are excluded: their trades
 // are the source of truth, so a FIFO rebuild would clobber the CSV-provided
-// commissions.
-func (q *Queries) ListAccountSymbolKeysForRoot(ctx context.Context, symbolRoot string) ([]ListAccountSymbolKeysForRootRow, error) {
-	rows, err := q.db.QueryContext(ctx, listAccountSymbolKeysForRoot, symbolRoot)
+// commissions. Scoped by user_id so an admin instrument-setup recompute
+// doesn't touch other users' accounts.
+func (q *Queries) ListAccountSymbolKeysForRoot(ctx context.Context, arg ListAccountSymbolKeysForRootParams) ([]ListAccountSymbolKeysForRootRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAccountSymbolKeysForRoot, arg.SymbolRoot, arg.UserID)
 	if err != nil {
 		return nil, err
 	}
@@ -221,6 +235,7 @@ WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
   AND a.commission_source = 'rate'
+  AND a.user_id     = ?
   AND cr.per_contract_per_side IS NULL
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root
@@ -236,8 +251,10 @@ type ListOrphanedCommissionTradesRow struct {
 	TradeCount  int64   `json:"trade_count"`
 }
 
-func (q *Queries) ListOrphanedCommissionTrades(ctx context.Context) ([]ListOrphanedCommissionTradesRow, error) {
-	rows, err := q.db.QueryContext(ctx, listOrphanedCommissionTrades)
+// Scoped by user_id - the "you have trades whose commission cell isn't
+// configured" hint should only surface the requesting user's gaps.
+func (q *Queries) ListOrphanedCommissionTrades(ctx context.Context, userID int64) ([]ListOrphanedCommissionTradesRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOrphanedCommissionTrades, userID)
 	if err != nil {
 		return nil, err
 	}

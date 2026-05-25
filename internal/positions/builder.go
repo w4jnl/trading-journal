@@ -41,6 +41,10 @@ type Key struct {
 type Builder struct {
 	Queries  *models.Queries
 	Timezone *time.Location
+	// UserID owns the accounts this builder rebuilds. Set by the importer
+	// or admin handler that constructs the Builder; used to scope account
+	// lookups so a user can't trigger a rebuild against someone else's data.
+	UserID int64
 }
 
 // Result reports rebuild outcomes.
@@ -136,7 +140,10 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 		return 0, nil
 	}
 
-	account, err := b.Queries.GetAccountByID(ctx, k.AccountID)
+	account, err := b.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{
+		ID:     k.AccountID,
+		UserID: b.UserID,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("load account: %w", err)
 	}
