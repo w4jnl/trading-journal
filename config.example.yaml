@@ -13,5 +13,54 @@ imports:
 oi_dashboards:
   root: "./oi_dashboard"
 
-# Trading timezone — used for day boundaries on calendar/dashboard. Storage is always UTC.
+# Trading timezone -- used for day boundaries on calendar/dashboard.
+# Storage is always UTC.
 timezone: "America/Chicago"
+
+# Authentication. The app is multi-user; every request resolves to a user
+# row, even on a single-trader deploy where there's only one of them.
+auth:
+  # "local" runs the built-in login UI with bcrypt-hashed passwords and
+  # sqlite-backed sessions. "proxy" is reserved for a future phase where
+  # a reverse proxy (Authelia, oauth2-proxy, Caddy forward_auth) sets a
+  # Remote-User header.
+  mode: "local"
+
+  # Username assigned ownership of all pre-multiuser data on the very
+  # first start (when the multiuser migration runs). Must exist on first
+  # boot; after that the value is mostly inert -- it's also the username
+  # the "users reset <name>" command targets in the most common case.
+  bootstrap_user: "admin"
+
+  # HMAC key for CSRF tokens. Any string >= 32 bytes is fine; for binary
+  # randomness prefix with "base64:" and pass a base64-encoded value.
+  # If empty the server generates an ephemeral key at startup (with a
+  # WARN) -- tokens then do not survive a restart.
+  session_secret: ""
+
+  # Session lifetime, hours. Default 168 (7 days).
+  session_ttl_hours: 168
+
+  # Mark the session cookie Secure (browser only sends it over HTTPS).
+  # Default true. Flip to false ONLY for plain-HTTP deploys on a trusted
+  # private network -- without TLS the cookie travels in cleartext.
+  # cookie_secure: false
+
+  # Proxy-mode settings (only consulted when mode = "proxy"). Phase 3.
+  proxy:
+    user_header: "Remote-User"
+    email_header: "Remote-Email"
+    display_name_header: "Remote-Name"
+    groups_header: "Remote-Groups"
+    admin_group: "admin"
+    # CIDR allowlist for r.RemoteAddr -- requests that don't originate
+    # from a trusted proxy are rejected before any header is read.
+    trusted_proxies: []
+    # Provision unknown users automatically on first sight. Off by
+    # default so a typo in your SSO config doesn't silently grow your
+    # user list.
+    auto_provision: false
+    # Where /logout should redirect (your SSO logout URL). When unset,
+    # /logout returns a stub page asking the user to sign out through
+    # the SSO.
+    logout_url: ""

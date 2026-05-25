@@ -58,14 +58,84 @@ $EDITOR config.yaml        # set port, timezone, paths if you want
 ```
 
 By default the server binds on `:8080`, writes `./data/trading.db`, and
-watches `./imports/inbox/` for CSV drops. Open
-<http://localhost:8080/dashboard> and either upload your first export at
-`/import` or drop a `.csv` into `imports/inbox/` and watch the
-dashboard light up.
+watches `./imports/inbox/` for CSV drops.
+
+On first start the app creates a single user (default name `admin`,
+configurable via `auth.bootstrap_user`) and assigns every existing
+account / trade / journal entry to that user. Set its password and
+sign in:
+
+```bash
+./trading-journal users reset admin   # interactive password prompt
+./trading-journal                     # start the server
+# open http://localhost:8080/  — login at /login
+```
+
+Then either upload your first export at `/import` or drop a `.csv`
+into `imports/inbox/` and watch the dashboard light up.
 
 The schema lives in `internal/db/migrations/*.sql` (dbmate format) and
 is applied automatically on startup from the embedded files. No
 external migration tool required.
+
+## Authentication & users
+
+The app is multi-user. Every request resolves to a row in the `users`
+table; data isolation is enforced at the query layer so two users on
+the same DB never see each other's accounts, trades, journal entries,
+balances, or sync log.
+
+**Auth modes** are picked by `auth.mode` in `config.yaml`:
+
+- `local` (default) -- built-in login page at `/login`, bcrypt
+  passwords, sqlite-backed sessions, HMAC-bound CSRF tokens on every
+  mutating request. Cookie is `HttpOnly + SameSite=Lax` and `Secure`
+  by default (drop `auth.cookie_secure: false` if you're running plain
+  HTTP behind a trusted VPN).
+- `proxy` -- reserved for a future phase. Will trust `Remote-User`
+  (configurable) from an upstream reverse proxy like Authelia,
+  oauth2-proxy, or Caddy `forward_auth`. Not implemented yet.
+
+See **[config.example.yaml](config.example.yaml)** for every auth
+knob, with comments. `auth.session_secret` is the HMAC key for CSRF
+tokens -- set it to any 32+ byte string (or `base64:<random>`) so
+tokens survive restarts.
+
+### Managing users
+
+All user management is through the CLI subcommand, which shares the
+same binary and config as the server:
+
+```bash
+./trading-journal users -h            # full subcommand help
+
+# Create / reset
+./trading-journal users add bob              # prompts for password (x2)
+./trading-journal users add jane --admin --email=jane@example.com
+./trading-journal users reset bob            # also destroys bob's sessions
+
+# Inspect
+./trading-journal users list                 # id, username, admin, active, email
+
+# Toggle state
+./trading-journal users promote bob          # grant admin
+./trading-journal users demote bob           # revoke admin
+./trading-journal users deactivate bob       # disable login + kill sessions
+./trading-journal users activate bob
+
+# Permanent removal
+./trading-journal users delete bob           # interactive: retype username
+./trading-journal users delete bob --yes     # skip the retype prompt
+```
+
+`delete` is destructive. It cascades through trades, executions,
+journal entries (every scope), balance anchors, daily stats, custom
+journal templates, sessions, and accounts -- the user's slice of the
+DB is gone. `sync_log` rows are preserved with `user_id` set NULL so
+the import audit history survives.
+
+The CLI refuses to delete the last active admin so the deployment
+doesn't end up unmanageable -- promote another user first.
 
 ## Quick start (Docker)
 

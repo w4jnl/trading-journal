@@ -30,3 +30,13 @@ UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?;
 -- Proxy mode refreshes email / display_name / is_admin from headers on every
 -- request. is_admin is recomputed by the caller from the groups header.
 UPDATE users SET email = ?, display_name = ?, is_admin = ? WHERE id = ?;
+
+-- name: CountAdmins :one
+SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1;
+
+-- name: DeleteUser :exec
+-- Removes the users row. All per-user data should be cleaned up before
+-- calling this; see internal/auth/users.go DeletePurgeUser for the
+-- transactional wipe sequence (FK NO ACTION on trades/executions/etc.
+-- forces explicit leaf deletes first).
+DELETE FROM users WHERE id = ?;

@@ -18,11 +18,46 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
-// runUsersCommand dispatches `./trading-journal users <subcommand>`. Called
+// usersHelp is printed for `users -h`, `users help`, an unknown subcommand,
+// or when no subcommand is given.
+const usersHelp = `Usage: trading-journal users <subcommand> [args]
+
+Subcommands:
+  add <username> [--admin] [--email=foo@bar]
+        Create a new user. Prompts for a password (twice).
+  reset <username>
+        Set a new password. Existing sessions are destroyed.
+  list
+        Print every user (id, username, admin flag, active flag, email).
+  activate   <username>
+        Re-enable a deactivated user.
+  deactivate <username>
+        Disable login + kill existing sessions. Data is preserved.
+  promote <username>
+        Grant admin.
+  demote <username>
+        Revoke admin.
+  delete <username> [--yes]
+        Permanently delete the user and ALL their accounts, trades,
+        executions, journal entries, balance anchors, daily stats,
+        sessions, and custom journal templates. sync_log history is
+        anonymized (user_id set to NULL). Requires retyping the
+        username at the prompt unless --yes is passed. Refuses to
+        remove the last active admin.
+
+Global flags (recognized anywhere in the args):
+  --config=PATH   Path to config.yaml (default: ./config.yaml)
+`
+
+// runUsersCommand dispatches ` + "`./trading-journal users <subcommand>`" + `. Called
 // from main when os.Args[1] == "users". Returns a non-nil error to bubble up.
 func runUsersCommand(args []string, cfgPath string) error {
-	if len(args) == 0 {
-		return fmt.Errorf("usage: trading-journal users <add|reset|list> ...")
+	if len(args) == 0 || args[0] == "-h" || args[0] == "--help" || args[0] == "help" {
+		fmt.Print(usersHelp)
+		if len(args) == 0 {
+			return fmt.Errorf("missing subcommand")
+		}
+		return nil
 	}
 
 	cfg, err := config.Load(cfgPath)
@@ -57,8 +92,11 @@ func runUsersCommand(args []string, cfgPath string) error {
 		return userSetAdmin(ctx, q, rest, true)
 	case "demote":
 		return userSetAdmin(ctx, q, rest, false)
+	case "delete":
+		return userDelete(ctx, conn, q, rest)
 	default:
-		return fmt.Errorf("unknown users subcommand %q (try add|reset|list|activate|deactivate|promote|demote)", sub)
+		fmt.Fprint(os.Stderr, usersHelp)
+		return fmt.Errorf("unknown users subcommand %q", sub)
 	}
 }
 
@@ -247,6 +285,70 @@ func userSetAdmin(ctx context.Context, q *models.Queries, args []string, admin b
 		state = "promoted to admin"
 	}
 	fmt.Printf("User %s %s\n", row.Username, state)
+	return nil
+}
+
+func userDelete(ctx context.Context, conn *sql.DB, q *models.Queries, args []string) error {
+	confirmed := false
+	var username string
+	for _, a := range args {
+		switch a {
+		case "--yes", "-y":
+			confirmed = true
+		default:
+			if username == "" && !strings.HasPrefix(a, "--") {
+				username = a
+			}
+		}
+	}
+	if username == "" {
+		return fmt.Errorf("usage: users delete <username> [--yes]")
+	}
+
+	row, err := q.GetUserByUsername(ctx, username)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return fmt.Errorf("no such user: %s", username)
+		}
+		return err
+	}
+
+	// Refuse to remove the last active admin - otherwise the deployment
+	// becomes unreachable for user management until somebody opens
+	// the sqlite file by hand.
+	if row.IsAdmin != 0 && row.IsActive != 0 {
+		n, err := q.CountAdmins(ctx)
+		if err != nil {
+			return fmt.Errorf("count admins: %w", err)
+		}
+		if n <= 1 {
+			return fmt.Errorf("refusing to delete %q: they are the last active admin. Promote another user first", username)
+		}
+	}
+
+	if !confirmed {
+		fmt.Fprintf(os.Stderr,
+			"This will permanently delete user %q (id=%d) and ALL their accounts, trades,\n"+
+				"executions, journal entries, balance anchors, daily stats, sessions, and\n"+
+				"custom journal templates. sync_log history will be anonymized.\n"+
+				"\n"+
+				"Type the username to confirm: ", username, row.ID)
+		typed, err := stdinReader.ReadString('\n')
+		if err != nil && err != io.EOF {
+			return err
+		}
+		typed = strings.TrimRight(typed, "\r\n")
+		if typed != username {
+			return fmt.Errorf("aborted (typed %q, expected %q)", typed, username)
+		}
+	}
+
+	stats, err := auth.PurgeUser(ctx, conn, row.ID)
+	if err != nil {
+		return fmt.Errorf("purge: %w", err)
+	}
+	fmt.Printf("Deleted user %s (id=%d): removed %d accounts, %d trades\n",
+		username, row.ID, stats.Accounts, stats.Trades)
 	return nil
 }
 

@@ -25,8 +25,32 @@ import (
 	"github.com/w4jnl/trading-journal/web"
 )
 
+const topHelp = `Usage: trading-journal [flags]
+       trading-journal users <subcommand> [args]
+
+Run the server (default):
+  -config PATH   Path to config.yaml (default: ./config.yaml).
+                 If the file is missing the server boots with built-in
+                 defaults; see config.example.yaml for the full schema.
+
+User management:
+  trading-journal users -h
+                 Print user-management subcommands (add, reset, delete,
+                 list, activate, deactivate, promote, demote).
+`
+
 func main() {
-	// Subcommands run before flag parsing so `./trading-journal users add ...`
+	// Top-level -h / --help / help shortcut before flag parsing so users
+	// don't have to know which subcommand to run first.
+	if len(os.Args) >= 2 {
+		switch os.Args[1] {
+		case "-h", "--help", "help":
+			fmt.Print(topHelp)
+			return
+		}
+	}
+
+	// Subcommands run before flag parsing so ` + "`./trading-journal users add ...`" + `
 	// doesn't try to interpret subcommand args as global flags.
 	if len(os.Args) >= 2 && os.Args[1] == "users" {
 		// Allow `--config` to appear anywhere in the subcommand args.
