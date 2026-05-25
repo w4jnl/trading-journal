@@ -112,6 +112,17 @@ func loadAppliedVersions(conn *sql.DB) (map[string]bool, error) {
 }
 
 func applyOne(conn *sql.DB, version, upSQL string) error {
+	// SQLite's recommended pattern for table rebuilds (the only way to change
+	// UNIQUE constraints, drop columns, etc.) is to disable foreign_keys for
+	// the duration. The pragma can't be toggled inside a transaction, so we
+	// flip it on the connection, run the migration's tx, then restore. Any
+	// FK violations introduced by the migration would be caught by the
+	// foreign_key_check pragma below before COMMIT.
+	if _, err := conn.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable foreign_keys: %w", err)
+	}
+	defer func() { _, _ = conn.Exec(`PRAGMA foreign_keys = ON`) }()
+
 	tx, err := conn.Begin()
 	if err != nil {
 		return err
@@ -119,6 +130,30 @@ func applyOne(conn *sql.DB, version, upSQL string) error {
 	if _, err := tx.Exec(upSQL); err != nil {
 		_ = tx.Rollback()
 		return err
+	}
+	// Catch any referential breakage the migration introduced before we
+	// commit. With foreign_keys=OFF during exec, violations don't fire at
+	// statement time; foreign_key_check returns one row per offender.
+	rows, err := tx.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("foreign_key_check: %w", err)
+	}
+	var violations []string
+	for rows.Next() {
+		var table, parent string
+		var rowid, fkid sql.NullInt64
+		if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
+			rows.Close()
+			_ = tx.Rollback()
+			return err
+		}
+		violations = append(violations, fmt.Sprintf("%s row %d -> %s", table, rowid.Int64, parent))
+	}
+	rows.Close()
+	if len(violations) > 0 {
+		_ = tx.Rollback()
+		return fmt.Errorf("foreign_key_check found %d violation(s): %s", len(violations), strings.Join(violations, "; "))
 	}
 	if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
 		_ = tx.Rollback()
