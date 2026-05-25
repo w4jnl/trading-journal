@@ -11,19 +11,30 @@ import (
 )
 
 const deleteBalanceAnchor = `-- name: DeleteBalanceAnchor :exec
-DELETE FROM balance_anchors WHERE id = ?
+DELETE FROM balance_anchors
+WHERE balance_anchors.id = ?
+  AND balance_anchors.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?)
 `
 
-func (q *Queries) DeleteBalanceAnchor(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteBalanceAnchor, id)
+type DeleteBalanceAnchorParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// Caller must have verified the parent account belongs to the user. The
+// subquery enforces this defensively in case a handler forgets to check.
+func (q *Queries) DeleteBalanceAnchor(ctx context.Context, arg DeleteBalanceAnchorParams) error {
+	_, err := q.db.ExecContext(ctx, deleteBalanceAnchor, arg.ID, arg.UserID)
 	return err
 }
 
 const listBalanceAnchors = `-- name: ListBalanceAnchors :many
 
-SELECT id, account_id, anchor_date, balance, COALESCE(note, '') AS note
-FROM balance_anchors
-ORDER BY account_id, anchor_date ASC, id ASC
+SELECT ba.id, ba.account_id, ba.anchor_date, ba.balance, COALESCE(ba.note, '') AS note
+FROM balance_anchors ba
+JOIN accounts a ON a.id = ba.account_id
+WHERE a.user_id = ?
+ORDER BY ba.account_id, ba.anchor_date ASC, ba.id ASC
 `
 
 type ListBalanceAnchorsRow struct {
@@ -37,11 +48,11 @@ type ListBalanceAnchorsRow struct {
 // Queries against the balance_anchors table, used by the /accounts page and
 // the per-trade running-balance column on /trades. The trade-side delta walks
 // live in trades.sql (ListClosedTradeDeltasOrdered).
-// Every anchor, ordered so the loadBalances pass can walk per-account.
-// COALESCE on `note` keeps the consumer free of nullable-string handling
-// since the empty string is the natural default in the UI.
-func (q *Queries) ListBalanceAnchors(ctx context.Context) ([]ListBalanceAnchorsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listBalanceAnchors)
+// Every anchor for this user, ordered so the loadBalances pass can walk
+// per-account. COALESCE on `note` keeps the consumer free of nullable-string
+// handling since the empty string is the natural default in the UI.
+func (q *Queries) ListBalanceAnchors(ctx context.Context, userID int64) ([]ListBalanceAnchorsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listBalanceAnchors, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -85,7 +96,7 @@ type UpsertBalanceAnchorParams struct {
 }
 
 // Same-day re-saves overwrite -- lets the user fix a typo without first
-// deleting the old anchor.
+// deleting the old anchor. Caller must have verified account ownership.
 func (q *Queries) UpsertBalanceAnchor(ctx context.Context, arg UpsertBalanceAnchorParams) error {
 	_, err := q.db.ExecContext(ctx, upsertBalanceAnchor,
 		arg.AccountID,

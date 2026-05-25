@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -36,6 +37,15 @@ type Handlers struct {
 	Timezone       *time.Location
 	Logger         *slog.Logger
 
+	// CSRF mints + verifies session-bound CSRF tokens. main wires this from
+	// cfg.Auth.SessionSecret. Nil = no CSRF (acceptable in proxy mode where
+	// the SSO frontend enforces origin checks).
+	CSRF *auth.CSRF
+
+	// ActAs is the admin "browse as another user" helper. Nil disables
+	// the feature (and the /admin/act-as routes return 500-ish).
+	ActAs *auth.ActAs
+
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
 	// distinguish page renders ("page:<name>") from partial renders
@@ -48,7 +58,29 @@ type Handlers struct {
 // can reference any sibling partial via {{template "name" .}} without the
 // caller listing it explicitly. The parsed set is cached after first use —
 // templates ship in embed.FS so they never change at runtime.
-func (h *Handlers) renderPage(w http.ResponseWriter, page string, data any) {
+//
+// When `data` is a map[string]any (the common case across handlers), the
+// caller's r is consulted to inject CurrentUser and CSRFToken so base.html
+// can render the auth widget and forms can include the token. Pass nil r
+// from non-request callers (none today, but kept open for future tooling).
+func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page string, data any) {
+	if r != nil {
+		if m, ok := data.(map[string]any); ok {
+			if _, exists := m["CurrentUser"]; !exists {
+				if u := auth.UserFrom(r.Context()); u != nil {
+					m["CurrentUser"] = u
+				}
+			}
+			if _, exists := m["CSRFToken"]; !exists && h.CSRF != nil {
+				m["CSRFToken"] = h.CSRF.Token(auth.CookieFromRequest(r))
+			}
+			if _, exists := m["OriginalUser"]; !exists {
+				if orig := auth.OriginalUserFrom(r.Context()); orig != nil {
+					m["OriginalUser"] = orig
+				}
+			}
+		}
+	}
 	t, err := h.parsedPage(page)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse %s: %w", page, err))
@@ -129,6 +161,8 @@ func (h *Handlers) funcMap() template.FuncMap {
 		loc = time.UTC
 	}
 	return template.FuncMap{
+		"hasPrefix":  strings.HasPrefix,
+		"trimPrefix": strings.TrimPrefix,
 		"derefStr": func(s *string) string {
 			if s == nil {
 				return ""
@@ -412,7 +446,7 @@ func accountsForFilter(accounts []models.Account, includeRetired bool) []models.
 // ListRetiredAccountIDs query — callers use the set to skip retired rows
 // in already-fetched daily_stats or accounts lists without a re-query.
 func (h *Handlers) retiredAccountSet(ctx context.Context) (map[int64]bool, error) {
-	ids, err := h.Queries.ListRetiredAccountIDs(ctx)
+	ids, err := h.Queries.ListRetiredAccountIDs(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return nil, err
 	}

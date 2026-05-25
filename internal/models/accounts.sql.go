@@ -11,14 +11,15 @@ import (
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
-    name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
+    user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at
 `
 
 type CreateAccountParams struct {
+	UserID           int64   `json:"user_id"`
 	Name             string  `json:"name"`
 	Firm             *string `json:"firm"`
 	ImportSource     string  `json:"import_source"`
@@ -31,6 +32,7 @@ type CreateAccountParams struct {
 
 func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (Account, error) {
 	row := q.db.QueryRowContext(ctx, createAccount,
+		arg.UserID,
 		arg.Name,
 		arg.Firm,
 		arg.ImportSource,
@@ -43,6 +45,7 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -51,21 +54,30 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts WHERE id = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at FROM accounts WHERE id = ? AND user_id = ?
 `
 
-func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error) {
-	row := q.db.QueryRowContext(ctx, getAccountByID, id)
+type GetAccountByIDParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// Returns sql.ErrNoRows if the user doesn't own this account, which the
+// caller can treat as 404 - this is the primary ownership gate for any
+// handler that takes an account id from the URL.
+func (q *Queries) GetAccountByID(ctx context.Context, arg GetAccountByIDParams) (Account, error) {
+	row := q.db.QueryRowContext(ctx, getAccountByID, arg.ID, arg.UserID)
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -74,26 +86,31 @@ func (q *Queries) GetAccountByID(ctx context.Context, id int64) (Account, error)
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }
 
 const getAccountByRef = `-- name: GetAccountByRef :one
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts WHERE import_source = ? AND account_ref = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?
 `
 
 type GetAccountByRefParams struct {
+	UserID       int64  `json:"user_id"`
 	ImportSource string `json:"import_source"`
 	AccountRef   string `json:"account_ref"`
 }
 
+// Scoped by user_id so two users with the same broker account_ref under the
+// same import_source don't collide. Unique constraint is
+// (user_id, import_source, account_ref).
 func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams) (Account, error) {
-	row := q.db.QueryRowContext(ctx, getAccountByRef, arg.ImportSource, arg.AccountRef)
+	row := q.db.QueryRowContext(ctx, getAccountByRef, arg.UserID, arg.ImportSource, arg.AccountRef)
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -102,8 +119,8 @@ func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }
@@ -116,8 +133,13 @@ SELECT
         ELSE 'none'
     END AS claim
 FROM accounts a
-WHERE a.id = ?
+WHERE a.id = ? AND a.user_id = ?
 `
+
+type GetAccountImportClaimParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
 
 // Returns the import format that has "claimed" the account:
 //
@@ -126,19 +148,19 @@ WHERE a.id = ?
 //	'none'   - no import has touched the account yet (or it was wiped)
 //
 // Used to reject mixed TopStep imports before they double-count.
-func (q *Queries) GetAccountImportClaim(ctx context.Context, id int64) (string, error) {
-	row := q.db.QueryRowContext(ctx, getAccountImportClaim, id)
+func (q *Queries) GetAccountImportClaim(ctx context.Context, arg GetAccountImportClaimParams) (string, error) {
+	row := q.db.QueryRowContext(ctx, getAccountImportClaim, arg.ID, arg.UserID)
 	var claim string
 	err := row.Scan(&claim)
 	return claim, err
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source FROM accounts ORDER BY name
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at FROM accounts WHERE user_id = ? ORDER BY name
 `
 
-func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
-	rows, err := q.db.QueryContext(ctx, listAccounts)
+func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, listAccounts, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -148,6 +170,7 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 		var i Account
 		if err := rows.Scan(
 			&i.ID,
+			&i.UserID,
 			&i.Name,
 			&i.Firm,
 			&i.ImportSource,
@@ -156,8 +179,8 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 			&i.Currency,
 			&i.NeedsSetup,
 			&i.Active,
-			&i.CreatedAt,
 			&i.CommissionSource,
+			&i.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -173,14 +196,14 @@ func (q *Queries) ListAccounts(ctx context.Context) ([]Account, error) {
 }
 
 const listRetiredAccountIDs = `-- name: ListRetiredAccountIDs :many
-SELECT id FROM accounts WHERE active = 0
+SELECT id FROM accounts WHERE user_id = ? AND active = 0
 `
 
-// IDs of retired accounts (active = 0). Used by handlers that need a quick
-// set lookup to skip retired-account rows in already-fetched daily_stats
-// or accounts lists.
-func (q *Queries) ListRetiredAccountIDs(ctx context.Context) ([]int64, error) {
-	rows, err := q.db.QueryContext(ctx, listRetiredAccountIDs)
+// IDs of retired accounts (active = 0) belonging to the user. Used by
+// handlers that need a quick set lookup to skip retired-account rows in
+// already-fetched daily_stats or accounts lists.
+func (q *Queries) ListRetiredAccountIDs(ctx context.Context, userID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listRetiredAccountIDs, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -203,27 +226,28 @@ func (q *Queries) ListRetiredAccountIDs(ctx context.Context) ([]int64, error) {
 }
 
 const setAccountCommissionSource = `-- name: SetAccountCommissionSource :exec
-UPDATE accounts SET commission_source = ? WHERE id = ?
+UPDATE accounts SET commission_source = ? WHERE id = ? AND user_id = ?
 `
 
 type SetAccountCommissionSourceParams struct {
 	CommissionSource string `json:"commission_source"`
 	ID               int64  `json:"id"`
+	UserID           int64  `json:"user_id"`
 }
 
 // Flips an account between rate-table lookup and CSV-inline commissions.
-// Called from the importer when a trades-shaped CSV (TopstepX trades) lands
-// so the FIFO rebuild path skips the account afterwards.
+// Scoped by user_id so a handler can't be tricked into flipping someone
+// else's account via a guessed id.
 func (q *Queries) SetAccountCommissionSource(ctx context.Context, arg SetAccountCommissionSourceParams) error {
-	_, err := q.db.ExecContext(ctx, setAccountCommissionSource, arg.CommissionSource, arg.ID)
+	_, err := q.db.ExecContext(ctx, setAccountCommissionSource, arg.CommissionSource, arg.ID, arg.UserID)
 	return err
 }
 
 const updateAccount = `-- name: UpdateAccount :one
 UPDATE accounts
 SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
-WHERE id = ?
-RETURNING id, name, firm, import_source, account_ref, type, currency, needs_setup, active, created_at, commission_source
+WHERE id = ? AND user_id = ?
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at
 `
 
 type UpdateAccountParams struct {
@@ -234,6 +258,7 @@ type UpdateAccountParams struct {
 	Active     int64   `json:"active"`
 	NeedsSetup int64   `json:"needs_setup"`
 	ID         int64   `json:"id"`
+	UserID     int64   `json:"user_id"`
 }
 
 func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (Account, error) {
@@ -245,10 +270,12 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		arg.Active,
 		arg.NeedsSetup,
 		arg.ID,
+		arg.UserID,
 	)
 	var i Account
 	err := row.Scan(
 		&i.ID,
+		&i.UserID,
 		&i.Name,
 		&i.Firm,
 		&i.ImportSource,
@@ -257,8 +284,8 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.Currency,
 		&i.NeedsSetup,
 		&i.Active,
-		&i.CreatedAt,
 		&i.CommissionSource,
+		&i.CreatedAt,
 	)
 	return i, err
 }

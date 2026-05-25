@@ -37,6 +37,12 @@ type ImportService struct {
 	FailedDir    string
 	Timezone     *time.Location // used by the position builder for daily_stats date bucketing
 	Logger       *slog.Logger
+
+	// UserID owns any account auto-created during import and is recorded
+	// on sync_log rows. Phase 1b: all imports are attributed to a single
+	// user (the stub authenticator's bootstrap user). Phase 1c will thread
+	// per-request / per-inbox-subdir ownership through Import* methods.
+	UserID int64
 }
 
 // Outcome summarizes what an ImportFile call did.
@@ -53,10 +59,52 @@ type Outcome struct {
 	ErrorMessage       string // empty on success
 }
 
+// userScopeKey threads the per-import user identity through the importer's
+// internal helpers (move-to-processed/failed need the username for the
+// per-user subdir, the ingest path needs the user id to attribute auto-
+// created accounts). Set by ImportFileForUser, read by helpers; falls back
+// to s.effectiveUserID(ctx) when absent so callers that haven't been multiuser-converted
+// keep working.
+type userScopeKey struct{}
+
+type userScope struct {
+	UserID   int64
+	Username string
+}
+
+func withUserScope(ctx context.Context, uid int64, name string) context.Context {
+	return context.WithValue(ctx, userScopeKey{}, userScope{UserID: uid, Username: name})
+}
+
+func (s *ImportService) effectiveUserID(ctx context.Context) int64 {
+	if sc, ok := ctx.Value(userScopeKey{}).(userScope); ok && sc.UserID != 0 {
+		return sc.UserID
+	}
+	return s.UserID
+}
+
+func (s *ImportService) effectiveUsername(ctx context.Context) string {
+	if sc, ok := ctx.Value(userScopeKey{}).(userScope); ok {
+		return sc.Username
+	}
+	return ""
+}
+
 // ImportFile reads, parses, ingests, and relocates a single CSV file.
 // Account discovery for trade-shaped formats happens from the filename.
+// Falls back to s.effectiveUserID(ctx) for any auto-created accounts; for per-user
+// inbox routing see ImportFileForUser.
 func (s *ImportService) ImportFile(ctx context.Context, path string) (Outcome, error) {
 	return s.importFile(ctx, path, 0)
+}
+
+// ImportFileForUser is the per-user-subdir variant. The watcher calls it
+// with the user resolved from the inbox subdir name; UI uploads call it
+// with the request's authenticated user. username is purely for naming
+// the processed/<username>/ and failed/<username>/ move destinations -
+// the actual ownership of auto-created accounts comes from userID.
+func (s *ImportService) ImportFileForUser(ctx context.Context, path string, userID int64, username string) (Outcome, error) {
+	return s.importFile(withUserScope(ctx, userID, username), path, 0)
 }
 
 // ImportFileToAccount is the explicit-account variant used by the /import
@@ -66,6 +114,11 @@ func (s *ImportService) ImportFile(ctx context.Context, path string) (Outcome, e
 // embedded per-row and this parameter is ignored.
 func (s *ImportService) ImportFileToAccount(ctx context.Context, path string, accountID int64) (Outcome, error) {
 	return s.importFile(ctx, path, accountID)
+}
+
+// ImportFileToAccountForUser is ImportFileToAccount + per-user move dirs.
+func (s *ImportService) ImportFileToAccountForUser(ctx context.Context, path string, accountID, userID int64, username string) (Outcome, error) {
+	return s.importFile(withUserScope(ctx, userID, username), path, accountID)
 }
 
 // importFile is the shared body. forceAccountID=0 means "use the filename-
@@ -135,8 +188,11 @@ func dispatchParse(format Format, r io.Reader) ([]Fill, error) {
 // only applies to the TopStep orders/trades pair - MotiveWave accounts
 // live in their own (import_source, account_ref) namespace and have no
 // equivalent collision risk, so MotiveWave imports skip the check.
-func ensureClaimCompatible(ctx context.Context, q *models.Queries, accountID int64, accountName string, incoming Format) error {
-	claim, err := q.GetAccountImportClaim(ctx, accountID)
+func ensureClaimCompatible(ctx context.Context, q *models.Queries, userID, accountID int64, accountName string, incoming Format) error {
+	claim, err := q.GetAccountImportClaim(ctx, models.GetAccountImportClaimParams{
+		ID:     accountID,
+		UserID: userID,
+	})
 	if err != nil {
 		return fmt.Errorf("read import claim: %w", err)
 	}
@@ -223,7 +279,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			if created {
 				out.AccountsCreated++
 			}
-			if err := ensureClaimCompatible(ctx, q, acct.ID, acct.Name, format); err != nil {
+			if err := ensureClaimCompatible(ctx, q, s.effectiveUserID(ctx), acct.ID, acct.Name, format); err != nil {
 				return err
 			}
 			accounts[f.AccountRef] = acct.ID
@@ -270,7 +326,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 		if tz == nil {
 			tz = time.UTC
 		}
-		builder := &positions.Builder{Queries: q, Timezone: tz}
+		builder := &positions.Builder{Queries: q, Timezone: tz, UserID: s.effectiveUserID(ctx)}
 		keys := make([]positions.Key, 0, len(rebuildKeys))
 		for k := range rebuildKeys {
 			// Inline accounts (TopstepX trades CSV) are the source of truth for
@@ -335,11 +391,14 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	}
 	// Reject if the account is already orders-imported. Done before
 	// SetAccountCommissionSource so a rejected import doesn't mutate state.
-	acct, err := q.GetAccountByID(ctx, accountID)
+	acct, err := q.GetAccountByID(ctx, models.GetAccountByIDParams{
+		ID:     accountID,
+		UserID: s.effectiveUserID(ctx),
+	})
 	if err != nil {
 		return fmt.Errorf("load account: %w", err)
 	}
-	if err := ensureClaimCompatible(ctx, q, accountID, acct.Name, FormatTopstepXTrades); err != nil {
+	if err := ensureClaimCompatible(ctx, q, s.effectiveUserID(ctx), accountID, acct.Name, FormatTopstepXTrades); err != nil {
 		return err
 	}
 	// Trades CSV is the only source that carries per-trade commissions inline,
@@ -347,6 +406,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	if err := q.SetAccountCommissionSource(ctx, models.SetAccountCommissionSourceParams{
 		CommissionSource: "inline",
 		ID:               accountID,
+		UserID:           s.effectiveUserID(ctx),
 	}); err != nil {
 		return fmt.Errorf("mark account inline: %w", err)
 	}
@@ -513,7 +573,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 
 	// Pull the candidate set: any TopStep-import-sourced account, plus any
 	// account whose firm is explicitly topstep (covers user-renamed cases).
-	all, err := q.ListAccounts(ctx)
+	all, err := q.ListAccounts(ctx, s.effectiveUserID(ctx))
 	if err != nil {
 		return 0, false, err
 	}
@@ -536,6 +596,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 			}
 		}
 		created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+			UserID:           s.effectiveUserID(ctx),
 			Name:             ref,
 			Firm:             &firm,
 			ImportSource:     string(FormatTopstepX),
@@ -566,6 +627,7 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 		}
 	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           s.effectiveUserID(ctx),
 		Name:             "TOPSTEP-DEFAULT",
 		Firm:             &firm,
 		ImportSource:     string(FormatTopstepX),
@@ -751,6 +813,7 @@ func upsertInstrumentStub(ctx context.Context, tx *sql.Tx, q *models.Queries, f 
 
 func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queries, format Format, ref, source string) (models.Account, bool, error) {
 	existing, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
+		UserID:       s.effectiveUserID(ctx),
 		ImportSource: string(format),
 		AccountRef:   ref,
 	})
@@ -772,6 +835,7 @@ func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queri
 		needsSetup = 1
 	}
 	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           s.effectiveUserID(ctx),
 		Name:             ref,
 		Firm:             strPtrOrNil(firm),
 		ImportSource:     string(format),
@@ -795,7 +859,7 @@ func strPtrOrNil(s string) *string {
 }
 
 func (s *ImportService) finalizeSuccess(ctx context.Context, srcPath string, out Outcome) (Outcome, error) {
-	dest, err := s.moveToProcessed(srcPath)
+	dest, err := s.moveToProcessed(srcPath, s.effectiveUsername(ctx))
 	if err != nil {
 		s.logger().Warn("import succeeded but move-to-processed failed",
 			"source", srcPath, "err", err)
@@ -821,7 +885,7 @@ func (s *ImportService) finalizeSuccess(ctx context.Context, srcPath string, out
 }
 
 func (s *ImportService) finalizeFailure(ctx context.Context, srcPath string, out Outcome) (Outcome, error) {
-	dest, err := s.moveToFailed(srcPath, out.ErrorMessage)
+	dest, err := s.moveToFailed(srcPath, out.ErrorMessage, s.effectiveUsername(ctx))
 	if err != nil {
 		s.logger().Warn("import failed and move-to-failed also failed",
 			"source", srcPath, "err", err)
@@ -843,33 +907,51 @@ func (s *ImportService) finalizeFailure(ctx context.Context, srcPath string, out
 	return out, nil
 }
 
-// moveToProcessed moves srcPath into ProcessedDir with a timestamp prefix to
-// avoid name collisions.
-func (s *ImportService) moveToProcessed(srcPath string) (string, error) {
-	if s.ProcessedDir == "" {
+// userScopedDir returns dir/<username>/ when username is non-empty,
+// otherwise the bare dir (backward-compat flat layout). Creates the
+// destination dir as a side effect.
+func userScopedDir(dir, username string) (string, error) {
+	if dir == "" {
 		return "", nil
 	}
-	if err := os.MkdirAll(s.ProcessedDir, 0o755); err != nil {
+	if username != "" {
+		dir = filepath.Join(dir, username)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	dest := filepath.Join(s.ProcessedDir, timestampPrefixed(filepath.Base(srcPath)))
+	return dir, nil
+}
+
+// moveToProcessed moves srcPath into ProcessedDir[/username] with a
+// timestamp prefix to avoid name collisions.
+func (s *ImportService) moveToProcessed(srcPath, username string) (string, error) {
+	dir, err := userScopedDir(s.ProcessedDir, username)
+	if err != nil {
+		return "", err
+	}
+	if dir == "" {
+		return "", nil
+	}
+	dest := filepath.Join(dir, timestampPrefixed(filepath.Base(srcPath)))
 	if err := moveFile(srcPath, dest); err != nil {
 		return "", err
 	}
 	return dest, nil
 }
 
-// moveToFailed moves srcPath into FailedDir with a timestamp prefix and writes
-// a sibling .error.txt file containing the import error message.
-func (s *ImportService) moveToFailed(srcPath, errMsg string) (string, error) {
-	if s.FailedDir == "" {
-		return "", nil
-	}
-	if err := os.MkdirAll(s.FailedDir, 0o755); err != nil {
+// moveToFailed moves srcPath into FailedDir[/username] with a timestamp
+// prefix and writes a sibling .error.txt file containing the import error.
+func (s *ImportService) moveToFailed(srcPath, errMsg, username string) (string, error) {
+	dir, err := userScopedDir(s.FailedDir, username)
+	if err != nil {
 		return "", err
 	}
+	if dir == "" {
+		return "", nil
+	}
 	base := timestampPrefixed(filepath.Base(srcPath))
-	dest := filepath.Join(s.FailedDir, base)
+	dest := filepath.Join(dir, base)
 	if err := moveFile(srcPath, dest); err != nil {
 		return "", err
 	}
@@ -923,7 +1005,9 @@ func timestampPrefixed(base string) string {
 
 func (s *ImportService) writeSyncLog(ctx context.Context, out Outcome, status, message string) (int64, error) {
 	source := out.SourcePath
+	uid := s.effectiveUserID(ctx)
 	row, err := s.Queries.CreateSyncLog(ctx, models.CreateSyncLogParams{
+		UserID:      &uid,
 		AccountID:   nil,
 		SyncType:    string(out.Format),
 		Status:      status,
@@ -960,7 +1044,10 @@ func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID i
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	acct, err := q.GetAccountByID(ctx, accountID)
+	acct, err := q.GetAccountByID(ctx, models.GetAccountByIDParams{
+		ID:     accountID,
+		UserID: s.effectiveUserID(ctx),
+	})
 	if err != nil {
 		return fmt.Errorf("load account: %w", err)
 	}
@@ -1000,7 +1087,10 @@ func (s *ImportService) RebuildTradesForSymbol(ctx context.Context, symbolRoot s
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	rows, err := q.ListAccountSymbolKeysForRoot(ctx, symbolRoot)
+	rows, err := q.ListAccountSymbolKeysForRoot(ctx, models.ListAccountSymbolKeysForRootParams{
+		SymbolRoot: symbolRoot,
+		UserID:     s.effectiveUserID(ctx),
+	})
 	if err != nil {
 		return fmt.Errorf("list keys for root %s: %w", symbolRoot, err)
 	}
@@ -1033,6 +1123,7 @@ func (s *ImportService) RebuildTradesForCommissionCell(ctx context.Context, firm
 		Firm:       &firm,
 		AssetClass: &assetClass,
 		SizeClass:  &sizeClass,
+		UserID:     s.effectiveUserID(ctx),
 	})
 	if err != nil {
 		return fmt.Errorf("list keys for cell (%s,%s,%s): %w", firm, assetClass, sizeClass, err)
@@ -1057,7 +1148,7 @@ func (s *ImportService) runRebuild(ctx context.Context, q *models.Queries, keys 
 	if tz == nil {
 		tz = time.UTC
 	}
-	builder := &positions.Builder{Queries: q, Timezone: tz}
+	builder := &positions.Builder{Queries: q, Timezone: tz, UserID: s.effectiveUserID(ctx)}
 	if _, err := builder.Rebuild(ctx, keys); err != nil {
 		return fmt.Errorf("rebuild: %w", err)
 	}

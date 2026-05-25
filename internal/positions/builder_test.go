@@ -30,14 +30,21 @@ func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 		t.Fatalf("db.Open: %v", err)
 	}
 	t.Cleanup(func() { conn.Close() })
-	if err := db.RunMigrations(conn); err != nil {
+	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: "test"}); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 	q := models.New(conn)
 
+	// Look up the bootstrap user the migration created.
+	var bootstrapID int64
+	if err := conn.QueryRow(`SELECT id FROM users WHERE username = 'test'`).Scan(&bootstrapID); err != nil {
+		t.Fatalf("load bootstrap user: %v", err)
+	}
+
 	// Create a test account with firm=apex (so commission lookups have a match).
 	apex := "apex"
 	acct, err := q.CreateAccount(context.Background(), models.CreateAccountParams{
+		UserID:           bootstrapID,
 		Name:             "test",
 		Firm:             &apex,
 		ImportSource:     "motivewave_csv",
@@ -51,7 +58,7 @@ func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 	}
 
 	loc, _ := time.LoadLocation("America/Chicago")
-	return &Builder{Queries: q, Timezone: loc}, q, conn, acct.ID
+	return &Builder{Queries: q, Timezone: loc, UserID: bootstrapID}, q, conn, acct.ID
 }
 
 func insertSynthExecutions(t *testing.T, q *models.Queries, accountID int64, symbol, root string, fills []synthFill) {
@@ -407,6 +414,148 @@ func TestRebuild_PreservesJournalLinkAcrossRebuild(t *testing.T) {
 	}
 	if linkedID != trades[0].ID {
 		t.Errorf("journal_entries.trade_id = %d, want %d (the new trade)", linkedID, trades[0].ID)
+	}
+}
+
+// TestRebuild_PreservesGroupJournalLinksAcrossRebuild guards the M:N
+// group-journal table (journal_entry_trades). The FK has ON DELETE
+// CASCADE, so a naive rebuild wipes every link to a deleted trade.
+// The builder must snapshot pre-delete and re-insert post-replay.
+func TestRebuild_PreservesGroupJournalLinksAcrossRebuild(t *testing.T) {
+	b, q, conn, accID := setupBuilder(t)
+	// Two trades on the same account/symbol so we can verify multiple
+	// links survive (not just the first one).
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0)},
+		{"sell", 1, 7252, at(5)},
+		{"sell", 1, 7260, at(20)},
+		{"buy", 1, 7258, at(25)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("first rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 2 {
+		t.Fatalf("setup expected 2 trades, got %d", len(trades))
+	}
+
+	// Create a group journal entry and link both trades to it.
+	res, err := conn.Exec(
+		`INSERT INTO journal_entries (account_id, entry_date, body, scope) VALUES (?, ?, ?, 'group')`,
+		accID, "2026-05-10", "group debrief",
+	)
+	if err != nil {
+		t.Fatalf("seed group entry: %v", err)
+	}
+	groupID, err := res.LastInsertId()
+	if err != nil {
+		t.Fatalf("LastInsertId: %v", err)
+	}
+	for _, tr := range trades {
+		if _, err := conn.Exec(
+			`INSERT INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)`,
+			groupID, tr.ID,
+		); err != nil {
+			t.Fatalf("seed link: %v", err)
+		}
+	}
+	origEntryTimes := []time.Time{trades[0].EntryTime, trades[1].EntryTime}
+
+	// Second rebuild — same executions, same resulting entry_times. The
+	// CASCADE wipes both link rows; the builder must re-insert them.
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("rebuild with group links: %v", err)
+	}
+	trades, _ = q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 2 {
+		t.Fatalf("post-rebuild len(trades) = %d, want 2", len(trades))
+	}
+	// Sanity: entry_times survived the rebuild.
+	for i, want := range origEntryTimes {
+		if !trades[i].EntryTime.Equal(want) {
+			t.Fatalf("trade[%d] entry_time drift: %v vs %v", i, trades[i].EntryTime, want)
+		}
+	}
+
+	var linkCount int64
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM journal_entry_trades WHERE journal_entry_id = ?`, groupID,
+	).Scan(&linkCount); err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if linkCount != 2 {
+		t.Fatalf("links after rebuild = %d, want 2 (group links must survive replay)", linkCount)
+	}
+
+	// Each link should point at the new trade with the matching entry_time.
+	for _, tr := range trades {
+		var hits int64
+		if err := conn.QueryRow(
+			`SELECT COUNT(*) FROM journal_entry_trades WHERE journal_entry_id = ? AND trade_id = ?`,
+			groupID, tr.ID,
+		).Scan(&hits); err != nil {
+			t.Fatalf("link lookup: %v", err)
+		}
+		if hits != 1 {
+			t.Errorf("expected exactly 1 link to trade id %d, got %d", tr.ID, hits)
+		}
+	}
+}
+
+// TestRebuild_GroupLinkDropsWhenSignalShifts is the symmetric fallback
+// case: when the underlying executions change enough that no trade
+// with the original entry_time exists anymore, the link is dropped
+// silently - same behavior as the trade-scope (single trade_id) FK.
+func TestRebuild_GroupLinkDropsWhenSignalShifts(t *testing.T) {
+	b, q, conn, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0)},
+		{"sell", 1, 7252, at(5)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("first rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("setup expected 1 trade, got %d", len(trades))
+	}
+
+	res, err := conn.Exec(
+		`INSERT INTO journal_entries (account_id, entry_date, body, scope) VALUES (?, ?, 'g', 'group')`,
+		accID, "2026-05-10",
+	)
+	if err != nil {
+		t.Fatalf("seed group entry: %v", err)
+	}
+	groupID, _ := res.LastInsertId()
+	if _, err := conn.Exec(
+		`INSERT INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)`,
+		groupID, trades[0].ID,
+	); err != nil {
+		t.Fatalf("seed link: %v", err)
+	}
+
+	// Wipe executions, insert a new pair with a different entry_time so
+	// the rebuilt trade has no signal-match against the original.
+	if _, err := conn.Exec(`DELETE FROM executions WHERE account_id = ?`, accID); err != nil {
+		t.Fatalf("clear execs: %v", err)
+	}
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7300, at(120)}, // 2h later → different entry_time
+		{"sell", 1, 7302, at(125)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("rebuild after shift: %v", err)
+	}
+
+	var linkCount int64
+	if err := conn.QueryRow(
+		`SELECT COUNT(*) FROM journal_entry_trades WHERE journal_entry_id = ?`, groupID,
+	).Scan(&linkCount); err != nil {
+		t.Fatalf("count links: %v", err)
+	}
+	if linkCount != 0 {
+		t.Errorf("links after signal shift = %d, want 0 (dropped fallback)", linkCount)
 	}
 }
 

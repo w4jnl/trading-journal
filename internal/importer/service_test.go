@@ -24,12 +24,17 @@ func setupTestService(t *testing.T) (*ImportService, *sql.DB, string, string, st
 	}
 	t.Cleanup(func() { conn.Close() })
 
-	if err := db.RunMigrations(conn); err != nil {
+	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: "test"}); err != nil {
 		t.Fatalf("RunMigrations: %v", err)
 	}
 
 	processed := filepath.Join(tmp, "processed")
 	failed := filepath.Join(tmp, "failed")
+
+	var bootstrapID int64
+	if err := conn.QueryRow(`SELECT id FROM users WHERE username = 'test'`).Scan(&bootstrapID); err != nil {
+		t.Fatalf("load bootstrap user: %v", err)
+	}
 
 	loc, _ := time.LoadLocation("America/Chicago")
 	svc := &ImportService{
@@ -38,6 +43,7 @@ func setupTestService(t *testing.T) (*ImportService, *sql.DB, string, string, st
 		ProcessedDir: processed,
 		FailedDir:    failed,
 		Timezone:     loc,
+		UserID:       bootstrapID,
 	}
 	return svc, conn, tmp, processed, failed
 }
@@ -332,9 +338,9 @@ func TestImportFile_MotiveWaveNotBlockedByStaleInlineFlag(t *testing.T) {
 	// the MotiveWave fixture so the importer resolves to this exact row
 	// instead of creating a fresh one.
 	if _, err := conn.Exec(`
-		INSERT INTO accounts (name, firm, import_source, account_ref, type, currency, needs_setup, commission_source)
-		VALUES ('APEX-100001-28', 'apex', 'motivewave_csv', 'APEX-100001-28', 'prop_eval', 'USD', 0, 'inline')
-	`); err != nil {
+		INSERT INTO accounts (user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source)
+		VALUES (?, 'APEX-100001-28', 'apex', 'motivewave_csv', 'APEX-100001-28', 'prop_eval', 'USD', 0, 'inline')
+	`, svc.UserID); err != nil {
 		t.Fatalf("seed inline APEX account: %v", err)
 	}
 

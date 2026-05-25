@@ -13,10 +13,35 @@ import (
 //go:embed migrations/*.sql
 var migrationsFS embed.FS
 
+// MigrationVars provides values substituted into migration SQL bodies before
+// exec. Currently only ${BOOTSTRAP_USERNAME} (the admin user assigned
+// ownership of pre-multiuser data) is supported. The value is validated as
+// SQL-safe (alphanumeric + a few separators) so the substitution can't be
+// used to inject statements via a malicious config.
+type MigrationVars struct {
+	BootstrapUsername string
+}
+
+func (v MigrationVars) apply(sql string) (string, error) {
+	if !strings.Contains(sql, "${BOOTSTRAP_USERNAME}") {
+		return sql, nil
+	}
+	if v.BootstrapUsername == "" {
+		return "", fmt.Errorf("migration references ${BOOTSTRAP_USERNAME} but no bootstrap username configured")
+	}
+	for _, r := range v.BootstrapUsername {
+		ok := (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' || r == '.'
+		if !ok {
+			return "", fmt.Errorf("bootstrap username %q contains unsafe character %q (allowed: A-Za-z0-9 _-.)", v.BootstrapUsername, r)
+		}
+	}
+	return strings.ReplaceAll(sql, "${BOOTSTRAP_USERNAME}", v.BootstrapUsername), nil
+}
+
 // RunMigrations applies any pending migrations from the embedded migrations/ dir.
 // Files use dbmate format (-- migrate:up / -- migrate:down). Only the up section
 // is executed at runtime; rollbacks are a manual / dev-tooling concern.
-func RunMigrations(conn *sql.DB) error {
+func RunMigrations(conn *sql.DB, vars MigrationVars) error {
 	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)`); err != nil {
 		return fmt.Errorf("create schema_migrations: %w", err)
 	}
@@ -46,6 +71,10 @@ func RunMigrations(conn *sql.DB) error {
 			return fmt.Errorf("read %s: %w", path, err)
 		}
 		upSQL, err := extractUp(string(raw))
+		if err != nil {
+			return fmt.Errorf("migration %s: %w", path, err)
+		}
+		upSQL, err = vars.apply(upSQL)
 		if err != nil {
 			return fmt.Errorf("migration %s: %w", path, err)
 		}
@@ -83,6 +112,17 @@ func loadAppliedVersions(conn *sql.DB) (map[string]bool, error) {
 }
 
 func applyOne(conn *sql.DB, version, upSQL string) error {
+	// SQLite's recommended pattern for table rebuilds (the only way to change
+	// UNIQUE constraints, drop columns, etc.) is to disable foreign_keys for
+	// the duration. The pragma can't be toggled inside a transaction, so we
+	// flip it on the connection, run the migration's tx, then restore. Any
+	// FK violations introduced by the migration would be caught by the
+	// foreign_key_check pragma below before COMMIT.
+	if _, err := conn.Exec(`PRAGMA foreign_keys = OFF`); err != nil {
+		return fmt.Errorf("disable foreign_keys: %w", err)
+	}
+	defer func() { _, _ = conn.Exec(`PRAGMA foreign_keys = ON`) }()
+
 	tx, err := conn.Begin()
 	if err != nil {
 		return err
@@ -90,6 +130,30 @@ func applyOne(conn *sql.DB, version, upSQL string) error {
 	if _, err := tx.Exec(upSQL); err != nil {
 		_ = tx.Rollback()
 		return err
+	}
+	// Catch any referential breakage the migration introduced before we
+	// commit. With foreign_keys=OFF during exec, violations don't fire at
+	// statement time; foreign_key_check returns one row per offender.
+	rows, err := tx.Query(`PRAGMA foreign_key_check`)
+	if err != nil {
+		_ = tx.Rollback()
+		return fmt.Errorf("foreign_key_check: %w", err)
+	}
+	var violations []string
+	for rows.Next() {
+		var table, parent string
+		var rowid, fkid sql.NullInt64
+		if err := rows.Scan(&table, &rowid, &parent, &fkid); err != nil {
+			rows.Close()
+			_ = tx.Rollback()
+			return err
+		}
+		violations = append(violations, fmt.Sprintf("%s row %d -> %s", table, rowid.Int64, parent))
+	}
+	rows.Close()
+	if len(violations) > 0 {
+		_ = tx.Rollback()
+		return fmt.Errorf("foreign_key_check found %d violation(s): %s", len(violations), strings.Join(violations, "; "))
 	}
 	if _, err := tx.Exec(`INSERT INTO schema_migrations (version) VALUES (?)`, version); err != nil {
 		_ = tx.Rollback()

@@ -41,6 +41,10 @@ type Key struct {
 type Builder struct {
 	Queries  *models.Queries
 	Timezone *time.Location
+	// UserID owns the accounts this builder rebuilds. Set by the importer
+	// or admin handler that constructs the Builder; used to scope account
+	// lookups so a user can't trigger a rebuild against someone else's data.
+	UserID int64
 }
 
 // Result reports rebuild outcomes.
@@ -104,6 +108,20 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 		}
 	}
 
+	// Snapshot group-journal links (M:N journal_entry_trades) for this
+	// (account, symbol) before the DELETE+CASCADE wipes them. No manual
+	// clear needed - the FK CASCADE handles that; we just need to know
+	// what was there so we can re-insert after the replay produces fresh
+	// trades with the same entry_time. Same fallback as trade-scope
+	// entries: if entry_time shifts, the link is silently dropped.
+	groupLinks, err := b.Queries.ListGroupLinksForAccountSymbol(ctx, models.ListGroupLinksForAccountSymbolParams{
+		AccountID: k.AccountID,
+		Symbol:    k.Symbol,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list group links: %w", err)
+	}
+
 	if err := b.Queries.DeleteTradesForAccountSymbol(ctx, models.DeleteTradesForAccountSymbolParams{
 		AccountID: k.AccountID,
 		Symbol:    k.Symbol,
@@ -122,7 +140,10 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 		return 0, nil
 	}
 
-	account, err := b.Queries.GetAccountByID(ctx, k.AccountID)
+	account, err := b.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{
+		ID:     k.AccountID,
+		UserID: b.UserID,
+	})
 	if err != nil {
 		return 0, fmt.Errorf("load account: %w", err)
 	}
@@ -161,6 +182,29 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 			// boundaries shifted; entry stays detached.
 		default:
 			return closed, fmt.Errorf("find trade by signal: %w", err)
+		}
+	}
+
+	// Re-link group entries (M:N) the same way. The CASCADE wiped the
+	// link rows when DeleteTradesForAccountSymbol ran; re-insert now.
+	for _, link := range groupLinks {
+		newID, err := b.Queries.FindTradeBySignal(ctx, models.FindTradeBySignalParams{
+			AccountID: k.AccountID,
+			Symbol:    k.Symbol,
+			EntryTime: link.EntryTime,
+		})
+		switch {
+		case err == nil:
+			if err := b.Queries.InsertGroupLink(ctx, models.InsertGroupLinkParams{
+				JournalEntryID: link.JournalEntryID,
+				TradeID:        newID,
+			}); err != nil {
+				return closed, fmt.Errorf("relink group entry %d: %w", link.JournalEntryID, err)
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// boundaries shifted; group link silently drops (same fallback).
+		default:
+			return closed, fmt.Errorf("find trade by signal (group): %w", err)
 		}
 	}
 

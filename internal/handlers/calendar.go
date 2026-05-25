@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -81,6 +82,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+		UserID:     userID(ctx),
 		StatDate:   monthStart,
 		StatDate_2: monthEnd,
 	})
@@ -91,6 +93,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 
 	// Day-level journal entries for the visible range so we can flag cells.
 	journals, err := h.Queries.ListDayJournalsInRange(ctx, models.ListDayJournalsInRangeParams{
+		UserID:      userIDPtr(ctx),
 		EntryDate:   monthStart,
 		EntryDate_2: monthEnd,
 	})
@@ -115,6 +118,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	weekJournalStart := monthStart.AddDate(0, 0, -7)
 	weekJournalEnd := monthEnd.AddDate(0, 0, 7)
 	weekJournals, err := h.Queries.ListWeekJournalsInRange(ctx, models.ListWeekJournalsInRangeParams{
+		UserID:      userIDPtr(ctx),
 		EntryDate:   weekJournalStart,
 		EntryDate_2: weekJournalEnd,
 	})
@@ -240,7 +244,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		weeklyTotals[wi] = wt
 	}
 
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
@@ -266,7 +270,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 	filterQS := template.URL(filterOnly.Encode())
 
-	h.renderPage(w, "calendar.html", map[string]any{
+	h.renderPage(w, r, "calendar.html", map[string]any{
 		"NavActive":        "calendar",
 		"BackHref":         validBackHref(r),
 		"MonthLabel":       monthStart.Format("January 2006"),

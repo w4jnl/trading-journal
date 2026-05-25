@@ -195,13 +195,37 @@
      POSTs the selected IDs to /journal/group/new which creates the entry and
      redirects to the editor. Uses the shared .sticky-action-bar utility for
      safe-area-aware bottom padding. -->
+<!-- Sticky selection action bar.
+     - "Journal selected" creates a brand-new group entry and navigates to it.
+     - "Add to group" links the selected trades into an existing group entry
+       (picked from the adjacent select) and stays on /trades. -->
 <form id="group-form" method="post" action="/journal/group/new" class="sel-bar sticky-action-bar">
   <input type="hidden" name="back" value="/trades{{if .Filters}}{{end}}">
   <span class="muted"><strong id="sel-count" class="num">0</strong> trade(s) selected.</span>
-  <div class="row-sm" style="margin-left: auto;">
+  <div class="row-sm" style="margin-left: auto; gap: 8px; flex-wrap: wrap; align-items: center;">
+    {{if .GroupOptions}}
+      <select id="group-target" class="sel-bar-select" title="Pick an existing group entry">
+        <option value="">— pick group —</option>
+        {{range .GroupOptions}}
+          <option value="{{.ID}}">{{.Label}}</option>
+        {{end}}
+      </select>
+      <button type="button" id="add-to-group-btn" class="btn btn--secondary btn--sm"
+              title="Link the selected trades into the chosen group entry">
+        Add to group
+      </button>
+    {{end}}
     <button type="button" id="sel-clear" class="btn btn--ghost btn--sm">Clear</button>
     <button type="submit" class="btn btn--primary btn--sm" title="Journal selected (⌘D)">Journal selected →</button>
   </div>
+</form>
+
+{{/* Sibling form used by the "Add to group" button. Its action is set
+     by JS at click time to /journal/group/{selected-id}/link. Kept
+     separate from #group-form so the regular "Journal selected"
+     submit doesn't accidentally pick up its hidden inputs. */}}
+<form id="group-link-form" method="post" action="" style="display: none;">
+  <input type="hidden" name="back" value="/trades{{if .Filters}}{{end}}">
 </form>
 
 {{template "trade_sheet" .}}
@@ -278,6 +302,33 @@
         form.appendChild(hidden);
       });
     });
+
+    /* "Add to group" — link the ticked trades into an existing group
+       entry. Stays on /trades after submit (server redirects back with
+       a grouplinked flash). Synthesizes trade_id hidden inputs the same
+       way the new-group submit does, but on the sibling #group-link-form. */
+    const linkForm = document.getElementById('group-link-form');
+    const linkBtn = document.getElementById('add-to-group-btn');
+    const groupSel = document.getElementById('group-target');
+    if (linkForm && linkBtn && groupSel) {
+      linkBtn.addEventListener('click', () => {
+        const ticked = boxes().filter((b) => b.checked);
+        if (ticked.length === 0) { alert('Tick at least one trade first.'); return; }
+        const gid = groupSel.value;
+        if (!gid) { alert('Pick a group entry first.'); return; }
+        linkForm.querySelectorAll('input[name="trade_id"]').forEach((n) => n.remove());
+        ticked.forEach((b) => {
+          const hidden = document.createElement('input');
+          hidden.type = 'hidden';
+          hidden.name = 'trade_id';
+          hidden.value = b.value;
+          linkForm.appendChild(hidden);
+        });
+        linkForm.action = '/journal/group/' + gid + '/link';
+        linkForm.submit();
+      });
+    }
+
     // ⌘D / Ctrl-D submits the group-journal form when ≥1 trade is ticked.
     // Skip when typing in an input/textarea so the user can still use the
     // browser-default Cmd-D bookmark shortcut while interacting with forms.
@@ -294,6 +345,25 @@
     });
     refresh();
   })();
+
+  /* Toast the result of "Add to group" when the page reloads with the
+     `flash=grouplinked=N&group=ID` query — produced by the server's
+     redirect back from POST /journal/group/{id}/link. Strip the
+     params from the URL so a manual refresh doesn't re-toast. */
+  (function () {
+    const url = new URL(window.location.href);
+    const flash = url.searchParams.get('flash') || '';
+    if (!flash.startsWith('grouplinked=')) return;
+    const n = parseInt(flash.slice('grouplinked='.length), 10) || 0;
+    const gid = url.searchParams.get('group') || '';
+    if (typeof window.toast === 'function') {
+      const where = gid ? ' to group #' + gid : '';
+      window.toast('Linked ' + n + ' trade' + (n === 1 ? '' : 's') + where, { kind: 'success' });
+    }
+    url.searchParams.delete('flash');
+    url.searchParams.delete('group');
+    window.history.replaceState({}, '', url.pathname + (url.searchParams.toString() ? '?' + url.searchParams.toString() : '') + url.hash);
+  })();
 </script>
 
 <style>
@@ -302,6 +372,18 @@
   .trades-wrapper table .col-sel,
   table .col-sel { width: 36px; text-align: center; }
   .trade-sel { cursor: pointer; width: 18px; height: 18px; }
+
+  /* Inline group picker in the bulk-action bar. Caps width so a long
+     entry body excerpt doesn't push the buttons off the row. */
+  .sel-bar-select {
+    height: 28px;
+    padding: 4px 8px;
+    font-size: 12px;
+    max-width: 320px;
+  }
+  @media (max-width: 600px) {
+    .sel-bar-select { max-width: 100%; }
+  }
   @media (max-width: 600px) {
     table .col-sel { width: 44px; }
     .trade-sel { width: 20px; height: 20px; }

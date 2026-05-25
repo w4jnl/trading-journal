@@ -1,45 +1,48 @@
 -- name: GetDayJournalEntry :one
 SELECT * FROM journal_entries
-WHERE entry_date = ? AND scope = 'day'
+WHERE user_id = ? AND entry_date = ? AND scope = 'day'
 LIMIT 1;
 
 -- name: GetWeekJournalEntry :one
 -- entry_date for week-scoped rows is the Monday of that ISO week.
 SELECT * FROM journal_entries
-WHERE entry_date = ? AND scope = 'week'
+WHERE user_id = ? AND entry_date = ? AND scope = 'week'
 LIMIT 1;
 
 -- name: GetJournalEntryByTradeID :one
+-- The trade itself is already user-owned (verified via GetTradeByID), so
+-- this query trusts the trade_id and doesn't re-check user_id.
 SELECT * FROM journal_entries WHERE trade_id = ? LIMIT 1;
 
 -- name: CreateJournalEntry :one
-INSERT INTO journal_entries (trade_id, account_id, entry_date, body, mood, tag, scope)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateJournalEntry :exec
+-- Scope by user_id so a guessed entry id can't update someone else's entry.
 UPDATE journal_entries
 SET body = ?, mood = ?, tag = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
+WHERE id = ? AND user_id = ?;
 
 -- name: DeleteJournalEntry :exec
-DELETE FROM journal_entries WHERE id = ?;
+DELETE FROM journal_entries WHERE id = ? AND user_id = ?;
 
 -- name: ListRecentJournalEntries :many
 SELECT * FROM journal_entries
-WHERE scope = 'day'
+WHERE user_id = ? AND scope = 'day'
 ORDER BY entry_date DESC, id DESC
 LIMIT ?;
 
 -- name: ListDayJournalsInRange :many
 -- Used by /calendar to flag which dates have day-level entries.
 SELECT entry_date, tag FROM journal_entries
-WHERE scope = 'day' AND entry_date >= ? AND entry_date < ?
+WHERE user_id = ? AND scope = 'day' AND entry_date >= ? AND entry_date < ?
 ORDER BY entry_date;
 
 -- name: ListWeekJournalsInRange :many
 SELECT entry_date, tag FROM journal_entries
-WHERE scope = 'week' AND entry_date >= ? AND entry_date < ?
+WHERE user_id = ? AND scope = 'week' AND entry_date >= ? AND entry_date < ?
 ORDER BY entry_date;
 
 -- name: ListJournalFeed :many
@@ -54,5 +57,6 @@ SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body, je.mood, je.ta
 FROM journal_entries je
 LEFT JOIN trades t   ON t.id = je.trade_id
 LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
+WHERE je.user_id = ?
 ORDER BY je.entry_date DESC, je.id DESC
 LIMIT ?;

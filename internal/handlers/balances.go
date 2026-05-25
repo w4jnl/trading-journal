@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -43,7 +44,7 @@ type AccountBalance struct {
 func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64]AccountBalance, error) {
 	tz := h.localTZ()
 
-	anchorRows, err := h.Queries.ListBalanceAnchors(ctx)
+	anchorRows, err := h.Queries.ListBalanceAnchors(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return nil, fmt.Errorf("list balance_anchors: %w", err)
 	}
@@ -63,7 +64,7 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 		ExitTime time.Time // raw UTC timestamp; compared directly so the result is tz-independent
 		NetPnL   float64
 	}
-	tradeRows, err := h.Queries.ListClosedTradeDeltasOrdered(ctx)
+	tradeRows, err := h.Queries.ListClosedTradeDeltasOrdered(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return nil, fmt.Errorf("list trades: %w", err)
 	}
@@ -165,7 +166,7 @@ func (h *Handlers) loadTradeBalances(ctx context.Context) (map[int64]*float64, e
 		Balance float64
 	}
 	anchorsByAccount := map[int64][]anchorRow{}
-	anchors, err := h.Queries.ListBalanceAnchors(ctx)
+	anchors, err := h.Queries.ListBalanceAnchors(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return nil, fmt.Errorf("anchors: %w", err)
 	}
@@ -182,7 +183,7 @@ func (h *Handlers) loadTradeBalances(ctx context.Context) (map[int64]*float64, e
 		NetPnl   float64
 	}
 	tradesByAccount := map[int64][]tradeRow{}
-	tradeDeltas, err := h.Queries.ListClosedTradeDeltasOrdered(ctx)
+	tradeDeltas, err := h.Queries.ListClosedTradeDeltasOrdered(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return nil, fmt.Errorf("trades: %w", err)
 	}
@@ -354,7 +355,7 @@ func (h *Handlers) BalanceDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Queries.DeleteBalanceAnchor(ctx, anchorID); err != nil {
+	if err := h.Queries.DeleteBalanceAnchor(ctx, models.DeleteBalanceAnchorParams{ID: anchorID, UserID: auth.MustUser(ctx).ID}); err != nil {
 		h.serverError(w, fmt.Errorf("delete anchor: %w", err))
 		return
 	}
@@ -373,7 +374,7 @@ func (h *Handlers) BalanceDelete(w http.ResponseWriter, r *http.Request) {
 // the bulk-edit form on the rest of the page).
 func (h *Handlers) renderBalanceCell(w http.ResponseWriter, r *http.Request, accountID int64, toastMsg string) {
 	ctx := r.Context()
-	acct, err := h.Queries.GetAccountByID(ctx, accountID)
+	acct, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: accountID, UserID: auth.MustUser(ctx).ID})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load account: %w", err))
 		return

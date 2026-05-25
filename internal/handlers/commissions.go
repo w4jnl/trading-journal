@@ -60,7 +60,7 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list instruments: %w", err))
 		return
 	}
-	orphanRows, err := h.Queries.ListOrphanedCommissionTrades(ctx)
+	orphanRows, err := h.Queries.ListOrphanedCommissionTrades(ctx, userID(ctx))
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list orphans: %w", err))
 		return
@@ -110,7 +110,7 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	sortOrphansByCount(reasons)
 
-	h.renderPage(w, "commissions.html", map[string]any{
+	h.renderPage(w, r, "commissions.html", map[string]any{
 		"NavActive":    "commissions",
 		"BackHref":     validBackHref(r),
 		"AssetClasses": assetClasses,

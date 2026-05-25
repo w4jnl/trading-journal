@@ -11,12 +11,13 @@ import (
 )
 
 const createJournalEntry = `-- name: CreateJournalEntry :one
-INSERT INTO journal_entries (trade_id, account_id, entry_date, body, mood, tag, scope)
-VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope
+INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id
 `
 
 type CreateJournalEntryParams struct {
+	UserID    *int64    `json:"user_id"`
 	TradeID   *int64    `json:"trade_id"`
 	AccountID *int64    `json:"account_id"`
 	EntryDate time.Time `json:"entry_date"`
@@ -28,6 +29,7 @@ type CreateJournalEntryParams struct {
 
 func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntryParams) (JournalEntry, error) {
 	row := q.db.QueryRowContext(ctx, createJournalEntry,
+		arg.UserID,
 		arg.TradeID,
 		arg.AccountID,
 		arg.EntryDate,
@@ -48,27 +50,38 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		&i.UpdatedAt,
 		&i.Tag,
 		&i.Scope,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const deleteJournalEntry = `-- name: DeleteJournalEntry :exec
-DELETE FROM journal_entries WHERE id = ?
+DELETE FROM journal_entries WHERE id = ? AND user_id = ?
 `
 
-func (q *Queries) DeleteJournalEntry(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, deleteJournalEntry, id)
+type DeleteJournalEntryParams struct {
+	ID     int64  `json:"id"`
+	UserID *int64 `json:"user_id"`
+}
+
+func (q *Queries) DeleteJournalEntry(ctx context.Context, arg DeleteJournalEntryParams) error {
+	_, err := q.db.ExecContext(ctx, deleteJournalEntry, arg.ID, arg.UserID)
 	return err
 }
 
 const getDayJournalEntry = `-- name: GetDayJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries
-WHERE entry_date = ? AND scope = 'day'
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries
+WHERE user_id = ? AND entry_date = ? AND scope = 'day'
 LIMIT 1
 `
 
-func (q *Queries) GetDayJournalEntry(ctx context.Context, entryDate time.Time) (JournalEntry, error) {
-	row := q.db.QueryRowContext(ctx, getDayJournalEntry, entryDate)
+type GetDayJournalEntryParams struct {
+	UserID    *int64    `json:"user_id"`
+	EntryDate time.Time `json:"entry_date"`
+}
+
+func (q *Queries) GetDayJournalEntry(ctx context.Context, arg GetDayJournalEntryParams) (JournalEntry, error) {
+	row := q.db.QueryRowContext(ctx, getDayJournalEntry, arg.UserID, arg.EntryDate)
 	var i JournalEntry
 	err := row.Scan(
 		&i.ID,
@@ -81,14 +94,17 @@ func (q *Queries) GetDayJournalEntry(ctx context.Context, entryDate time.Time) (
 		&i.UpdatedAt,
 		&i.Tag,
 		&i.Scope,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const getJournalEntryByTradeID = `-- name: GetJournalEntryByTradeID :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries WHERE trade_id = ? LIMIT 1
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries WHERE trade_id = ? LIMIT 1
 `
 
+// The trade itself is already user-owned (verified via GetTradeByID), so
+// this query trusts the trade_id and doesn't re-check user_id.
 func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) (JournalEntry, error) {
 	row := q.db.QueryRowContext(ctx, getJournalEntryByTradeID, tradeID)
 	var i JournalEntry
@@ -103,19 +119,25 @@ func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) 
 		&i.UpdatedAt,
 		&i.Tag,
 		&i.Scope,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const getWeekJournalEntry = `-- name: GetWeekJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries
-WHERE entry_date = ? AND scope = 'week'
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries
+WHERE user_id = ? AND entry_date = ? AND scope = 'week'
 LIMIT 1
 `
 
+type GetWeekJournalEntryParams struct {
+	UserID    *int64    `json:"user_id"`
+	EntryDate time.Time `json:"entry_date"`
+}
+
 // entry_date for week-scoped rows is the Monday of that ISO week.
-func (q *Queries) GetWeekJournalEntry(ctx context.Context, entryDate time.Time) (JournalEntry, error) {
-	row := q.db.QueryRowContext(ctx, getWeekJournalEntry, entryDate)
+func (q *Queries) GetWeekJournalEntry(ctx context.Context, arg GetWeekJournalEntryParams) (JournalEntry, error) {
+	row := q.db.QueryRowContext(ctx, getWeekJournalEntry, arg.UserID, arg.EntryDate)
 	var i JournalEntry
 	err := row.Scan(
 		&i.ID,
@@ -128,17 +150,19 @@ func (q *Queries) GetWeekJournalEntry(ctx context.Context, entryDate time.Time) 
 		&i.UpdatedAt,
 		&i.Tag,
 		&i.Scope,
+		&i.UserID,
 	)
 	return i, err
 }
 
 const listDayJournalsInRange = `-- name: ListDayJournalsInRange :many
 SELECT entry_date, tag FROM journal_entries
-WHERE scope = 'day' AND entry_date >= ? AND entry_date < ?
+WHERE user_id = ? AND scope = 'day' AND entry_date >= ? AND entry_date < ?
 ORDER BY entry_date
 `
 
 type ListDayJournalsInRangeParams struct {
+	UserID      *int64    `json:"user_id"`
 	EntryDate   time.Time `json:"entry_date"`
 	EntryDate_2 time.Time `json:"entry_date_2"`
 }
@@ -150,7 +174,7 @@ type ListDayJournalsInRangeRow struct {
 
 // Used by /calendar to flag which dates have day-level entries.
 func (q *Queries) ListDayJournalsInRange(ctx context.Context, arg ListDayJournalsInRangeParams) ([]ListDayJournalsInRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listDayJournalsInRange, arg.EntryDate, arg.EntryDate_2)
+	rows, err := q.db.QueryContext(ctx, listDayJournalsInRange, arg.UserID, arg.EntryDate, arg.EntryDate_2)
 	if err != nil {
 		return nil, err
 	}
@@ -181,9 +205,15 @@ SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body, je.mood, je.ta
 FROM journal_entries je
 LEFT JOIN trades t   ON t.id = je.trade_id
 LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
+WHERE je.user_id = ?
 ORDER BY je.entry_date DESC, je.id DESC
 LIMIT ?
 `
+
+type ListJournalFeedParams struct {
+	UserID *int64 `json:"user_id"`
+	Limit  int64  `json:"limit"`
+}
 
 type ListJournalFeedRow struct {
 	ID              int64     `json:"id"`
@@ -206,8 +236,8 @@ type ListJournalFeedRow struct {
 // The cross-scope chronological feed. Joins in trade + account context so the
 // feed item for a trade-scoped entry can render the symbol/direction/account
 // in the row without a second query per entry.
-func (q *Queries) ListJournalFeed(ctx context.Context, limit int64) ([]ListJournalFeedRow, error) {
-	rows, err := q.db.QueryContext(ctx, listJournalFeed, limit)
+func (q *Queries) ListJournalFeed(ctx context.Context, arg ListJournalFeedParams) ([]ListJournalFeedRow, error) {
+	rows, err := q.db.QueryContext(ctx, listJournalFeed, arg.UserID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -246,14 +276,19 @@ func (q *Queries) ListJournalFeed(ctx context.Context, limit int64) ([]ListJourn
 }
 
 const listRecentJournalEntries = `-- name: ListRecentJournalEntries :many
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope FROM journal_entries
-WHERE scope = 'day'
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries
+WHERE user_id = ? AND scope = 'day'
 ORDER BY entry_date DESC, id DESC
 LIMIT ?
 `
 
-func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]JournalEntry, error) {
-	rows, err := q.db.QueryContext(ctx, listRecentJournalEntries, limit)
+type ListRecentJournalEntriesParams struct {
+	UserID *int64 `json:"user_id"`
+	Limit  int64  `json:"limit"`
+}
+
+func (q *Queries) ListRecentJournalEntries(ctx context.Context, arg ListRecentJournalEntriesParams) ([]JournalEntry, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentJournalEntries, arg.UserID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -272,6 +307,7 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]
 			&i.UpdatedAt,
 			&i.Tag,
 			&i.Scope,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -288,11 +324,12 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, limit int64) ([]
 
 const listWeekJournalsInRange = `-- name: ListWeekJournalsInRange :many
 SELECT entry_date, tag FROM journal_entries
-WHERE scope = 'week' AND entry_date >= ? AND entry_date < ?
+WHERE user_id = ? AND scope = 'week' AND entry_date >= ? AND entry_date < ?
 ORDER BY entry_date
 `
 
 type ListWeekJournalsInRangeParams struct {
+	UserID      *int64    `json:"user_id"`
 	EntryDate   time.Time `json:"entry_date"`
 	EntryDate_2 time.Time `json:"entry_date_2"`
 }
@@ -303,7 +340,7 @@ type ListWeekJournalsInRangeRow struct {
 }
 
 func (q *Queries) ListWeekJournalsInRange(ctx context.Context, arg ListWeekJournalsInRangeParams) ([]ListWeekJournalsInRangeRow, error) {
-	rows, err := q.db.QueryContext(ctx, listWeekJournalsInRange, arg.EntryDate, arg.EntryDate_2)
+	rows, err := q.db.QueryContext(ctx, listWeekJournalsInRange, arg.UserID, arg.EntryDate, arg.EntryDate_2)
 	if err != nil {
 		return nil, err
 	}
@@ -328,22 +365,25 @@ func (q *Queries) ListWeekJournalsInRange(ctx context.Context, arg ListWeekJourn
 const updateJournalEntry = `-- name: UpdateJournalEntry :exec
 UPDATE journal_entries
 SET body = ?, mood = ?, tag = ?, updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
+WHERE id = ? AND user_id = ?
 `
 
 type UpdateJournalEntryParams struct {
-	Body string  `json:"body"`
-	Mood *int64  `json:"mood"`
-	Tag  *string `json:"tag"`
-	ID   int64   `json:"id"`
+	Body   string  `json:"body"`
+	Mood   *int64  `json:"mood"`
+	Tag    *string `json:"tag"`
+	ID     int64   `json:"id"`
+	UserID *int64  `json:"user_id"`
 }
 
+// Scope by user_id so a guessed entry id can't update someone else's entry.
 func (q *Queries) UpdateJournalEntry(ctx context.Context, arg UpdateJournalEntryParams) error {
 	_, err := q.db.ExecContext(ctx, updateJournalEntry,
 		arg.Body,
 		arg.Mood,
 		arg.Tag,
 		arg.ID,
+		arg.UserID,
 	)
 	return err
 }

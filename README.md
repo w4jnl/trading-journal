@@ -58,14 +58,167 @@ $EDITOR config.yaml        # set port, timezone, paths if you want
 ```
 
 By default the server binds on `:8080`, writes `./data/trading.db`, and
-watches `./imports/inbox/` for CSV drops. Open
-<http://localhost:8080/dashboard> and either upload your first export at
-`/import` or drop a `.csv` into `imports/inbox/` and watch the
-dashboard light up.
+watches `./imports/inbox/` for CSV drops.
+
+On first start the app creates a single user (default name `admin`,
+configurable via `auth.bootstrap_user`) and assigns every existing
+account / trade / journal entry to that user. Set its password and
+sign in:
+
+```bash
+./trading-journal users reset admin   # interactive password prompt
+./trading-journal                     # start the server
+# open http://localhost:8080/  — login at /login
+```
+
+Then either upload your first export at `/import` or drop a `.csv`
+into `imports/inbox/` and watch the dashboard light up.
 
 The schema lives in `internal/db/migrations/*.sql` (dbmate format) and
 is applied automatically on startup from the embedded files. No
 external migration tool required.
+
+## Authentication & users
+
+The app is multi-user. Every request resolves to a row in the `users`
+table; data isolation is enforced at the query layer so two users on
+the same DB never see each other's accounts, trades, journal entries,
+balances, or sync log.
+
+**Auth modes** are picked by `auth.mode` in `config.yaml`:
+
+- `local` (default) -- built-in login page at `/login`, bcrypt
+  passwords, sqlite-backed sessions, HMAC-bound CSRF tokens on every
+  mutating request. Cookie is `HttpOnly + SameSite=Lax` and `Secure`
+  by default (drop `auth.cookie_secure: false` if you're running plain
+  HTTP behind a trusted VPN).
+- `proxy` -- trusts identity headers (`Remote-User`, `Remote-Email`,
+  `Remote-Groups`) from an upstream reverse proxy like Authelia,
+  oauth2-proxy, or Caddy `forward_auth`. See the [Proxy
+  mode](#proxy-mode) section below.
+
+See **[config.example.yaml](config.example.yaml)** for every auth
+knob, with comments. `auth.session_secret` is the HMAC key for CSRF
+tokens, session-id binding, and the act-as cookie -- set it to any
+32+ byte string (or `base64:<random>`) so tokens survive restarts.
+
+### Managing users
+
+Two surfaces are available, both backed by the same code path. Pick
+whichever fits the task at hand.
+
+**Web UI:** `/admin/users` (admins only; non-admins get 403). Inline
+actions for create / reset password / promote-demote / deactivate-
+activate / delete / act-as. Linked from the sidebar's **Admin →
+Users** entry whenever the signed-in user has the admin flag.
+
+**CLI:** the binary doubles as a user-management tool. Useful for
+bootstrapping the first admin (no UI is reachable before then) and
+for scripted maintenance:
+
+```bash
+./trading-journal users -h            # full subcommand help
+
+# Create / reset
+./trading-journal users add bob              # prompts for password (x2)
+./trading-journal users add jane --admin --email=jane@example.com
+./trading-journal users reset bob            # also destroys bob's sessions
+
+# Inspect
+./trading-journal users list                 # id, username, admin, active, email
+
+# Toggle state
+./trading-journal users promote bob          # grant admin
+./trading-journal users demote bob           # revoke admin
+./trading-journal users deactivate bob       # disable login + kill sessions
+./trading-journal users activate bob
+
+# Permanent removal
+./trading-journal users delete bob           # interactive: retype username
+./trading-journal users delete bob --yes     # skip the retype prompt
+```
+
+`delete` is destructive. It removes everything that belongs to the
+user, in one transaction with an end-of-tx `foreign_key_check`:
+
+- DB rows: accounts, trades, executions, journal entries (every
+  scope), `journal_entry_trades`, `journal_attachments` rows,
+  balance anchors, daily stats, custom journal templates, sessions.
+  `sync_log` rows have their `user_id` set to NULL so the import
+  audit history survives anonymized.
+- Files: journal attachment files referenced by the deleted entries,
+  the user's `imports/inbox/<name>/`, `imports/processed/<name>/`,
+  `imports/failed/<name>/`, and `imports/uploads/<id>/` directories.
+
+Both the CLI and the web UI refuse to delete the last active admin
+(promote another user first) and refuse to let an admin delete the
+account they're signed in as.
+
+### Admin act-as
+
+Admins can browse the app as another user without learning their
+password. From `/admin/users`, click **Act as** on the target row;
+a signed cookie carries the target id, every page renders a
+red-tinted "Acting as ALICE -- signed in as ADMIN" banner with a
+**Return** button. The cookie is HMAC-signed (any tampering invalidates
+it) and the target's `is_active` is re-checked on every request, so
+a deactivated target can't be impersonated even if a stale cookie
+survives. POST `/admin/act-as/clear` (or the banner button) drops
+the cookie. Audit: every act-as session uses the *target's* user_id
+end-to-end (queries, sync_log, importer attribution) -- the admin's
+identity stays in the cookie for the banner only.
+
+### Proxy mode
+
+Set `auth.mode: "proxy"` to delegate authentication to a reverse
+proxy. The app trusts identity from configurable headers (default
+`Remote-User`, `Remote-Email`, `Remote-Groups`) but only when the
+request originates from an allowlisted CIDR -- this is the only thing
+between the public internet and impersonation, so it has to be set:
+
+```yaml
+auth:
+  mode: "proxy"
+  bootstrap_user: "admin"             # still required (owns flat-inbox drops)
+  proxy:
+    user_header: "Remote-User"
+    email_header: "Remote-Email"
+    display_name_header: "Remote-Name"
+    groups_header: "Remote-Groups"
+    admin_group: "admin"              # comma-list match grants is_admin
+    trusted_proxies:                  # CIDR allowlist for r.RemoteAddr
+      - "172.20.0.0/16"
+      - "127.0.0.1"
+    auto_provision: false             # create users on first sight?
+    logout_url: ""                    # where /logout sends the browser
+```
+
+On every request the proxy authenticator:
+
+1. Verifies `r.RemoteAddr` falls inside `trusted_proxies`. If not,
+   the headers are ignored and the request reads as unauthenticated.
+2. Reads `user_header`; empty -> unauthenticated.
+3. Looks up the username. If absent and `auto_provision: true`,
+   creates the row with no password (proxy users never log in
+   locally). Otherwise refuses.
+4. Refreshes `email` / `display_name` / `is_admin` on the existing
+   row so changes in the upstream SSO propagate. `is_admin` comes
+   from an exact comma-separated match of `admin_group` inside
+   `groups_header`.
+
+`/login` redirects to `/`; `/logout` redirects to `logout_url` if
+set, else returns a stub page asking the user to sign out via the
+SSO.
+
+A minimal Authelia setup pointing at the app uses
+`forwarded_headers` with `Remote-User` / `Remote-Email` /
+`Remote-Groups` and a per-rule access policy that grants `admin`
+group membership to whoever should administer the trading journal.
+oauth2-proxy and Caddy `forward_auth` work the same way; whichever
+proxy you use, double-check that it strips client-supplied
+`Remote-*` headers before forwarding -- otherwise the CIDR
+allowlist is the only thing standing between a curious client and
+impersonation.
 
 ## Quick start (Docker)
 
@@ -141,11 +294,37 @@ Two entry points, same code path:
    and it auto-imports.
 
 After processing, files move out of `inbox/`:
-- success → `imports/processed/<timestamp>_<filename>`
-- failure → `imports/failed/<filename>` plus a sibling
+- success → `imports/processed/<username>/<timestamp>_<filename>`
+- failure → `imports/failed/<username>/<filename>` plus a sibling
   `<filename>.error.txt`
 
 No file is silently lost.
+
+### Per-user inbox subdirectories
+
+The watcher recognizes `imports/inbox/<username>/` subdirs and routes
+each one's drops to that user. Subdir name must match a `users.username`
+in the DB and the user must be active (`is_active = 1`); subdirs that
+don't resolve are logged at startup and ignored. So:
+
+```
+imports/
+  inbox/
+    alice/   foo.csv          ← alice's account
+    bob/     bar.csv          ← bob's account
+    leftover.csv              ← still works → bootstrap user
+  processed/
+    alice/   2026-…_foo.csv
+    bob/     2026-…_bar.csv
+    2026-…_leftover.csv       ← flat path for flat drops
+  failed/    … (mirrors processed/<username>/ …)
+```
+
+Files dropped directly into `inbox/` (no subdir) still work for
+single-user compatibility — they get attributed to the bootstrap user
+and use the flat `processed/` / `failed/` paths. The UI upload at
+`/import` always uses the request's logged-in user, regardless of
+where the staged file ends up.
 
 ## Backup
 

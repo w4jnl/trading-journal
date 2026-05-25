@@ -331,12 +331,101 @@ hr {
   font-size: 10px;
   padding: 1px 5px;
 }
+.sidebar-user {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  margin-bottom: 8px;
+  border-radius: var(--r-md);
+  background: var(--bg-sunken);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  min-width: 0;
+}
+.sidebar-user-avatar {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--brand-teal, var(--accent));
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 12px;
+  text-transform: uppercase;
+  line-height: 1;
+}
+.sidebar-user-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.2;
+}
+.sidebar-user-name {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--fg);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-user-sub {
+  font-size: 10px;
+  color: var(--fg-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-user-logout-form { margin: 0; flex: 0 0 auto; }
+.sidebar-user-logout {
+  background: transparent;
+  border: 0;
+  color: var(--fg-muted);
+  cursor: pointer;
+  padding: 6px;
+  border-radius: var(--r-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: color var(--t-fast), background var(--t-fast);
+}
+.sidebar-user-logout svg { width: 16px; height: 16px; display: block; }
+.sidebar-user-logout:hover {
+  color: var(--neg);
+  background: color-mix(in srgb, var(--neg) 12%, transparent);
+}
+.sidebar-user-logout:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 .app-main {
   min-width: 0;
   display: flex;
   flex-direction: column;
 }
+
+/* Admin "Acting as ..." banner. Sits at the top of .app-main so it's
+   above every page render but below the sidebar's stack. */
+.actas-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--neg) 14%, var(--bg-elevated));
+  border-bottom: 1px solid color-mix(in srgb, var(--neg) 35%, transparent);
+  color: var(--fg);
+  font-size: 13px;
+}
+.actas-banner-text { flex: 1; }
+.actas-banner code { font-family: var(--font-mono); font-size: 12px; }
 
 .app-content {
   max-width: var(--content-max);

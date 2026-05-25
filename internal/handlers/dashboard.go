@@ -9,6 +9,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -120,7 +121,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lastSyncs, err := h.Queries.ListLastSyncByType(ctx)
+	lastSyncs, err := h.Queries.ListLastSyncByType(ctx, userIDPtr(ctx))
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list last syncs: %w", err))
 		return
@@ -152,7 +153,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 	today := todayLocal(tz)
 	isStale := stats.HasTrades && !stats.Date.Equal(today)
 
-	h.renderPage(w, "dashboard.html", map[string]any{
+	h.renderPage(w, r, "dashboard.html", map[string]any{
 		"NavActive":    "dashboard",
 		"BackHref":     validBackHref(r),
 		"Stats":        stats,
@@ -181,6 +182,7 @@ func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days i
 	rows, err := h.Queries.DashboardDailyNetPnL(ctx, models.DashboardDailyNetPnLParams{
 		ExitTime:   &start,
 		ExitTime_2: &end,
+		UserID:     userID(ctx),
 	})
 	if err != nil {
 		return nil, err
@@ -336,6 +338,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 	n, err := h.Queries.CountClosedTradesInRange(ctx, models.CountClosedTradesInRangeParams{
 		ExitTime:   &today,
 		ExitTime_2: &tomorrow,
+		UserID:     userID(ctx),
 	})
 	if err != nil {
 		return time.Time{}, err
@@ -344,7 +347,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 		return today, nil
 	}
 
-	mostRecent, err := h.Queries.MostRecentClosedExitTime(ctx)
+	mostRecent, err := h.Queries.MostRecentClosedExitTime(ctx, userID(ctx))
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && mostRecent == nil) {
 		return today, nil
 	}
@@ -362,6 +365,7 @@ func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *ti
 	rows, err := h.Queries.ListClosedTradesInRange(ctx, models.ListClosedTradesInRangeParams{
 		ExitTime:   &date,
 		ExitTime_2: &end,
+		UserID:     userID(ctx),
 	})
 	if err != nil {
 		return dashboardStats{}, err
@@ -423,7 +427,7 @@ func (h *Handlers) dashboardEquityNow(ctx context.Context, tz *time.Location) (d
 	if err != nil {
 		return dashboardEquity{}, err
 	}
-	accounts, err := h.Queries.ListAccounts(ctx)
+	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return dashboardEquity{}, err
 	}

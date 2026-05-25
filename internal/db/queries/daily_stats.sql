@@ -14,6 +14,10 @@ INSERT INTO daily_stats (
 SELECT * FROM daily_stats WHERE account_id = ? ORDER BY stat_date;
 
 -- name: ListDailyStatsForRange :many
-SELECT * FROM daily_stats
-WHERE stat_date >= ? AND stat_date < ?
-ORDER BY stat_date, account_id;
+-- Scoped to a single user by joining accounts.user_id. Used by the journal
+-- day/week aggregators and any other view that walks "all my activity in
+-- this date window".
+SELECT ds.* FROM daily_stats ds
+JOIN accounts a ON a.id = ds.account_id
+WHERE a.user_id = ? AND ds.stat_date >= ? AND ds.stat_date < ?
+ORDER BY ds.stat_date, ds.account_id;

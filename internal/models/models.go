@@ -10,6 +10,7 @@ import (
 
 type Account struct {
 	ID               int64     `json:"id"`
+	UserID           int64     `json:"user_id"`
 	Name             string    `json:"name"`
 	Firm             *string   `json:"firm"`
 	ImportSource     string    `json:"import_source"`
@@ -18,8 +19,8 @@ type Account struct {
 	Currency         string    `json:"currency"`
 	NeedsSetup       int64     `json:"needs_setup"`
 	Active           int64     `json:"active"`
-	CreatedAt        time.Time `json:"created_at"`
 	CommissionSource string    `json:"commission_source"`
+	CreatedAt        time.Time `json:"created_at"`
 }
 
 type AssetClass struct {
@@ -111,6 +112,7 @@ type JournalEntry struct {
 	UpdatedAt time.Time `json:"updated_at"`
 	Tag       *string   `json:"tag"`
 	Scope     string    `json:"scope"`
+	UserID    *int64    `json:"user_id"`
 }
 
 type JournalEntryTrade struct {
@@ -120,11 +122,21 @@ type JournalEntryTrade struct {
 
 type JournalTemplate struct {
 	ID        int64     `json:"id"`
+	UserID    *int64    `json:"user_id"`
 	Name      string    `json:"name"`
 	Scope     string    `json:"scope"`
 	Body      string    `json:"body"`
 	Builtin   int64     `json:"builtin"`
 	CreatedAt time.Time `json:"created_at"`
+}
+
+type Session struct {
+	ID        string    `json:"id"`
+	UserID    int64     `json:"user_id"`
+	CreatedAt time.Time `json:"created_at"`
+	ExpiresAt time.Time `json:"expires_at"`
+	UserAgent *string   `json:"user_agent"`
+	Ip        *string   `json:"ip"`
 }
 
 type SizeClass struct {
@@ -143,6 +155,7 @@ type SyncLog struct {
 	ExecsAdded  int64     `json:"execs_added"`
 	Message     *string   `json:"message"`
 	SyncedAt    time.Time `json:"synced_at"`
+	UserID      *int64    `json:"user_id"`
 }
 
 type Trade struct {
@@ -171,4 +184,16 @@ type TradeExecution struct {
 	ExecutionID int64   `json:"execution_id"`
 	Role        string  `json:"role"`
 	QtyUsed     float64 `json:"qty_used"`
+}
+
+type User struct {
+	ID           int64      `json:"id"`
+	Username     string     `json:"username"`
+	Email        *string    `json:"email"`
+	PasswordHash *string    `json:"password_hash"`
+	IsAdmin      int64      `json:"is_admin"`
+	IsActive     int64      `json:"is_active"`
+	DisplayName  *string    `json:"display_name"`
+	CreatedAt    time.Time  `json:"created_at"`
+	LastLoginAt  *time.Time `json:"last_login_at"`
 }

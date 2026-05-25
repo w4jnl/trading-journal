@@ -23,6 +23,7 @@
       } catch (e) { /* localStorage blocked — leave default */ }
     })();
   </script>
+  <meta name="csrf-token" content="{{.CSRFToken}}">
   <link rel="preload" href="/static/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/JetBrainsMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
@@ -41,6 +42,58 @@
   <meta name="twitter:card"       content="summary_large_image">
 
   <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <script>
+    // Inject the CSRF token into every same-origin POST/DELETE/PUT/PATCH:
+    //   - <form method=post> gets a hidden input named csrf_token added on submit
+    //     (idempotent: skipped if the form already has one)
+    //   - HTMX requests get an X-CSRF-Token header so hx-post / hx-delete /
+    //     hx-put etc. all carry the token without per-template plumbing.
+    (function () {
+      var meta = document.querySelector('meta[name="csrf-token"]');
+      var token = meta ? meta.getAttribute('content') : '';
+      if (!token) return;
+      document.addEventListener('submit', function (e) {
+        var f = e.target;
+        if (!(f instanceof HTMLFormElement)) return;
+        var m = (f.method || '').toLowerCase();
+        if (m !== 'post' && m !== 'put' && m !== 'delete' && m !== 'patch') return;
+        if (f.querySelector('input[name="csrf_token"]')) return;
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'csrf_token';
+        inp.value = token;
+        f.appendChild(inp);
+      }, true);
+      document.body && document.body.addEventListener('htmx:configRequest', function (e) {
+        if (e.detail && e.detail.headers) e.detail.headers['X-CSRF-Token'] = token;
+      });
+      // body may not exist yet when this script runs in <head>; rebind once DOM is ready.
+      document.addEventListener('DOMContentLoaded', function () {
+        document.body.addEventListener('htmx:configRequest', function (e) {
+          if (e.detail && e.detail.headers) e.detail.headers['X-CSRF-Token'] = token;
+        });
+      });
+      // Wrap window.fetch so same-origin mutating calls (journal preview,
+      // attachment uploads, etc.) get the token without per-call plumbing.
+      var origFetch = window.fetch.bind(window);
+      window.fetch = function (input, init) {
+        try {
+          init = init || {};
+          var method = (init.method || (typeof input === 'object' && input.method) || 'GET').toUpperCase();
+          if (method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+            var url = typeof input === 'string' ? input : (input && input.url) || '';
+            var sameOrigin = !/^https?:\/\//i.test(url) || url.indexOf(window.location.origin) === 0;
+            if (sameOrigin) {
+              var h = new Headers(init.headers || (typeof input === 'object' && input.headers) || {});
+              if (!h.has('X-CSRF-Token')) h.set('X-CSRF-Token', token);
+              init.headers = h;
+            }
+          }
+        } catch (e) { /* fall through to original fetch */ }
+        return origFetch(input, init);
+      };
+    })();
+  </script>
 </head>
 <body>
   <div class="app-shell">
@@ -112,7 +165,32 @@
         Commissions
       </a>
 
+      {{if and .CurrentUser .CurrentUser.IsAdmin}}
+      <div class="sidebar-section">Admin</div>
+      <a href="/admin/users" class="sidebar-link {{if eq .NavActive "admin_users"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 21 C 2 16 5 14 9 14 C 13 14 16 16 16 21"/><circle cx="17" cy="10" r="2.5"/><path d="M14 21 C 14 17.5 16 16 18 16 C 20 16 22 17.5 22 21"/></svg>
+        Users
+      </a>
+      {{end}}
+
       <div class="sidebar-footer">
+        {{if .CurrentUser}}
+        <div class="sidebar-user" title="Signed in as {{.CurrentUser.Username}}{{if .CurrentUser.IsAdmin}} (admin){{end}}">
+          <span class="sidebar-user-avatar" aria-hidden="true">{{slice .CurrentUser.DisplayName 0 1}}</span>
+          <span class="sidebar-user-meta">
+            <span class="sidebar-user-name">{{.CurrentUser.DisplayName}}</span>
+            <span class="sidebar-user-sub">
+              {{if .CurrentUser.IsAdmin}}admin{{else}}signed in{{end}}
+            </span>
+          </span>
+          <form method="post" action="/logout" class="sidebar-user-logout-form">
+            <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+            <button type="submit" class="sidebar-user-logout" title="Sign out" aria-label="Sign out">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 4 L18 4 A 2 2 0 0 1 20 6 L20 18 A 2 2 0 0 1 18 20 L15 20"/><polyline points="10 8 4 12 10 16"/><line x1="4" y1="12" x2="14" y2="12"/></svg>
+            </button>
+          </form>
+        </div>
+        {{end}}
         <button type="button" id="cmdk-open" class="sidebar-link" style="background:transparent;border:0;width:100%;text-align:left;cursor:pointer;font:inherit;">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="6"/><line x1="15.5" y1="15.5" x2="20" y2="20"/></svg>
           Search
@@ -127,6 +205,19 @@
     </aside>
 
     <main class="app-main">
+      {{if .OriginalUser}}
+      <div class="actas-banner" role="status">
+        <span class="actas-banner-text">
+          Acting as <strong>{{.CurrentUser.DisplayName}}</strong>
+          (<code>@{{.CurrentUser.Username}}</code>)
+          - signed in as <strong>{{.OriginalUser.Username}}</strong>
+        </span>
+        <form method="post" action="/admin/act-as/clear" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn--secondary btn--sm">Return to {{.OriginalUser.Username}}</button>
+        </form>
+      </div>
+      {{end}}
       <div class="app-content">
         {{block "content" .}}{{end}}
       </div>

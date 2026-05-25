@@ -1,37 +1,43 @@
 -- name: GetAccountByRef :one
-SELECT * FROM accounts WHERE import_source = ? AND account_ref = ?;
+-- Scoped by user_id so two users with the same broker account_ref under the
+-- same import_source don't collide. Unique constraint is
+-- (user_id, import_source, account_ref).
+SELECT * FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?;
 
 -- name: CreateAccount :one
 INSERT INTO accounts (
-    name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
+    user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 RETURNING *;
 
 -- name: SetAccountCommissionSource :exec
 -- Flips an account between rate-table lookup and CSV-inline commissions.
--- Called from the importer when a trades-shaped CSV (TopstepX trades) lands
--- so the FIFO rebuild path skips the account afterwards.
-UPDATE accounts SET commission_source = ? WHERE id = ?;
+-- Scoped by user_id so a handler can't be tricked into flipping someone
+-- else's account via a guessed id.
+UPDATE accounts SET commission_source = ? WHERE id = ? AND user_id = ?;
 
 -- name: ListAccounts :many
-SELECT * FROM accounts ORDER BY name;
+SELECT * FROM accounts WHERE user_id = ? ORDER BY name;
 
 -- name: GetAccountByID :one
-SELECT * FROM accounts WHERE id = ?;
+-- Returns sql.ErrNoRows if the user doesn't own this account, which the
+-- caller can treat as 404 - this is the primary ownership gate for any
+-- handler that takes an account id from the URL.
+SELECT * FROM accounts WHERE id = ? AND user_id = ?;
 
 -- name: UpdateAccount :one
 UPDATE accounts
 SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
-WHERE id = ?
+WHERE id = ? AND user_id = ?
 RETURNING *;
 
 -- name: ListRetiredAccountIDs :many
--- IDs of retired accounts (active = 0). Used by handlers that need a quick
--- set lookup to skip retired-account rows in already-fetched daily_stats
--- or accounts lists.
-SELECT id FROM accounts WHERE active = 0;
+-- IDs of retired accounts (active = 0) belonging to the user. Used by
+-- handlers that need a quick set lookup to skip retired-account rows in
+-- already-fetched daily_stats or accounts lists.
+SELECT id FROM accounts WHERE user_id = ? AND active = 0;
 
 -- name: GetAccountImportClaim :one
 -- Returns the import format that has "claimed" the account:
@@ -46,4 +52,4 @@ SELECT
         ELSE 'none'
     END AS claim
 FROM accounts a
-WHERE a.id = ?;
+WHERE a.id = ? AND a.user_id = ?;

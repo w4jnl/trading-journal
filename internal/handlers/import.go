@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -17,12 +18,12 @@ import (
 // ImportPage renders the /import page: an upload form and the recent-imports
 // list pulled from sync_log.
 func (h *Handlers) ImportPage(w http.ResponseWriter, r *http.Request) {
-	recent, err := h.Queries.ListSyncLogRecent(r.Context(), 20)
+	recent, err := h.Queries.ListSyncLogRecent(r.Context(), models.ListSyncLogRecentParams{UserID: userIDPtr(r.Context()), Limit: 20})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list sync_log: %w", err))
 		return
 	}
-	h.renderPage(w, "import.html", map[string]any{
+	h.renderPage(w, r, "import.html", map[string]any{
 		"NavActive": "import",
 		"BackHref":  validBackHref(r),
 		"Recent":    recent,
@@ -85,7 +86,8 @@ func (h *Handlers) ImportUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	defer cleanup()
-	outcome, err := h.ImportSvc.ImportFile(ctx, staged)
+	u := auth.MustUser(ctx)
+	outcome, err := h.ImportSvc.ImportFileForUser(ctx, staged, u.ID, u.Username)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("import: %w", err))
 		return
@@ -130,7 +132,8 @@ func (h *Handlers) ImportAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	outcome, err := h.ImportSvc.ImportFileToAccount(ctx, staged, accountID)
+	u := auth.MustUser(ctx)
+	outcome, err := h.ImportSvc.ImportFileToAccountForUser(ctx, staged, accountID, u.ID, u.Username)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("import: %w", err))
 		return
@@ -169,7 +172,7 @@ func (h *Handlers) detectNeedsAccountPicker(ctx context.Context, stagedPath stri
 		return false, nil, nil
 	}
 
-	all, err := h.Queries.ListAccounts(ctx)
+	all, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return false, nil, err
 	}
@@ -245,6 +248,7 @@ func (h *Handlers) createAccountFromForm(ctx context.Context, r *http.Request) (
 		needsSetup = 1
 	}
 	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           auth.MustUser(ctx).ID,
 		Name:             name,
 		Firm:             strPtrOrNil(firm),
 		ImportSource:     importSrc,

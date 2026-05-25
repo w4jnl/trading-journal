@@ -1,16 +1,18 @@
 -- name: ListAccountSymbolKeysForRoot :many
 -- Inline-commission accounts (TopstepX trades CSV) are excluded: their trades
 -- are the source of truth, so a FIFO rebuild would clobber the CSV-provided
--- commissions.
+-- commissions. Scoped by user_id so an admin instrument-setup recompute
+-- doesn't touch other users' accounts.
 SELECT DISTINCT e.account_id, e.symbol
 FROM executions e
 JOIN accounts a ON e.account_id = a.id
 WHERE e.symbol_root = ?
+  AND a.user_id = ?
   AND a.commission_source = 'rate'
 ORDER BY e.account_id, e.symbol;
 
 -- name: ListAccountSymbolKeysForCell :many
--- Same inline-account exclusion as ListAccountSymbolKeysForRoot.
+-- Same inline-account + user_id scoping as ListAccountSymbolKeysForRoot.
 SELECT DISTINCT e.account_id, e.symbol
 FROM executions e
 JOIN accounts a ON e.account_id = a.id
@@ -18,6 +20,7 @@ JOIN instruments i ON e.symbol_root = i.symbol_root
 WHERE a.firm = ?
   AND i.asset_class = ?
   AND i.size_class = ?
+  AND a.user_id = ?
   AND a.commission_source = 'rate'
 ORDER BY e.account_id, e.symbol;
 
@@ -46,6 +49,8 @@ INSERT INTO asset_classes (code, label, sort_order) VALUES (?, ?, ?);
 INSERT INTO size_classes (code, label, sort_order) VALUES (?, ?, ?);
 
 -- name: ListOrphanedCommissionTrades :many
+-- Scoped by user_id - the "you have trades whose commission cell isn't
+-- configured" hint should only surface the requesting user's gaps.
 SELECT
     a.id   AS account_id,
     a.name AS account_name,
@@ -65,6 +70,7 @@ WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
   AND a.commission_source = 'rate'
+  AND a.user_id     = ?
   AND cr.per_contract_per_side IS NULL
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root;
