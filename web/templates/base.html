@@ -165,6 +165,14 @@
         Commissions
       </a>
 
+      {{if and .CurrentUser .CurrentUser.IsAdmin}}
+      <div class="sidebar-section">Admin</div>
+      <a href="/admin/users" class="sidebar-link {{if eq .NavActive "admin_users"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 21 C 2 16 5 14 9 14 C 13 14 16 16 16 21"/><circle cx="17" cy="10" r="2.5"/><path d="M14 21 C 14 17.5 16 16 18 16 C 20 16 22 17.5 22 21"/></svg>
+        Users
+      </a>
+      {{end}}
+
       <div class="sidebar-footer">
         {{if .CurrentUser}}
         <div class="sidebar-user" title="Signed in as {{.CurrentUser.Username}}{{if .CurrentUser.IsAdmin}} (admin){{end}}">
@@ -197,6 +205,19 @@
     </aside>
 
     <main class="app-main">
+      {{if .OriginalUser}}
+      <div class="actas-banner" role="status">
+        <span class="actas-banner-text">
+          Acting as <strong>{{.CurrentUser.DisplayName}}</strong>
+          (<code>@{{.CurrentUser.Username}}</code>)
+          - signed in as <strong>{{.OriginalUser.Username}}</strong>
+        </span>
+        <form method="post" action="/admin/act-as/clear" style="margin:0;">
+          <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+          <button type="submit" class="btn btn--secondary btn--sm">Return to {{.OriginalUser.Username}}</button>
+        </form>
+      </div>
+      {{end}}
       <div class="app-content">
         {{block "content" .}}{{end}}
       </div>

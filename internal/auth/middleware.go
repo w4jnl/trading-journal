@@ -26,7 +26,11 @@ func isPublic(path string) bool {
 // RequireUser wraps next with an auth check. Requests to public paths pass
 // straight through; everything else must resolve to a user, otherwise the
 // authenticator's HandleUnauthenticated decides the response shape.
-func RequireUser(a Authenticator, next http.Handler) http.Handler {
+//
+// When act is non-nil and the resolved user is an active admin carrying a
+// valid act_as cookie, the request's user is swapped to the target and
+// the original admin is stashed under origUserKey for the banner.
+func RequireUser(a Authenticator, act *ActAs, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isPublic(r.URL.Path) {
 			next.ServeHTTP(w, r)
@@ -42,7 +46,9 @@ func RequireUser(a Authenticator, next http.Handler) http.Handler {
 			a.HandleUnauthenticated(w, r)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
+		ctx := r.Context()
+		u, ctx = act.Apply(ctx, r, u)
+		next.ServeHTTP(w, r.WithContext(WithUser(ctx, u)))
 	})
 }
 

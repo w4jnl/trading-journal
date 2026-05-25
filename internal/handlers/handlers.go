@@ -42,6 +42,10 @@ type Handlers struct {
 	// the SSO frontend enforces origin checks).
 	CSRF *auth.CSRF
 
+	// ActAs is the admin "browse as another user" helper. Nil disables
+	// the feature (and the /admin/act-as routes return 500-ish).
+	ActAs *auth.ActAs
+
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
 	// distinguish page renders ("page:<name>") from partial renders
@@ -69,6 +73,11 @@ func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page strin
 			}
 			if _, exists := m["CSRFToken"]; !exists && h.CSRF != nil {
 				m["CSRFToken"] = h.CSRF.Token(auth.CookieFromRequest(r))
+			}
+			if _, exists := m["OriginalUser"]; !exists {
+				if orig := auth.OriginalUserFrom(r.Context()); orig != nil {
+					m["OriginalUser"] = orig
+				}
 			}
 		}
 	}
@@ -152,6 +161,8 @@ func (h *Handlers) funcMap() template.FuncMap {
 		loc = time.UTC
 	}
 	return template.FuncMap{
+		"hasPrefix":  strings.HasPrefix,
+		"trimPrefix": strings.TrimPrefix,
 		"derefStr": func(s *string) string {
 			if s == nil {
 				return ""

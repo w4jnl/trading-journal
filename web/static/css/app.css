@@ -412,6 +412,21 @@ hr {
   flex-direction: column;
 }
 
+/* Admin "Acting as ..." banner. Sits at the top of .app-main so it's
+   above every page render but below the sidebar's stack. */
+.actas-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 16px;
+  background: color-mix(in srgb, var(--neg) 14%, var(--bg-elevated));
+  border-bottom: 1px solid color-mix(in srgb, var(--neg) 35%, transparent);
+  color: var(--fg);
+  font-size: 13px;
+}
+.actas-banner-text { flex: 1; }
+.actas-banner code { font-family: var(--font-mono); font-size: 12px; }
+
 .app-content {
   max-width: var(--content-max);
   width: 100%;

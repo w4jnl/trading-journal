@@ -132,6 +132,11 @@ func run() error {
 		return fmt.Errorf("session secret: %w", err)
 	}
 	csrf := auth.NewCSRF(csrfSecret)
+	actAs := &auth.ActAs{
+		Queries: queries,
+		Secret:  csrfSecret,
+		Secure:  cfg.Auth.CookieSecure == nil || *cfg.Auth.CookieSecure,
+	}
 
 	ttlHours := cfg.Auth.SessionTTLHours
 	if ttlHours <= 0 {
@@ -172,7 +177,29 @@ func run() error {
 		}
 		bootstrapUserID = stub.User.ID
 	case "proxy":
-		return fmt.Errorf("auth.mode=proxy is not implemented yet (phase 3)")
+		pa, err := auth.NewProxyAuth(conn, queries, auth.ProxyAuthOptions{
+			UserHeader:        cfg.Auth.Proxy.UserHeader,
+			EmailHeader:       cfg.Auth.Proxy.EmailHeader,
+			DisplayNameHeader: cfg.Auth.Proxy.DisplayNameHeader,
+			GroupsHeader:      cfg.Auth.Proxy.GroupsHeader,
+			AdminGroup:        cfg.Auth.Proxy.AdminGroup,
+			TrustedProxies:    cfg.Auth.Proxy.TrustedProxies,
+			AutoProvision:     cfg.Auth.Proxy.AutoProvision,
+			LogoutURL:         cfg.Auth.Proxy.LogoutURL,
+		})
+		if err != nil {
+			return fmt.Errorf("proxy auth: %w", err)
+		}
+		authn = pa
+		// Bootstrap user remains the importer's default attribution for
+		// watcher drops in the flat inbox/ root; per-user subdirs override
+		// it as in local mode.
+		stub, err := auth.NewStub(conn, cfg.Auth.BootstrapUser)
+		if err != nil {
+			return fmt.Errorf("resolve bootstrap user: %w", err)
+		}
+		bootstrapUserID = stub.User.ID
+		slog.Info("proxy auth ready", "trusted", pa.DescribeTrustedProxies(), "auto_provision", cfg.Auth.Proxy.AutoProvision)
 	default:
 		return fmt.Errorf("unknown auth.mode %q", cfg.Auth.Mode)
 	}
@@ -196,6 +223,7 @@ func run() error {
 		OIDashboardsDir: cfg.OIDashboards.Root,
 		Timezone:        tz,
 		CSRF:            csrf,
+		ActAs:           actAs,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -260,6 +288,18 @@ func run() error {
 	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/file/{name}", h.OIDashboardFile)
 
+	// Admin user management. RequireAdmin wraps each handler so non-admins
+	// get 403 even if they guess the URL. Act-as endpoints live in the
+	// same admin namespace because they're scoped by admin privilege.
+	mux.Handle("GET /admin/users", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersPage)))
+	mux.Handle("POST /admin/users", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersCreate)))
+	mux.Handle("POST /admin/users/{id}/reset", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersResetPassword)))
+	mux.Handle("POST /admin/users/{id}/admin", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersToggleAdmin)))
+	mux.Handle("POST /admin/users/{id}/active", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersToggleActive)))
+	mux.Handle("POST /admin/users/{id}/delete", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersDelete)))
+	mux.Handle("POST /admin/act-as/{id}", auth.RequireAdmin(http.HandlerFunc(h.AdminActAsStart)))
+	mux.HandleFunc("POST /admin/act-as/clear", h.AdminActAsClear)
+
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
 		return fmt.Errorf("static sub-fs: %w", err)
@@ -278,7 +318,7 @@ func run() error {
 	// the session into r.Context().
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           csrf.Middleware(auth.RequireUser(authn, mux)),
+		Handler:           csrf.Middleware(auth.RequireUser(authn, actAs, mux)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

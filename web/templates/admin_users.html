@@ -1,0 +1,130 @@
+{{define "title"}}Users — Trading Journal{{end}}
+
+{{define "content"}}
+<h1>Users</h1>
+
+{{if .Flash}}
+<div class="flash saved" style="margin-bottom: 16px;">
+  {{if eq .Flash "reset"}}Password reset; the user's existing sessions were destroyed.
+  {{else if eq .Flash "toggled"}}Updated.
+  {{else if hasPrefix .Flash "created="}}Created user <code>{{trimPrefix .Flash "created="}}</code>.
+  {{else if hasPrefix .Flash "deleted="}}Deleted user — see counts in the URL.
+  {{else}}{{.Flash}}{{end}}
+</div>
+{{end}}
+{{if .FlashErr}}
+<div class="flash empty" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>
+{{end}}
+
+<div class="table-scroll" style="margin-bottom: 24px;">
+  <table class="users-table">
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>Username</th>
+        <th>Display name</th>
+        <th>Email</th>
+        <th>Role</th>
+        <th>Status</th>
+        <th>Last login</th>
+        <th style="text-align: right;">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Users}}
+      {{$me := eq .ID $.Me.ID}}
+      <tr {{if not .IsActive}}class="row-dim"{{end}}>
+        <td class="num muted">{{.ID}}</td>
+        <td><strong>{{.Username}}</strong>{{if $me}} <span class="muted">(you)</span>{{end}}</td>
+        <td>{{if .DisplayName}}{{derefStr .DisplayName}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>{{if .Email}}{{derefStr .Email}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td>
+          {{if .IsAdmin}}<span class="pill pill-admin">admin</span>{{else}}<span class="muted">user</span>{{end}}
+        </td>
+        <td>
+          {{if .IsActive}}<span class="pill pill-active">active</span>{{else}}<span class="muted">disabled</span>{{end}}
+        </td>
+        <td class="muted">{{if .LastLoginAt}}{{.LastLoginAt.UTC.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+        <td class="row-actions" style="text-align: right;">
+          <details class="disclose">
+            <summary class="btn btn--secondary btn--sm">Actions</summary>
+            <div class="row-actions-menu">
+              <form method="post" action="/admin/users/{{.ID}}/reset" class="row-actions-form">
+                <input type="password" name="password" placeholder="new password" minlength="8" required style="width:140px;">
+                <button type="submit" class="btn btn--secondary btn--sm">Reset</button>
+              </form>
+              <form method="post" action="/admin/users/{{.ID}}/admin">
+                <input type="hidden" name="value" value="{{if .IsAdmin}}0{{else}}1{{end}}">
+                <button type="submit" class="btn btn--secondary btn--sm">
+                  {{if .IsAdmin}}Demote{{else}}Promote to admin{{end}}
+                </button>
+              </form>
+              <form method="post" action="/admin/users/{{.ID}}/active">
+                <input type="hidden" name="value" value="{{if .IsActive}}0{{else}}1{{end}}">
+                <button type="submit" class="btn btn--secondary btn--sm">
+                  {{if .IsActive}}Deactivate{{else}}Activate{{end}}
+                </button>
+              </form>
+              <form method="post" action="/admin/act-as/{{.ID}}">
+                <button type="submit" class="btn btn--secondary btn--sm"
+                        {{if $me}}disabled title="already you"{{end}}>
+                  Act as
+                </button>
+              </form>
+              <form method="post" action="/admin/users/{{.ID}}/delete"
+                    onsubmit="return confirm('Delete {{.Username}} AND all their data (trades, journal, imports, attachments)? This cannot be undone.');">
+                <button type="submit" class="btn btn--danger btn--sm" {{if $me}}disabled title="cannot delete yourself"{{end}}>
+                  Delete
+                </button>
+              </form>
+            </div>
+          </details>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<details class="disclose card" style="padding: 16px;">
+  <summary class="btn btn--primary" style="display: inline-flex;">+ Add user</summary>
+  <form method="post" action="/admin/users" class="form-grid" style="margin-top: 12px;">
+    <label class="field">
+      <span class="field-label">Username</span>
+      <input name="username" required pattern="[A-Za-z0-9_.-]+" title="Letters, digits, _ - . only">
+    </label>
+    <label class="field">
+      <span class="field-label">Password (≥ 8 chars)</span>
+      <input type="password" name="password" minlength="8" required>
+    </label>
+    <label class="field">
+      <span class="field-label">Email (optional)</span>
+      <input type="email" name="email">
+    </label>
+    <label class="row-sm" style="align-items: center; gap: 6px;">
+      <input type="checkbox" name="is_admin" value="1">
+      <span>Admin</span>
+    </label>
+    <button type="submit" class="btn btn--primary">Create user</button>
+  </form>
+</details>
+
+<style>
+  .users-table th, .users-table td { padding: 8px 10px; vertical-align: middle; }
+  .users-table tr.row-dim { opacity: 0.55; }
+  .users-table .row-actions-menu {
+    display: flex; flex-direction: column; gap: 6px;
+    background: var(--bg-elevated); border: 1px solid var(--border);
+    border-radius: var(--r-md); padding: 8px;
+    margin-top: 6px; min-width: 240px;
+  }
+  .users-table .row-actions-menu form { display: flex; gap: 6px; margin: 0; }
+  .users-table .row-actions-menu .row-actions-form input[type="password"] {
+    padding: 4px 6px; font-size: 12px;
+  }
+  .pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .pill-admin  { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 22%, transparent); color: var(--brand-teal, var(--accent)); }
+  .pill-active { background: color-mix(in srgb, var(--pos) 18%, transparent); color: var(--pos); }
+  .form-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }
+</style>
+{{end}}
