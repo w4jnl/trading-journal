@@ -32,10 +32,15 @@ auth:
   # the "users reset <name>" command targets in the most common case.
   bootstrap_user: "admin"
 
-  # HMAC key for CSRF tokens. Any string >= 32 bytes is fine; for binary
-  # randomness prefix with "base64:" and pass a base64-encoded value.
-  # If empty the server generates an ephemeral key at startup (with a
-  # WARN) -- tokens then do not survive a restart.
+  # HMAC key for CSRF tokens, session-id binding, and the admin act-as
+  # cookie. Any string >= 32 bytes is fine; for binary randomness prefix
+  # with "base64:" and pass a base64-encoded value. If empty the server
+  # generates an ephemeral key at startup (with a WARN) -- tokens then
+  # do not survive a restart.
+  #
+  # Can be overridden by the TJ_SESSION_SECRET environment variable so
+  # you can check this file into git and inject the real secret via
+  # Docker secrets / systemd EnvironmentFile / etc. Env wins over file.
   session_secret: ""
 
   # Session lifetime, hours. Default 168 (7 days).

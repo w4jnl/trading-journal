@@ -101,6 +101,10 @@ See **[config.example.yaml](config.example.yaml)** for every auth
 knob, with comments. `auth.session_secret` is the HMAC key for CSRF
 tokens, session-id binding, and the act-as cookie -- set it to any
 32+ byte string (or `base64:<random>`) so tokens survive restarts.
+For deployments where the config file is checked in, the secret can
+also be supplied at runtime via the `TJ_SESSION_SECRET` environment
+variable (Docker secrets, systemd `EnvironmentFile`, etc.); the
+env value overrides whatever is in the YAML.
 
 ### Managing users
 
