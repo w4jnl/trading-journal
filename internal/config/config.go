@@ -117,6 +117,10 @@ func (c Config) Validate() error {
 
 // Load reads cfgPath if it exists, otherwise returns defaults.
 // A missing file is not an error: defaults are sensible for first boot.
+// Environment variables override the YAML for a small allowlist of
+// secret-like fields - currently TJ_SESSION_SECRET. Env wins over file so
+// you can ship a checked-in config.yaml and inject the secret at run
+// time (Docker secrets, systemd EnvironmentFile, etc.).
 func Load(cfgPath string) (Config, error) {
 	cfg := defaults()
 	abs, err := filepath.Abs(cfgPath)
@@ -125,13 +129,16 @@ func Load(cfgPath string) (Config, error) {
 	}
 	data, err := os.ReadFile(abs)
 	if errors.Is(err, fs.ErrNotExist) {
-		return cfg, nil
-	}
-	if err != nil {
+		// No file is OK; we still consult env overrides below.
+	} else if err != nil {
 		return cfg, fmt.Errorf("read config %s: %w", abs, err)
-	}
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
+	} else if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return cfg, fmt.Errorf("parse config: %w", err)
 	}
+
+	if v := os.Getenv("TJ_SESSION_SECRET"); v != "" {
+		cfg.Auth.SessionSecret = v
+	}
+
 	return cfg, nil
 }
