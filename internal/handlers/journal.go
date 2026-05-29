@@ -996,7 +996,13 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 		}
 
 		if row.Tag != nil && *row.Tag != "" {
-			fmt.Fprintf(&b, "- **Tag:** %s\n\n", *row.Tag)
+			fmt.Fprintf(&b, "- **Tag:** %s\n", *row.Tag)
+		}
+		if row.StrategyName != nil && *row.StrategyName != "" {
+			fmt.Fprintf(&b, "- **Strategy:** %s\n", *row.StrategyName)
+		}
+		if (row.Tag != nil && *row.Tag != "") || (row.StrategyName != nil && *row.StrategyName != "") {
+			b.WriteString("\n")
 		}
 
 		// Summary + per-trade bullet list — same for every scope so the
@@ -1086,6 +1092,9 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 		}
 		if row.Tag != nil {
 			e.Tag = *row.Tag
+		}
+		if row.StrategyName != nil {
+			e.Strategy = *row.StrategyName
 		}
 		entries = append(entries, e)
 	}
