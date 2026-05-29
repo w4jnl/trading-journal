@@ -62,18 +62,33 @@
 
 {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 
-<details class="disclose" style="margin-top: 16px; margin-bottom: 16px;">
-  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add another trade</summary>
-  <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" style="margin-top: 8px;">
-    <div class="row">
-      <label class="field">
-        <span class="field-label">Trade ID</span>
-        <input type="number" name="trade_id" min="1" required placeholder="e.g. 1234" style="width: 140px;">
+<details class="disclose trade-picker" style="margin-top: 16px; margin-bottom: 16px;">
+  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add trades</summary>
+  {{if .CandidateTrades}}
+  <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" id="tp-form" style="margin-top: 8px;">
+    <input type="search" class="tp-search" placeholder="Filter by symbol, date, account…" autocomplete="off" aria-label="Filter trades">
+    <div class="tp-list">
+      {{range .CandidateTrades}}
+      <label class="tp-row" data-search="{{.Search}}">
+        <input type="checkbox" name="trade_id" value="{{.ID}}">
+        <span class="tp-date muted">{{.Date}}</span>
+        <span class="tp-sym"><strong>{{.Symbol}}</strong></span>
+        {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
+        <span class="tp-qty num">{{formatQty .Qty}}</span>
+        <span class="tp-pnl num">{{pnlClass .NetPnl}}</span>
+        <span class="tp-acct muted">{{.Account}}</span>
       </label>
-      <button type="submit" class="btn btn--primary btn--sm">Add</button>
-      <span class="muted" style="font-size: 11px;">Copy a trade ID from <a href="/trades">/trades</a>.</span>
+      {{end}}
+      <p class="tp-noresults muted" hidden>No trades match the filter.</p>
+    </div>
+    <div class="row" style="margin-top: 10px;">
+      <button type="submit" class="btn btn--primary btn--sm tp-add" disabled>Add selected</button>
+      <span class="muted tp-count" style="font-size: 11px;"></span>
     </div>
   </form>
+  {{else}}
+  <p class="muted" style="margin-top: 8px;">All your closed trades are already in this group (or you have none yet).</p>
+  {{end}}
 </details>
 
 {{template "trade_sheet" .}}
@@ -85,5 +100,51 @@
   .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
   details.disclose > summary { list-style: none; cursor: pointer; }
   details.disclose > summary::-webkit-details-marker { display: none; }
+
+  /* Trade picker */
+  .tp-search { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+  .tp-list { max-height: 340px; overflow-y: auto; border: 1px solid var(--border);
+             border-radius: var(--r-md); }
+  .tp-row { display: grid; grid-template-columns: 56px 1fr auto auto auto 1fr;
+            align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer;
+            border-bottom: 1px solid var(--border); font-size: 13px; }
+  .tp-row:last-of-type { border-bottom: 0; }
+  .tp-row:hover { background: var(--bg-hover); }
+  .tp-row input[type=checkbox] { margin: 0; }
+  .tp-row .tp-acct { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tp-noresults { padding: 14px; text-align: center; }
 </style>
+
+<script>
+  (function () {
+    var form = document.getElementById('tp-form');
+    if (!form) return;
+    var search = form.querySelector('.tp-search');
+    var rows = Array.prototype.slice.call(form.querySelectorAll('.tp-row'));
+    var noResults = form.querySelector('.tp-noresults');
+    var addBtn = form.querySelector('.tp-add');
+    var count = form.querySelector('.tp-count');
+
+    function applyFilter() {
+      var q = (search.value || '').trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function (row) {
+        var match = q === '' || (row.getAttribute('data-search') || '').indexOf(q) !== -1;
+        row.hidden = !match;
+        if (match) shown++;
+      });
+      if (noResults) noResults.hidden = shown !== 0;
+    }
+    function updateCount() {
+      var n = form.querySelectorAll('.tp-row input[type=checkbox]:checked').length;
+      addBtn.disabled = n === 0;
+      count.textContent = n ? n + ' selected' : '';
+    }
+    search.addEventListener('input', applyFilter);
+    form.addEventListener('change', function (e) {
+      if (e.target && e.target.matches('.tp-row input[type=checkbox]')) updateCount();
+    });
+    updateCount();
+  })();
+</script>
 {{end}}
