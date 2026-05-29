@@ -1,8 +1,10 @@
+{{/* Single-file outcome card. Reused by the multi-file list below and
+     by /import/assign's response. */}}
 {{define "import_outcome"}}
 {{if .ErrorMessage}}
 <div class="card card--neg">
   <strong>Failed:</strong> {{.ErrorMessage}}
-  <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
+  {{if .DestinationPath}}<div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>{{end}}
 </div>
 {{else}}
 <div class="card card--pos">
@@ -13,6 +15,24 @@
   <span class="num">{{.InstrumentsStubbed}}</span> new instrument stubs,
   <span class="num">{{.TradesCreated}}</span> trades materialized.
   <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
+</div>
+{{end}}
+{{end}}
+
+{{/* Multi-file response. Renders one labeled card per uploaded file plus
+     any deferred account pickers. .Results is []uploadResult. */}}
+{{define "import_outcomes"}}
+{{if gt (len .Results) 1}}
+<div class="muted" style="margin-bottom: 8px;">{{len .Results}} files processed.</div>
+{{end}}
+{{range .Results}}
+<div class="import-result" style="margin-bottom: 10px;">
+  <div class="muted num" style="font-size: 12px; margin-bottom: 4px;">{{.Name}}</div>
+  {{if .Picker}}
+    {{template "import_picker" .Picker}}
+  {{else}}
+    {{template "import_outcome" .Outcome}}
+  {{end}}
 </div>
 {{end}}
 {{end}}

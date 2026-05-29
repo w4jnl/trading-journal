@@ -4,9 +4,11 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 
@@ -30,69 +32,124 @@ func (h *Handlers) ImportPage(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// ImportUpload handles a multipart upload of a CSV. Stages the file under
-// imports/uploads/ (same filesystem as processed/failed/ so the eventual
-// rename doesn't cross device boundaries), detects the format, and either:
-//   - imports immediately (normal path), or
-//   - returns an "account picker" partial when the file is a TopstepX trades
-//     CSV whose target account can't be inferred from the filename AND more
-//     than one TopStep account already exists. The staged file stays in
-//     place; the picker form re-posts to /import/assign with the chosen
-//     account.
+// uploadResult is one row in the multi-file import response: either a
+// completed Outcome or a deferred account-picker. Exactly one of Outcome /
+// Picker is non-nil. Name is the original (client) filename for display.
+type uploadResult struct {
+	Name    string
+	Outcome *importer.Outcome
+	Picker  map[string]any
+}
+
+// ImportUpload handles a multipart upload of one OR MORE CSV files. Each
+// file is staged under imports/uploads/ (same filesystem as processed/
+// failed/ so the eventual rename doesn't cross device boundaries), its
+// format detected, and then either:
+//   - imported immediately (normal path), or
+//   - deferred to an "account picker" when the file is a TopstepX trades
+//     CSV whose target account can't be inferred from the filename. The
+//     staged file stays in place; the picker form re-posts to
+//     /import/assign with the chosen account.
 //
-// Response is HTMX-swapped into the page's #outcome target.
+// Files are processed in filename order. Import order does NOT affect the
+// final trade state — the FIFO position builder rebuilds each touched
+// (account, symbol) from every execution sorted by exec_time, so a later
+// file that contains earlier fills still lands correctly. We sort only so
+// the TopStep orders-vs-trades claim lock (first file to touch an account
+// wins) and the rendered output are deterministic.
+//
+// Response is the list of per-file outcome cards + any pickers, HTMX-
+// swapped into the page's #outcome target.
 func (h *Handlers) ImportUpload(w http.ResponseWriter, r *http.Request) {
-	// Cap the request body. A CSV import is text; even a year of fills sits
-	// well under 64 MiB. Without this an oversized upload would buffer to
-	// disk via the form parser before the handler ever ran.
-	const maxImportBytes = 64 * 1024 * 1024
+	// Cap the request body. CSVs are text; even a year of fills per file
+	// sits well under this. Bumped for the multi-file case.
+	const maxImportBytes = 256 * 1024 * 1024
 	r.Body = http.MaxBytesReader(w, r.Body, maxImportBytes)
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
+	if err := r.ParseMultipartForm(64 << 20); err != nil {
 		http.Error(w, "bad multipart form: "+err.Error(), http.StatusBadRequest)
 		return
 	}
-	file, header, err := r.FormFile("file")
-	if err != nil {
-		http.Error(w, "missing file field: "+err.Error(), http.StatusBadRequest)
-		return
-	}
-	defer file.Close()
 
-	staged, cleanup, err := stageUpload(file, header.Filename, h.UploadsDir)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("stage upload: %w", err))
+	var headers []*multipart.FileHeader
+	if r.MultipartForm != nil {
+		headers = r.MultipartForm.File["file"]
+	}
+	if len(headers) == 0 {
+		http.Error(w, "missing file field", http.StatusBadRequest)
 		return
 	}
+
+	// Deterministic order — see the doc comment for why correctness does
+	// not depend on it.
+	sort.SliceStable(headers, func(i, j int) bool {
+		return headers[i].Filename < headers[j].Filename
+	})
 
 	ctx := context.WithoutCancel(r.Context())
+	u := auth.MustUser(ctx)
 
-	// Peek at the staged file's format so we can decide whether to prompt.
+	results := make([]uploadResult, 0, len(headers))
+	for _, header := range headers {
+		res, err := h.importOneUploaded(ctx, header, u)
+		if err != nil {
+			// Stage/IO error for this file: surface it inline as a failed
+			// "outcome" rather than aborting the whole batch.
+			msg := err.Error()
+			results = append(results, uploadResult{
+				Name:    header.Filename,
+				Outcome: &importer.Outcome{SourcePath: header.Filename, ErrorMessage: msg},
+			})
+			continue
+		}
+		results = append(results, res)
+	}
+
+	h.renderPartial(w, "_import_outcome.html", "import_outcomes", map[string]any{
+		"Results": results,
+	})
+}
+
+// importOneUploaded stages a single uploaded file and either imports it or
+// returns a picker descriptor. The staged temp dir is cleaned up on the
+// import path; on the picker path it is intentionally left in place so the
+// follow-up /import/assign POST can finish the ingest.
+func (h *Handlers) importOneUploaded(ctx context.Context, header *multipart.FileHeader, u *auth.User) (uploadResult, error) {
+	f, err := header.Open()
+	if err != nil {
+		return uploadResult{}, fmt.Errorf("open upload: %w", err)
+	}
+	defer f.Close()
+
+	staged, cleanup, err := stageUpload(f, header.Filename, h.UploadsDir)
+	if err != nil {
+		return uploadResult{}, fmt.Errorf("stage upload: %w", err)
+	}
+
 	needsPicker, topstepAccounts, err := h.detectNeedsAccountPicker(ctx, staged)
 	if err != nil {
 		cleanup()
-		h.serverError(w, fmt.Errorf("detect picker: %w", err))
-		return
+		return uploadResult{}, fmt.Errorf("detect picker: %w", err)
 	}
 	if needsPicker {
-		// Don't cleanup — the picker form needs the staged path to survive.
-		h.renderPartial(w, "_import_picker.html", "import_picker", map[string]any{
-			"StagedPath":      staged,
-			"OriginalName":    header.Filename,
-			"TopstepAccounts": topstepAccounts,
-			"FirmOptions":     []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
-			"TypeOptions":     accountTypeOptions(),
-		})
-		return
+		// Leave staged in place for the assign step.
+		return uploadResult{
+			Name: header.Filename,
+			Picker: map[string]any{
+				"StagedPath":      staged,
+				"OriginalName":    header.Filename,
+				"TopstepAccounts": topstepAccounts,
+				"FirmOptions":     []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
+				"TypeOptions":     accountTypeOptions(),
+			},
+		}, nil
 	}
 
 	defer cleanup()
-	u := auth.MustUser(ctx)
 	outcome, err := h.ImportSvc.ImportFileForUser(ctx, staged, u.ID, u.Username)
 	if err != nil {
-		h.serverError(w, fmt.Errorf("import: %w", err))
-		return
+		return uploadResult{}, fmt.Errorf("import: %w", err)
 	}
-	h.renderPartial(w, "_import_outcome.html", "import_outcome", outcome)
+	return uploadResult{Name: header.Filename, Outcome: &outcome}, nil
 }
 
 // ImportAssign handles POST /import/assign — the second step of the upload
