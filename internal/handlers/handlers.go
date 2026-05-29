@@ -163,6 +163,11 @@ func (h *Handlers) funcMap() template.FuncMap {
 	return template.FuncMap{
 		"hasPrefix":  strings.HasPrefix,
 		"trimPrefix": strings.TrimPrefix,
+		// markdown renders a markdown string to sanitized HTML. Used by the
+		// strategy card (and anywhere a stored markdown doc is shown inline).
+		"markdown": func(s string) template.HTML {
+			return template.HTML(renderMarkdown(s))
+		},
 		"derefStr": func(s *string) string {
 			if s == nil {
 				return ""

@@ -60,6 +60,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		DateLabel string
 		MetaLabel string // "APEX-1 / MESM6 long · $42.50" for trade, "May 4–10" for week
 		Tag       string
+		Strategy  string // assigned strategy name, "" when none
 		Body      string
 		EditURL   string // where to navigate when the row is clicked
 		// Group-only — populated when Scope == "group", zero otherwise.
@@ -79,6 +80,9 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		if row.Tag != nil {
 			fi.Tag = *row.Tag
+		}
+		if row.StrategyName != nil {
+			fi.Strategy = *row.StrategyName
 		}
 		switch row.Scope {
 		case "day":
@@ -143,19 +147,132 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	y, wk := now.ISOWeek()
 	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
 
+	// Strategy filter options (the user's strategies) + a name lookup for the
+	// active-chip labels.
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+	stratName := map[int64]string{}
+	stratOpts := make([]journalStrategyOption, 0, len(strategies))
+	for _, s := range strategies {
+		stratName[s.ID] = s.Name
+		stratOpts = append(stratOpts, journalStrategyOption{ID: s.ID, Name: s.Name, Checked: filters.strategySet[s.ID]})
+	}
+
+	filterCount := len(filters.scopes) + len(filters.tags) + len(filters.strategies)
+	if filters.strategyNone {
+		filterCount++
+	}
+	if filters.fromStr != "" {
+		filterCount++
+	}
+	if filters.toStr != "" {
+		filterCount++
+	}
+
+	activeChips := buildJournalActiveChips(filters, stratName)
+
 	h.renderPage(w, r, "journal_feed.html", map[string]any{
-		"NavActive":     "journal",
-		"BackHref":      validBackHref(r),
-		"Items":         items,
-		"Today":         todayStr,
-		"ThisWeek":      thisWeekStr,
-		"FilterFrom":    filters.fromStr,
-		"FilterTo":      filters.toStr,
-		"ScopeSelected": filters.scopeSet, // map[string]bool — used by checkboxes
-		"TagSelected":   filters.tagSet,
-		"FilterActive":  filters.active(),
-		"ExportQS":      template.URL(exportQueryString(filters)), // ready-to-append (without leading '?')
+		"NavActive":           "journal",
+		"BackHref":            validBackHref(r),
+		"Items":               items,
+		"Today":               todayStr,
+		"ThisWeek":            thisWeekStr,
+		"FilterFrom":          filters.fromStr,
+		"FilterTo":            filters.toStr,
+		"ScopeSelected":       filters.scopeSet, // map[string]bool — used by checkboxes
+		"TagSelected":         filters.tagSet,
+		"StrategyOptions":     stratOpts,
+		"StrategyNoneChecked": filters.strategyNone,
+		"FilterActive":        filters.active(),
+		"FilterCount":         filterCount,
+		"ActiveFilters":       activeChips,
+		"ExportQS":            template.URL(exportQueryString(filters)), // ready-to-append (without leading '?')
 	})
+}
+
+// journalStrategyOption is one checkbox in the feed's Strategy filter row.
+type journalStrategyOption struct {
+	ID      int64
+	Name    string
+	Checked bool
+}
+
+// journalActiveChip is one removable chip on the collapsed filter bar. RemoveURL
+// is the current feed URL with just this one filter value dropped.
+type journalActiveChip struct {
+	Label     string
+	RemoveURL string
+}
+
+// buildJournalActiveChips renders one chip per active filter value, each with a
+// RemoveURL that drops only that value (other active filters persist).
+func buildJournalActiveChips(f journalFilters, stratName map[int64]string) []journalActiveChip {
+	// Materialize the current params, then a helper clones-minus-one.
+	base := url.Values{}
+	if f.fromStr != "" {
+		base.Set("from", f.fromStr)
+	}
+	if f.toStr != "" {
+		base.Set("to", f.toStr)
+	}
+	for _, s := range f.scopes {
+		base.Add("scope", s)
+	}
+	for _, t := range f.tags {
+		base.Add("tag", t)
+	}
+	for _, id := range f.strategies {
+		base.Add("strategy", strconv.FormatInt(id, 10))
+	}
+	if f.strategyNone {
+		base.Add("strategy", "none")
+	}
+	removeURL := func(key, val string) string {
+		v := url.Values{}
+		for k, vals := range base {
+			for _, x := range vals {
+				if k == key && x == val {
+					continue
+				}
+				v.Add(k, x)
+			}
+		}
+		if enc := v.Encode(); enc != "" {
+			return "/journal?" + enc
+		}
+		return "/journal"
+	}
+
+	scopeLabels := map[string]string{"day": "Day", "trade": "Trade", "week": "Week", "group": "Group"}
+	tagLabels := map[string]string{"good": "Good", "neutral": "Neutral", "bad": "Bad", "untagged": "Untagged"}
+
+	var chips []journalActiveChip
+	if f.fromStr != "" {
+		chips = append(chips, journalActiveChip{"From " + f.fromStr, removeURL("from", f.fromStr)})
+	}
+	if f.toStr != "" {
+		chips = append(chips, journalActiveChip{"To " + f.toStr, removeURL("to", f.toStr)})
+	}
+	for _, s := range f.scopes {
+		chips = append(chips, journalActiveChip{scopeLabels[s], removeURL("scope", s)})
+	}
+	for _, t := range f.tags {
+		chips = append(chips, journalActiveChip{tagLabels[t], removeURL("tag", t)})
+	}
+	for _, id := range f.strategies {
+		name := stratName[id]
+		if name == "" {
+			continue // unknown / not the user's — don't surface a chip we can't label
+		}
+		chips = append(chips, journalActiveChip{name, removeURL("strategy", strconv.FormatInt(id, 10))})
+	}
+	if f.strategyNone {
+		chips = append(chips, journalActiveChip{"Unassigned", removeURL("strategy", "none")})
+	}
+	return chips
 }
 
 // exportQueryString re-emits the active filters as a URL query string so the
@@ -175,10 +292,17 @@ func exportQueryString(f journalFilters) string {
 	for _, t := range f.tags {
 		v.Add("tag", t)
 	}
+	for _, id := range f.strategies {
+		v.Add("strategy", strconv.FormatInt(id, 10))
+	}
+	if f.strategyNone {
+		v.Add("strategy", "none")
+	}
 	return v.Encode()
 }
 
-// journalFilters carries the parsed feed filters: date range + scope + tag.
+// journalFilters carries the parsed feed filters: date range + scope + tag +
+// strategy.
 type journalFilters struct {
 	from, to      *time.Time
 	fromStr, toStr string
@@ -188,17 +312,24 @@ type journalFilters struct {
 	// (tag column IS NULL). The DB tag values are good/neutral/bad.
 	tags    []string
 	tagSet  map[string]bool
+	// strategies are the selected strategy ids; strategyNone selects entries
+	// with no strategy attached (strategy_id IS NULL).
+	strategies   []int64
+	strategyNone bool
+	strategySet  map[int64]bool
 }
 
 func (f journalFilters) active() bool {
-	return f.from != nil || f.to != nil || len(f.scopes) > 0 || len(f.tags) > 0
+	return f.from != nil || f.to != nil || len(f.scopes) > 0 || len(f.tags) > 0 ||
+		len(f.strategies) > 0 || f.strategyNone
 }
 
-// parseJournalFilters reads ?from=&to=&scope=&tag= from the request.
+// parseJournalFilters reads ?from=&to=&scope=&tag=&strategy= from the request.
 func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
 	f := journalFilters{
-		scopeSet: map[string]bool{},
-		tagSet:   map[string]bool{},
+		scopeSet:    map[string]bool{},
+		tagSet:      map[string]bool{},
+		strategySet: map[int64]bool{},
 	}
 	if v := strings.TrimSpace(r.URL.Query().Get("from")); v != "" {
 		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
@@ -231,6 +362,16 @@ func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
 			}
 		}
 	}
+	for _, v := range r.URL.Query()["strategy"] {
+		if v == "none" {
+			f.strategyNone = true
+			continue
+		}
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 && !f.strategySet[id] {
+			f.strategies = append(f.strategies, id)
+			f.strategySet[id] = true
+		}
+	}
 	return f
 }
 
@@ -249,6 +390,7 @@ type feedRow struct {
 	TradeDirection *string
 	TradeNetPnl    *float64
 	AccountName    *string
+	StrategyName   *string
 }
 
 // listJournalFeedFiltered runs a raw SQL query so the dynamic WHERE clause
@@ -300,14 +442,30 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
 		}
 	}
+	if len(f.strategies) > 0 || f.strategyNone {
+		var parts []string
+		if len(f.strategies) > 0 {
+			ph := strings.Repeat("?,", len(f.strategies))
+			ph = ph[:len(ph)-1]
+			parts = append(parts, "je.strategy_id IN ("+ph+")")
+			for _, id := range f.strategies {
+				args = append(args, id)
+			}
+		}
+		if f.strategyNone {
+			parts = append(parts, "je.strategy_id IS NULL")
+		}
+		clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+	}
 
 	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
 	             je.mood, je.tag, je.scope,
 	             t.symbol, t.direction, t.net_pnl,
-	             a.name
+	             a.name, s.name
 	      FROM journal_entries je
-	      LEFT JOIN trades t   ON t.id = je.trade_id
-	      LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
+	      LEFT JOIN trades t      ON t.id = je.trade_id
+	      LEFT JOIN accounts a    ON a.id = COALESCE(je.account_id, t.account_id)
+	      LEFT JOIN strategies s  ON s.id = je.strategy_id
 	      WHERE ` + strings.Join(clauses, " AND ") + `
 	      ORDER BY je.entry_date DESC, je.id DESC
 	      LIMIT ?`
@@ -326,7 +484,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			&r.ID, &r.TradeID, &r.AccountID, &r.EntryDate, &r.Body,
 			&r.Mood, &r.Tag, &r.Scope,
 			&r.TradeSymbol, &r.TradeDirection, &r.TradeNetPnl,
-			&r.AccountName,
+			&r.AccountName, &r.StrategyName,
 		); err != nil {
 			return nil, err
 		}
@@ -412,23 +570,32 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	daySummary := summarizeTradeRows(dayTrades)
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal.html", map[string]any{
-		"NavActive": "journal",
-		"BackHref":  backHref,
-		"Date":      dateStr,
-		"DateNice":  date.Format("Mon, 2 Jan 2006"),
-		"PrevDay":   prevDay,
-		"NextDay":   nextDay,
-		"Today":     time.Now().In(h.localTZ()).Format("2006-01-02"),
-		"HasEntry":  hasEntry,
-		"Entry":     entry,
-		"Mood":      mood,
-		"Tag":       tag,
-		"Rendered":  rendered,
-		"Recent":    recent,
-		"Flash":     flash,
-		"Trades":    dayTrades,
-		"Summary":   daySummary,
+		"NavActive":        "journal",
+		"BackHref":         backHref,
+		"Date":             dateStr,
+		"DateNice":         date.Format("Mon, 2 Jan 2006"),
+		"PrevDay":          prevDay,
+		"NextDay":          nextDay,
+		"Today":            time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"HasEntry":         hasEntry,
+		"Entry":            entry,
+		"Mood":             mood,
+		"Tag":              tag,
+		"Rendered":         rendered,
+		"Recent":           recent,
+		"Flash":            flash,
+		"Trades":           dayTrades,
+		"Summary":          daySummary,
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(entry.StrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
 	})
 }
 
@@ -498,6 +665,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(r.FormValue("body"))
 	mood := parseMood(r.FormValue("mood"))
 	tag := parseTag(r.FormValue("tag"))
+	strategyID := h.parseStrategyID(r)
 
 	// Explicit delete signal from the editor's Delete button. We piggyback on
 	// the save endpoint instead of a /journal/{date}/delete route because that
@@ -528,13 +696,14 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
 		UserID:    userIDPtr(ctx),
-			TradeID:   nil,
-			AccountID: nil,
-			EntryDate: date,
-			Body:      body,
-			Mood:      mood,
-			Tag:       tag,
-			Scope:     "day",
+			TradeID:    nil,
+			AccountID:  nil,
+			EntryDate:  date,
+			Body:       body,
+			Mood:       mood,
+			Tag:        tag,
+			Scope:      "day",
+			StrategyID: strategyID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create journal: %w", err))
 			return
@@ -554,10 +723,11 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
 		UserID: userIDPtr(ctx),
-			Body: body,
-			Mood: mood,
-			Tag:  tag,
-			ID:   existing.ID,
+			Body:       body,
+			Mood:       mood,
+			Tag:        tag,
+			StrategyID: strategyID,
+			ID:         existing.ID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("update journal: %w", err))
 			return
@@ -589,10 +759,12 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 	var journalBody, journalTag string
 	var hasJournal bool
 	var journalEntryID int64
+	var journalStrategyID *int64
 	if entry, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
 		hasJournal = true
 		journalBody = entry.Body
 		journalEntryID = entry.ID
+		journalStrategyID = entry.StrategyID
 		if entry.Tag != nil {
 			journalTag = *entry.Tag
 		}
@@ -608,18 +780,27 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := summarizeTradeRows(trades)
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal_trade.html", map[string]any{
-		"NavActive":      "journal",
-		"BackHref":       validBackHref(r),
-		"Trade":          trade,
-		"TradeID":        id,
-		"HasJournal":     hasJournal,
-		"JournalBody":    journalBody,
-		"JournalTag":     journalTag,
-		"JournalEntryID": journalEntryID,
-		"Summary":        summary,
-		"Trades":         trades,
-		"Flash":          r.URL.Query().Get("flash"),
+		"NavActive":        "journal",
+		"BackHref":         validBackHref(r),
+		"Trade":            trade,
+		"TradeID":          id,
+		"HasJournal":       hasJournal,
+		"JournalBody":      journalBody,
+		"JournalTag":       journalTag,
+		"JournalEntryID":   journalEntryID,
+		"Summary":          summary,
+		"Trades":           trades,
+		"Flash":            r.URL.Query().Get("flash"),
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(journalStrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, journalStrategyID),
 	})
 }
 
@@ -666,21 +847,30 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	weekSummary := summarizeTradeRows(weekTrades)
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal_week.html", map[string]any{
-		"NavActive":  "journal",
-		"BackHref":   validBackHref(r),
-		"WeekID":     fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
-		"WeekLabel":  fmt.Sprintf("Week %d, %d", isoWeek, isoYear),
-		"RangeLabel": fmt.Sprintf("%s – %s", monday.Format("Mon, 2 Jan"), sunday.Format("Mon, 2 Jan 2006")),
-		"PrevWeek":   fmt.Sprintf("%d-W%02d", py, pw),
-		"NextWeek":   fmt.Sprintf("%d-W%02d", ny, nw),
-		"HasEntry":   hasEntry,
-		"Entry":      entry,
-		"Tag":        tag,
-		"Rendered":   rendered,
-		"Flash":      r.URL.Query().Get("flash"),
-		"Trades":     weekTrades,
-		"Summary":    weekSummary,
+		"NavActive":        "journal",
+		"BackHref":         validBackHref(r),
+		"WeekID":           fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
+		"WeekLabel":        fmt.Sprintf("Week %d, %d", isoWeek, isoYear),
+		"RangeLabel":       fmt.Sprintf("%s – %s", monday.Format("Mon, 2 Jan"), sunday.Format("Mon, 2 Jan 2006")),
+		"PrevWeek":         fmt.Sprintf("%d-W%02d", py, pw),
+		"NextWeek":         fmt.Sprintf("%d-W%02d", ny, nw),
+		"HasEntry":         hasEntry,
+		"Entry":            entry,
+		"Tag":              tag,
+		"Rendered":         rendered,
+		"Flash":            r.URL.Query().Get("flash"),
+		"Trades":           weekTrades,
+		"Summary":          weekSummary,
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(entry.StrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
 	})
 }
 
@@ -708,6 +898,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
+	strategyID := h.parseStrategyID(r)
 
 	existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
 	switch {
@@ -718,13 +909,14 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
 		UserID:    userIDPtr(ctx),
-			TradeID:   nil,
-			AccountID: nil,
-			EntryDate: monday,
-			Body:      body,
-			Mood:      nil,
-			Tag:       tag,
-			Scope:     "week",
+			TradeID:    nil,
+			AccountID:  nil,
+			EntryDate:  monday,
+			Body:       body,
+			Mood:       nil,
+			Tag:        tag,
+			Scope:      "week",
+			StrategyID: strategyID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create week journal: %w", err))
 			return
@@ -743,10 +935,11 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
 		UserID: userIDPtr(ctx),
-			Body: body,
-			Mood: existing.Mood,
-			Tag:  tag,
-			ID:   existing.ID,
+			Body:       body,
+			Mood:       existing.Mood,
+			Tag:        tag,
+			StrategyID: strategyID,
+			ID:         existing.ID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("update week journal: %w", err))
 			return
@@ -955,7 +1148,13 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 		}
 
 		if row.Tag != nil && *row.Tag != "" {
-			fmt.Fprintf(&b, "- **Tag:** %s\n\n", *row.Tag)
+			fmt.Fprintf(&b, "- **Tag:** %s\n", *row.Tag)
+		}
+		if row.StrategyName != nil && *row.StrategyName != "" {
+			fmt.Fprintf(&b, "- **Strategy:** %s\n", *row.StrategyName)
+		}
+		if (row.Tag != nil && *row.Tag != "") || (row.StrategyName != nil && *row.StrategyName != "") {
+			b.WriteString("\n")
 		}
 
 		// Summary + per-trade bullet list — same for every scope so the
@@ -1046,6 +1245,9 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 		if row.Tag != nil {
 			e.Tag = *row.Tag
 		}
+		if row.StrategyName != nil {
+			e.Strategy = *row.StrategyName
+		}
 		entries = append(entries, e)
 	}
 
@@ -1082,6 +1284,13 @@ func filterDescription(f journalFilters) string {
 	}
 	if len(f.tags) > 0 {
 		parts = append(parts, "tag: "+strings.Join(f.tags, ", "))
+	}
+	if len(f.strategies) > 0 || f.strategyNone {
+		n := len(f.strategies)
+		if f.strategyNone {
+			n++
+		}
+		parts = append(parts, fmt.Sprintf("strategy: %d selected", n))
 	}
 	if len(parts) == 0 {
 		return ""

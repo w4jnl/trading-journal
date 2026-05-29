@@ -11,20 +11,21 @@ import (
 )
 
 const createJournalEntry = `-- name: CreateJournalEntry :one
-INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id
+INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope, strategy_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id
 `
 
 type CreateJournalEntryParams struct {
-	UserID    *int64    `json:"user_id"`
-	TradeID   *int64    `json:"trade_id"`
-	AccountID *int64    `json:"account_id"`
-	EntryDate time.Time `json:"entry_date"`
-	Body      string    `json:"body"`
-	Mood      *int64    `json:"mood"`
-	Tag       *string   `json:"tag"`
-	Scope     string    `json:"scope"`
+	UserID     *int64    `json:"user_id"`
+	TradeID    *int64    `json:"trade_id"`
+	AccountID  *int64    `json:"account_id"`
+	EntryDate  time.Time `json:"entry_date"`
+	Body       string    `json:"body"`
+	Mood       *int64    `json:"mood"`
+	Tag        *string   `json:"tag"`
+	Scope      string    `json:"scope"`
+	StrategyID *int64    `json:"strategy_id"`
 }
 
 func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntryParams) (JournalEntry, error) {
@@ -37,6 +38,7 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		arg.Mood,
 		arg.Tag,
 		arg.Scope,
+		arg.StrategyID,
 	)
 	var i JournalEntry
 	err := row.Scan(
@@ -51,6 +53,7 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		&i.Tag,
 		&i.Scope,
 		&i.UserID,
+		&i.StrategyID,
 	)
 	return i, err
 }
@@ -70,7 +73,7 @@ func (q *Queries) DeleteJournalEntry(ctx context.Context, arg DeleteJournalEntry
 }
 
 const getDayJournalEntry = `-- name: GetDayJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries
 WHERE user_id = ? AND entry_date = ? AND scope = 'day'
 LIMIT 1
 `
@@ -95,12 +98,13 @@ func (q *Queries) GetDayJournalEntry(ctx context.Context, arg GetDayJournalEntry
 		&i.Tag,
 		&i.Scope,
 		&i.UserID,
+		&i.StrategyID,
 	)
 	return i, err
 }
 
 const getJournalEntryByTradeID = `-- name: GetJournalEntryByTradeID :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries WHERE trade_id = ? LIMIT 1
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries WHERE trade_id = ? LIMIT 1
 `
 
 // The trade itself is already user-owned (verified via GetTradeByID), so
@@ -120,12 +124,13 @@ func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) 
 		&i.Tag,
 		&i.Scope,
 		&i.UserID,
+		&i.StrategyID,
 	)
 	return i, err
 }
 
 const getWeekJournalEntry = `-- name: GetWeekJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries
 WHERE user_id = ? AND entry_date = ? AND scope = 'week'
 LIMIT 1
 `
@@ -151,6 +156,7 @@ func (q *Queries) GetWeekJournalEntry(ctx context.Context, arg GetWeekJournalEnt
 		&i.Tag,
 		&i.Scope,
 		&i.UserID,
+		&i.StrategyID,
 	)
 	return i, err
 }
@@ -276,7 +282,7 @@ func (q *Queries) ListJournalFeed(ctx context.Context, arg ListJournalFeedParams
 }
 
 const listRecentJournalEntries = `-- name: ListRecentJournalEntries :many
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries
 WHERE user_id = ? AND scope = 'day'
 ORDER BY entry_date DESC, id DESC
 LIMIT ?
@@ -308,6 +314,7 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, arg ListRecentJo
 			&i.Tag,
 			&i.Scope,
 			&i.UserID,
+			&i.StrategyID,
 		); err != nil {
 			return nil, err
 		}
@@ -364,16 +371,17 @@ func (q *Queries) ListWeekJournalsInRange(ctx context.Context, arg ListWeekJourn
 
 const updateJournalEntry = `-- name: UpdateJournalEntry :exec
 UPDATE journal_entries
-SET body = ?, mood = ?, tag = ?, updated_at = CURRENT_TIMESTAMP
+SET body = ?, mood = ?, tag = ?, strategy_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND user_id = ?
 `
 
 type UpdateJournalEntryParams struct {
-	Body   string  `json:"body"`
-	Mood   *int64  `json:"mood"`
-	Tag    *string `json:"tag"`
-	ID     int64   `json:"id"`
-	UserID *int64  `json:"user_id"`
+	Body       string  `json:"body"`
+	Mood       *int64  `json:"mood"`
+	Tag        *string `json:"tag"`
+	StrategyID *int64  `json:"strategy_id"`
+	ID         int64   `json:"id"`
+	UserID     *int64  `json:"user_id"`
 }
 
 // Scope by user_id so a guessed entry id can't update someone else's entry.
@@ -382,6 +390,7 @@ func (q *Queries) UpdateJournalEntry(ctx context.Context, arg UpdateJournalEntry
 		arg.Body,
 		arg.Mood,
 		arg.Tag,
+		arg.StrategyID,
 		arg.ID,
 		arg.UserID,
 	)

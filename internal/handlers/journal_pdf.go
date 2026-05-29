@@ -39,14 +39,15 @@ type pdfHeader struct {
 //     so every entry — regardless of scope — shows the trades it was
 //     written about.
 type pdfEntry struct {
-	Title   string
-	Scope   string
-	Account string
-	Trade   string
-	Tag     string
-	Body    string
-	Summary GroupSummary
-	Trades  []linkedTrade
+	Title    string
+	Scope    string
+	Account  string
+	Trade    string
+	Tag      string
+	Strategy string
+	Body     string
+	Summary  GroupSummary
+	Trades   []linkedTrade
 }
 
 // page geometry, in mm.
@@ -188,6 +189,11 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 	if e.Tag != "" {
 		pdf.SetX(pdf.GetX() + 2)
 		r.drawTagChip(e.Tag)
+	}
+	if e.Strategy != "" {
+		pdf.SetX(pdf.GetX() + 2)
+		// Teal strategy chip, matching the on-screen feed.
+		r.drawChip(e.Strategy, chipColor{224, 242, 242, 15, 118, 110})
 	}
 	pdf.Ln(8)
 

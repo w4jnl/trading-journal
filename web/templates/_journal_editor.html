@@ -10,6 +10,9 @@
     Mode          — "split" (default) | "single"
     EntryID       — optional entry ID (int64) — used as default attachment scope
     Templates     — bool — show templates dropdown
+    HideRecall    — bool — hide the Recall dropdown (e.g. in the Library
+                    template/strategy editors where prior-entry recall is
+                    meaningless)
     MinHeight     — px string, e.g. "360px" (default)
 
   Renders a wrapper that journal_editor.js looks for via [data-je]. The
@@ -47,8 +50,10 @@
     <button type="button" class="je-btn" data-je-action="templates" style="position:relative;"
             title="Apply template">Templates ▾</button>
     {{end}}
+    {{if not .HideRecall}}
     <button type="button" class="je-btn" data-je-action="recall" style="position:relative;"
             title="Look at a prior entry of the same scope">Recall ▾</button>
+    {{end}}
     <div class="je-spacer"></div>
     <span class="je-status" data-je-status></span>
   </div>
@@ -65,5 +70,38 @@
   <div class="journal-editor__preview" data-je-preview aria-live="polite">
     {{if .Body}}<p class="journal-editor__preview-empty">Loading preview…</p>{{else}}<p class="journal-editor__preview-empty">Nothing to preview yet.</p>{{end}}
   </div>
+</div>
+{{end}}
+
+{{/* strategy_picker — a <select> for attaching one trading strategy to a
+     journal entry. Dict: Strategies ([]Strategy), StrategyID (*int64 current,
+     may be nil). Submits strategy_id; empty value = detach. Renders a
+     "manage" hint linking to /library when the user has no strategies yet. */}}
+{{define "strategy_picker"}}
+<label class="field je-strategy-field">
+  <span class="field-label">Strategy</span>
+  {{if .Strategies}}
+  <select name="strategy_id" class="je-strategy-select">
+    <option value="">— none —</option>
+    {{range .Strategies}}
+      <option value="{{.ID}}" {{if eq $.StrategyID .ID}}selected{{end}}>{{.Name}}</option>
+    {{end}}
+  </select>
+  {{else}}
+  <span class="muted" style="font-size:12px;">No strategies yet — <a href="/library?tab=strategies">create one</a>.</span>
+  {{end}}
+</label>
+{{end}}
+
+{{/* strategy_card — full render of the strategy attached to a saved entry.
+     Dict is the Strategy itself (.Name, .Body). Place below the entry's
+     trades/summary. */}}
+{{define "strategy_card"}}
+<div class="card strategy-card" style="margin-top:16px;">
+  <div class="row-sm" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
+    <h3 style="margin:0; font-size:14px;">Strategy · {{.Name}}</h3>
+    <a href="/library?tab=strategies" class="muted" style="font-size:11px;">edit in Library</a>
+  </div>
+  <div class="markdown-preview">{{markdown .Body}}</div>
 </div>
 {{end}}

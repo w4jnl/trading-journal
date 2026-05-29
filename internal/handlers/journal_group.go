@@ -411,11 +411,11 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	var entry models.JournalEntry
 	row := h.DB.QueryRowContext(ctx, `
-		SELECT id, trade_id, account_id, entry_date, body, mood, tag, scope, created_at, updated_at
+		SELECT id, trade_id, account_id, entry_date, body, mood, tag, scope, created_at, updated_at, strategy_id
 		FROM journal_entries WHERE id = ? AND scope = 'group' AND user_id = ?
 	`, id, userID(ctx))
 	if err := row.Scan(&entry.ID, &entry.TradeID, &entry.AccountID, &entry.EntryDate,
-		&entry.Body, &entry.Mood, &entry.Tag, &entry.Scope, &entry.CreatedAt, &entry.UpdatedAt); err != nil {
+		&entry.Body, &entry.Mood, &entry.Tag, &entry.Scope, &entry.CreatedAt, &entry.UpdatedAt, &entry.StrategyID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
@@ -443,18 +443,27 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		tag = *entry.Tag
 	}
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal_group.html", map[string]any{
-		"NavActive":     "journal",
-		"BackHref":      validBackHref(r),
-		"EntryID":       id,
-		"Entry":         entry,
-		"EntryDate":     entry.EntryDate.In(tz).Format("2006-01-02"),
-		"EntryDateNice": entry.EntryDate.In(tz).Format("Mon, 2 Jan 2006"),
-		"Trades":        trades,
-		"Summary":       summary,
-		"Tag":           tag,
-		"Rendered":      rendered,
-		"Flash":         r.URL.Query().Get("flash"),
+		"NavActive":        "journal",
+		"BackHref":         validBackHref(r),
+		"EntryID":          id,
+		"Entry":            entry,
+		"EntryDate":        entry.EntryDate.In(tz).Format("2006-01-02"),
+		"EntryDateNice":    entry.EntryDate.In(tz).Format("Mon, 2 Jan 2006"),
+		"Trades":           trades,
+		"Summary":          summary,
+		"Tag":              tag,
+		"Rendered":         rendered,
+		"Flash":            r.URL.Query().Get("flash"),
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(entry.StrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
 	})
 }
 
@@ -485,6 +494,7 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 	}
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
+	strategyID := h.parseStrategyID(r)
 	if body == "" {
 		if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: id, UserID: userIDPtr(ctx)}); err != nil {
 			h.serverError(w, fmt.Errorf("delete group: %w", err))
@@ -494,11 +504,12 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID: userIDPtr(ctx),
-		Body: body,
-		Mood: nil,
-		Tag:  tag,
-		ID:   id,
+		UserID:     userIDPtr(ctx),
+		Body:       body,
+		Mood:       nil,
+		Tag:        tag,
+		StrategyID: strategyID,
+		ID:         id,
 	}); err != nil {
 		h.serverError(w, fmt.Errorf("update group: %w", err))
 		return

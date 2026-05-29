@@ -9,66 +9,95 @@
 <div class="card card--accent" style="margin-bottom: 16px;">
   <div class="row">
     <a class="btn btn--primary" href="/journal/{{.Today}}?back=/journal">+ Today</a>
+    <a class="btn btn--secondary" href="/journal/week/{{.ThisWeek}}?back=/journal">This week</a>
     <label class="field">
       <span class="field-label">Any day</span>
       <input type="date" max="{{.Today}}"
              onchange="if (this.value) window.location.href='/journal/'+this.value+'?back=/journal'">
     </label>
     <label class="field">
+      {{/* No preset value: selecting the current week from a pre-filled input
+           wouldn't fire onchange (value unchanged), so the current week was
+           unreachable here. Use the "This week" button above, or pick any
+           week — including the current one — from the empty picker. */}}
       <span class="field-label">Any week</span>
-      <input type="week" value="{{.ThisWeek}}"
+      <input type="week"
              onchange="if (this.value) window.location.href='/journal/week/'+this.value+'?back=/journal'">
     </label>
   </div>
 </div>
 
-<!-- FILTER panel -->
-<form class="card" method="get" action="/journal" style="margin-bottom: 16px;">
-  <div class="card-title">Filter</div>
-  <div class="row">
-    <label class="field">
-      <span class="field-label">From</span>
-      <input type="date" name="from" value="{{.FilterFrom}}">
-    </label>
-    <label class="field">
-      <span class="field-label">To</span>
-      <input type="date" name="to" value="{{.FilterTo}}">
-    </label>
-  </div>
-  <div class="row" style="margin-top: 12px;">
-    <div>
-      <div class="field-label" style="margin-bottom: 6px;">Type</div>
-      <div class="chip-row">
-        <label class="chip scope-day"><input type="checkbox" name="scope" value="day"   {{if index $.ScopeSelected "day"}}checked{{end}}>Day</label>
-        <label class="chip scope-trade"><input type="checkbox" name="scope" value="trade" {{if index $.ScopeSelected "trade"}}checked{{end}}>Trade</label>
-        <label class="chip scope-week"><input type="checkbox" name="scope" value="week"  {{if index $.ScopeSelected "week"}}checked{{end}}>Week</label>
-        <label class="chip scope-group"><input type="checkbox" name="scope" value="group" {{if index $.ScopeSelected "group"}}checked{{end}}>Group</label>
+<!-- FILTER panel: collapsed by default, auto-open when a filter is active.
+     The summary row is always visible (toggle + active chips + count +
+     downloads); the form expands below only when engaged. -->
+<details class="filter-panel" {{if .FilterActive}}open{{end}}>
+  <summary class="filter-bar">
+    <span class="filter-toggle">Filters{{if .FilterActive}} · {{.FilterCount}}{{end}} <span class="filter-caret">▾</span></span>
+    <span class="filter-active-chips">
+      {{range .ActiveFilters}}<a class="fchip" href="{{.RemoveURL}}" title="Remove filter">{{.Label}} <span class="fchip-x">✕</span></a>{{end}}
+    </span>
+    <span class="filter-bar-right">
+      <span class="muted"><span class="num">{{len .Items}}</span> entries</span>
+      <a href="/journal/export.md{{if .ExportQS}}?{{.ExportQS}}{{end}}" class="btn btn--secondary btn--sm">Download .md</a>
+      <a href="/journal/export.pdf{{if .ExportQS}}?{{.ExportQS}}{{end}}" class="btn btn--secondary btn--sm">Download PDF</a>
+    </span>
+  </summary>
+
+  <form class="filter-form" method="get" action="/journal">
+    <div class="row">
+      <label class="field">
+        <span class="field-label">From</span>
+        <input type="date" name="from" value="{{.FilterFrom}}">
+      </label>
+      <label class="field">
+        <span class="field-label">To</span>
+        <input type="date" name="to" value="{{.FilterTo}}">
+      </label>
+    </div>
+    <div class="row" style="margin-top: 12px;">
+      <div>
+        <div class="field-label" style="margin-bottom: 6px;">Type</div>
+        <div class="chip-row">
+          <label class="chip scope-day"><input type="checkbox" name="scope" value="day"   {{if index $.ScopeSelected "day"}}checked{{end}}>Day</label>
+          <label class="chip scope-trade"><input type="checkbox" name="scope" value="trade" {{if index $.ScopeSelected "trade"}}checked{{end}}>Trade</label>
+          <label class="chip scope-week"><input type="checkbox" name="scope" value="week"  {{if index $.ScopeSelected "week"}}checked{{end}}>Week</label>
+          <label class="chip scope-group"><input type="checkbox" name="scope" value="group" {{if index $.ScopeSelected "group"}}checked{{end}}>Group</label>
+        </div>
+      </div>
+      <div>
+        <div class="field-label" style="margin-bottom: 6px;">Tag</div>
+        <div class="chip-row">
+          <label class="chip tag-good"><input type="checkbox" name="tag" value="good"     {{if index $.TagSelected "good"}}checked{{end}}>Good</label>
+          <label class="chip tag-neutral"><input type="checkbox" name="tag" value="neutral" {{if index $.TagSelected "neutral"}}checked{{end}}>Neutral</label>
+          <label class="chip tag-bad"><input type="checkbox" name="tag" value="bad"      {{if index $.TagSelected "bad"}}checked{{end}}>Bad</label>
+          <label class="chip tag-untagged"><input type="checkbox" name="tag" value="untagged" {{if index $.TagSelected "untagged"}}checked{{end}}>Untagged</label>
+        </div>
       </div>
     </div>
-    <div>
-      <div class="field-label" style="margin-bottom: 6px;">Tag</div>
-      <div class="chip-row">
-        <label class="chip tag-good"><input type="checkbox" name="tag" value="good"     {{if index $.TagSelected "good"}}checked{{end}}>Good</label>
-        <label class="chip tag-neutral"><input type="checkbox" name="tag" value="neutral" {{if index $.TagSelected "neutral"}}checked{{end}}>Neutral</label>
-        <label class="chip tag-bad"><input type="checkbox" name="tag" value="bad"      {{if index $.TagSelected "bad"}}checked{{end}}>Bad</label>
-        <label class="chip tag-untagged"><input type="checkbox" name="tag" value="untagged" {{if index $.TagSelected "untagged"}}checked{{end}}>Untagged</label>
+    {{if or .StrategyOptions .StrategyNoneChecked}}
+    <div class="row" style="margin-top: 12px;">
+      <div>
+        <div class="field-label" style="margin-bottom: 6px;">Strategy</div>
+        <div class="chip-row">
+          {{range .StrategyOptions}}
+            <label class="chip strategy-filter-chip"><input type="checkbox" name="strategy" value="{{.ID}}" {{if .Checked}}checked{{end}}>{{.Name}}</label>
+          {{end}}
+          <label class="chip strategy-filter-chip"><input type="checkbox" name="strategy" value="none" {{if $.StrategyNoneChecked}}checked{{end}}>Unassigned</label>
+        </div>
       </div>
     </div>
-  </div>
-  <div class="row" style="margin-top: 16px;">
-    <button type="submit" class="btn btn--primary">Apply</button>
-    {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear</a>{{end}}
-    {{/* Export buttons mirror the *applied* filter state — same as Apply. */}}
-    <a href="/journal/export.md{{if .ExportQS}}?{{.ExportQS}}{{end}}" class="btn btn--secondary btn--sm">Download .md</a>
-    <a href="/journal/export.pdf{{if .ExportQS}}?{{.ExportQS}}{{end}}" class="btn btn--secondary btn--sm">Download PDF</a>
-    <span class="muted" style="margin-left: auto;"><span class="num">{{len .Items}}</span> entries{{if .FilterActive}} (filtered){{end}}.</span>
-  </div>
-</form>
+    {{end}}
+    <div class="row" style="margin-top: 16px;">
+      <button type="submit" class="btn btn--primary">Apply</button>
+      {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear all</a>{{end}}
+    </div>
+  </form>
+</details>
 
 {{if .Items}}
 <ul class="feed">
   {{range .Items}}
-    <li>
+    <li class="{{if eq .Tag "good"}}row-tag-good{{else if eq .Tag "bad"}}row-tag-bad{{end}}">
       <a class="entry-link" href="{{.EditURL}}">
         <span class="scope-badge scope-{{.Scope}}">
           {{if eq .Scope "day"}}Day
@@ -90,7 +119,10 @@
           {{end}}
           <div class="entry-preview">{{snippet .Body 180}}</div>
         </span>
-        {{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}
+        <span class="entry-pills">
+          {{if .Strategy}}<span class="pill strategy-chip" title="Strategy: {{.Strategy}}">{{.Strategy}}</span>{{end}}
+          <span class="tag-slot">{{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}</span>
+        </span>
       </a>
     </li>
   {{end}}
@@ -111,6 +143,28 @@
 {{end}}
 
 <style>
+  /* Collapsible filter panel. The summary is the always-visible compact bar;
+     the form below shows only when the <details> is open. */
+  .filter-panel { border: 1px solid var(--border); border-radius: var(--r-md);
+                  background: var(--bg-elev); margin-bottom: 16px; }
+  .filter-bar { list-style: none; cursor: pointer; display: flex; align-items: center;
+                gap: 12px; flex-wrap: wrap; padding: 10px 14px; }
+  .filter-bar::-webkit-details-marker { display: none; }
+  .filter-panel[open] > .filter-bar { border-bottom: 1px solid var(--border); }
+  .filter-toggle { font-weight: 600; font-size: 13px; color: var(--fg);
+                   display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .filter-caret { color: var(--fg-muted); transition: transform var(--t-fast); display: inline-block; }
+  .filter-panel[open] .filter-caret { transform: rotate(180deg); }
+  .filter-active-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
+  .fchip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
+           border-radius: var(--r-pill); font-size: 12px; font-weight: 500;
+           background: var(--accent-soft); color: var(--accent); text-decoration: none;
+           transition: background var(--t-fast); }
+  .fchip:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+  .fchip-x { font-size: 10px; opacity: 0.75; }
+  .filter-bar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; flex-shrink: 0; }
+  .filter-form { padding: 14px; }
+
   /* Chip/scope/tag colors. Hue stays consistent between the chip-picker and
      the scope-badge / tag-chip pills shown on each feed entry. */
   .chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
@@ -128,6 +182,8 @@
   .chip:has(:checked).tag-neutral { background: var(--bg-sunken);   border-color: var(--fg-muted); color: var(--fg); }
   .chip:has(:checked).tag-bad     { background: var(--neg-soft);    border-color: var(--neg);    color: var(--neg); }
   .chip:has(:checked).tag-untagged{ background: var(--bg-sunken);   border-color: var(--fg-subtle); color: var(--fg-muted); }
+  .chip:has(:checked).strategy-filter-chip { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 16%, transparent);
+                                             border-color: var(--brand-teal, var(--accent)); color: var(--brand-teal, var(--accent)); }
 
   /* Feed list */
   ul.feed { list-style: none; padding: 0; margin: 0;
@@ -136,6 +192,19 @@
   ul.feed li { padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background var(--t-fast); }
   ul.feed li:last-child { border-bottom: 0; }
   ul.feed li:hover { background: var(--bg-hover); }
+  /* Subtle tag-based row tint. color-mix blends a small amount of the
+     pos/neg hue into the row base, so it reads gently in both light and
+     dark themes (both --pos/--neg and --bg-elev are theme variables).
+     Neutral / untagged rows get no tint. */
+  ul.feed li.row-tag-good { background: color-mix(in srgb, var(--pos) 9%, var(--bg-elev)); }
+  ul.feed li.row-tag-bad  { background: color-mix(in srgb, var(--neg) 9%, var(--bg-elev)); }
+  ul.feed li.row-tag-good:hover { background: color-mix(in srgb, var(--pos) 16%, var(--bg-elev)); }
+  ul.feed li.row-tag-bad:hover  { background: color-mix(in srgb, var(--neg) 16%, var(--bg-elev)); }
+  /* Dark theme: the same hue over a dark base reads fainter, so mix in more. */
+  [data-theme="dark"] ul.feed li.row-tag-good { background: color-mix(in srgb, var(--pos) 20%, var(--bg-elev)); }
+  [data-theme="dark"] ul.feed li.row-tag-bad  { background: color-mix(in srgb, var(--neg) 20%, var(--bg-elev)); }
+  [data-theme="dark"] ul.feed li.row-tag-good:hover { background: color-mix(in srgb, var(--pos) 30%, var(--bg-elev)); }
+  [data-theme="dark"] ul.feed li.row-tag-bad:hover  { background: color-mix(in srgb, var(--neg) 30%, var(--bg-elev)); }
   ul.feed a.entry-link { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: start; text-decoration: none; color: var(--fg); }
   .scope-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px;
                  border-radius: var(--r-pill); font-size: 11px; font-weight: 600;
@@ -152,5 +221,16 @@
   .tag-chip-good    { background: var(--pos-soft); color: var(--pos); }
   .tag-chip-neutral { background: var(--bg-sunken); color: var(--fg-muted); }
   .tag-chip-bad     { background: var(--neg-soft); color: var(--neg); }
+  /* Strategy chip: distinct from tag chips (teal/brand), with a small
+     "playbook" leading glyph so it reads as a strategy, not a tag. */
+  .entry-pills { display: inline-flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  /* Fixed-width tag slot, always present (even when the entry has no tag) so
+     the strategy chip to its left keeps a consistent right edge across rows
+     whether or not a tag is shown. Both chips align into tidy columns. */
+  .tag-slot { width: 72px; display: inline-flex; justify-content: flex-end; flex-shrink: 0; }
+  .strategy-chip { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 16%, transparent);
+                   color: var(--brand-teal, var(--accent)); max-width: 200px; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+  .strategy-chip::before { content: "▦ "; font-size: 10px; opacity: 0.8; }
 </style>
 {{end}}

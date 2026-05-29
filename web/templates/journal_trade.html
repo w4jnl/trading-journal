@@ -26,9 +26,12 @@
 
 <form method="post" action="/trades/{{.TradeID}}/journal">
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
-  <div class="row-sm" style="margin-bottom: 12px;">
-    <span class="label" style="margin-right: 4px;">Tag</span>
-    {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+  <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
+    <div>
+      <span class="label" style="margin-right: 4px;">Tag</span>
+      {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+    </div>
+    {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
   </div>
 
   {{template "journal_editor" (dict
@@ -61,6 +64,8 @@
   "EntryID"      0
   "EmptyMessage" "Trade not found."
 )}}
+
+{{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 
 {{template "trade_sheet" .}}
 {{end}}
