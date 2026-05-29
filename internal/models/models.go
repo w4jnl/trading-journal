@@ -156,6 +156,12 @@ type Strategy struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type StrategyPlaybook struct {
+	UserID    int64     `json:"user_id"`
+	Body      string    `json:"body"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type SyncLog struct {
 	ID          int64     `json:"id"`
 	AccountID   *int64    `json:"account_id"`
