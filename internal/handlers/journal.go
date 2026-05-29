@@ -147,19 +147,132 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	y, wk := now.ISOWeek()
 	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
 
+	// Strategy filter options (the user's strategies) + a name lookup for the
+	// active-chip labels.
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+	stratName := map[int64]string{}
+	stratOpts := make([]journalStrategyOption, 0, len(strategies))
+	for _, s := range strategies {
+		stratName[s.ID] = s.Name
+		stratOpts = append(stratOpts, journalStrategyOption{ID: s.ID, Name: s.Name, Checked: filters.strategySet[s.ID]})
+	}
+
+	filterCount := len(filters.scopes) + len(filters.tags) + len(filters.strategies)
+	if filters.strategyNone {
+		filterCount++
+	}
+	if filters.fromStr != "" {
+		filterCount++
+	}
+	if filters.toStr != "" {
+		filterCount++
+	}
+
+	activeChips := buildJournalActiveChips(filters, stratName)
+
 	h.renderPage(w, r, "journal_feed.html", map[string]any{
-		"NavActive":     "journal",
-		"BackHref":      validBackHref(r),
-		"Items":         items,
-		"Today":         todayStr,
-		"ThisWeek":      thisWeekStr,
-		"FilterFrom":    filters.fromStr,
-		"FilterTo":      filters.toStr,
-		"ScopeSelected": filters.scopeSet, // map[string]bool — used by checkboxes
-		"TagSelected":   filters.tagSet,
-		"FilterActive":  filters.active(),
-		"ExportQS":      template.URL(exportQueryString(filters)), // ready-to-append (without leading '?')
+		"NavActive":           "journal",
+		"BackHref":            validBackHref(r),
+		"Items":               items,
+		"Today":               todayStr,
+		"ThisWeek":            thisWeekStr,
+		"FilterFrom":          filters.fromStr,
+		"FilterTo":            filters.toStr,
+		"ScopeSelected":       filters.scopeSet, // map[string]bool — used by checkboxes
+		"TagSelected":         filters.tagSet,
+		"StrategyOptions":     stratOpts,
+		"StrategyNoneChecked": filters.strategyNone,
+		"FilterActive":        filters.active(),
+		"FilterCount":         filterCount,
+		"ActiveFilters":       activeChips,
+		"ExportQS":            template.URL(exportQueryString(filters)), // ready-to-append (without leading '?')
 	})
+}
+
+// journalStrategyOption is one checkbox in the feed's Strategy filter row.
+type journalStrategyOption struct {
+	ID      int64
+	Name    string
+	Checked bool
+}
+
+// journalActiveChip is one removable chip on the collapsed filter bar. RemoveURL
+// is the current feed URL with just this one filter value dropped.
+type journalActiveChip struct {
+	Label     string
+	RemoveURL string
+}
+
+// buildJournalActiveChips renders one chip per active filter value, each with a
+// RemoveURL that drops only that value (other active filters persist).
+func buildJournalActiveChips(f journalFilters, stratName map[int64]string) []journalActiveChip {
+	// Materialize the current params, then a helper clones-minus-one.
+	base := url.Values{}
+	if f.fromStr != "" {
+		base.Set("from", f.fromStr)
+	}
+	if f.toStr != "" {
+		base.Set("to", f.toStr)
+	}
+	for _, s := range f.scopes {
+		base.Add("scope", s)
+	}
+	for _, t := range f.tags {
+		base.Add("tag", t)
+	}
+	for _, id := range f.strategies {
+		base.Add("strategy", strconv.FormatInt(id, 10))
+	}
+	if f.strategyNone {
+		base.Add("strategy", "none")
+	}
+	removeURL := func(key, val string) string {
+		v := url.Values{}
+		for k, vals := range base {
+			for _, x := range vals {
+				if k == key && x == val {
+					continue
+				}
+				v.Add(k, x)
+			}
+		}
+		if enc := v.Encode(); enc != "" {
+			return "/journal?" + enc
+		}
+		return "/journal"
+	}
+
+	scopeLabels := map[string]string{"day": "Day", "trade": "Trade", "week": "Week", "group": "Group"}
+	tagLabels := map[string]string{"good": "Good", "neutral": "Neutral", "bad": "Bad", "untagged": "Untagged"}
+
+	var chips []journalActiveChip
+	if f.fromStr != "" {
+		chips = append(chips, journalActiveChip{"From " + f.fromStr, removeURL("from", f.fromStr)})
+	}
+	if f.toStr != "" {
+		chips = append(chips, journalActiveChip{"To " + f.toStr, removeURL("to", f.toStr)})
+	}
+	for _, s := range f.scopes {
+		chips = append(chips, journalActiveChip{scopeLabels[s], removeURL("scope", s)})
+	}
+	for _, t := range f.tags {
+		chips = append(chips, journalActiveChip{tagLabels[t], removeURL("tag", t)})
+	}
+	for _, id := range f.strategies {
+		name := stratName[id]
+		if name == "" {
+			continue // unknown / not the user's — don't surface a chip we can't label
+		}
+		chips = append(chips, journalActiveChip{name, removeURL("strategy", strconv.FormatInt(id, 10))})
+	}
+	if f.strategyNone {
+		chips = append(chips, journalActiveChip{"Unassigned", removeURL("strategy", "none")})
+	}
+	return chips
 }
 
 // exportQueryString re-emits the active filters as a URL query string so the
@@ -179,10 +292,17 @@ func exportQueryString(f journalFilters) string {
 	for _, t := range f.tags {
 		v.Add("tag", t)
 	}
+	for _, id := range f.strategies {
+		v.Add("strategy", strconv.FormatInt(id, 10))
+	}
+	if f.strategyNone {
+		v.Add("strategy", "none")
+	}
 	return v.Encode()
 }
 
-// journalFilters carries the parsed feed filters: date range + scope + tag.
+// journalFilters carries the parsed feed filters: date range + scope + tag +
+// strategy.
 type journalFilters struct {
 	from, to      *time.Time
 	fromStr, toStr string
@@ -192,17 +312,24 @@ type journalFilters struct {
 	// (tag column IS NULL). The DB tag values are good/neutral/bad.
 	tags    []string
 	tagSet  map[string]bool
+	// strategies are the selected strategy ids; strategyNone selects entries
+	// with no strategy attached (strategy_id IS NULL).
+	strategies   []int64
+	strategyNone bool
+	strategySet  map[int64]bool
 }
 
 func (f journalFilters) active() bool {
-	return f.from != nil || f.to != nil || len(f.scopes) > 0 || len(f.tags) > 0
+	return f.from != nil || f.to != nil || len(f.scopes) > 0 || len(f.tags) > 0 ||
+		len(f.strategies) > 0 || f.strategyNone
 }
 
-// parseJournalFilters reads ?from=&to=&scope=&tag= from the request.
+// parseJournalFilters reads ?from=&to=&scope=&tag=&strategy= from the request.
 func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
 	f := journalFilters{
-		scopeSet: map[string]bool{},
-		tagSet:   map[string]bool{},
+		scopeSet:    map[string]bool{},
+		tagSet:      map[string]bool{},
+		strategySet: map[int64]bool{},
 	}
 	if v := strings.TrimSpace(r.URL.Query().Get("from")); v != "" {
 		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
@@ -233,6 +360,16 @@ func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
 				f.tags = append(f.tags, v)
 				f.tagSet[v] = true
 			}
+		}
+	}
+	for _, v := range r.URL.Query()["strategy"] {
+		if v == "none" {
+			f.strategyNone = true
+			continue
+		}
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil && id > 0 && !f.strategySet[id] {
+			f.strategies = append(f.strategies, id)
+			f.strategySet[id] = true
 		}
 	}
 	return f
@@ -304,6 +441,21 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 		if len(parts) > 0 {
 			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
 		}
+	}
+	if len(f.strategies) > 0 || f.strategyNone {
+		var parts []string
+		if len(f.strategies) > 0 {
+			ph := strings.Repeat("?,", len(f.strategies))
+			ph = ph[:len(ph)-1]
+			parts = append(parts, "je.strategy_id IN ("+ph+")")
+			for _, id := range f.strategies {
+				args = append(args, id)
+			}
+		}
+		if f.strategyNone {
+			parts = append(parts, "je.strategy_id IS NULL")
+		}
+		clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
 	}
 
 	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
@@ -1132,6 +1284,13 @@ func filterDescription(f journalFilters) string {
 	}
 	if len(f.tags) > 0 {
 		parts = append(parts, "tag: "+strings.Join(f.tags, ", "))
+	}
+	if len(f.strategies) > 0 || f.strategyNone {
+		n := len(f.strategies)
+		if f.strategyNone {
+			n++
+		}
+		parts = append(parts, fmt.Sprintf("strategy: %d selected", n))
 	}
 	if len(parts) == 0 {
 		return ""
