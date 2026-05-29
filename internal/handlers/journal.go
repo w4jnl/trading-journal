@@ -60,6 +60,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		DateLabel string
 		MetaLabel string // "APEX-1 / MESM6 long · $42.50" for trade, "May 4–10" for week
 		Tag       string
+		Strategy  string // assigned strategy name, "" when none
 		Body      string
 		EditURL   string // where to navigate when the row is clicked
 		// Group-only — populated when Scope == "group", zero otherwise.
@@ -79,6 +80,9 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		if row.Tag != nil {
 			fi.Tag = *row.Tag
+		}
+		if row.StrategyName != nil {
+			fi.Strategy = *row.StrategyName
 		}
 		switch row.Scope {
 		case "day":
@@ -249,6 +253,7 @@ type feedRow struct {
 	TradeDirection *string
 	TradeNetPnl    *float64
 	AccountName    *string
+	StrategyName   *string
 }
 
 // listJournalFeedFiltered runs a raw SQL query so the dynamic WHERE clause
@@ -304,10 +309,11 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
 	             je.mood, je.tag, je.scope,
 	             t.symbol, t.direction, t.net_pnl,
-	             a.name
+	             a.name, s.name
 	      FROM journal_entries je
-	      LEFT JOIN trades t   ON t.id = je.trade_id
-	      LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
+	      LEFT JOIN trades t      ON t.id = je.trade_id
+	      LEFT JOIN accounts a    ON a.id = COALESCE(je.account_id, t.account_id)
+	      LEFT JOIN strategies s  ON s.id = je.strategy_id
 	      WHERE ` + strings.Join(clauses, " AND ") + `
 	      ORDER BY je.entry_date DESC, je.id DESC
 	      LIMIT ?`
@@ -326,7 +332,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			&r.ID, &r.TradeID, &r.AccountID, &r.EntryDate, &r.Body,
 			&r.Mood, &r.Tag, &r.Scope,
 			&r.TradeSymbol, &r.TradeDirection, &r.TradeNetPnl,
-			&r.AccountName,
+			&r.AccountName, &r.StrategyName,
 		); err != nil {
 			return nil, err
 		}

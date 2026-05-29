@@ -90,7 +90,10 @@
           {{end}}
           <div class="entry-preview">{{snippet .Body 180}}</div>
         </span>
-        {{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}
+        <span class="entry-pills">
+          {{if .Strategy}}<span class="pill strategy-chip" title="Strategy: {{.Strategy}}">{{.Strategy}}</span>{{end}}
+          {{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}
+        </span>
       </a>
     </li>
   {{end}}
@@ -152,5 +155,12 @@
   .tag-chip-good    { background: var(--pos-soft); color: var(--pos); }
   .tag-chip-neutral { background: var(--bg-sunken); color: var(--fg-muted); }
   .tag-chip-bad     { background: var(--neg-soft); color: var(--neg); }
+  /* Strategy chip: distinct from tag chips (teal/brand), with a small
+     "playbook" leading glyph so it reads as a strategy, not a tag. */
+  .entry-pills { display: inline-flex; gap: 6px; align-items: center; flex-shrink: 0; }
+  .strategy-chip { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 16%, transparent);
+                   color: var(--brand-teal, var(--accent)); max-width: 200px; overflow: hidden;
+                   text-overflow: ellipsis; white-space: nowrap; }
+  .strategy-chip::before { content: "▦ "; font-size: 10px; opacity: 0.8; }
 </style>
 {{end}}
