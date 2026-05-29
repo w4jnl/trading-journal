@@ -1460,7 +1460,10 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .je-templates,
 .je-recall {
   position: fixed;
-  z-index: 50;
+  /* Above the trade-sheet modal backdrop (z-index 100) so the menu is
+     usable when the journal editor is opened inside the trade sheet;
+     below the command palette (200) and toast stack (300). */
+  z-index: 150;
   min-width: 260px;
   max-width: 380px;
   max-height: 340px;
