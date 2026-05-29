@@ -333,7 +333,37 @@
       anchor.appendChild(button);
     }
     anchor.appendChild(box);
+    positionDropdown(button, box);
+    // Reposition on scroll / resize while open (the box is position:fixed,
+    // so it doesn't track the button on its own). Self-removing: once the
+    // caller's close handler detaches the box, the next event tears the
+    // listeners down.
+    var reposition = function () {
+      if (!box.isConnected) {
+        window.removeEventListener("scroll", reposition, true);
+        window.removeEventListener("resize", reposition);
+        return;
+      }
+      positionDropdown(button, box);
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
     return anchor;
+  }
+
+  // positionDropdown places a position:fixed dropdown just below its trigger
+  // button, right-aligned to it, clamped into the viewport. Fixed positioning
+  // is what lets the menu escape the editor root's `overflow: hidden`.
+  function positionDropdown(button, box) {
+    var r = button.getBoundingClientRect();
+    box.style.top = Math.round(r.bottom + 4) + "px";
+    var width = box.offsetWidth || 260;
+    var left = Math.round(r.right - width);
+    var pad = 8;
+    if (left < pad) left = pad;
+    var maxLeft = window.innerWidth - width - pad;
+    if (left > maxLeft) left = Math.max(pad, maxLeft);
+    box.style.left = left + "px";
   }
 
   // ---------- Templates dropdown ----------

@@ -1461,13 +1461,13 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   display: inline-flex;
 }
 
-/* Templates / Recall dropdown — shared styles. */
+/* Templates / Recall dropdown — shared styles. position:fixed (with
+   coordinates set in JS from the trigger button's rect) so the menu
+   escapes the journal editor root's `overflow: hidden`. */
 .je-templates,
 .je-recall {
-  position: absolute;
-  right: 0;
-  top: calc(100% + 4px);
-  z-index: 20;
+  position: fixed;
+  z-index: 50;
   min-width: 260px;
   max-width: 380px;
   max-height: 340px;
