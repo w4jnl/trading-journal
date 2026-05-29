@@ -166,24 +166,22 @@
      use and when. Rendered view + collapsible rich editor. */}}
 <div class="lib-section playbook-section">
   <div class="lib-section-head">
-    <div>
-      <h2>Strategy playbook</h2>
-      <p class="muted" style="font-size: 12px; margin: 2px 0 0 0;">A single document describing which strategy to use, and when. Markdown supported.</p>
-    </div>
-    <details class="lib-new">
-      <summary><span class="btn btn--secondary btn--sm">{{if .PlaybookBody}}Edit playbook{{else}}+ Write playbook{{end}}</span></summary>
-      <form method="post" action="/library/playbook" class="lib-form">
-        <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-        <div class="field"><span class="field-label">Playbook (markdown)</span>
-          {{template "journal_editor" (dict
-            "Body" .PlaybookBody "Name" "body" "Scope" "any"
-            "Placeholder" "## When to trade which strategy\n\n- **ORB breakout** - first 30m, trend days...\n- **Mean reversion** - chop / range days..."
-            "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "320px" "EntryID" 0)}}
-        </div>
-        <div class="row"><button type="submit" class="btn btn--primary">Save playbook</button></div>
-      </form>
-    </details>
+    <h2>Strategy playbook</h2>
   </div>
+
+  <details class="lib-new">
+    <summary><span class="btn btn--secondary btn--sm">{{if .PlaybookBody}}Edit playbook{{else}}+ Write playbook{{end}}</span></summary>
+    <form method="post" action="/library/playbook" class="lib-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field"><span class="field-label">Playbook (markdown)</span>
+        {{template "journal_editor" (dict
+          "Body" .PlaybookBody "Name" "body" "Scope" "any"
+          "Placeholder" "## When to trade which strategy\n\n- **ORB breakout** - first 30m, trend days...\n- **Mean reversion** - chop / range days..."
+          "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "320px" "EntryID" 0)}}
+      </div>
+      <div class="row"><button type="submit" class="btn btn--primary">Save playbook</button></div>
+    </form>
+  </details>
 
   {{if .PlaybookBody}}
   <div class="card playbook-card"><div class="markdown-preview">{{.PlaybookRendered}}</div></div>
