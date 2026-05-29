@@ -318,26 +318,20 @@
       });
   }
 
-  // mountDropdown ensures `button` is wrapped in a position:relative span
-  // (.je-dropdown-anchor) and appends `box` as a sibling of the button
-  // inside that span. Appending block content directly into a <button>
-  // is invalid HTML and renders flattened/overlapping in WebKit, which is
-  // what broke the Recall list's multi-line items. Idempotent: re-wrapping
-  // an already-wrapped button is a no-op. Returns the anchor element.
+  // mountDropdown portals `box` to <body> and positions it (fixed) under the
+  // trigger `button`. Rendering inside the editor subtree hit two problems:
+  // a <button> flattens block children (overlap), and the editor root's
+  // `overflow: hidden` + inner stacking contexts clipped the menu's first
+  // row. Appending to <body> sidesteps both — nothing between :root and the
+  // box can clip or overlap it.
   function mountDropdown(button, box) {
-    var anchor = button.parentElement;
-    if (!anchor || !anchor.classList.contains("je-dropdown-anchor")) {
-      anchor = document.createElement("span");
-      anchor.className = "je-dropdown-anchor";
-      button.parentNode.insertBefore(anchor, button);
-      anchor.appendChild(button);
-    }
-    anchor.appendChild(box);
+    document.body.appendChild(box);
     positionDropdown(button, box);
+    box.scrollTop = 0;
     // Reposition on scroll / resize while open (the box is position:fixed,
     // so it doesn't track the button on its own). Self-removing: once the
-    // caller's close handler detaches the box, the next event tears the
-    // listeners down.
+    // close handler detaches the box, the next event tears the listeners
+    // down.
     var reposition = function () {
       if (!box.isConnected) {
         window.removeEventListener("scroll", reposition, true);
@@ -348,12 +342,10 @@
     };
     window.addEventListener("scroll", reposition, true);
     window.addEventListener("resize", reposition);
-    return anchor;
   }
 
   // positionDropdown places a position:fixed dropdown just below its trigger
-  // button, right-aligned to it, clamped into the viewport. Fixed positioning
-  // is what lets the menu escape the editor root's `overflow: hidden`.
+  // button, right-aligned to it, clamped into the viewport.
   function positionDropdown(button, box) {
     var r = button.getBoundingClientRect();
     box.style.top = Math.round(r.bottom + 4) + "px";
@@ -369,7 +361,8 @@
   // ---------- Templates dropdown ----------
 
   function toggleTemplates(ctx, button) {
-    var existing = ctx.root.querySelector(".je-templates");
+    // Menus live in <body>, so look there. At most one is open.
+    var existing = document.querySelector(".je-templates");
     if (existing) { existing.remove(); return; }
     fetchTemplates(ctx).then(function (templates) {
       var box = document.createElement("div");
@@ -392,14 +385,12 @@
         });
         box.appendChild(item);
       });
-      // Mount as a sibling of the button (inside a positioned wrapper),
-      // NOT inside it: a <button> only allows phrasing content, so block
-      // children render flattened/overlapping.
-      var anchor = mountDropdown(button, box);
-      // Close on outside click / Esc.
+      mountDropdown(button, box);
+      // Close on outside click / Esc. box lives in <body>, so check both
+      // the trigger and the box explicitly.
       function close(e) {
         if (e.type === "keydown" && e.key !== "Escape") return;
-        if (e.type === "click" && (anchor.contains(e.target))) return;
+        if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
         box.remove();
         document.removeEventListener("click", close, true);
         document.removeEventListener("keydown", close);
@@ -438,7 +429,7 @@
   // ---------- Recall (prior entries of same scope) ----------
 
   function toggleRecall(ctx, button) {
-    var existing = ctx.root.querySelector(".je-recall");
+    var existing = document.querySelector(".je-recall");
     if (existing) { existing.remove(); return; }
     fetchRecent(ctx).then(function (entries) {
       var box = document.createElement("div");
@@ -475,10 +466,10 @@
         });
         box.appendChild(item);
       });
-      var anchor = mountDropdown(button, box);
+      mountDropdown(button, box);
       function close(e) {
         if (e.type === "keydown" && e.key !== "Escape") return;
-        if (e.type === "click" && (anchor.contains(e.target))) return;
+        if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
         box.remove();
         document.removeEventListener("click", close, true);
         document.removeEventListener("keydown", close);

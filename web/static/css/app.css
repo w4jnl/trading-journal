@@ -1453,17 +1453,10 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   letter-spacing: 0.04em;
 }
 
-/* Wrapper that anchors a toolbar dropdown. The dropdown is a sibling of
-   the trigger <button> inside this span (NOT a child of the button — a
-   button can't hold block content without flattening it). */
-.je-dropdown-anchor {
-  position: relative;
-  display: inline-flex;
-}
-
-/* Templates / Recall dropdown — shared styles. position:fixed (with
-   coordinates set in JS from the trigger button's rect) so the menu
-   escapes the journal editor root's `overflow: hidden`. */
+/* Templates / Recall dropdown — shared styles. Portaled to <body> and
+   position:fixed (coordinates set in JS from the trigger button's rect) so
+   the menu escapes the journal editor root's `overflow: hidden` and any
+   inner stacking context. */
 .je-templates,
 .je-recall {
   position: fixed;
