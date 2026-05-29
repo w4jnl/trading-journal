@@ -13,6 +13,18 @@ imports:
 oi_dashboards:
   root: "./oi_dashboard"
 
+# Periodic backup. When enabled, the app writes one tar.gz snapshot at
+# startup (skipped if today's already exists) and one daily at `hour`
+# local time into `dir`. Each archive holds a consistent SQLite copy
+# (VACUUM INTO), the attachments dir, the imports processed/failed audit
+# trail, and config.yaml. Retention keeps the 10 newest archives plus one
+# per calendar month forever. NOTE: archives include config.yaml's
+# session secret -- protect `dir` with filesystem permissions.
+backup:
+  enabled: true
+  dir: "./backups"
+  hour: 4 # 0-23, local server time
+
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

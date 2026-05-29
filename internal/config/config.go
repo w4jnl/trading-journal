@@ -16,7 +16,17 @@ type Config struct {
 	Imports      Imports      `yaml:"imports"`
 	OIDashboards OIDashboards `yaml:"oi_dashboards"`
 	Auth         Auth         `yaml:"auth"`
+	Backup       Backup       `yaml:"backup"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// Backup controls the periodic on-disk snapshot. When Enabled, the app writes
+// one archive at startup (deduped per day) and one daily at Hour local time
+// into Dir. Retention keeps the 10 newest plus one per calendar month forever.
+type Backup struct {
+	Dir     string `yaml:"dir"`
+	Hour    int    `yaml:"hour"` // 0-23, local server time
+	Enabled bool   `yaml:"enabled"`
 }
 
 // Auth controls the multi-user authentication layer. Mode "local" runs the
@@ -85,6 +95,7 @@ func defaults() Config {
 				AdminGroup:  "admin",
 			},
 		},
+		Backup:   Backup{Dir: "./backups", Hour: 4, Enabled: true},
 		Timezone: "America/Chicago",
 	}
 }
@@ -111,6 +122,9 @@ func (c Config) Validate() error {
 		}
 	default:
 		return fmt.Errorf("auth.mode must be \"local\" or \"proxy\", got %q", a.Mode)
+	}
+	if c.Backup.Enabled && (c.Backup.Hour < 0 || c.Backup.Hour > 23) {
+		return fmt.Errorf("backup.hour must be 0-23, got %d", c.Backup.Hour)
 	}
 	return nil
 }
