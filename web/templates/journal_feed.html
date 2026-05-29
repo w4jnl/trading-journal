@@ -68,7 +68,7 @@
 {{if .Items}}
 <ul class="feed">
   {{range .Items}}
-    <li>
+    <li class="{{if eq .Tag "good"}}row-tag-good{{else if eq .Tag "bad"}}row-tag-bad{{end}}">
       <a class="entry-link" href="{{.EditURL}}">
         <span class="scope-badge scope-{{.Scope}}">
           {{if eq .Scope "day"}}Day
@@ -139,6 +139,14 @@
   ul.feed li { padding: 12px 16px; border-bottom: 1px solid var(--border); transition: background var(--t-fast); }
   ul.feed li:last-child { border-bottom: 0; }
   ul.feed li:hover { background: var(--bg-hover); }
+  /* Subtle tag-based row tint. color-mix blends a small amount of the
+     pos/neg hue into the row base, so it reads gently in both light and
+     dark themes (both --pos/--neg and --bg-elev are theme variables).
+     Neutral / untagged rows get no tint. */
+  ul.feed li.row-tag-good { background: color-mix(in srgb, var(--pos) 9%, var(--bg-elev)); }
+  ul.feed li.row-tag-bad  { background: color-mix(in srgb, var(--neg) 9%, var(--bg-elev)); }
+  ul.feed li.row-tag-good:hover { background: color-mix(in srgb, var(--pos) 16%, var(--bg-elev)); }
+  ul.feed li.row-tag-bad:hover  { background: color-mix(in srgb, var(--neg) 16%, var(--bg-elev)); }
   ul.feed a.entry-link { display: grid; grid-template-columns: 92px 1fr auto; gap: 12px; align-items: start; text-decoration: none; color: var(--fg); }
   .scope-badge { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px;
                  border-radius: var(--r-pill); font-size: 11px; font-weight: 600;
