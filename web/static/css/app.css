@@ -1453,16 +1453,20 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   letter-spacing: 0.04em;
 }
 
-/* Templates / Recall dropdown — shared styles. */
+/* Templates / Recall dropdown — shared styles. Portaled to <body> and
+   position:fixed (coordinates set in JS from the trigger button's rect) so
+   the menu escapes the journal editor root's `overflow: hidden` and any
+   inner stacking context. */
 .je-templates,
 .je-recall {
-  position: absolute;
-  right: 0;
-  top: 32px;
-  z-index: 5;
-  min-width: 220px;
-  max-width: 360px;
-  max-height: 320px;
+  position: fixed;
+  /* Above the trade-sheet modal backdrop (z-index 100) so the menu is
+     usable when the journal editor is opened inside the trade sheet;
+     below the command palette (200) and toast stack (300). */
+  z-index: 150;
+  min-width: 260px;
+  max-width: 380px;
+  max-height: 340px;
   overflow-y: auto;
   background: var(--bg-raised);
   border: 1px solid var(--border);
@@ -1483,26 +1487,51 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   background: transparent;
   border: 0;
   height: auto;
+  min-height: 0;
   font-family: var(--font-sans);
 }
 .je-templates-item { white-space: nowrap; }
+
+/* Recall items stack a date line + a snippet with a hairline separator so
+   adjacent multi-line entries never read as one blob. NOTE: keep these as
+   display:block, NOT flex. A <button> with display:flex hits a long-standing
+   WebKit bug where the button's content is clipped at the top — that was
+   what cut the first row's date in half. Block layout sidesteps it; the
+   date/snippet are block divs that stack naturally. */
+.je-recall-item {
+  display: block;
+  padding: 8px 10px;
+}
+.je-recall-item + .je-recall-item {
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.je-recall-item + .je-recall-item:last-child { border-radius: 0 0 var(--r-sm) var(--r-sm); }
+
 .je-templates-item:hover,
 .je-recall-item:hover { background: var(--accent-soft); color: var(--accent); }
 
 .je-recall-item .je-recall-date {
-  font-weight: 500;
+  font-weight: 600;
   font-size: 12px;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .je-recall-item .je-recall-snippet {
   color: var(--fg-muted);
   font-size: 11px;
-  line-height: 1.4;
+  line-height: 1.45;
+  margin-top: 3px;
+  max-height: calc(1.45em * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
-  margin-top: 2px;
+  word-break: break-word;
 }
 .je-recall-item:hover .je-recall-snippet { color: var(--accent); }
 .je-recall-empty {

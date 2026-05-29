@@ -6,16 +6,16 @@
 <h1>Import CSV</h1>
 
 <div class="card" style="margin-bottom: 24px;">
-  <p class="muted" style="margin-bottom: 16px;">Drop a MotiveWave or TopstepX CSV here, or copy one to <code>imports/inbox/</code> for auto-import. Format is detected from the header row.</p>
+  <p class="muted" style="margin-bottom: 16px;">Drop one or more MotiveWave or TopstepX CSVs here, or copy them to <code>imports/inbox/</code> for auto-import. Format is detected from the header row. Import order doesn't matter — trades are rebuilt from all fills chronologically.</p>
   <form id="import-form" hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
     <div id="drop-zone" class="drop-zone">
       <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--fg-subtle); margin-bottom: 14px;">
         <path d="M12 3 L12 16"/><polyline points="7 11 12 16 17 11"/><line x1="4" y1="20" x2="20" y2="20"/>
       </svg>
-      <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">Drop a .csv file here</div>
-      <div class="muted" style="margin-bottom: 18px;">or pick from disk</div>
+      <div style="font-weight: 600; font-size: 16px; margin-bottom: 4px;">Drop .csv files here</div>
+      <div class="muted" style="margin-bottom: 18px;">or pick from disk (multiple allowed)</div>
       <div class="row" style="justify-content: center;">
-        <input type="file" name="file" accept=".csv" required>
+        <input type="file" name="file" accept=".csv" multiple required>
         <button type="submit" class="btn btn--primary">Import</button>
         <span id="busy" class="muted htmx-indicator"><span class="spinner"></span> working…</span>
       </div>
@@ -63,11 +63,18 @@
 
     zone.addEventListener('drop', async (e) => {
       if (!e.dataTransfer || !e.dataTransfer.files.length) return;
-      const file = e.dataTransfer.files[0];
+      // Collect every dropped file. Filter to .csv so a stray non-CSV in a
+      // multi-select drop doesn't 400 the whole batch; the server also
+      // detects format per file. Sort by name client-side for a stable
+      // visual order (the server sorts too).
+      const files = Array.from(e.dataTransfer.files)
+        .filter((f) => /\.csv$/i.test(f.name))
+        .sort((a, b) => a.name.localeCompare(b.name));
+      if (!files.length) return;
       const fd = new FormData();
-      fd.append('file', file);
+      files.forEach((f) => fd.append('file', f));
       const out = document.getElementById('outcome');
-      out.innerHTML = '<div class="card"><span class="spinner"></span> working…</div>';
+      out.innerHTML = '<div class="card"><span class="spinner"></span> importing ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…</div>';
       try {
         const resp = await fetch('/import/upload', { method: 'POST', body: fd });
         out.innerHTML = await resp.text();

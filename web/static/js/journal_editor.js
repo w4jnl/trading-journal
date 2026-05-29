@@ -318,10 +318,51 @@
       });
   }
 
+  // mountDropdown portals `box` to <body> and positions it (fixed) under the
+  // trigger `button`. Rendering inside the editor subtree hit two problems:
+  // a <button> flattens block children (overlap), and the editor root's
+  // `overflow: hidden` + inner stacking contexts clipped the menu's first
+  // row. Appending to <body> sidesteps both — nothing between :root and the
+  // box can clip or overlap it.
+  function mountDropdown(button, box) {
+    document.body.appendChild(box);
+    positionDropdown(button, box);
+    box.scrollTop = 0;
+    // Reposition on scroll / resize while open (the box is position:fixed,
+    // so it doesn't track the button on its own). Self-removing: once the
+    // close handler detaches the box, the next event tears the listeners
+    // down.
+    var reposition = function () {
+      if (!box.isConnected) {
+        window.removeEventListener("scroll", reposition, true);
+        window.removeEventListener("resize", reposition);
+        return;
+      }
+      positionDropdown(button, box);
+    };
+    window.addEventListener("scroll", reposition, true);
+    window.addEventListener("resize", reposition);
+  }
+
+  // positionDropdown places a position:fixed dropdown just below its trigger
+  // button, right-aligned to it, clamped into the viewport.
+  function positionDropdown(button, box) {
+    var r = button.getBoundingClientRect();
+    box.style.top = Math.round(r.bottom + 4) + "px";
+    var width = box.offsetWidth || 260;
+    var left = Math.round(r.right - width);
+    var pad = 8;
+    if (left < pad) left = pad;
+    var maxLeft = window.innerWidth - width - pad;
+    if (left > maxLeft) left = Math.max(pad, maxLeft);
+    box.style.left = left + "px";
+  }
+
   // ---------- Templates dropdown ----------
 
   function toggleTemplates(ctx, button) {
-    var existing = ctx.root.querySelector(".je-templates");
+    // Menus live in <body>, so look there. At most one is open.
+    var existing = document.querySelector(".je-templates");
     if (existing) { existing.remove(); return; }
     fetchTemplates(ctx).then(function (templates) {
       var box = document.createElement("div");
@@ -344,9 +385,9 @@
         });
         box.appendChild(item);
       });
-      // Position relative to the button (which is position:relative in CSS).
-      button.appendChild(box);
-      // Close on outside click / Esc.
+      mountDropdown(button, box);
+      // Close on outside click / Esc. box lives in <body>, so check both
+      // the trigger and the box explicitly.
       function close(e) {
         if (e.type === "keydown" && e.key !== "Escape") return;
         if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
@@ -388,7 +429,7 @@
   // ---------- Recall (prior entries of same scope) ----------
 
   function toggleRecall(ctx, button) {
-    var existing = ctx.root.querySelector(".je-recall");
+    var existing = document.querySelector(".je-recall");
     if (existing) { existing.remove(); return; }
     fetchRecent(ctx).then(function (entries) {
       var box = document.createElement("div");
@@ -400,9 +441,14 @@
         box.appendChild(empty);
       }
       entries.forEach(function (e) {
-        var item = document.createElement("button");
-        item.type = "button";
+        // A <div role=button>, NOT a <button>: a real button won't lay out
+        // multi-line block children reliably (WebKit clips flex buttons at
+        // the top and ignores block child heights), which is what made the
+        // date overlap / clip. A div lays the date + snippet out normally.
+        var item = document.createElement("div");
         item.className = "je-recall-item";
+        item.setAttribute("role", "button");
+        item.tabIndex = 0;
         var d = document.createElement("div");
         d.className = "je-recall-date";
         d.textContent = e.date_label;
@@ -419,13 +465,17 @@
         s.className = "je-recall-snippet";
         s.textContent = e.snippet;
         item.appendChild(s);
-        item.addEventListener("click", function () {
+        var activate = function () {
           showPeek(ctx, e);
           box.remove();
+        };
+        item.addEventListener("click", activate);
+        item.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); activate(); }
         });
         box.appendChild(item);
       });
-      button.appendChild(box);
+      mountDropdown(button, box);
       function close(e) {
         if (e.type === "keydown" && e.key !== "Escape") return;
         if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
