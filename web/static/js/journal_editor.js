@@ -441,9 +441,14 @@
         box.appendChild(empty);
       }
       entries.forEach(function (e) {
-        var item = document.createElement("button");
-        item.type = "button";
+        // A <div role=button>, NOT a <button>: a real button won't lay out
+        // multi-line block children reliably (WebKit clips flex buttons at
+        // the top and ignores block child heights), which is what made the
+        // date overlap / clip. A div lays the date + snippet out normally.
+        var item = document.createElement("div");
         item.className = "je-recall-item";
+        item.setAttribute("role", "button");
+        item.tabIndex = 0;
         var d = document.createElement("div");
         d.className = "je-recall-date";
         d.textContent = e.date_label;
@@ -460,9 +465,13 @@
         s.className = "je-recall-snippet";
         s.textContent = e.snippet;
         item.appendChild(s);
-        item.addEventListener("click", function () {
+        var activate = function () {
           showPeek(ctx, e);
           box.remove();
+        };
+        item.addEventListener("click", activate);
+        item.addEventListener("keydown", function (ev) {
+          if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); activate(); }
         });
         box.appendChild(item);
       });
