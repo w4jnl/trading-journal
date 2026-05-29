@@ -165,12 +165,11 @@
 {{/* Strategy playbook: a single per-user markdown doc on which strategy to
      use and when. Rendered view + collapsible rich editor. */}}
 <div class="lib-section playbook-section">
-  <div class="lib-section-head">
-    <h2>Strategy playbook</h2>
-  </div>
-
-  <details class="lib-new">
-    <summary><span class="btn btn--secondary btn--sm">{{if .PlaybookBody}}Edit playbook{{else}}+ Write playbook{{end}}</span></summary>
+  <details class="lib-new playbook-edit">
+    <summary class="playbook-edit-summary">
+      <h2 style="margin:0; font-size:15px;">Strategy playbook</h2>
+      <span class="btn btn--secondary btn--sm">{{if .PlaybookBody}}Edit playbook{{else}}+ Write playbook{{end}}</span>
+    </summary>
     <form method="post" action="/library/playbook" class="lib-form">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <div class="field"><span class="field-label">Playbook (markdown)</span>
@@ -237,6 +236,10 @@
   .lib-empty { padding:16px; text-align:center; border:1px dashed var(--border); border-radius: var(--r-md); }
 
   .playbook-section { margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--border); }
+  /* Summary IS the header row: title left, toggle button right; the editor
+     form opens full-width below it (via .lib-new[open] > .lib-form). */
+  .playbook-edit > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .playbook-edit > summary::-webkit-details-marker { display:none; }
   .playbook-card { padding: 16px 18px; }
   .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
   .markdown-preview h1:first-child, .markdown-preview h2:first-child, .markdown-preview h3:first-child { margin-top: 0; }
