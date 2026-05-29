@@ -67,18 +67,33 @@
   {{if .CandidateTrades}}
   <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" id="tp-form" style="margin-top: 8px;">
     <input type="search" class="tp-search" placeholder="Filter by symbol, date, account…" autocomplete="off" aria-label="Filter trades">
-    <div class="tp-list">
-      {{range .CandidateTrades}}
-      <label class="tp-row" data-search="{{.Search}}">
-        <input type="checkbox" name="trade_id" value="{{.ID}}">
-        <span class="tp-date muted">{{.Date}}</span>
-        <span class="tp-sym"><strong>{{.Symbol}}</strong></span>
-        {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
-        <span class="tp-qty num">{{formatQty .Qty}}</span>
-        <span class="tp-pnl num">{{pnlClass .NetPnl}}</span>
-        <span class="tp-acct muted">{{.Account}}</span>
-      </label>
-      {{end}}
+    <div class="tp-list table-scroll">
+      <table class="tp-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Entry (UTC)</th>
+            <th>Account</th>
+            <th>Symbol</th>
+            <th>Dir</th>
+            <th class="tabular">Qty</th>
+            <th class="tabular">Net P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .CandidateTrades}}
+          <tr class="tp-row" data-search="{{.Search}}">
+            <td class="tp-check"><input type="checkbox" name="trade_id" value="{{.ID}}"></td>
+            <td class="num muted">{{.Entry}}</td>
+            <td>{{.Account}}</td>
+            <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+            <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+            <td class="tabular num">{{formatQty .Qty}}</td>
+            <td class="tabular num">{{pnlChip .NetPnl}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
       <p class="tp-noresults muted" hidden>No trades match the filter.</p>
     </div>
     <div class="row" style="margin-top: 10px;">
@@ -101,17 +116,15 @@
   details.disclose > summary { list-style: none; cursor: pointer; }
   details.disclose > summary::-webkit-details-marker { display: none; }
 
-  /* Trade picker */
+  /* Trade picker — same column shape as the linked-trades table above. */
   .tp-search { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
-  .tp-list { max-height: 340px; overflow-y: auto; border: 1px solid var(--border);
-             border-radius: var(--r-md); }
-  .tp-row { display: grid; grid-template-columns: 56px 1fr auto auto auto 1fr;
-            align-items: center; gap: 10px; padding: 7px 10px; cursor: pointer;
-            border-bottom: 1px solid var(--border); font-size: 13px; }
-  .tp-row:last-of-type { border-bottom: 0; }
+  .tp-list { max-height: 360px; overflow-y: auto; }
+  .tp-table { width: 100%; }
+  .tp-table th, .tp-table td { white-space: nowrap; }
+  .tp-row { cursor: pointer; }
   .tp-row:hover { background: var(--bg-hover); }
-  .tp-row input[type=checkbox] { margin: 0; }
-  .tp-row .tp-acct { text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tp-row .tp-check { width: 1%; }
+  .tp-row .tp-check input[type=checkbox] { margin: 0; }
   .tp-noresults { padding: 14px; text-align: center; }
 </style>
 
@@ -143,6 +156,17 @@
     search.addEventListener('input', applyFilter);
     form.addEventListener('change', function (e) {
       if (e.target && e.target.matches('.tp-row input[type=checkbox]')) updateCount();
+    });
+    // Clicking anywhere on a row toggles its checkbox (except when the click
+    // is already on the checkbox, which toggles natively).
+    form.addEventListener('click', function (e) {
+      var row = e.target.closest('.tp-row');
+      if (!row) return;
+      if (e.target.matches('input[type=checkbox]')) return;
+      var cb = row.querySelector('input[type=checkbox]');
+      if (!cb) return;
+      cb.checked = !cb.checked;
+      updateCount();
     });
     updateCount();
   })();

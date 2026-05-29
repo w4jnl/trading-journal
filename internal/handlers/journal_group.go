@@ -458,19 +458,17 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	picks := make([]groupTradePick, 0, len(candidates))
 	for _, t := range candidates {
-		date := ""
-		if t.ExitTime != nil {
-			date = t.ExitTime.In(tz).Format("Jan 2")
-		}
+		entry := t.EntryTime.UTC().Format("2006-01-02 15:04")
 		picks = append(picks, groupTradePick{
-			ID:        t.ID,
-			Date:      date,
-			Symbol:    t.Symbol,
-			Direction: t.Direction,
-			Qty:       t.Qty,
-			NetPnl:    t.NetPnl,
-			Account:   t.AccountName,
-			Search:    strings.ToLower(date + " " + t.Symbol + " " + t.SymbolRoot + " " + t.Direction + " " + t.AccountName),
+			ID:         t.ID,
+			Entry:      entry,
+			Symbol:     t.Symbol,
+			SymbolRoot: t.SymbolRoot,
+			Direction:  t.Direction,
+			Qty:        t.Qty,
+			NetPnl:     t.NetPnl,
+			Account:    t.AccountName,
+			Search:     strings.ToLower(entry + " " + t.Symbol + " " + t.SymbolRoot + " " + t.Direction + " " + t.AccountName),
 		})
 	}
 
@@ -497,14 +495,15 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 // Date is pre-formatted in the trading tz and Search is a lowercased blob
 // the client filter matches against, so the template stays tz-agnostic.
 type groupTradePick struct {
-	ID        int64
-	Date      string
-	Symbol    string
-	Direction string
-	Qty       float64
-	NetPnl    *float64
-	Account   string
-	Search    string
+	ID         int64
+	Entry      string // entry time, "2006-01-02 15:04" UTC (matches the linked-trades table)
+	Symbol     string
+	SymbolRoot string
+	Direction  string
+	Qty        float64
+	NetPnl     *float64
+	Account    string
+	Search     string
 }
 
 // loadLinkableTrades returns the user's recent closed trades NOT already
