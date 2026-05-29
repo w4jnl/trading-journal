@@ -39,8 +39,12 @@
         <label class="field"><span class="field-label">Scope</span>
           <select name="scope">{{range .ScopeOptions}}<option value="{{.}}">{{.}}</option>{{end}}</select></label>
       </div>
-      <label class="field"><span class="field-label">Body (markdown)</span>
-        <textarea name="body" class="lib-textarea" rows="10" placeholder="## What worked&#10;-&#10;&#10;## What didn't&#10;-"></textarea></label>
+      <div class="field"><span class="field-label">Body (markdown)</span>
+        {{template "journal_editor" (dict
+          "Body" "" "Name" "body" "Scope" "any"
+          "Placeholder" "## What worked\n-\n\n## What didn't\n-"
+          "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "240px" "EntryID" 0)}}
+      </div>
       <div class="row"><button type="submit" class="btn btn--primary">Create template</button></div>
     </form>
   </details>
@@ -61,8 +65,12 @@
           <label class="field"><span class="field-label">Scope</span>
             <select name="scope">{{range $.ScopeOptions}}<option value="{{.}}" {{if eq . $tplScope}}selected{{end}}>{{.}}</option>{{end}}</select></label>
         </div>
-        <label class="field"><span class="field-label">Body (markdown)</span>
-          <textarea name="body" class="lib-textarea" rows="12">{{.Body}}</textarea></label>
+        <div class="field"><span class="field-label">Body (markdown)</span>
+          {{template "journal_editor" (dict
+            "Body" .Body "Name" "body" "Scope" "any"
+            "Placeholder" "Template body…"
+            "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "240px" "EntryID" 0)}}
+        </div>
         <div class="row" style="justify-content: space-between;">
           <button type="submit" class="btn btn--primary btn--sm">Save</button>
         </div>
@@ -113,8 +121,12 @@
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <label class="field"><span class="field-label">Name</span>
         <input type="text" name="name" required placeholder="e.g. ORB breakout"></label>
-      <label class="field"><span class="field-label">Strategy (markdown)</span>
-        <textarea name="body" class="lib-textarea" rows="14" placeholder="## Setup&#10;&#10;## Entry&#10;&#10;## Exit / management&#10;&#10;## Invalidation"></textarea></label>
+      <div class="field"><span class="field-label">Strategy (markdown)</span>
+        {{template "journal_editor" (dict
+          "Body" "" "Name" "body" "Scope" "any"
+          "Placeholder" "## Setup\n\n## Entry\n\n## Exit / management\n\n## Invalidation"
+          "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "300px" "EntryID" 0)}}
+      </div>
       <div class="row"><button type="submit" class="btn btn--primary">Create strategy</button></div>
     </form>
   </details>
@@ -130,8 +142,12 @@
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <label class="field"><span class="field-label">Name</span>
           <input type="text" name="name" value="{{.Name}}" required></label>
-        <label class="field"><span class="field-label">Strategy (markdown)</span>
-          <textarea name="body" class="lib-textarea" rows="16">{{.Body}}</textarea></label>
+        <div class="field"><span class="field-label">Strategy (markdown)</span>
+          {{template "journal_editor" (dict
+            "Body" .Body "Name" "body" "Scope" "any"
+            "Placeholder" "Strategy body…"
+            "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "300px" "EntryID" 0)}}
+        </div>
         <div class="row"><button type="submit" class="btn btn--primary btn--sm">Save</button></div>
       </form>
     </details>
@@ -179,7 +195,7 @@
   .lib-form { display:flex; flex-direction:column; gap:12px; padding:14px; }
   .lib-form-row { display:flex; gap:14px; flex-wrap:wrap; }
   .lib-form-row .field { flex:1 1 220px; }
-  .lib-textarea { width:100%; box-sizing:border-box; font-family: var(--font-mono); font-size:12px; line-height:1.5; }
+  .lib-form .field { width:100%; }
 
   /* New-item disclosure: full-width block so the form isn't squeezed to the
      toggle button's width. The summary shows just the compact button. */

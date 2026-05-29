@@ -10,6 +10,9 @@
     Mode          — "split" (default) | "single"
     EntryID       — optional entry ID (int64) — used as default attachment scope
     Templates     — bool — show templates dropdown
+    HideRecall    — bool — hide the Recall dropdown (e.g. in the Library
+                    template/strategy editors where prior-entry recall is
+                    meaningless)
     MinHeight     — px string, e.g. "360px" (default)
 
   Renders a wrapper that journal_editor.js looks for via [data-je]. The
@@ -47,8 +50,10 @@
     <button type="button" class="je-btn" data-je-action="templates" style="position:relative;"
             title="Apply template">Templates ▾</button>
     {{end}}
+    {{if not .HideRecall}}
     <button type="button" class="je-btn" data-je-action="recall" style="position:relative;"
             title="Look at a prior entry of the same scope">Recall ▾</button>
+    {{end}}
     <div class="je-spacer"></div>
     <span class="je-status" data-je-status></span>
   </div>
