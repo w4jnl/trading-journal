@@ -102,17 +102,18 @@ type JournalAttachment struct {
 }
 
 type JournalEntry struct {
-	ID        int64     `json:"id"`
-	TradeID   *int64    `json:"trade_id"`
-	AccountID *int64    `json:"account_id"`
-	EntryDate time.Time `json:"entry_date"`
-	Body      string    `json:"body"`
-	Mood      *int64    `json:"mood"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Tag       *string   `json:"tag"`
-	Scope     string    `json:"scope"`
-	UserID    *int64    `json:"user_id"`
+	ID         int64     `json:"id"`
+	TradeID    *int64    `json:"trade_id"`
+	AccountID  *int64    `json:"account_id"`
+	EntryDate  time.Time `json:"entry_date"`
+	Body       string    `json:"body"`
+	Mood       *int64    `json:"mood"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+	Tag        *string   `json:"tag"`
+	Scope      string    `json:"scope"`
+	UserID     *int64    `json:"user_id"`
+	StrategyID *int64    `json:"strategy_id"`
 }
 
 type JournalEntryTrade struct {
@@ -121,13 +122,14 @@ type JournalEntryTrade struct {
 }
 
 type JournalTemplate struct {
-	ID        int64     `json:"id"`
-	UserID    *int64    `json:"user_id"`
-	Name      string    `json:"name"`
-	Scope     string    `json:"scope"`
-	Body      string    `json:"body"`
-	Builtin   int64     `json:"builtin"`
-	CreatedAt time.Time `json:"created_at"`
+	ID        int64      `json:"id"`
+	UserID    *int64     `json:"user_id"`
+	Name      string     `json:"name"`
+	Scope     string     `json:"scope"`
+	Body      string     `json:"body"`
+	Builtin   int64      `json:"builtin"`
+	CreatedAt time.Time  `json:"created_at"`
+	UpdatedAt *time.Time `json:"updated_at"`
 }
 
 type Session struct {
@@ -143,6 +145,15 @@ type SizeClass struct {
 	Code      string `json:"code"`
 	Label     string `json:"label"`
 	SortOrder int64  `json:"sort_order"`
+}
+
+type Strategy struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Name      string    `json:"name"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type SyncLog struct {

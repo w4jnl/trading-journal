@@ -15,14 +15,14 @@ LIMIT 1;
 SELECT * FROM journal_entries WHERE trade_id = ? LIMIT 1;
 
 -- name: CreateJournalEntry :one
-INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope, strategy_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdateJournalEntry :exec
 -- Scope by user_id so a guessed entry id can't update someone else's entry.
 UPDATE journal_entries
-SET body = ?, mood = ?, tag = ?, updated_at = CURRENT_TIMESTAMP
+SET body = ?, mood = ?, tag = ?, strategy_id = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND user_id = ?;
 
 -- name: DeleteJournalEntry :exec

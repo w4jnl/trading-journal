@@ -412,23 +412,32 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	daySummary := summarizeTradeRows(dayTrades)
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal.html", map[string]any{
-		"NavActive": "journal",
-		"BackHref":  backHref,
-		"Date":      dateStr,
-		"DateNice":  date.Format("Mon, 2 Jan 2006"),
-		"PrevDay":   prevDay,
-		"NextDay":   nextDay,
-		"Today":     time.Now().In(h.localTZ()).Format("2006-01-02"),
-		"HasEntry":  hasEntry,
-		"Entry":     entry,
-		"Mood":      mood,
-		"Tag":       tag,
-		"Rendered":  rendered,
-		"Recent":    recent,
-		"Flash":     flash,
-		"Trades":    dayTrades,
-		"Summary":   daySummary,
+		"NavActive":        "journal",
+		"BackHref":         backHref,
+		"Date":             dateStr,
+		"DateNice":         date.Format("Mon, 2 Jan 2006"),
+		"PrevDay":          prevDay,
+		"NextDay":          nextDay,
+		"Today":            time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"HasEntry":         hasEntry,
+		"Entry":            entry,
+		"Mood":             mood,
+		"Tag":              tag,
+		"Rendered":         rendered,
+		"Recent":           recent,
+		"Flash":            flash,
+		"Trades":           dayTrades,
+		"Summary":          daySummary,
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(entry.StrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
 	})
 }
 
@@ -498,6 +507,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(r.FormValue("body"))
 	mood := parseMood(r.FormValue("mood"))
 	tag := parseTag(r.FormValue("tag"))
+	strategyID := h.parseStrategyID(r)
 
 	// Explicit delete signal from the editor's Delete button. We piggyback on
 	// the save endpoint instead of a /journal/{date}/delete route because that
@@ -528,13 +538,14 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
 		UserID:    userIDPtr(ctx),
-			TradeID:   nil,
-			AccountID: nil,
-			EntryDate: date,
-			Body:      body,
-			Mood:      mood,
-			Tag:       tag,
-			Scope:     "day",
+			TradeID:    nil,
+			AccountID:  nil,
+			EntryDate:  date,
+			Body:       body,
+			Mood:       mood,
+			Tag:        tag,
+			Scope:      "day",
+			StrategyID: strategyID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create journal: %w", err))
 			return
@@ -554,10 +565,11 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
 		UserID: userIDPtr(ctx),
-			Body: body,
-			Mood: mood,
-			Tag:  tag,
-			ID:   existing.ID,
+			Body:       body,
+			Mood:       mood,
+			Tag:        tag,
+			StrategyID: strategyID,
+			ID:         existing.ID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("update journal: %w", err))
 			return
@@ -589,10 +601,12 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 	var journalBody, journalTag string
 	var hasJournal bool
 	var journalEntryID int64
+	var journalStrategyID *int64
 	if entry, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
 		hasJournal = true
 		journalBody = entry.Body
 		journalEntryID = entry.ID
+		journalStrategyID = entry.StrategyID
 		if entry.Tag != nil {
 			journalTag = *entry.Tag
 		}
@@ -608,18 +622,27 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 	}
 	summary := summarizeTradeRows(trades)
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal_trade.html", map[string]any{
-		"NavActive":      "journal",
-		"BackHref":       validBackHref(r),
-		"Trade":          trade,
-		"TradeID":        id,
-		"HasJournal":     hasJournal,
-		"JournalBody":    journalBody,
-		"JournalTag":     journalTag,
-		"JournalEntryID": journalEntryID,
-		"Summary":        summary,
-		"Trades":         trades,
-		"Flash":          r.URL.Query().Get("flash"),
+		"NavActive":        "journal",
+		"BackHref":         validBackHref(r),
+		"Trade":            trade,
+		"TradeID":          id,
+		"HasJournal":       hasJournal,
+		"JournalBody":      journalBody,
+		"JournalTag":       journalTag,
+		"JournalEntryID":   journalEntryID,
+		"Summary":          summary,
+		"Trades":           trades,
+		"Flash":            r.URL.Query().Get("flash"),
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(journalStrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, journalStrategyID),
 	})
 }
 
@@ -666,21 +689,30 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	weekSummary := summarizeTradeRows(weekTrades)
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPage(w, r, "journal_week.html", map[string]any{
-		"NavActive":  "journal",
-		"BackHref":   validBackHref(r),
-		"WeekID":     fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
-		"WeekLabel":  fmt.Sprintf("Week %d, %d", isoWeek, isoYear),
-		"RangeLabel": fmt.Sprintf("%s – %s", monday.Format("Mon, 2 Jan"), sunday.Format("Mon, 2 Jan 2006")),
-		"PrevWeek":   fmt.Sprintf("%d-W%02d", py, pw),
-		"NextWeek":   fmt.Sprintf("%d-W%02d", ny, nw),
-		"HasEntry":   hasEntry,
-		"Entry":      entry,
-		"Tag":        tag,
-		"Rendered":   rendered,
-		"Flash":      r.URL.Query().Get("flash"),
-		"Trades":     weekTrades,
-		"Summary":    weekSummary,
+		"NavActive":        "journal",
+		"BackHref":         validBackHref(r),
+		"WeekID":           fmt.Sprintf("%d-W%02d", isoYear, isoWeek),
+		"WeekLabel":        fmt.Sprintf("Week %d, %d", isoWeek, isoYear),
+		"RangeLabel":       fmt.Sprintf("%s – %s", monday.Format("Mon, 2 Jan"), sunday.Format("Mon, 2 Jan 2006")),
+		"PrevWeek":         fmt.Sprintf("%d-W%02d", py, pw),
+		"NextWeek":         fmt.Sprintf("%d-W%02d", ny, nw),
+		"HasEntry":         hasEntry,
+		"Entry":            entry,
+		"Tag":              tag,
+		"Rendered":         rendered,
+		"Flash":            r.URL.Query().Get("flash"),
+		"Trades":           weekTrades,
+		"Summary":          weekSummary,
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(entry.StrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
 	})
 }
 
@@ -708,6 +740,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
+	strategyID := h.parseStrategyID(r)
 
 	existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
 	switch {
@@ -718,13 +751,14 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
 		UserID:    userIDPtr(ctx),
-			TradeID:   nil,
-			AccountID: nil,
-			EntryDate: monday,
-			Body:      body,
-			Mood:      nil,
-			Tag:       tag,
-			Scope:     "week",
+			TradeID:    nil,
+			AccountID:  nil,
+			EntryDate:  monday,
+			Body:       body,
+			Mood:       nil,
+			Tag:        tag,
+			Scope:      "week",
+			StrategyID: strategyID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create week journal: %w", err))
 			return
@@ -743,10 +777,11 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
 		UserID: userIDPtr(ctx),
-			Body: body,
-			Mood: existing.Mood,
-			Tag:  tag,
-			ID:   existing.ID,
+			Body:       body,
+			Mood:       existing.Mood,
+			Tag:        tag,
+			StrategyID: strategyID,
+			ID:         existing.ID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("update week journal: %w", err))
 			return

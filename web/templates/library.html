@@ -1,0 +1,175 @@
+{{define "title"}}Library — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+
+<h1>Library</h1>
+<p class="muted" style="margin-bottom: 16px;">Manage your journal templates and trading strategies. Templates pre-fill the editor; strategies are named playbooks you can attach to any journal entry.</p>
+
+{{if .Flash}}
+<div class="flash saved" style="margin-bottom: 16px;">
+  {{if eq .Flash "saved"}}Saved.
+  {{else if eq .Flash "cloned"}}Template cloned — edit your copy below.
+  {{else if eq .Flash "deleted"}}Deleted.
+  {{else}}{{.Flash}}{{end}}
+</div>
+{{end}}
+{{if .FlashErr}}<div class="flash empty" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>{{end}}
+
+<div class="tabs" style="margin-bottom: 20px;">
+  <a href="/library?tab=templates" class="tab {{if eq .Tab "templates"}}tab-on{{end}}">Templates</a>
+  <a href="/library?tab=strategies" class="tab {{if eq .Tab "strategies"}}tab-on{{end}}">Strategies</a>
+</div>
+
+{{if eq .Tab "templates"}}
+{{/* -------------------------------- TEMPLATES -------------------------------- */}}
+
+<h2 style="font-size: 15px;">Your templates</h2>
+<div class="table-scroll" style="margin-bottom: 12px;">
+  <table class="lib-table">
+    <thead><tr><th>Name</th><th>Scope</th><th style="text-align:right;">Actions</th></tr></thead>
+    <tbody>
+      {{range .UserTemplates}}
+      {{$tplScope := .Scope}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td><span class="pill">{{.Scope}}</span></td>
+        <td style="text-align:right;">
+          <details class="disclose">
+            <summary class="btn btn--secondary btn--sm" style="display:inline-flex;">Edit</summary>
+            <form method="post" action="/library/templates/{{.ID}}" class="card lib-edit">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <label class="field"><span class="field-label">Name</span>
+                <input type="text" name="name" value="{{.Name}}" required></label>
+              <label class="field"><span class="field-label">Scope</span>
+                <select name="scope">
+                  {{range $.ScopeOptions}}<option value="{{.}}" {{if eq . $tplScope}}selected{{end}}>{{.}}</option>{{end}}
+                </select></label>
+              <label class="field"><span class="field-label">Body (markdown)</span>
+                <textarea name="body" class="lib-textarea" rows="10">{{.Body}}</textarea></label>
+              <div class="row">
+                <button type="submit" class="btn btn--primary btn--sm">Save</button>
+              </div>
+            </form>
+          </details>
+          <form method="post" action="/library/templates/{{.ID}}/delete" style="display:inline;"
+                onsubmit="return confirm('Delete template {{.Name}}?');">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="3" class="muted" style="text-align:center; padding:16px;">No templates yet — create one below or clone a system template.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<details class="disclose card" style="padding:16px; margin-bottom: 28px;">
+  <summary class="btn btn--primary" style="display:inline-flex;">+ New template</summary>
+  <form method="post" action="/library/templates" style="margin-top:12px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="field" style="margin-bottom:10px;"><span class="field-label">Name</span>
+      <input type="text" name="name" required placeholder="e.g. Morning prep"></label>
+    <label class="field" style="margin-bottom:10px;"><span class="field-label">Scope</span>
+      <select name="scope">
+        {{range .ScopeOptions}}<option value="{{.}}">{{.}}</option>{{end}}
+      </select></label>
+    <label class="field" style="margin-bottom:10px;"><span class="field-label">Body (markdown)</span>
+      <textarea name="body" class="lib-textarea" rows="10" placeholder="## What worked&#10;-&#10;&#10;## What didn't&#10;-"></textarea></label>
+    <button type="submit" class="btn btn--primary">Create template</button>
+  </form>
+</details>
+
+<h2 style="font-size: 15px;">System templates <span class="muted" style="font-weight:400;">· read-only</span></h2>
+<div class="table-scroll">
+  <table class="lib-table">
+    <thead><tr><th>Name</th><th>Scope</th><th style="text-align:right;">Actions</th></tr></thead>
+    <tbody>
+      {{range .BuiltinTemplates}}
+      <tr>
+        <td>{{.Name}} <span class="pill pill-system">system</span></td>
+        <td><span class="pill">{{.Scope}}</span></td>
+        <td style="text-align:right;">
+          <form method="post" action="/library/templates/{{.ID}}/clone" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn--secondary btn--sm">Clone to edit</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="3" class="muted" style="text-align:center; padding:16px;">No system templates.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+{{else}}
+{{/* -------------------------------- STRATEGIES -------------------------------- */}}
+
+<h2 style="font-size: 15px;">Your strategies</h2>
+<p class="muted" style="margin-bottom: 12px; font-size: 12px;">A strategy is a named, markdown playbook. Attach one to any journal entry from its editor; the full strategy then shows on that entry.</p>
+<div class="table-scroll" style="margin-bottom: 12px;">
+  <table class="lib-table">
+    <thead><tr><th>Name</th><th>Updated</th><th style="text-align:right;">Actions</th></tr></thead>
+    <tbody>
+      {{range .Strategies}}
+      <tr>
+        <td><strong>{{.Name}}</strong></td>
+        <td class="muted num">{{.UpdatedAt.UTC.Format "2006-01-02"}}</td>
+        <td style="text-align:right;">
+          <details class="disclose">
+            <summary class="btn btn--secondary btn--sm" style="display:inline-flex;">Edit</summary>
+            <form method="post" action="/library/strategies/{{.ID}}" class="card lib-edit">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <label class="field"><span class="field-label">Name</span>
+                <input type="text" name="name" value="{{.Name}}" required></label>
+              <label class="field"><span class="field-label">Strategy (markdown)</span>
+                <textarea name="body" class="lib-textarea" rows="14">{{.Body}}</textarea></label>
+              <div class="row"><button type="submit" class="btn btn--primary btn--sm">Save</button></div>
+            </form>
+          </details>
+          <form method="post" action="/library/strategies/{{.ID}}/delete" style="display:inline;"
+                onsubmit="return confirm('Delete strategy {{.Name}}? Entries using it keep their note but lose the link.');">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="3" class="muted" style="text-align:center; padding:16px;">No strategies yet — create one below.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<details class="disclose card" style="padding:16px;">
+  <summary class="btn btn--primary" style="display:inline-flex;">+ New strategy</summary>
+  <form method="post" action="/library/strategies" style="margin-top:12px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="field" style="margin-bottom:10px;"><span class="field-label">Name</span>
+      <input type="text" name="name" required placeholder="e.g. ORB breakout"></label>
+    <label class="field" style="margin-bottom:10px;"><span class="field-label">Strategy (markdown)</span>
+      <textarea name="body" class="lib-textarea" rows="14" placeholder="## Setup&#10;&#10;## Entry&#10;&#10;## Exit / management&#10;&#10;## Invalidation"></textarea></label>
+    <button type="submit" class="btn btn--primary">Create strategy</button>
+  </form>
+</details>
+
+{{end}}
+
+<style>
+  .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); }
+  .tab { padding:8px 16px; border-radius: var(--r-md) var(--r-md) 0 0; color: var(--fg-muted); font-weight:500; font-size:13px; border:1px solid transparent; border-bottom:0; margin-bottom:-1px; }
+  .tab:hover { color: var(--fg); }
+  .tab-on { color: var(--fg); background: var(--bg-elevated); border-color: var(--border); }
+  .lib-table th, .lib-table td { padding:8px 10px; vertical-align: middle; }
+  .lib-edit { margin-top:8px; display:flex; flex-direction:column; gap:10px; max-width:680px; }
+  .lib-textarea { width:100%; box-sizing:border-box; font-family: var(--font-mono); font-size:12px; line-height:1.5; }
+  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; background: var(--bg-sunken); color: var(--fg-muted); }
+  .pill-system { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+  details.disclose { display:inline-block; }
+  details.disclose > summary { list-style:none; cursor:pointer; }
+  details.disclose > summary::-webkit-details-marker { display:none; }
+</style>
+{{end}}

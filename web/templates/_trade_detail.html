@@ -51,9 +51,12 @@
         hx-target="#trade-sheet-content"
         hx-swap="innerHTML"
         hx-encoding="application/x-www-form-urlencoded">
-    <div class="row-sm" style="margin-bottom: 8px;">
-      <span class="label" style="margin-right: 4px;">Tag</span>
-      {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+    <div class="row-sm" style="margin-bottom: 8px; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
+      <div>
+        <span class="label" style="margin-right: 4px;">Tag</span>
+        {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+      </div>
+      {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
     </div>
     {{template "journal_editor" (dict
       "Body"        $.JournalBody
@@ -74,6 +77,8 @@
   {{if or (eq $.Flash "saved") (eq $.Flash "deleted")}}
   <script>window.__journalChanged = true;</script>
   {{end}}
+
+  {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 </section>
 
 {{/* Executions live at the top of the render data (.Executions), NOT under

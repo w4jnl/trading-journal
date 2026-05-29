@@ -411,11 +411,13 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 	var journalBody, journalTag string
 	var hasJournal bool
 	var journalEntryID int64
+	var journalStrategyID *int64
 	var journalRendered template.HTML
 	if entry, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
 		hasJournal = true
 		journalBody = entry.Body
 		journalEntryID = entry.ID
+		journalStrategyID = entry.StrategyID
 		if entry.Tag != nil {
 			journalTag = *entry.Tag
 		}
@@ -425,16 +427,25 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		return
 	}
 
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
-		"Trade":           trade,
-		"TradeID":         id,
-		"Executions":      execs,
-		"HasJournal":      hasJournal,
-		"JournalBody":     journalBody,
-		"JournalTag":      journalTag,
-		"JournalEntryID":  journalEntryID,
-		"JournalRendered": journalRendered,
-		"Flash":           flash,
+		"Trade":            trade,
+		"TradeID":          id,
+		"Executions":       execs,
+		"HasJournal":       hasJournal,
+		"JournalBody":      journalBody,
+		"JournalTag":       journalTag,
+		"JournalEntryID":   journalEntryID,
+		"JournalRendered":  journalRendered,
+		"Flash":            flash,
+		"Strategies":       strategies,
+		"StrategyID":       strategyIDValue(journalStrategyID),
+		"AssignedStrategy": h.loadAssignedStrategy(r, journalStrategyID),
 	})
 }
 
@@ -460,6 +471,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
+	strategyID := h.parseStrategyID(r)
 	// Explicit Delete button — sets _action=delete so an empty body isn't
 	// the only way to remove an entry. Matches the day/week/group flow.
 	if r.FormValue("_action") == "delete" {
@@ -488,13 +500,14 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
 		UserID:    userIDPtr(ctx),
-			TradeID:   &tradeID,
-			AccountID: &trade.AccountID,
-			EntryDate: entryDate,
-			Body:      body,
-			Mood:      nil,
-			Tag:       tag,
-			Scope:     "trade",
+			TradeID:    &tradeID,
+			AccountID:  &trade.AccountID,
+			EntryDate:  entryDate,
+			Body:       body,
+			Mood:       nil,
+			Tag:        tag,
+			Scope:      "trade",
+			StrategyID: strategyID,
 		}); err != nil {
 			h.serverError(w, fmt.Errorf("create trade journal: %w", err))
 			return
@@ -512,10 +525,11 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		} else {
 			if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
 		UserID: userIDPtr(ctx),
-				Body: body,
-				Mood: existing.Mood, // preserve mood; trade entries don't expose it in v1
-				Tag:  tag,
-				ID:   existing.ID,
+				Body:       body,
+				Mood:       existing.Mood, // preserve mood; trade entries don't expose it in v1
+				Tag:        tag,
+				StrategyID: strategyID,
+				ID:         existing.ID,
 			}); err != nil {
 				h.serverError(w, fmt.Errorf("update trade journal: %w", err))
 				return
