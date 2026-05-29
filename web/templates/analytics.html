@@ -204,7 +204,7 @@
       <div class="blurb">
         <span class="pair">{{.Direction}} <span class="num">{{printf "%.0f" .Qty}}</span> <code>{{.Symbol}}</code> @ <span class="num">{{printf "%.2f" .EntryPrice}}</span></span>
         <span class="pair">→ <span class="num">{{printf "%.2f" .ExitPrice}}</span></span>
-        <span class="pair num">{{.ExitTime.UTC.Format "2006-01-02 15:04"}}</span>
+        <span class="pair num">{{ltime .ExitTime "datetime"}}</span>
         <span class="pair">{{.AccountName}}</span>
       </div>
     {{else}}<div class="value">—</div>{{end}}
@@ -220,7 +220,7 @@
       <div class="blurb">
         <span class="pair">{{.Direction}} <span class="num">{{printf "%.0f" .Qty}}</span> <code>{{.Symbol}}</code> @ <span class="num">{{printf "%.2f" .EntryPrice}}</span></span>
         <span class="pair">→ <span class="num">{{printf "%.2f" .ExitPrice}}</span></span>
-        <span class="pair num">{{.ExitTime.UTC.Format "2006-01-02 15:04"}}</span>
+        <span class="pair num">{{ltime .ExitTime "datetime"}}</span>
         <span class="pair">{{.AccountName}}</span>
       </div>
     {{else}}<div class="value">—</div>{{end}}

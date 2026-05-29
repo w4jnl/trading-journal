@@ -72,7 +72,7 @@
         <thead>
           <tr>
             <th></th>
-            <th>Entry (UTC)</th>
+            <th>Entry</th>
             <th>Account</th>
             <th>Symbol</th>
             <th>Dir</th>
@@ -84,7 +84,7 @@
           {{range .CandidateTrades}}
           <tr class="tp-row" data-search="{{.Search}}">
             <td class="tp-check"><input type="checkbox" name="trade_id" value="{{.ID}}"></td>
-            <td class="num muted">{{.Entry}}</td>
+            <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
             <td>{{.Account}}</td>
             <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
             <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>

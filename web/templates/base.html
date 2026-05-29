@@ -94,6 +94,37 @@
       };
     })();
   </script>
+  <script>
+    // Localize <time class="lt"> elements to the browser's timezone. The
+    // server renders them with a UTC instant in datetime= and a UTC fallback
+    // text; we rewrite the text from the Date's local components so the app's
+    // "YYYY-MM-DD HH:MM" look is preserved, just in local time.
+    (function () {
+      function pad(n) { return String(n).padStart(2, '0'); }
+      function localizeTimes(root) {
+        var scope = root || document;
+        scope.querySelectorAll('time.lt[datetime]:not([data-localized])').forEach(function (el) {
+          var d = new Date(el.getAttribute('datetime'));
+          if (isNaN(d.getTime())) return;
+          var Y = d.getFullYear(), M = pad(d.getMonth() + 1), D = pad(d.getDate());
+          var h = pad(d.getHours()), m = pad(d.getMinutes()), s = pad(d.getSeconds());
+          var date = Y + '-' + M + '-' + D;
+          var map = {
+            'date': date,
+            'datetime': date + ' ' + h + ':' + m,
+            'datetime-sec': date + ' ' + h + ':' + m + ':' + s,
+            'time': h + ':' + m
+          };
+          el.textContent = map[el.getAttribute('data-fmt')] || (date + ' ' + h + ':' + m);
+          el.setAttribute('data-localized', '1');
+        });
+      }
+      window.localizeTimes = localizeTimes;
+      document.addEventListener('DOMContentLoaded', function () { localizeTimes(document); });
+      // Re-localize HTMX-swapped fragments (trade-detail modal, journal saves…).
+      document.addEventListener('htmx:afterSwap', function (e) { localizeTimes(e.target); });
+    })();
+  </script>
 </head>
 <body>
   <div class="app-shell">

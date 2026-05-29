@@ -458,17 +458,17 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 	picks := make([]groupTradePick, 0, len(candidates))
 	for _, t := range candidates {
-		entry := t.EntryTime.UTC().Format("2006-01-02 15:04")
+		entryUTC := t.EntryTime.UTC().Format("2006-01-02 15:04")
 		picks = append(picks, groupTradePick{
 			ID:         t.ID,
-			Entry:      entry,
+			EntryTime:  t.EntryTime,
 			Symbol:     t.Symbol,
 			SymbolRoot: t.SymbolRoot,
 			Direction:  t.Direction,
 			Qty:        t.Qty,
 			NetPnl:     t.NetPnl,
 			Account:    t.AccountName,
-			Search:     strings.ToLower(entry + " " + t.Symbol + " " + t.SymbolRoot + " " + t.Direction + " " + t.AccountName),
+			Search:     strings.ToLower(entryUTC + " " + t.Symbol + " " + t.SymbolRoot + " " + t.Direction + " " + t.AccountName),
 		})
 	}
 
@@ -496,7 +496,7 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 // the client filter matches against, so the template stays tz-agnostic.
 type groupTradePick struct {
 	ID         int64
-	Entry      string // entry time, "2006-01-02 15:04" UTC (matches the linked-trades table)
+	EntryTime  time.Time // rendered browser-local via the lt helper
 	Symbol     string
 	SymbolRoot string
 	Direction  string

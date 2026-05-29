@@ -140,7 +140,7 @@
       <tr>
         <th class="col-sel"><input type="checkbox" id="sel-all" title="Select all on this page"></th>
         <th></th>
-        <th>Entry (UTC)</th>
+        <th>Entry time</th>
         <th>Account</th>
         <th>Symbol</th>
         <th>Dir</th>
@@ -166,7 +166,7 @@
         <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
           {{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
-        <td class="num muted">{{.EntryTime.UTC.Format "2006-01-02 15:04"}}</td>
+        <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
         <td>{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
         <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
         <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
