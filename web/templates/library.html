@@ -162,6 +162,33 @@
   {{end}}
 </div>
 
+{{/* Strategy playbook: a single per-user markdown doc on which strategy to
+     use and when. Rendered view + collapsible rich editor. */}}
+<div class="lib-section playbook-section">
+  <details class="lib-new playbook-edit">
+    <summary class="playbook-edit-summary">
+      <h2 style="margin:0; font-size:15px;">Strategy playbook</h2>
+      <span class="btn btn--secondary btn--sm">{{if .PlaybookBody}}Edit playbook{{else}}+ Write playbook{{end}}</span>
+    </summary>
+    <form method="post" action="/library/playbook" class="lib-form">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <div class="field"><span class="field-label">Playbook (markdown)</span>
+        {{template "journal_editor" (dict
+          "Body" .PlaybookBody "Name" "body" "Scope" "any"
+          "Placeholder" "## When to trade which strategy\n\n- **ORB breakout** - first 30m, trend days...\n- **Mean reversion** - chop / range days..."
+          "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "320px" "EntryID" 0)}}
+      </div>
+      <div class="row"><button type="submit" class="btn btn--primary">Save playbook</button></div>
+    </form>
+  </details>
+
+  {{if .PlaybookBody}}
+  <div class="card playbook-card"><div class="markdown-preview">{{.PlaybookRendered}}</div></div>
+  {{else}}
+  <p class="muted lib-empty">No playbook yet — click "Write playbook" to add one.</p>
+  {{end}}
+</div>
+
 {{end}}
 
 <style>
@@ -207,5 +234,18 @@
   .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; background: var(--bg-sunken); color: var(--fg-muted); }
   .pill-system { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .lib-empty { padding:16px; text-align:center; border:1px dashed var(--border); border-radius: var(--r-md); }
+
+  .playbook-section { margin-top: 8px; padding-top: 24px; border-top: 1px solid var(--border); }
+  /* Summary IS the header row: title left, toggle button right; the editor
+     form opens full-width below it (via .lib-new[open] > .lib-form). */
+  .playbook-edit > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
+  .playbook-edit > summary::-webkit-details-marker { display:none; }
+  .playbook-card { padding: 16px 18px; }
+  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
+  .markdown-preview h1:first-child, .markdown-preview h2:first-child, .markdown-preview h3:first-child { margin-top: 0; }
+  .markdown-preview ul, .markdown-preview ol { padding-left: 20px; }
+  .markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
+  .markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
+  .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
 </style>
 {{end}}

@@ -8,6 +8,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -44,21 +45,51 @@ func (h *Handlers) LibraryPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Strategy playbook — a single per-user markdown doc. May not exist yet.
+	var playbookBody string
+	if pb, err := h.Queries.GetStrategyPlaybook(ctx, uid); err == nil {
+		playbookBody = pb.Body
+	} else if !errors.Is(err, sql.ErrNoRows) {
+		h.serverError(w, fmt.Errorf("get playbook: %w", err))
+		return
+	}
+
 	tab := r.URL.Query().Get("tab")
 	if tab != "strategies" {
 		tab = "templates"
 	}
 	h.renderPage(w, r, "library.html", map[string]any{
-		"NavActive":      "library",
-		"BackHref":       validBackHref(r),
-		"Tab":            tab,
+		"NavActive":        "library",
+		"BackHref":         validBackHref(r),
+		"Tab":              tab,
 		"BuiltinTemplates": builtins,
-		"UserTemplates":  userTemplates,
-		"Strategies":     strategies,
-		"ScopeOptions":   []string{"any", "day", "week", "trade", "group"},
-		"Flash":          r.URL.Query().Get("flash"),
-		"FlashErr":       r.URL.Query().Get("err"),
+		"UserTemplates":    userTemplates,
+		"Strategies":       strategies,
+		"ScopeOptions":     []string{"any", "day", "week", "trade", "group"},
+		"PlaybookBody":     playbookBody,
+		"PlaybookRendered": template.HTML(renderMarkdown(playbookBody)),
+		"Flash":            r.URL.Query().Get("flash"),
+		"FlashErr":         r.URL.Query().Get("err"),
 	})
+}
+
+// PlaybookSave handles POST /library/playbook — upserts the user's single
+// strategy playbook document.
+func (h *Handlers) PlaybookSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	body := strings.TrimSpace(r.PostFormValue("body"))
+	if err := h.Queries.UpsertStrategyPlaybook(ctx, models.UpsertStrategyPlaybookParams{
+		UserID: userID(ctx),
+		Body:   body,
+	}); err != nil {
+		h.serverError(w, fmt.Errorf("save playbook: %w", err))
+		return
+	}
+	redirectLibrary(w, r, "strategies", "saved", "")
 }
 
 // ---- Templates ----

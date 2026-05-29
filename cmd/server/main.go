@@ -270,6 +270,7 @@ func run() error {
 	mux.HandleFunc("POST /library/strategies", h.StrategyCreate)
 	mux.HandleFunc("POST /library/strategies/{id}", h.StrategyUpdate)
 	mux.HandleFunc("POST /library/strategies/{id}/delete", h.StrategyDelete)
+	mux.HandleFunc("POST /library/playbook", h.PlaybookSave)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)

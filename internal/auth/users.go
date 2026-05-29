@@ -139,9 +139,11 @@ func PurgeUser(ctx context.Context, db *sql.DB, userID int64, opts PurgeUserOpti
 		`DELETE FROM executions   WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)`,
 		`DELETE FROM daily_stats  WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)`,
 		`DELETE FROM balance_anchors WHERE account_id IN (SELECT id FROM accounts WHERE user_id = ?)`,
-		// Accounts and per-user templates.
+		// Accounts and per-user templates / strategies / playbook.
 		`DELETE FROM accounts          WHERE user_id = ?`,
 		`DELETE FROM journal_templates WHERE user_id = ?`,
+		`DELETE FROM strategies        WHERE user_id = ?`,
+		`DELETE FROM strategy_playbooks WHERE user_id = ?`,
 		// sync_log.user_id is ON DELETE SET NULL in the schema, but
 		// foreign_keys = OFF (set above) means the implicit trigger
 		// doesn't fire. NULL the column explicitly here so audit
