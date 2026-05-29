@@ -449,6 +449,29 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Candidate trades for the "+ Add trades" picker: the user's recent
+	// closed trades not already linked to this group.
+	candidates, err := loadLinkableTrades(ctx, h.DB, userID(ctx), id, 300)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load linkable trades: %w", err))
+		return
+	}
+	picks := make([]groupTradePick, 0, len(candidates))
+	for _, t := range candidates {
+		entry := t.EntryTime.UTC().Format("2006-01-02 15:04")
+		picks = append(picks, groupTradePick{
+			ID:         t.ID,
+			Entry:      entry,
+			Symbol:     t.Symbol,
+			SymbolRoot: t.SymbolRoot,
+			Direction:  t.Direction,
+			Qty:        t.Qty,
+			NetPnl:     t.NetPnl,
+			Account:    t.AccountName,
+			Search:     strings.ToLower(entry + " " + t.Symbol + " " + t.SymbolRoot + " " + t.Direction + " " + t.AccountName),
+		})
+	}
+
 	h.renderPage(w, r, "journal_group.html", map[string]any{
 		"NavActive":        "journal",
 		"BackHref":         validBackHref(r),
@@ -464,7 +487,38 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(entry.StrategyID),
 		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
+		"CandidateTrades":  picks,
 	})
+}
+
+// groupTradePick is one row in the group editor's "+ Add trades" picker.
+// Date is pre-formatted in the trading tz and Search is a lowercased blob
+// the client filter matches against, so the template stays tz-agnostic.
+type groupTradePick struct {
+	ID         int64
+	Entry      string // entry time, "2006-01-02 15:04" UTC (matches the linked-trades table)
+	Symbol     string
+	SymbolRoot string
+	Direction  string
+	Qty        float64
+	NetPnl     *float64
+	Account    string
+	Search     string
+}
+
+// loadLinkableTrades returns the user's recent closed trades NOT already
+// linked to entryID, newest first, capped at limit.
+func loadLinkableTrades(ctx context.Context, db *sql.DB, userID, entryID int64, limit int) ([]linkedTrade, error) {
+	return scanLinkedTrades(ctx, db, `
+		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		FROM trades t
+		JOIN accounts a ON a.id = t.account_id
+		WHERE a.user_id = ?
+		  AND t.status = 'closed' AND t.exit_time IS NOT NULL
+		  AND t.id NOT IN (SELECT trade_id FROM journal_entry_trades WHERE journal_entry_id = ?)
+		ORDER BY t.exit_time DESC, t.id DESC
+		LIMIT ?`, userID, entryID, limit)
 }
 
 // GroupJournalSave handles POST /journal/group/{id}. Empty body deletes the
@@ -582,6 +636,33 @@ func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "no trade_id", http.StatusBadRequest)
 		return
 	}
+
+	// Ownership: the group entry must belong to the caller.
+	var ownEntry int64
+	if err := h.DB.QueryRowContext(ctx,
+		"SELECT 1 FROM journal_entries WHERE id = ? AND user_id = ? AND scope = 'group'",
+		entryID, userID(ctx),
+	).Scan(&ownEntry); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	// Keep only trade ids the caller actually owns, so a guessed/foreign id
+	// can't be linked into the user's group entry.
+	owned := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		var ok int64
+		if err := h.DB.QueryRowContext(ctx,
+			"SELECT 1 FROM trades t JOIN accounts a ON a.id = t.account_id WHERE t.id = ? AND a.user_id = ?",
+			id, userID(ctx),
+		).Scan(&ok); err == nil {
+			owned = append(owned, id)
+		}
+	}
+	if len(owned) == 0 {
+		http.Error(w, "no owned trades to link", http.StatusBadRequest)
+		return
+	}
+	ids = owned
 
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {

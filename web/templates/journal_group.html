@@ -62,18 +62,48 @@
 
 {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 
-<details class="disclose" style="margin-top: 16px; margin-bottom: 16px;">
-  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add another trade</summary>
-  <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" style="margin-top: 8px;">
-    <div class="row">
-      <label class="field">
-        <span class="field-label">Trade ID</span>
-        <input type="number" name="trade_id" min="1" required placeholder="e.g. 1234" style="width: 140px;">
-      </label>
-      <button type="submit" class="btn btn--primary btn--sm">Add</button>
-      <span class="muted" style="font-size: 11px;">Copy a trade ID from <a href="/trades">/trades</a>.</span>
+<details class="disclose trade-picker" style="margin-top: 16px; margin-bottom: 16px;">
+  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add trades</summary>
+  {{if .CandidateTrades}}
+  <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" id="tp-form" style="margin-top: 8px;">
+    <input type="search" class="tp-search" placeholder="Filter by symbol, date, account…" autocomplete="off" aria-label="Filter trades">
+    <div class="tp-list table-scroll">
+      <table class="tp-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Entry (UTC)</th>
+            <th>Account</th>
+            <th>Symbol</th>
+            <th>Dir</th>
+            <th class="tabular">Qty</th>
+            <th class="tabular">Net P&amp;L</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{range .CandidateTrades}}
+          <tr class="tp-row" data-search="{{.Search}}">
+            <td class="tp-check"><input type="checkbox" name="trade_id" value="{{.ID}}"></td>
+            <td class="num muted">{{.Entry}}</td>
+            <td>{{.Account}}</td>
+            <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+            <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+            <td class="tabular num">{{formatQty .Qty}}</td>
+            <td class="tabular num">{{pnlChip .NetPnl}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+      <p class="tp-noresults muted" hidden>No trades match the filter.</p>
+    </div>
+    <div class="row" style="margin-top: 10px;">
+      <button type="submit" class="btn btn--primary btn--sm tp-add" disabled>Add selected</button>
+      <span class="muted tp-count" style="font-size: 11px;"></span>
     </div>
   </form>
+  {{else}}
+  <p class="muted" style="margin-top: 8px;">All your closed trades are already in this group (or you have none yet).</p>
+  {{end}}
 </details>
 
 {{template "trade_sheet" .}}
@@ -85,5 +115,60 @@
   .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
   details.disclose > summary { list-style: none; cursor: pointer; }
   details.disclose > summary::-webkit-details-marker { display: none; }
+
+  /* Trade picker — same column shape as the linked-trades table above. */
+  .tp-search { width: 100%; box-sizing: border-box; margin-bottom: 10px; }
+  .tp-list { max-height: 360px; overflow-y: auto; }
+  .tp-table { width: 100%; }
+  .tp-table th, .tp-table td { white-space: nowrap; }
+  .tp-row { cursor: pointer; }
+  .tp-row:hover { background: var(--bg-hover); }
+  .tp-row .tp-check { width: 1%; }
+  .tp-row .tp-check input[type=checkbox] { margin: 0; }
+  .tp-noresults { padding: 14px; text-align: center; }
 </style>
+
+<script>
+  (function () {
+    var form = document.getElementById('tp-form');
+    if (!form) return;
+    var search = form.querySelector('.tp-search');
+    var rows = Array.prototype.slice.call(form.querySelectorAll('.tp-row'));
+    var noResults = form.querySelector('.tp-noresults');
+    var addBtn = form.querySelector('.tp-add');
+    var count = form.querySelector('.tp-count');
+
+    function applyFilter() {
+      var q = (search.value || '').trim().toLowerCase();
+      var shown = 0;
+      rows.forEach(function (row) {
+        var match = q === '' || (row.getAttribute('data-search') || '').indexOf(q) !== -1;
+        row.hidden = !match;
+        if (match) shown++;
+      });
+      if (noResults) noResults.hidden = shown !== 0;
+    }
+    function updateCount() {
+      var n = form.querySelectorAll('.tp-row input[type=checkbox]:checked').length;
+      addBtn.disabled = n === 0;
+      count.textContent = n ? n + ' selected' : '';
+    }
+    search.addEventListener('input', applyFilter);
+    form.addEventListener('change', function (e) {
+      if (e.target && e.target.matches('.tp-row input[type=checkbox]')) updateCount();
+    });
+    // Clicking anywhere on a row toggles its checkbox (except when the click
+    // is already on the checkbox, which toggles natively).
+    form.addEventListener('click', function (e) {
+      var row = e.target.closest('.tp-row');
+      if (!row) return;
+      if (e.target.matches('input[type=checkbox]')) return;
+      var cb = row.querySelector('input[type=checkbox]');
+      if (!cb) return;
+      cb.checked = !cb.checked;
+      updateCount();
+    });
+    updateCount();
+  })();
+</script>
 {{end}}
