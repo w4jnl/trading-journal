@@ -92,7 +92,7 @@
         </span>
         <span class="entry-pills">
           {{if .Strategy}}<span class="pill strategy-chip" title="Strategy: {{.Strategy}}">{{.Strategy}}</span>{{end}}
-          {{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}
+          <span class="tag-slot">{{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}</span>
         </span>
       </a>
     </li>
@@ -157,7 +157,11 @@
   .tag-chip-bad     { background: var(--neg-soft); color: var(--neg); }
   /* Strategy chip: distinct from tag chips (teal/brand), with a small
      "playbook" leading glyph so it reads as a strategy, not a tag. */
-  .entry-pills { display: inline-flex; gap: 6px; align-items: center; flex-shrink: 0; }
+  .entry-pills { display: inline-flex; gap: 8px; align-items: center; flex-shrink: 0; }
+  /* Fixed-width tag slot, always present (even when the entry has no tag) so
+     the strategy chip to its left keeps a consistent right edge across rows
+     whether or not a tag is shown. Both chips align into tidy columns. */
+  .tag-slot { width: 72px; display: inline-flex; justify-content: flex-end; flex-shrink: 0; }
   .strategy-chip { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 16%, transparent);
                    color: var(--brand-teal, var(--accent)); max-width: 200px; overflow: hidden;
                    text-overflow: ellipsis; white-space: nowrap; }
