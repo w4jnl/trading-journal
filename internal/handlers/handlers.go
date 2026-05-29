@@ -164,6 +164,17 @@ func (h *Handlers) funcMap() template.FuncMap {
 		"hasPrefix":  strings.HasPrefix,
 		"trimPrefix": strings.TrimPrefix,
 		"formatQty":  formatQty, // trailing-zero-free trade quantity
+		// lt / ltp render a timestamp as a <time class="lt"> carrying the UTC
+		// instant; a small client script (base.html) rewrites the text to the
+		// browser's local timezone. The inner text is a UTC fallback for no-JS.
+		// fmtKind: "date" | "datetime" | "datetime-sec" | "time".
+		"ltime": func(t time.Time, fmtKind string) template.HTML { return localTimeTag(t, fmtKind) },
+		"ltimep": func(t *time.Time, fmtKind string) template.HTML {
+			if t == nil {
+				return ""
+			}
+			return localTimeTag(*t, fmtKind)
+		},
 		// markdown renders a markdown string to sanitized HTML. Used by the
 		// strategy card (and anywhere a stored markdown doc is shown inline).
 		"markdown": func(s string) template.HTML {
@@ -392,6 +403,26 @@ func (h *Handlers) funcMap() template.FuncMap {
 			return ""
 		},
 	}
+}
+
+// localTimeTag emits a <time class="lt"> carrying the UTC instant in its
+// datetime attribute and a data-fmt shape. The inner text is a UTC fallback;
+// the client localizer (base.html) rewrites it to the browser's timezone.
+func localTimeTag(t time.Time, fmtKind string) template.HTML {
+	u := t.UTC()
+	fallback := map[string]string{
+		"date":         "2006-01-02",
+		"datetime":     "2006-01-02 15:04",
+		"datetime-sec": "2006-01-02 15:04:05",
+		"time":         "15:04",
+	}[fmtKind]
+	if fallback == "" {
+		fallback = "2006-01-02 15:04"
+		fmtKind = "datetime"
+	}
+	return template.HTML(fmt.Sprintf(
+		`<time class="lt" datetime="%s" data-fmt="%s">%s</time>`,
+		u.Format(time.RFC3339), fmtKind, u.Format(fallback)))
 }
 
 func (h *Handlers) serverError(w http.ResponseWriter, err error) {

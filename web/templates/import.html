@@ -94,7 +94,7 @@
   <table>
     <thead>
       <tr>
-        <th>When (UTC)</th>
+        <th>When</th>
         <th>Source</th>
         <th>Status</th>
         <th class="tabular">Execs</th>
@@ -106,7 +106,7 @@
     <tbody>
     {{range .Recent}}
       <tr>
-        <td class="num muted">{{.SyncedAt.UTC.Format "2006-01-02 15:04:05"}}</td>
+        <td class="num muted">{{ltime .SyncedAt "datetime-sec"}}</td>
         <td><code>{{.SyncType}}</code></td>
         <td>
           {{if eq .Status "success"}}<span class="pill success">success</span>

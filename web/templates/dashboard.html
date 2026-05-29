@@ -229,7 +229,7 @@
         <tbody>
           {{range .RecentTrades}}
           <tr>
-            <td class="num muted">{{if .ExitTime}}{{.ExitTime.UTC.Format "2006-01-02 15:04"}}{{end}}</td>
+            <td class="num muted">{{ltimep .ExitTime "datetime"}}</td>
             <td>{{.AccountName}}</td>
             <td class="num">{{.Symbol}}</td>
             <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
@@ -256,7 +256,7 @@
             <code>{{.SyncType}}</code>
             {{if eq .Status "success"}}<span class="pill success">success</span>{{else}}<span class="pill error">{{.Status}}</span>{{end}}
           </div>
-          <div class="muted">{{.SyncedAt.UTC.Format "2006-01-02 15:04 UTC"}} · <span class="num">{{.ExecsAdded}}</span> execs · <span class="num">{{.TradesAdded}}</span> trades</div>
+          <div class="muted">{{ltime .SyncedAt "datetime"}} · <span class="num">{{.ExecsAdded}}</span> execs · <span class="num">{{.TradesAdded}}</span> trades</div>
         </li>
         {{else}}
         <li class="muted">No imports yet.</li>

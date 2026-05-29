@@ -135,7 +135,7 @@
   <div class="lib-item">
     <details class="lib-row">
       <summary class="lib-row-head">
-        <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="muted num" style="font-size:11px;">updated {{.UpdatedAt.UTC.Format "2006-01-02"}}</span></span>
+        <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="muted num" style="font-size:11px;">updated {{ltime .UpdatedAt "date"}}</span></span>
         <span class="lib-row-edit">Edit ▾</span>
       </summary>
       <form method="post" action="/library/strategies/{{.ID}}" class="lib-form">

@@ -7,7 +7,7 @@
 </div>
 <div class="muted" style="margin-bottom: 12px; font-size: 12px;">
   {{.AccountName}}{{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
-  · {{.EntryTime.UTC.Format "2006-01-02 15:04"}}{{if .ExitTime}} → {{.ExitTime.UTC.Format "15:04"}} UTC{{end}}
+  · {{ltime .EntryTime "datetime"}}{{if .ExitTime}} → {{ltimep .ExitTime "time"}}{{end}}
 </div>
 
 <div class="trade-stat-strip">
@@ -91,7 +91,7 @@
     <table>
       <thead>
         <tr>
-          <th>Time (UTC)</th>
+          <th>Time</th>
           <th>Role</th>
           <th>Side</th>
           <th class="tabular">Price</th>
@@ -103,7 +103,7 @@
       <tbody>
       {{range .Executions}}
         <tr>
-          <td class="num muted">{{.ExecTime.UTC.Format "2006-01-02 15:04:05.000"}}</td>
+          <td class="num muted">{{ltime .ExecTime "datetime-sec"}}</td>
           <td><code>{{.Role}}</code></td>
           <td>{{.Side}}</td>
           <td class="tabular num">{{printf "%.2f" .Price}}</td>

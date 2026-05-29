@@ -44,7 +44,7 @@
         <td>
           {{if .IsActive}}<span class="pill pill-active">active</span>{{else}}<span class="muted">disabled</span>{{end}}
         </td>
-        <td class="muted">{{if .LastLoginAt}}{{.LastLoginAt.UTC.Format "2006-01-02 15:04"}}{{else}}—{{end}}</td>
+        <td class="muted">{{if .LastLoginAt}}{{ltimep .LastLoginAt "datetime"}}{{else}}—{{end}}</td>
         <td class="row-actions" style="text-align: right;">
           <details class="disclose">
             <summary class="btn btn--secondary btn--sm">Actions</summary>
