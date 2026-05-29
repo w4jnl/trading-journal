@@ -318,6 +318,24 @@
       });
   }
 
+  // mountDropdown ensures `button` is wrapped in a position:relative span
+  // (.je-dropdown-anchor) and appends `box` as a sibling of the button
+  // inside that span. Appending block content directly into a <button>
+  // is invalid HTML and renders flattened/overlapping in WebKit, which is
+  // what broke the Recall list's multi-line items. Idempotent: re-wrapping
+  // an already-wrapped button is a no-op. Returns the anchor element.
+  function mountDropdown(button, box) {
+    var anchor = button.parentElement;
+    if (!anchor || !anchor.classList.contains("je-dropdown-anchor")) {
+      anchor = document.createElement("span");
+      anchor.className = "je-dropdown-anchor";
+      button.parentNode.insertBefore(anchor, button);
+      anchor.appendChild(button);
+    }
+    anchor.appendChild(box);
+    return anchor;
+  }
+
   // ---------- Templates dropdown ----------
 
   function toggleTemplates(ctx, button) {
@@ -344,12 +362,14 @@
         });
         box.appendChild(item);
       });
-      // Position relative to the button (which is position:relative in CSS).
-      button.appendChild(box);
+      // Mount as a sibling of the button (inside a positioned wrapper),
+      // NOT inside it: a <button> only allows phrasing content, so block
+      // children render flattened/overlapping.
+      var anchor = mountDropdown(button, box);
       // Close on outside click / Esc.
       function close(e) {
         if (e.type === "keydown" && e.key !== "Escape") return;
-        if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
+        if (e.type === "click" && (anchor.contains(e.target))) return;
         box.remove();
         document.removeEventListener("click", close, true);
         document.removeEventListener("keydown", close);
@@ -425,10 +445,10 @@
         });
         box.appendChild(item);
       });
-      button.appendChild(box);
+      var anchor = mountDropdown(button, box);
       function close(e) {
         if (e.type === "keydown" && e.key !== "Escape") return;
-        if (e.type === "click" && (button.contains(e.target) || box.contains(e.target))) return;
+        if (e.type === "click" && (anchor.contains(e.target))) return;
         box.remove();
         document.removeEventListener("click", close, true);
         document.removeEventListener("keydown", close);
