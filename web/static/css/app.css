@@ -1492,13 +1492,14 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 }
 .je-templates-item { white-space: nowrap; }
 
-/* Recall items stack a date line + a snippet; give them a clear vertical
-   rhythm and a hairline separator so adjacent multi-line entries never
-   read as one blob. */
+/* Recall items stack a date line + a snippet with a hairline separator so
+   adjacent multi-line entries never read as one blob. NOTE: keep these as
+   display:block, NOT flex. A <button> with display:flex hits a long-standing
+   WebKit bug where the button's content is clipped at the top — that was
+   what cut the first row's date in half. Block layout sidesteps it; the
+   date/snippet are block divs that stack naturally. */
 .je-recall-item {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
+  display: block;
   padding: 8px 10px;
 }
 .je-recall-item + .je-recall-item {
@@ -1522,6 +1523,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   color: var(--fg-muted);
   font-size: 11px;
   line-height: 1.45;
+  margin-top: 3px;
   max-height: calc(1.45em * 2);
   display: -webkit-box;
   -webkit-line-clamp: 2;
