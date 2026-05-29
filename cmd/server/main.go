@@ -256,11 +256,12 @@ func run() error {
 	mux.HandleFunc("POST /accounts/{id}/clone", h.AccountsClone)
 	mux.HandleFunc("POST /balances/{anchor_id}/delete", h.BalanceDelete)
 	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)
+	// Commissions + instruments: everyone can view, only admins can modify.
 	mux.HandleFunc("GET /commissions", h.CommissionsPage)
-	mux.HandleFunc("POST /commissions/save", h.CommissionsBulkSave)
-	mux.HandleFunc("POST /commissions/rates/new", h.CommissionsRateCreate)
-	mux.HandleFunc("POST /commissions/rates/delete", h.CommissionsRateDelete)
-	mux.HandleFunc("POST /commissions/classes/new", h.CommissionsClassCreate)
+	mux.Handle("POST /commissions/save", auth.RequireAdmin(http.HandlerFunc(h.CommissionsBulkSave)))
+	mux.Handle("POST /commissions/rates/new", auth.RequireAdmin(http.HandlerFunc(h.CommissionsRateCreate)))
+	mux.Handle("POST /commissions/rates/delete", auth.RequireAdmin(http.HandlerFunc(h.CommissionsRateDelete)))
+	mux.Handle("POST /commissions/classes/new", auth.RequireAdmin(http.HandlerFunc(h.CommissionsClassCreate)))
 	// Library: per-user journal templates + trading strategies.
 	mux.HandleFunc("GET /library", h.LibraryPage)
 	mux.HandleFunc("POST /library/templates", h.TemplateCreate)

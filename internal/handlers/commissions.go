@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -119,6 +120,7 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 		"Instruments":  instruments,
 		"Firms":        firmsForCommissions,
 		"Orphans":      reasons,
+		"CanEdit":      auth.MustUser(ctx).IsAdmin,
 		"Flash":        r.URL.Query().Get("flash"),
 		"FlashErr":     r.URL.Query().Get("err"),
 	})
@@ -398,8 +400,9 @@ func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request)
 		h.logger().Warn("rebuild after rate create", "err", err)
 	}
 	h.renderPartial(w, "_commission_rate_row.html", "commission_rate_row", map[string]any{
-		"Rate":  models.CommissionRate{AssetClass: ac, Firm: firm, SizeClass: sc, PerContractPerSide: rate},
-		"Firms": firmsForCommissions,
+		"Rate":    models.CommissionRate{AssetClass: ac, Firm: firm, SizeClass: sc, PerContractPerSide: rate},
+		"Firms":   firmsForCommissions,
+		"CanEdit": true, // route is admin-gated
 	})
 }
 
