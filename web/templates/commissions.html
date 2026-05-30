@@ -8,6 +8,12 @@
 {{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
+{{if not .CanEdit}}
+<div class="card" style="margin-bottom: 16px;">
+  <span class="muted">Read-only view. Commission rates and instrument setup can only be changed by an admin.</span>
+</div>
+{{end}}
+
 <div class="card card--warn" style="margin-bottom: 16px;">
   Commission rates are <strong>per side, per contract</strong>, keyed by
   <strong>asset class × firm × size</strong>. Set each contract's asset
@@ -60,7 +66,7 @@
     </thead>
     <tbody id="rates-tbody">
       {{range .Rates}}
-        {{template "commission_rate_row" (dict "Rate" . "Firms" $.Firms)}}
+        {{template "commission_rate_row" (dict "Rate" . "Firms" $.Firms "CanEdit" $.CanEdit)}}
       {{else}}
         <tr><td colspan="5" class="muted" style="text-align:center; padding: 16px;">No commission rates configured yet. Use the form below to add the first.</td></tr>
       {{end}}
@@ -68,6 +74,7 @@
   </table>
 </div>
 
+{{if .CanEdit}}
 <details class="disclose" style="margin-top: 12px;">
   <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add rate</summary>
   <form hx-post="/commissions/rates/new"
@@ -103,6 +110,7 @@
     </p>
   </form>
 </details>
+{{end}}
 
 <h2 style="margin-top: 32px;">Instrument categorization</h2>
 <div class="table-scroll" style="margin-top: 8px;">
@@ -128,17 +136,17 @@
           <td><input form="commissions-form" type="number" step="0.0001" min="0"
                      name="instrument.{{$i.SymbolRoot}}.tick_size"
                      value="{{if $i.TickSize}}{{deref $i.TickSize}}{{end}}"
-                     class="num" style="width: 80px; text-align: right;"></td>
+                     class="num" style="width: 80px; text-align: right;" {{if not $.CanEdit}}disabled{{end}}></td>
           <td><input form="commissions-form" type="number" step="0.01" min="0"
                      name="instrument.{{$i.SymbolRoot}}.tick_value"
                      value="{{if $i.TickValue}}{{deref $i.TickValue}}{{end}}"
-                     class="num" style="width: 80px; text-align: right;"></td>
+                     class="num" style="width: 80px; text-align: right;" {{if not $.CanEdit}}disabled{{end}}></td>
           <td><input form="commissions-form" type="number" step="0.01" min="0"
                      name="instrument.{{$i.SymbolRoot}}.multiplier"
                      value="{{if $i.Multiplier}}{{deref $i.Multiplier}}{{end}}"
-                     class="num" style="width: 80px; text-align: right;"></td>
+                     class="num" style="width: 80px; text-align: right;" {{if not $.CanEdit}}disabled{{end}}></td>
           <td>
-            <select form="commissions-form" name="instrument.{{$i.SymbolRoot}}.asset_class">
+            <select form="commissions-form" name="instrument.{{$i.SymbolRoot}}.asset_class" {{if not $.CanEdit}}disabled{{end}}>
               <option value="" {{if not $i.AssetClass}}selected{{end}}>—</option>
               {{range $.AssetClasses}}
                 <option value="{{.Code}}" {{if and $i.AssetClass (eq .Code (derefStr $i.AssetClass))}}selected{{end}}>{{.Label}}</option>
@@ -146,7 +154,7 @@
             </select>
           </td>
           <td>
-            <select form="commissions-form" name="instrument.{{$i.SymbolRoot}}.size_class">
+            <select form="commissions-form" name="instrument.{{$i.SymbolRoot}}.size_class" {{if not $.CanEdit}}disabled{{end}}>
               <option value="" {{if not $i.SizeClass}}selected{{end}}>—</option>
               {{range $.SizeClasses}}
                 <option value="{{.Code}}" {{if and $i.SizeClass (eq .Code (derefStr $i.SizeClass))}}selected{{end}}>{{.Label}}</option>
@@ -174,6 +182,7 @@
           <li><code class="num">{{.Code}}</code> — {{.Label}} <span class="muted" style="font-size:11px;">(sort {{.SortOrder}})</span></li>
         {{end}}
       </ul>
+      {{if $.CanEdit}}
       <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
         <input type="hidden" name="kind" value="asset">
         <label class="field"><span class="field-label">Code</span>
@@ -184,6 +193,7 @@
           <input type="number" name="sort_order" value="100" style="width: 64px;"></label>
         <button type="submit" class="btn btn--secondary btn--sm">+ Add asset class</button>
       </form>
+      {{end}}
     </div>
     <div class="card">
       <h3 style="margin-top: 0;">Size classes</h3>
@@ -192,6 +202,7 @@
           <li><code class="num">{{.Code}}</code> — {{.Label}} <span class="muted" style="font-size:11px;">(sort {{.SortOrder}})</span></li>
         {{end}}
       </ul>
+      {{if $.CanEdit}}
       <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
         <input type="hidden" name="kind" value="size">
         <label class="field"><span class="field-label">Code</span>
@@ -202,10 +213,12 @@
           <input type="number" name="sort_order" value="100" style="width: 64px;"></label>
         <button type="submit" class="btn btn--secondary btn--sm">+ Add size class</button>
       </form>
+      {{end}}
     </div>
   </div>
 </details>
 
+{{if .CanEdit}}
 <div id="save-bar" class="save-bar">
   <span class="muted"><strong id="dirty-count" class="num">0</strong> row(s) changed.</span>
   <div class="row-sm" style="margin-left: auto;">
@@ -213,6 +226,7 @@
     <button form="commissions-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
   </div>
 </div>
+{{end}}
 
 <style>
   table.rates input, table.rates select,
@@ -240,6 +254,7 @@
   details.disclose > summary::-webkit-details-marker { display: none; }
 </style>
 
+{{if .CanEdit}}
 <script>
   /* Dirty-tracking JS shared in shape with /accounts: snapshot initial values,
      mark dirty rows, show sticky save-bar, support discard. */
@@ -310,4 +325,5 @@
     });
   })();
 </script>
+{{end}}
 {{end}}

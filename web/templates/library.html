@@ -55,9 +55,15 @@
     <details class="lib-row">
       <summary class="lib-row-head">
         <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="pill">{{.Scope}}</span></span>
-        <span class="lib-row-edit">Edit ▾</span>
+        <span class="lib-row-edit">▾</span>
       </summary>
-      <form method="post" action="/library/templates/{{.ID}}" class="lib-form">
+      <div class="lib-preview">
+        <div class="row" style="justify-content: flex-end; margin-bottom: 8px;">
+          <button type="button" class="btn btn--secondary btn--sm" data-lib-edit>Edit</button>
+        </div>
+        <div class="markdown-preview">{{markdown .Body}}</div>
+      </div>
+      <form method="post" action="/library/templates/{{.ID}}" class="lib-form" hidden>
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <div class="lib-form-row">
           <label class="field"><span class="field-label">Name</span>
@@ -71,8 +77,9 @@
             "Placeholder" "Template body…"
             "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "240px" "EntryID" 0)}}
         </div>
-        <div class="row" style="justify-content: space-between;">
+        <div class="row">
           <button type="submit" class="btn btn--primary btn--sm">Save</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-lib-cancel>Cancel</button>
         </div>
       </form>
     </details>
@@ -92,8 +99,16 @@
     <h2>System templates <span class="muted" style="font-weight:400; font-size:12px;">· read-only</span></h2>
   </div>
   {{range .BuiltinTemplates}}
-  <div class="lib-item lib-item--static">
-    <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="pill pill-system">system</span> <span class="pill">{{.Scope}}</span></span>
+  <div class="lib-item">
+    <details class="lib-row">
+      <summary class="lib-row-head">
+        <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="pill pill-system">system</span> <span class="pill">{{.Scope}}</span></span>
+        <span class="lib-row-edit">▾</span>
+      </summary>
+      <div class="lib-preview">
+        <div class="markdown-preview">{{markdown .Body}}</div>
+      </div>
+    </details>
     <form method="post" action="/library/templates/{{.ID}}/clone" class="lib-item-delete">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <button type="submit" class="btn btn--secondary btn--sm">Clone to edit</button>
@@ -136,9 +151,15 @@
     <details class="lib-row">
       <summary class="lib-row-head">
         <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="muted num" style="font-size:11px;">updated {{ltime .UpdatedAt "date"}}</span></span>
-        <span class="lib-row-edit">Edit ▾</span>
+        <span class="lib-row-edit">▾</span>
       </summary>
-      <form method="post" action="/library/strategies/{{.ID}}" class="lib-form">
+      <div class="lib-preview">
+        <div class="row" style="justify-content: flex-end; margin-bottom: 8px;">
+          <button type="button" class="btn btn--secondary btn--sm" data-lib-edit>Edit</button>
+        </div>
+        <div class="markdown-preview">{{markdown .Body}}</div>
+      </div>
+      <form method="post" action="/library/strategies/{{.ID}}" class="lib-form" hidden>
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <label class="field"><span class="field-label">Name</span>
           <input type="text" name="name" value="{{.Name}}" required></label>
@@ -148,7 +169,10 @@
             "Placeholder" "Strategy body…"
             "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "300px" "EntryID" 0)}}
         </div>
-        <div class="row"><button type="submit" class="btn btn--primary btn--sm">Save</button></div>
+        <div class="row">
+          <button type="submit" class="btn btn--primary btn--sm">Save</button>
+          <button type="button" class="btn btn--ghost btn--sm" data-lib-cancel>Cancel</button>
+        </div>
       </form>
     </details>
     <form method="post" action="/library/strategies/{{.ID}}/delete" class="lib-item-delete"
@@ -224,6 +248,13 @@
   .lib-form-row .field { flex:1 1 220px; }
   .lib-form .field { width:100%; }
 
+  /* Preview panel that opens when a row is clicked. Edit button swaps in the
+     form (see toggle script below). The [hidden] rules below override the
+     display:flex above so the form stays out of the DOM flow until Edit is
+     clicked - the bare `hidden` attribute is otherwise outranked. */
+  .lib-preview { padding:14px; }
+  .lib-form[hidden], .lib-preview[hidden] { display: none; }
+
   /* New-item disclosure: full-width block so the form isn't squeezed to the
      toggle button's width. The summary shows just the compact button. */
   .lib-new { display:block; margin-bottom:12px; }
@@ -248,4 +279,31 @@
   .markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
   .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
 </style>
+
+<script>
+  /* Library row: clicking the row expands a markdown preview; the "Edit"
+     button swaps the preview for the editor form, and "Cancel" swaps back.
+     One delegated listener handles every row on the page. */
+  document.addEventListener('click', function (e) {
+    var t = e.target;
+    if (!(t instanceof Element)) return;
+    if (t.matches('[data-lib-edit]')) {
+      var row = t.closest('.lib-row');
+      if (!row) return;
+      var preview = row.querySelector('.lib-preview');
+      var form = row.querySelector('.lib-form');
+      if (preview) preview.hidden = true;
+      if (form) form.hidden = false;
+      return;
+    }
+    if (t.matches('[data-lib-cancel]')) {
+      var row2 = t.closest('.lib-row');
+      if (!row2) return;
+      var p = row2.querySelector('.lib-preview');
+      var f = row2.querySelector('.lib-form');
+      if (f) f.hidden = true;
+      if (p) p.hidden = false;
+    }
+  });
+</script>
 {{end}}
