@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/backup"
 	"github.com/w4jnl/trading-journal/internal/config"
 	"github.com/w4jnl/trading-journal/internal/db"
 	"github.com/w4jnl/trading-journal/internal/handlers"
@@ -340,6 +341,20 @@ func run() error {
 
 	// Background session sweep — purge expired rows every hour.
 	go sessions.StartJanitor(ctx, time.Hour)
+
+	// Periodic backup — one snapshot at startup (deduped per day) and one
+	// daily at the configured hour. Failures are logged, never fatal.
+	if cfg.Backup.Enabled {
+		go backup.Schedule(ctx, backup.Options{
+			Dir:         cfg.Backup.Dir,
+			Hour:        cfg.Backup.Hour,
+			Loc:         tz,
+			DBPath:      cfg.Database.Path,
+			ConfigPath:  *cfgPath,
+			ImportsRoot: cfg.Imports.Root,
+			DB:          conn,
+		})
+	}
 
 	// Start the inbox watcher. Errors during individual imports are logged
 	// inside the watcher; only setup errors come back here.
