@@ -16,6 +16,7 @@ go.work.sum
 
 # SQLite database files
 /data/
+/backups/
 *.db
 *.db-journal
 *.db-wal
