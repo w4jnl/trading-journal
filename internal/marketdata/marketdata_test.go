@@ -99,6 +99,7 @@ func TestSymbolMap(t *testing.T) {
 		ok   bool
 	}{
 		"ES":   {"ES=F", true},
+		"EP":   {"ES=F", true},
 		"MES":  {"ES=F", true},
 		"mnq":  {"NQ=F", true},
 		" CL ": {"CL=F", true},

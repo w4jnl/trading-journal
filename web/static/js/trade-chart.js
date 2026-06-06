@@ -238,10 +238,13 @@
       }));
       var times = bars.map(function (b) { return b.t; });
       var markers = (panel.markers || []).map(function (m) {
+        var solid = m.side === "buy" ? c.pos : c.neg;
         return {
           time: snap(times, m.t),
           position: markerPosition(panel.direction, m.role),
-          color: m.side === "buy" ? c.pos : c.neg,
+          // Exits use a translucent shade so they read distinctly from the
+          // solid entry arrows (lightweight-charts has no hollow markers).
+          color: m.role === "exit" ? solid + "80" : solid,
           shape: m.side === "buy" ? "arrowUp" : "arrowDown",
           text: fmtPrice(m.price),
         };

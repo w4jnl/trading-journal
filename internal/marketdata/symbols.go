@@ -9,6 +9,7 @@ import "strings"
 // a "no market data" note and never makes a network call.
 var yahooSymbols = map[string]string{
 	"ES":  "ES=F",
+	"EP":  "ES=F", // CQG / AMP-CQG feed labels the E-mini S&P "EP" (same as ES)
 	"MES": "ES=F",
 	"NQ":  "NQ=F",
 	"MNQ": "NQ=F",

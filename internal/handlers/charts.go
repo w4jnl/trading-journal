@@ -149,6 +149,7 @@ type chartGroup struct {
 	firstEntry time.Time
 	lastExit   time.Time
 	hasOpen    bool
+	multiRoot  bool // merges >1 instrument root (e.g. ES + MES) onto one chart
 }
 
 // effectiveExit returns lastExit, or now when any trade in the group is open.
@@ -215,6 +216,7 @@ func groupTradesForChart(trades []linkedTrade) []chartGroup {
 			firstEntry: a.firstEntry,
 			lastExit:   a.lastExit,
 			hasOpen:    a.hasOpen,
+			multiRoot:  len(a.rootCount) > 1,
 		})
 	}
 	sort.Slice(groups, func(i, j int) bool { return groups[i].contract < groups[j].contract })
@@ -323,9 +325,14 @@ func (h *Handlers) buildChartPanel(ctx context.Context, g chartGroup, load bool,
 	panel.BarTimeframe = string(baseTf)
 	panel.Timeframe = string(marketdata.Coarser(displayTf, baseTf))
 	panel.Timeframes = marketdata.TimeframesFrom(baseTf)
-	if g.contract != "" && !strings.EqualFold(g.contract, g.root) {
-		panel.Note = "Continuous front-month series; candle basis may differ slightly from " + g.contract + "."
+	var notes []string
+	if g.multiRoot {
+		notes = append(notes, "Micro and full-size contracts are combined on one chart - they share the same underlying price.")
 	}
+	if g.contract != "" && !strings.EqualFold(g.contract, g.root) {
+		notes = append(notes, "Continuous front-month series; candle basis may differ slightly from "+g.contract+".")
+	}
+	panel.Note = strings.Join(notes, " ")
 	return panel, "ok"
 }
 
