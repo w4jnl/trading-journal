@@ -51,6 +51,10 @@ type Handlers struct {
 	// Nil disables charting entirely (the mount points render nothing).
 	MarketData *marketdata.CachingSource
 
+	// Prefetch is the background bar-cache warmer. The admin backfill action
+	// enqueues missing symbol-days through it. Nil when prefetch is disabled.
+	Prefetch *marketdata.Prefetcher
+
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
 	// distinguish page renders ("page:<name>") from partial renders

@@ -1,0 +1,70 @@
+{{define "title"}}Market data — Trading Journal{{end}}
+
+{{define "content"}}
+<h1>Market data</h1>
+<p class="muted" style="margin-bottom: 16px; font-size: 13px;">
+  Chart bar-cache coverage for the last {{.WindowDays}} days (Yahoo's intraday
+  horizon). Bars are shared across all accounts. Today and weekend/holiday days
+  are excluded; days older than the horizon can't get intraday data.
+</p>
+
+{{if .Disabled}}
+<div class="card">Charting is disabled in config (<code>market_data.enabled = false</code>).</div>
+{{else}}
+
+{{if eq .Flash "backfill"}}<div class="flash saved" style="margin-bottom:16px;">Backfill queued — missing days are fetching in the background. Reload in a moment to watch coverage climb.</div>{{end}}
+{{if eq .Flash "disabled"}}<div class="flash empty" style="margin-bottom:16px;">Prefetch is disabled (<code>market_data.prefetch = false</code>); cannot backfill.</div>{{end}}
+
+<div class="card" style="margin-bottom: 16px;">
+  <div class="row-sm" style="gap: 28px;">
+    <div><div class="label">Days needed</div><div class="num" style="font-size:18px;">{{.TotalNeeded}}</div></div>
+    <div><div class="label">Cached</div><div class="num" style="font-size:18px;">{{.TotalCached}}</div></div>
+    <div><div class="label">Missing</div><div class="num" style="font-size:18px;">{{if gt .TotalMissing 0}}<span class="pnl-neg">{{.TotalMissing}}</span>{{else}}0{{end}}</div></div>
+  </div>
+  {{if .PrefetchOn}}
+    {{if gt .TotalMissing 0}}
+    <form method="post" action="/admin/market-data/backfill" style="margin-top: 14px;"
+          onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Queuing…';">
+      <button type="submit" class="btn btn--primary">Backfill {{.TotalMissing}} missing day(s)</button>
+    </form>
+    {{else}}
+    <p class="muted" style="margin-top: 14px;">All needed days are cached — nothing to backfill.</p>
+    {{end}}
+  {{else}}
+    <p class="muted" style="margin-top: 14px;">The prefetch worker is disabled in config, so backfill is unavailable.</p>
+  {{end}}
+</div>
+
+{{if .Rows}}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th>Roots</th>
+        <th class="tabular">Needed</th>
+        <th class="tabular">Cached</th>
+        <th class="tabular">Missing</th>
+        <th>Missing days</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Rows}}
+      <tr>
+        <td class="num">{{.Symbol}}</td>
+        <td class="muted">{{.Roots}}</td>
+        <td class="tabular num">{{.Needed}}</td>
+        <td class="tabular num">{{.Cached}}</td>
+        <td class="tabular num">{{if gt .Missing 0}}<span class="pnl-neg">{{.Missing}}</span>{{else}}0{{end}}</td>
+        <td class="muted" style="font-size: 11px;">{{range .MissingDays}}{{.}} {{end}}{{if gt .Missing (len .MissingDays)}}…{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{else}}
+<p class="muted">No charted trades in the last {{.WindowDays}} days.</p>
+{{end}}
+
+{{end}}
+{{end}}

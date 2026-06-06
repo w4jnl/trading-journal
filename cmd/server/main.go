@@ -252,6 +252,7 @@ func run() error {
 		CSRF:            csrf,
 		ActAs:           actAs,
 		MarketData:      marketCache,
+		Prefetch:        prefetcher,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -343,6 +344,9 @@ func run() error {
 	mux.Handle("POST /admin/users/{id}/delete", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersDelete)))
 	mux.Handle("POST /admin/act-as/{id}", auth.RequireAdmin(http.HandlerFunc(h.AdminActAsStart)))
 	mux.HandleFunc("POST /admin/act-as/clear", h.AdminActAsClear)
+	// Admin market-data: review chart-cache coverage and backfill gaps.
+	mux.Handle("GET /admin/market-data", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataPage)))
+	mux.Handle("POST /admin/market-data/backfill", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataBackfill)))
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
