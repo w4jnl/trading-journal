@@ -61,9 +61,9 @@ type tfMeta struct {
 }
 
 // tfTable holds per-timeframe metadata. Lookbacks sit a touch under Yahoo's
-// documented limits (1m ~7d, 5m/15m/30m ~60d, 60m ~730d) to avoid boundary 422s.
+// observed limits (1m ~30d, 5m/15m/30m ~60d, 60m ~730d) to avoid boundary gaps.
 var tfTable = map[Timeframe]tfMeta{
-	TF1m:  {"1m", 6 * 24 * time.Hour, time.Minute},
+	TF1m:  {"1m", 25 * 24 * time.Hour, time.Minute},
 	TF5m:  {"5m", 55 * 24 * time.Hour, 5 * time.Minute},
 	TF15m: {"15m", 55 * 24 * time.Hour, 15 * time.Minute},
 	TF30m: {"30m", 55 * 24 * time.Hour, 30 * time.Minute},
@@ -98,6 +98,21 @@ func Coarser(a, b Timeframe) Timeframe {
 		return b
 	}
 	return a
+}
+
+// TimeframesFrom returns tf and every coarser timeframe in the ladder, as
+// strings - the bar sizes a chart can offer when its finest available data is
+// tf (the client rolls the finest bars up to any of these).
+func TimeframesFrom(tf Timeframe) []string {
+	i := ladderIndex(tf)
+	if i < 0 {
+		return []string{string(tf)}
+	}
+	out := make([]string, 0, len(tfLadder)-i)
+	for _, c := range tfLadder[i:] {
+		out = append(out, string(c))
+	}
+	return out
 }
 
 // StorageTimeframe returns the finest timeframe Yahoo can still serve for a day

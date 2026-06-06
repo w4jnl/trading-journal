@@ -29,18 +29,20 @@ type chartMarker struct {
 }
 
 type chartPanel struct {
-	Contract    string           `json:"contract"`
-	SymbolRoot  string           `json:"symbolRoot"`
-	YahooSymbol string           `json:"yahooSymbol"`
-	Timeframe   string           `json:"timeframe"`
-	Direction   string           `json:"direction"`
-	From        int64            `json:"from"`
-	To          int64            `json:"to"`
-	EntryAvg    float64          `json:"entryAvg,omitempty"`
-	ExitAvg     float64          `json:"exitAvg,omitempty"`
-	Bars        []marketdata.Bar `json:"bars"`
-	Markers     []chartMarker    `json:"markers"`
-	Note        string           `json:"note,omitempty"`
+	Contract     string           `json:"contract"`
+	SymbolRoot   string           `json:"symbolRoot"`
+	YahooSymbol  string           `json:"yahooSymbol"`
+	Timeframe    string           `json:"timeframe"`    // default/selected display bar size
+	BarTimeframe string           `json:"barTimeframe"` // granularity of the Bars array (finest available)
+	Timeframes   []string         `json:"timeframes"`   // selectable bar sizes (finest .. 1d)
+	Direction    string           `json:"direction"`
+	From         int64            `json:"from"`
+	To           int64            `json:"to"`
+	EntryAvg     float64          `json:"entryAvg,omitempty"`
+	ExitAvg      float64          `json:"exitAvg,omitempty"`
+	Bars         []marketdata.Bar `json:"bars"`
+	Markers      []chartMarker    `json:"markers"`
+	Note         string           `json:"note,omitempty"`
 }
 
 type chartEnvelope struct {
@@ -300,9 +302,27 @@ func (h *Handlers) buildChartPanel(ctx context.Context, g chartGroup, load bool,
 		return panel, "needs_load" // not cached yet; the load button will fetch
 	}
 
-	finalTf := marketdata.Coarser(displayTf, readTf)
-	panel.Bars = marketdata.AggregateTo(bars, finalTf)
-	panel.Timeframe = string(finalTf)
+	// Send bars at the finest stored granularity (capped for payload size); the
+	// client rolls them up to the chosen bar size via the header selector. The
+	// default selection is the duration-adaptive timeframe (never finer than the
+	// data we have).
+	const maxPayloadBars = 2500
+	baseTf := readTf
+	baseBars := bars
+	if len(baseBars) > maxPayloadBars {
+		for _, s := range marketdata.TimeframesFrom(readTf)[1:] {
+			c := marketdata.Timeframe(s)
+			baseBars = marketdata.AggregateTo(bars, c)
+			baseTf = c
+			if len(baseBars) <= maxPayloadBars {
+				break
+			}
+		}
+	}
+	panel.Bars = baseBars
+	panel.BarTimeframe = string(baseTf)
+	panel.Timeframe = string(marketdata.Coarser(displayTf, baseTf))
+	panel.Timeframes = marketdata.TimeframesFrom(baseTf)
 	if g.contract != "" && !strings.EqualFold(g.contract, g.root) {
 		panel.Note = "Continuous front-month series; candle basis may differ slightly from " + g.contract + "."
 	}

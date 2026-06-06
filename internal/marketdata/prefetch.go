@@ -94,7 +94,6 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
 		return
 	}
 
-	today := startOfDay(now, loc)
 	seen := map[string]bool{}
 	var jobs []prefetchJob
 	for rows.Next() {
@@ -109,16 +108,12 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
 		if !ok {
 			continue
 		}
-		end := now
+		var exitPtr *time.Time
 		if exit.Valid {
-			end = exit.Time
+			e := exit.Time
+			exitPtr = &e
 		}
-		d0 := startOfDay(entry, loc).AddDate(0, 0, -1)
-		d1 := startOfDay(end, loc).AddDate(0, 0, 1)
-		for d := d0; !d.After(d1); d = d.AddDate(0, 0, 1) {
-			if !d.Before(today) {
-				continue // today/future: lazy path handles the forming session
-			}
+		for _, d := range TradeDays(entry, exitPtr, loc, now) {
 			key := sym + "|" + dayKey(d)
 			if seen[key] {
 				continue
@@ -133,7 +128,7 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
 		if ctx.Err() != nil {
 			return
 		}
-		if present, err := p.Cache.dayPresent(ctx, j.sym, j.day); err == nil && present {
+		if need, err := p.Cache.dayNeedsFetch(ctx, j.sym, j.day, now); err == nil && !need {
 			continue
 		}
 		if err := p.Cache.FetchDay(ctx, j.sym, j.day); err != nil {
@@ -150,6 +145,32 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
 			return
 		}
 	}
+}
+
+// TradeDays returns the completed exchange-tz trading days a trade spans, padded
+// by one day on each side (entry_day-1 .. exit_day+1) and excluding today and
+// the future (an in-progress session is fetched lazily, not prefetched). A nil
+// exit means the trade is still open, so the span runs to now. Shared by the
+// prefetch worker and the admin coverage review so both agree on which days a
+// trade needs.
+func TradeDays(entry time.Time, exit *time.Time, loc *time.Location, now time.Time) []time.Time {
+	if loc == nil {
+		loc = time.UTC
+	}
+	end := now
+	if exit != nil {
+		end = *exit
+	}
+	today := startOfDay(now, loc)
+	d0 := startOfDay(entry, loc).AddDate(0, 0, -1)
+	d1 := startOfDay(end, loc).AddDate(0, 0, 1)
+	var out []time.Time
+	for d := d0; !d.After(d1); d = d.AddDate(0, 0, 1) {
+		if d.Before(today) {
+			out = append(out, d)
+		}
+	}
+	return out
 }
 
 // sleepCtx sleeps for d or until ctx is done. Returns false if ctx was cancelled.

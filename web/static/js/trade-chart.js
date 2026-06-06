@@ -56,7 +56,9 @@
       ".trade-chart__canvas{height:340px;width:100%}" +
       ".trade-chart__note{font-size:11px;color:var(--fg-muted);padding:4px 10px}" +
       ".trade-chart__msg{font-size:13px;color:var(--fg-muted);padding:18px 10px;text-align:center}" +
-      ".trade-chart__prompt{padding:14px;text-align:center}";
+      ".trade-chart__prompt{padding:14px;text-align:center}" +
+      ".trade-chart__barsize{display:inline-flex;align-items:center;gap:4px}" +
+      ".trade-chart__tf{font:inherit;font-weight:600;color:var(--fg);background:var(--bg-elev);border:1px solid var(--border);border-radius:4px;padding:1px 4px;cursor:pointer}";
     document.head.appendChild(s);
   }
 
@@ -147,9 +149,28 @@
       head.className = "trade-chart__head";
       var left = document.createElement("span");
       left.textContent = panel.contract || panel.symbolRoot || "";
-      var right = document.createElement("span");
-      right.textContent = panel.timeframe ? panel.timeframe + " bars" : "";
       head.appendChild(left);
+
+      // Bar-size control: a selector when more than one size is available
+      // (the finest bars roll up to any coarser size client-side), else a label.
+      var sel = null;
+      var right = document.createElement("span");
+      right.className = "trade-chart__barsize";
+      if (panel.bars && panel.bars.length && panel.timeframes && panel.timeframes.length > 1) {
+        right.appendChild(document.createTextNode("Bar size: "));
+        sel = document.createElement("select");
+        sel.className = "trade-chart__tf";
+        panel.timeframes.forEach(function (tf) {
+          var o = document.createElement("option");
+          o.value = tf;
+          o.textContent = humanTimeframe(tf);
+          if (tf === panel.timeframe) o.selected = true;
+          sel.appendChild(o);
+        });
+        right.appendChild(sel);
+      } else if (panel.timeframe) {
+        right.textContent = "Bar size: " + humanTimeframe(panel.timeframe);
+      }
       head.appendChild(right);
       card.appendChild(head);
 
@@ -166,8 +187,11 @@
       el.appendChild(card);
 
       if (panel.bars && panel.bars.length) {
-        var chart = drawPanel(holder, panel);
-        if (chart) el.__tcCharts.push(chart);
+        var handle = drawPanel(holder, panel);
+        if (handle) {
+          el.__tcCharts.push(handle.chart);
+          if (sel) sel.addEventListener("change", function () { handle.applyTf(sel.value); });
+        }
       } else {
         renderMessage(holder, "No market data for this period.");
       }
@@ -185,12 +209,7 @@
       layout: { background: { color: c.bg }, textColor: c.fg, attributionLogo: false },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       rightPriceScale: { borderColor: c.grid },
-      timeScale: {
-        borderColor: c.grid,
-        timeVisible: true,
-        secondsVisible: panel.timeframe === "1m",
-        rightOffset: 3,
-      },
+      timeScale: { borderColor: c.grid, timeVisible: true, rightOffset: 3 },
       crosshair: { mode: LWC.CrosshairMode ? LWC.CrosshairMode.Normal : 0 },
     });
 
@@ -201,37 +220,45 @@
       wickUpColor: c.pos,
       wickDownColor: c.neg,
     });
-    candle.setData(panel.bars.map(function (b) {
-      return { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c };
-    }));
-
     // Volume as an overlay histogram pinned to the bottom ~18% of the pane.
     var vol = chart.addSeries(LWC.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "" });
     chart.priceScale("").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
-    vol.setData(panel.bars.map(function (b) {
-      return { time: b.t, value: b.v || 0, color: (b.c >= b.o ? c.pos : c.neg) + "55" };
-    }));
 
-    // Entry/exit arrows, each snapped to its containing bar so the library
-    // always finds a matching data point.
-    var times = panel.bars.map(function (b) { return b.t; });
-    var markers = (panel.markers || []).map(function (m) {
-      return {
-        time: snap(times, m.t),
-        position: markerPosition(panel.direction, m.role),
-        color: m.side === "buy" ? c.pos : c.neg,
-        shape: m.side === "buy" ? "arrowUp" : "arrowDown",
-        text: fmtPrice(m.price),
-      };
-    }).sort(function (a, b) { return a.time - b.time; });
-    if (markers.length) {
+    var markersApi = null; // v5 markers primitive, created once then updated
+
+    // applyTf rolls the finest bars up to the chosen bar size and repaints the
+    // candles, volume, and entry/exit markers (re-snapped to the new bars).
+    function applyTf(tf) {
+      var bars = aggregateBars(panel.bars, tfSeconds(tf));
+      candle.setData(bars.map(function (b) {
+        return { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c };
+      }));
+      vol.setData(bars.map(function (b) {
+        return { time: b.t, value: b.v || 0, color: (b.c >= b.o ? c.pos : c.neg) + "55" };
+      }));
+      var times = bars.map(function (b) { return b.t; });
+      var markers = (panel.markers || []).map(function (m) {
+        return {
+          time: snap(times, m.t),
+          position: markerPosition(panel.direction, m.role),
+          color: m.side === "buy" ? c.pos : c.neg,
+          shape: m.side === "buy" ? "arrowUp" : "arrowDown",
+          text: fmtPrice(m.price),
+        };
+      }).sort(function (a, b) { return a.time - b.time; });
       if (LWC.createSeriesMarkers) {
-        LWC.createSeriesMarkers(candle, markers);
+        if (markersApi) markersApi.setMarkers(markers);
+        else markersApi = LWC.createSeriesMarkers(candle, markers);
       } else if (candle.setMarkers) {
         candle.setMarkers(markers); // v4 fallback
       }
+      chart.applyOptions({ timeScale: { secondsVisible: tf === "1m" } });
+      chart.timeScale().fitContent();
     }
 
+    applyTf(panel.timeframe || panel.barTimeframe);
+
+    // Average entry/exit price lines are independent of bar size, set once.
     var dashed = LWC.LineStyle ? LWC.LineStyle.Dashed : 2;
     if (panel.entryAvg) {
       candle.createPriceLine({ price: panel.entryAvg, color: c.muted, lineWidth: 1, lineStyle: dashed, axisLabelVisible: true, title: "in" });
@@ -240,8 +267,35 @@
       candle.createPriceLine({ price: panel.exitAvg, color: c.muted, lineWidth: 1, lineStyle: dashed, axisLabelVisible: true, title: "out" });
     }
 
-    chart.timeScale().fitContent();
-    return chart;
+    return { chart: chart, applyTf: applyTf };
+  }
+
+  // aggregateBars rolls fine bars up to `sec`-second buckets (open=first,
+  // high=max, low=min, close=last, volume=sum), keeping each bucket's first
+  // bar time. Mirrors the server-side roll-up so any coarser size is exact.
+  function aggregateBars(bars, sec) {
+    if (!bars || !bars.length || !sec) return bars || [];
+    var out = [], cur = null, curBucket = null;
+    for (var i = 0; i < bars.length; i++) {
+      var b = bars[i];
+      var bucket = b.t - (b.t % sec);
+      if (cur === null || bucket !== curBucket) {
+        if (cur) out.push(cur);
+        cur = { t: b.t, o: b.o, h: b.h, l: b.l, c: b.c, v: b.v || 0 };
+        curBucket = bucket;
+      } else {
+        if (b.h > cur.h) cur.h = b.h;
+        if (b.l < cur.l) cur.l = b.l;
+        cur.c = b.c;
+        cur.v += b.v || 0;
+      }
+    }
+    if (cur) out.push(cur);
+    return out;
+  }
+
+  function tfSeconds(tf) {
+    return { "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "1d": 86400 }[tf] || 60;
   }
 
   function markerPosition(direction, role) {
@@ -250,6 +304,18 @@
     var entryBelow = direction !== "short";
     if (role === "entry") return entryBelow ? "belowBar" : "aboveBar";
     return entryBelow ? "aboveBar" : "belowBar";
+  }
+
+  function humanTimeframe(tf) {
+    switch (tf) {
+      case "1m": return "1 min";
+      case "5m": return "5 min";
+      case "15m": return "15 min";
+      case "30m": return "30 min";
+      case "1h": return "1 hour";
+      case "1d": return "1 day";
+      default: return tf;
+    }
   }
 
   function fmtPrice(p) {

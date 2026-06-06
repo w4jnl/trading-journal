@@ -55,9 +55,6 @@
   </div>
 </form>
 
-{{if .ChartEnabled}}
-<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
-{{end}}
 {{template "journal_summary" (dict
   "Summary"      .Summary
   "Trades"       .Trades
@@ -65,6 +62,10 @@
   "EntryID"      0
   "EmptyMessage" "No trades closed in this week."
 )}}
+
+{{if .ChartEnabled}}
+<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
+{{end}}
 
 {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 
