@@ -199,6 +199,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M15 9 C 14 7.5 12.5 7 11 7 C 9 7 8 8 8 9.5 C 8 11 9.5 11.5 11 12 C 12.5 12.5 14.5 13 14.5 14.5 C 14.5 16 13.5 17 11.5 17 C 10 17 8.5 16.5 8 15"/><line x1="12" y1="5" x2="12" y2="7"/><line x1="12" y1="17" x2="12" y2="19"/></svg>
         Commissions
       </a>
+      <a href="/settings" class="sidebar-link {{if eq .NavActive "settings"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 2 L12 5 M12 19 L12 22 M2 12 L5 12 M19 12 L22 12 M4.9 4.9 L7 7 M17 17 L19.1 19.1 M19.1 4.9 L17 7 M7 17 L4.9 19.1"/></svg>
+        Settings
+      </a>
 
       {{if and .CurrentUser .CurrentUser.IsAdmin}}
       <div class="sidebar-section">Admin</div>

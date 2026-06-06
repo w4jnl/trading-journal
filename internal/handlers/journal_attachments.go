@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -150,26 +151,40 @@ func (h *Handlers) JournalAttachmentServe(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	h.serveAttachmentBytes(w, r, id, userID(r.Context()), false)
+}
+
+// serveAttachmentBytes streams a journal-attachment image with user scoping and
+// a path-traversal guard. Shared by the session route (requireOwnedRef=false)
+// and the API route (true). requireOwnedRef closes a gap for the stateless API:
+// an attachment with entry_id = 0 (uploaded before its entry was saved, or
+// pasted into a strategy) is otherwise readable by ANY authenticated principal
+// that guesses the id - acceptable for a freshly-minted session URL, not for a
+// long-lived API key. When true, an entry_id = 0 attachment is served only if
+// its id is referenced by a strategy or journal body the caller owns.
+func (h *Handlers) serveAttachmentBytes(w http.ResponseWriter, r *http.Request, id, uid int64, requireOwnedRef bool) {
 	var (
 		filePath string
 		mt       string
+		entryID  int64
 	)
-	// Scope by user_id via the parent entry. entry_id = 0 covers attachments
-	// uploaded before the entry was saved (paste-on-blank-page); those are
-	// only retrievable by the uploader because the URL was just minted.
 	row := h.DB.QueryRowContext(r.Context(),
-		`SELECT a.file_path, a.mime
+		`SELECT a.file_path, a.mime, a.entry_id
 		 FROM journal_attachments a
 		 LEFT JOIN journal_entries je ON je.id = a.entry_id
 		 WHERE a.id = ?
 		   AND (a.entry_id = 0 OR je.user_id = ?)`,
-		id, userID(r.Context()))
-	if err := row.Scan(&filePath, &mt); err != nil {
+		id, uid)
+	if err := row.Scan(&filePath, &mt, &entryID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
 		}
 		h.serverError(w, fmt.Errorf("load attachment: %w", err))
+		return
+	}
+	if requireOwnedRef && entryID == 0 && !h.userReferencesAttachment(r.Context(), uid, id) {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -212,6 +227,23 @@ func (h *Handlers) JournalAttachmentServe(w http.ResponseWriter, r *http.Request
 	} else {
 		_, _ = io.Copy(w, f)
 	}
+}
+
+// userReferencesAttachment reports whether attachment id appears in any of the
+// user's own strategy or journal bodies. The GLOB digit-boundary "[^0-9]"
+// prevents id 8 from matching ".../attachments/88"; in-body refs are markdown
+// image URLs always followed by ")", so a non-digit always trails the id.
+// (SQLite GLOB negates a character class with "^", not "!" - "!" is a literal.)
+func (h *Handlers) userReferencesAttachment(ctx context.Context, uid, id int64) bool {
+	pat := "*/journal/attachments/" + strconv.FormatInt(id, 10) + "[^0-9]*"
+	var one int
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT 1 FROM strategies WHERE user_id = ? AND body GLOB ?
+		 UNION ALL
+		 SELECT 1 FROM journal_entries WHERE user_id = ? AND body GLOB ?
+		 LIMIT 1`,
+		uid, pat, uid, pat).Scan(&one)
+	return err == nil
 }
 
 // JournalRecentList handles GET /journal/recent — returns recent journal

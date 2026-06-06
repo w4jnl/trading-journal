@@ -1,0 +1,182 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Trading Journal API",
+    "version": "v1",
+    "description": "Read strategies and journal entries, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content)."
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "security": [{ "bearerApiKey": [] }, { "apiKeyHeader": [] }],
+  "components": {
+    "securitySchemes": {
+      "bearerApiKey": { "type": "http", "scheme": "bearer", "description": "Authorization: Bearer tj_..." },
+      "apiKeyHeader": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+    },
+    "schemas": {
+      "Error": { "type": "object", "properties": { "error": { "type": "string" } }, "required": ["error"] },
+      "Attachment": {
+        "type": "object",
+        "properties": { "id": { "type": "integer" }, "url": { "type": "string", "description": "Fetch with your API key." } }
+      },
+      "Strategy": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "name": { "type": "string", "description": "Short name." },
+          "body": { "type": "string", "description": "Full description (markdown); image refs rewritten to API URLs." },
+          "attachments": { "type": "array", "items": { "$ref": "#/components/schemas/Attachment" } },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "Trade": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" }, "symbol": { "type": "string" }, "symbolRoot": { "type": "string" },
+          "direction": { "type": "string", "enum": ["long", "short"] }, "qty": { "type": "number" },
+          "account": { "type": "string" },
+          "entryTime": { "type": "string", "format": "date-time" },
+          "exitTime": { "type": ["string", "null"], "format": "date-time" },
+          "grossPnl": { "type": ["number", "null"] }, "commission": { "type": ["number", "null"] },
+          "netPnl": { "type": ["number", "null"] }
+        }
+      },
+      "Summary": {
+        "type": "object",
+        "properties": {
+          "trades": { "type": "integer" }, "net": { "type": "number" }, "gross": { "type": "number" },
+          "commission": { "type": "number" }, "wins": { "type": "integer" }, "losses": { "type": "integer" }
+        }
+      },
+      "JournalDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "scope": { "type": "string", "enum": ["day", "week", "trade", "group"] },
+          "date": { "type": "string", "example": "2026-06-02" },
+          "tag": { "type": ["string", "null"], "enum": ["good", "neutral", "bad", null] },
+          "mood": { "type": ["integer", "null"] },
+          "notes": { "type": "string", "description": "Markdown; image refs rewritten to API URLs." },
+          "strategy": {
+            "type": ["object", "null"],
+            "properties": { "id": { "type": "integer" }, "name": { "type": "string" } },
+            "description": "Assigned strategy, short name only (not the full description)."
+          },
+          "summary": { "$ref": "#/components/schemas/Summary" },
+          "trades": { "type": "array", "items": { "$ref": "#/components/schemas/Trade" } },
+          "chart": { "type": "object", "description": "Chart data: OHLC bars + entry/exit markers per contract panel." },
+          "attachments": { "type": "array", "items": { "$ref": "#/components/schemas/Attachment" } },
+          "chartPng": { "type": "string", "description": "URL of the rendered chart image." },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/strategies": {
+      "get": {
+        "summary": "List the caller's strategies (name + full markdown + image URLs).",
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Strategy" } } }
+            } } }
+          },
+          "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/strategies/{id}": {
+      "get": {
+        "summary": "Strategy detail.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Strategy" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/journal": {
+      "get": {
+        "summary": "List journal entries (summary rows).",
+        "parameters": [
+          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["day", "week", "trade", "group"] }, "description": "Repeatable." },
+          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" } },
+          { "name": "tag", "in": "query", "schema": { "type": "string", "enum": ["good", "neutral", "bad", "untagged"] } },
+          { "name": "strategy", "in": "query", "schema": { "type": "string" }, "description": "Strategy id, or 'none'." },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "items": { "type": "array", "items": { "type": "object" } },
+                "page": { "type": "object", "properties": { "limit": { "type": "integer" }, "offset": { "type": "integer" }, "count": { "type": "integer" } } }
+              }
+            } } }
+          }
+        }
+      }
+    },
+    "/journal/{id}": {
+      "get": {
+        "summary": "Journal entry detail (notes, tag, mood, strategy short name, trades overview + list, chart data, attachments).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalDetail" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/journal/{id}/notes": {
+      "post": {
+        "summary": "Append a dated note to the entry's body. Append-only: existing content is never removed.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "required": ["note"],
+            "properties": { "note": { "type": "string", "description": "Markdown; appended under a dated heading." } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "Appended", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "id": { "type": "integer" }, "appended": { "type": "boolean" } }
+          } } } },
+          "400": { "description": "Empty/invalid note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Entry not found (the API does not create entries)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/journal/{id}/chart.png": {
+      "get": {
+        "summary": "Server-rendered candlestick PNG of the entry's chart (cached data only).",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "contract", "in": "query", "schema": { "type": "string" }, "description": "Pick a contract/root when the entry spans several; defaults to the first." }
+        ],
+        "responses": {
+          "200": { "description": "PNG image", "content": { "image/png": { "schema": { "type": "string", "format": "binary" } } } },
+          "404": { "description": "No cached chart data", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/attachments/{id}": {
+      "get": {
+        "summary": "Fetch an embedded image referenced by a strategy/journal body the caller owns.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "Image bytes", "content": { "image/png": {}, "image/jpeg": {}, "image/gif": {}, "image/webp": {} } },
+          "404": { "description": "Not found / not owned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    }
+  }
+}
