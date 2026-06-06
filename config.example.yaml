@@ -25,6 +25,25 @@ backup:
   dir: "./backups"
   hour: 4 # 0-23, local server time
 
+# Trade-replay charts. Candlestick market context around a trade's entry/exit,
+# with the fills overlaid as arrow markers. Bars come from Yahoo Finance v8
+# (free, no API key); only continuous front-month futures are available, so the
+# candle basis differs slightly from a dated contract (the overlaid fills are
+# exact). Bars are cached in the DB; after each import a background worker warms
+# the cache for the touched accounts so charts render instantly on first view.
+market_data:
+  # "yahoo" (default) or "" to use the default. No other source in v1.
+  source: "yahoo"
+  # Leave blank for the public endpoint; override only for testing.
+  yahoo_base_url: ""
+  # Outbound fetch timeout, seconds. Default 10.
+  http_timeout_sec: 10
+  # enabled: false hides charts entirely. prefetch: false keeps charts but
+  # makes them lazy (the "Load chart" button) with no warm-on-import worker.
+  # Both default to true when omitted.
+  # enabled: true
+  # prefetch: true
+
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

@@ -55,6 +55,9 @@
   </div>
 </form>
 
+{{if .ChartEnabled}}
+<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
+{{end}}
 {{template "journal_summary" (dict
   "Summary"      .Summary
   "Trades"       .Trades

@@ -132,6 +132,25 @@ type JournalTemplate struct {
 	UpdatedAt *time.Time `json:"updated_at"`
 }
 
+type PriceBar struct {
+	YahooSymbol string  `json:"yahoo_symbol"`
+	Timeframe   string  `json:"timeframe"`
+	BarTime     int64   `json:"bar_time"`
+	Open        float64 `json:"open"`
+	High        float64 `json:"high"`
+	Low         float64 `json:"low"`
+	Close       float64 `json:"close"`
+	Volume      float64 `json:"volume"`
+	FetchedAt   int64   `json:"fetched_at"`
+}
+
+type PriceBarDay struct {
+	YahooSymbol string `json:"yahoo_symbol"`
+	Timeframe   string `json:"timeframe"`
+	Day         string `json:"day"`
+	FetchedAt   int64  `json:"fetched_at"`
+}
+
 type Session struct {
 	ID        string    `json:"id"`
 	UserID    int64     `json:"user_id"`

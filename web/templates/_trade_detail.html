@@ -38,6 +38,10 @@
 </div>
 {{end}}
 
+{{if .ChartEnabled}}
+<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
+{{end}}
+
 <section data-trade-journal>
   <div class="row-sm" style="justify-content: space-between; margin-bottom: 8px;">
     <h3 style="margin: 0;">Journal</h3>

@@ -433,10 +433,14 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		return
 	}
 
+	chartTrades := []linkedTrade{{ID: trade.ID, Symbol: trade.Symbol, SymbolRoot: trade.SymbolRoot, Direction: trade.Direction, EntryTime: trade.EntryTime, ExitTime: trade.ExitTime}}
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
 		"Trade":            trade,
 		"TradeID":          id,
 		"Executions":       execs,
+		"ChartEnabled":     h.chartShow(chartTrades),
+		"ChartEndpoint":    fmt.Sprintf("/charts/trade/%d", id),
+		"ChartCached":      h.chartCached(ctx, chartTrades),
 		"HasJournal":       hasJournal,
 		"JournalBody":      journalBody,
 		"JournalTag":       journalTag,
