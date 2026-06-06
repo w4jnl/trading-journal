@@ -36,6 +36,9 @@ around it.
 - **Exports** to Markdown and PDF, filterable by the same controls as
   the on-screen feed. Each entry carries its summary line + up to five
   underlying trades.
+- **HTTP API** with per-user API keys for read + append-only access to
+  strategies and journal entries — built to be LLM/agent-friendly
+  (discovery index + OpenAPI spec). See **[API.md](API.md)**.
 - **⌘K command palette** for fast navigation, recent pages, symbol
   jumps (type `MNQ` → `/trades?symbol_root=MNQ`), and date keywords
   (`today`, `last week`, …).
@@ -224,6 +227,22 @@ proxy you use, double-check that it strips client-supplied
 allowlist is the only thing standing between a curious client and
 impersonation.
 
+## HTTP API
+
+Beyond the web UI, the app exposes a small **HTTP API** for external
+clients and AI agents: read your strategies and journal entries (trades
+overview, detailed trade list, tags, assigned strategy, chart data + a
+server-rendered PNG, embedded images), and append dated notes to an entry
+(append-only — existing content is never overwritten).
+
+Access is by **per-user API key**, generated under **Settings**
+(`/settings`) and sent as `Authorization: Bearer tj_...` (or `X-API-Key`).
+The surface is LLM-friendly: a discovery index at `GET /api/v1` and an
+OpenAPI 3.1 spec at `GET /api/v1/openapi.json`, both behind the key.
+
+Full reference — authentication, every endpoint, JSON shapes, and a
+worked example — lives in **[API.md](API.md)**.
+
 ## Quick start (Docker)
 
 A container-based deployment is in `Docker/`:
@@ -345,6 +364,8 @@ exports you already have on hand.
 
 ## Further reading
 
+- **[API.md](API.md)** — the HTTP API: per-user key auth, the full
+  endpoint reference, JSON shapes, and an agent-oriented worked example.
 - **[CLAUDE.md](CLAUDE.md)** — repository-wide rules and design
   decisions that are easy to violate by accident (TZ handling, the
   `executions → trades` derivation, instrument stub auto-creation,
