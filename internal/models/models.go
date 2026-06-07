@@ -23,6 +23,17 @@ type Account struct {
 	CreatedAt        time.Time `json:"created_at"`
 }
 
+type ApiKey struct {
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	Name       string     `json:"name"`
+	KeyPrefix  string     `json:"key_prefix"`
+	KeySha256  string     `json:"key_sha256"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
+}
+
 type AssetClass struct {
 	Code      string `json:"code"`
 	Label     string `json:"label"`

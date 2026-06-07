@@ -60,3 +60,16 @@ LEFT JOIN accounts a ON a.id = COALESCE(je.account_id, t.account_id)
 WHERE je.user_id = ?
 ORDER BY je.entry_date DESC, je.id DESC
 LIMIT ?;
+
+-- name: GetJournalEntryByID :one
+-- Fetch one entry scoped by owner. Added for the API (no by-id query existed).
+SELECT * FROM journal_entries WHERE id = ? AND user_id = ?;
+
+-- name: AppendJournalEntryBody :exec
+-- Append-only note write for the API: concatenates onto the existing body in a
+-- single atomic UPDATE so concurrent appends can't lose each other's text (a
+-- Go-side read-modify-write could). The caller passes the fully formatted block
+-- to append (separator + dated heading + note). Scoped by owner.
+UPDATE journal_entries
+SET body = body || ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND user_id = ?;

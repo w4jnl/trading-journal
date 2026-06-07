@@ -306,6 +306,11 @@ func run() error {
 	mux.HandleFunc("POST /library/strategies/{id}", h.StrategyUpdate)
 	mux.HandleFunc("POST /library/strategies/{id}/delete", h.StrategyDelete)
 	mux.HandleFunc("POST /library/playbook", h.PlaybookSave)
+	// Settings: per-user API key management (session + CSRF chain).
+	mux.HandleFunc("GET /settings", h.SettingsPage)
+	mux.HandleFunc("POST /settings/api-keys", h.APIKeyCreate)
+	mux.HandleFunc("POST /settings/api-keys/{id}/revoke", h.APIKeyRevoke)
+	mux.HandleFunc("POST /settings/api-keys/{id}/delete", h.APIKeyDelete)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)
@@ -361,12 +366,18 @@ func run() error {
 
 	authn.Routes(mux)
 
-	// Handler chain: CSRF -> RequireUser -> mux. CSRF runs first so even
-	// the auth-protected POSTs are token-checked; RequireUser then resolves
-	// the session into r.Context().
+	// Top-level split: /api/* is a stateless, key-authenticated API that bypasses
+	// CSRF + session entirely; everything else keeps the HTML app's chain
+	// (CSRF -> RequireUser -> mux). http.ServeMux subtree dispatch on "/api/"
+	// does not strip the prefix, so the API mux registers full /api/v1/... paths.
+	apiKeyAuth := &auth.APIKeyAuth{Queries: queries}
+	root := http.NewServeMux()
+	root.Handle("/api/", apiKeyAuth.Middleware(h.APIMux()))
+	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           csrf.Middleware(auth.RequireUser(authn, actAs, mux)),
+		Handler:           root,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

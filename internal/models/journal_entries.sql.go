@@ -10,6 +10,27 @@ import (
 	"time"
 )
 
+const appendJournalEntryBody = `-- name: AppendJournalEntryBody :exec
+UPDATE journal_entries
+SET body = body || ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND user_id = ?
+`
+
+type AppendJournalEntryBodyParams struct {
+	Body   string `json:"body"`
+	ID     int64  `json:"id"`
+	UserID *int64 `json:"user_id"`
+}
+
+// Append-only note write for the API: concatenates onto the existing body in a
+// single atomic UPDATE so concurrent appends can't lose each other's text (a
+// Go-side read-modify-write could). The caller passes the fully formatted block
+// to append (separator + dated heading + note). Scoped by owner.
+func (q *Queries) AppendJournalEntryBody(ctx context.Context, arg AppendJournalEntryBodyParams) error {
+	_, err := q.db.ExecContext(ctx, appendJournalEntryBody, arg.Body, arg.ID, arg.UserID)
+	return err
+}
+
 const createJournalEntry = `-- name: CreateJournalEntry :one
 INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope, strategy_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -85,6 +106,36 @@ type GetDayJournalEntryParams struct {
 
 func (q *Queries) GetDayJournalEntry(ctx context.Context, arg GetDayJournalEntryParams) (JournalEntry, error) {
 	row := q.db.QueryRowContext(ctx, getDayJournalEntry, arg.UserID, arg.EntryDate)
+	var i JournalEntry
+	err := row.Scan(
+		&i.ID,
+		&i.TradeID,
+		&i.AccountID,
+		&i.EntryDate,
+		&i.Body,
+		&i.Mood,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Tag,
+		&i.Scope,
+		&i.UserID,
+		&i.StrategyID,
+	)
+	return i, err
+}
+
+const getJournalEntryByID = `-- name: GetJournalEntryByID :one
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries WHERE id = ? AND user_id = ?
+`
+
+type GetJournalEntryByIDParams struct {
+	ID     int64  `json:"id"`
+	UserID *int64 `json:"user_id"`
+}
+
+// Fetch one entry scoped by owner. Added for the API (no by-id query existed).
+func (q *Queries) GetJournalEntryByID(ctx context.Context, arg GetJournalEntryByIDParams) (JournalEntry, error) {
+	row := q.db.QueryRowContext(ctx, getJournalEntryByID, arg.ID, arg.UserID)
 	var i JournalEntry
 	err := row.Scan(
 		&i.ID,
