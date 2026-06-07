@@ -111,9 +111,13 @@ surface:
 | `GET`  | `/api/v1/strategies` | List your strategies |
 | `GET`  | `/api/v1/strategies/{id}` | One strategy |
 | `GET`  | `/api/v1/journal` | List journal entries (summary rows) |
+| `POST` | `/api/v1/journal` | Create an entry (day/week/trade/group) |
 | `GET`  | `/api/v1/journal/{id}` | One journal entry (full detail) |
 | `POST` | `/api/v1/journal/{id}/notes` | Append a dated note (append-only) |
 | `GET`  | `/api/v1/journal/{id}/chart.png` | Server-rendered chart image |
+| `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
+| `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
+| `GET`  | `/api/v1/trades/{id}/chart.png` | Server-rendered trade chart image |
 | `GET`  | `/api/v1/attachments/{id}` | Fetch an embedded image |
 
 ### Strategies
@@ -294,7 +298,55 @@ Errors:
 | Status | When |
 |---|---|
 | `400` | Body isn't `{"note": "..."}`, or the note is empty/whitespace |
-| `404` | Entry doesn't exist or you don't own it - **the API does not create entries** |
+| `404` | Entry doesn't exist or you don't own it - this endpoint only appends to an existing entry; create one with `POST /api/v1/journal` |
+
+### Creating journal entries
+
+`POST /api/v1/journal` creates one entry. A single `scope` field selects the
+kind; the rest of the body depends on it. On success you get **`201`** with the
+new entry in the exact shape `GET /api/v1/journal/{id}` returns, plus a
+`Location` header.
+
+| `scope` | Required | Optional | Keyed by (uniqueness) |
+|---|---|---|---|
+| `day` | `date` (`YYYY-MM-DD`), `body` | `tag`, `mood` (1-5), `strategyId` | one per date |
+| `week` | `week` (`YYYY-Www`), `body` | `tag`, `strategyId` | one per ISO week |
+| `trade` | `tradeId`, `body` | `tag`, `strategyId` | one per trade |
+| `group` | `tradeIds` (≥1) | `body`, `tag`, `strategyId` | **none - create freely** |
+
+```bash
+# A day entry
+curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"scope":"day","date":"2026-06-02","body":"Choppy open, sat out.","tag":"neutral"}' \
+  "$HOST/api/v1/journal"
+
+# A group entry over several trades (the group is DEFINED by these trades)
+curl -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"scope":"group","tradeIds":[4412,4413,4418],"body":"NQ ramp scalps.","tag":"good"}' \
+  "$HOST/api/v1/journal"
+```
+
+**Group entries** are the only multi-trade kind: you pass an explicit
+`tradeIds` array and the server links each (after dropping any you don't own),
+deriving the entry's date from the latest exit among them. Trades may belong to
+many groups, so a group create always succeeds - there is no conflict check.
+
+**Day / week / trade are singletons.** If one already exists, create returns
+**`409`** with the existing id - it never overwrites:
+
+```jsonc
+// POST /api/v1/journal {"scope":"day","date":"2026-06-02", ...} when one exists
+// -> 409
+{ "error": "a day entry already exists for 2026-06-02", "entryId": 8 }
+// then append instead:
+// POST /api/v1/journal/8/notes  {"note":"..."}
+```
+
+Other errors are `400`: unknown `scope`, missing the scope's required field, a
+future `date`, `mood` outside 1-5, a `tag` outside `good|neutral|bad`, an
+unknown/foreign `strategyId` or `tradeId`, or (group) no owned trades. Editing an
+existing entry's tag/mood/strategy and deleting entries are out of scope -
+create new, or append notes.
 
 ### Chart image (PNG)
 
@@ -324,14 +376,86 @@ strategy `body` and journal `notes`, and enumerated in each item's
 For safety, an image is served over the API only when it's referenced by a
 strategy or journal body **you own**; anything else is `404`.
 
+### Trades list
+
+`GET /api/v1/trades` returns closed trades, newest first, **page-based** (fixed
+page size 50).
+
+Query parameters (all optional):
+
+| Param | Type | Notes |
+|---|---|---|
+| `symbol_root` | string | e.g. `MES` |
+| `direction` | `long` \| `short` | |
+| `outcome` | `win` \| `loss` \| `breakeven` | by net P&L sign |
+| `from` | `YYYY-MM-DD` | inclusive lower bound on exit date |
+| `to` | `YYYY-MM-DD` | inclusive upper bound |
+| `account_id` | integer | one account |
+| `page` | integer | 1-based; default `1` |
+| `show_retired` | `1` | include trades on retired accounts |
+
+```jsonc
+// GET /api/v1/trades?symbol_root=MES&outcome=win&page=1
+{
+  "items": [
+    {
+      "id": 4412, "accountId": 7, "account": "APEX-100001-28", "firm": "apex",
+      "symbol": "MESM6", "symbolRoot": "MES", "direction": "long", "qty": 3,
+      "entryPrice": 7410.25, "exitPrice": 7423.50,
+      "entryTime": "2026-05-18T14:32:11Z", "exitTime": "2026-05-18T14:48:02Z",
+      "grossPnl": 37.5, "commission": 4.2, "netPnl": 33.3, "status": "closed",
+      "retired": false, "hasJournal": true, "journalTag": "good", "groupCount": 1
+    }
+  ],
+  "page": { "page": 1, "pageSize": 50, "pages": 3, "total": 124 }
+}
+```
+
+P&L fields are `null` for stub instruments (same rule as journal trades).
+
+### Trade detail
+
+`GET /api/v1/trades/{id}` -> the trade plus its fills, the linked trade-scope
+journal entry id (if any), how many group entries include it, and cached chart
+data. `404` if you don't own it.
+
+```jsonc
+{
+  "id": 4412, "accountId": 7, "account": "APEX-100001-28", "firm": "apex",
+  "symbol": "MESM6", "symbolRoot": "MES", "direction": "long", "qty": 3,
+  "entryPrice": 7410.25, "exitPrice": 7423.50,
+  "entryTime": "2026-05-18T14:32:11Z", "exitTime": "2026-05-18T14:48:02Z",
+  "grossPnl": 37.5, "commission": 4.2, "netPnl": 33.3, "status": "closed",
+  "brokerTradeId": null,
+  "hasJournal": true, "journalEntryId": 31, "journalTag": "good", "groupCount": 1,
+  "executions": [
+    { "time": "2026-05-18T14:32:11Z", "side": "buy",  "role": "entry", "qty": 3, "price": 7410.25 },
+    { "time": "2026-05-18T14:48:02Z", "side": "sell", "role": "exit",  "qty": 3, "price": 7423.50 }
+  ],
+  "chart": ChartEnvelope,        // present only when charting is enabled
+  "chartPng": "/api/v1/trades/4412/chart.png"
+}
+```
+
+`executions` are the actual fills; `qty` is the portion attributed to this
+trade. The `chart` field has the same shape as the journal
+[`chart` field](#the-chart-field).
+
+### Trade chart image (PNG)
+
+`GET /api/v1/trades/{id}/chart.png` - same renderer and `?contract=` rule as the
+journal chart image; `image/png` or `404` when nothing is cached.
+
 ## Status codes
 
 | Code | Meaning |
 |---|---|
 | `200` | OK |
-| `400` | Bad request (malformed id or note body) |
+| `201` | Created (journal create) |
+| `400` | Bad request (malformed id, bad/missing field) |
 | `401` | Missing/invalid/disabled key |
 | `404` | Not found, or not owned by you |
+| `409` | Conflict - a singleton entry already exists (carries `entryId`) |
 | `500` | Server error |
 
 ## Worked example
@@ -356,12 +480,23 @@ curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/journal/8/chart.png" -o ch
 curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"note":"Late entry on the 14:32 long; see chart."}' \
   "$HOST/api/v1/journal/8/notes"
+
+# Browse the trade log, then one trade in detail
+curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/trades?symbol_root=MES&outcome=win"
+curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/trades/4412"
+
+# Create a day journal entry (201, or 409 with entryId if it already exists)
+curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
+  -d '{"scope":"day","date":"2026-06-02","body":"Choppy open, sat out.","tag":"neutral"}' \
+  "$HOST/api/v1/journal"
 ```
 
 ## Notes & limits (v1)
 
 - Keys are **full-access** to their user's data (no per-key scopes yet).
-- The only write is **append a note**. The API cannot create or delete
-  entries, edit tags/mood/strategy, or change trades.
+- Writes are **create an entry** and **append a note** - both additive. The API
+  never overwrites or deletes: it can't edit an existing entry's tag/mood/
+  strategy, delete entries, or create/modify trades.
+- Trades are read-only and the list is page-based (fixed page size 50).
 - No rate limiting (intended for a private network / trusted agents).
 - The PNG is a single panel; the JSON `chart` field carries every panel.

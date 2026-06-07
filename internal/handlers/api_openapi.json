@@ -70,6 +70,86 @@
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" }
         }
+      },
+      "Execution": {
+        "type": "object",
+        "properties": {
+          "time": { "type": "string", "format": "date-time" },
+          "side": { "type": "string", "enum": ["buy", "sell"] },
+          "role": { "type": "string", "enum": ["entry", "exit"] },
+          "qty": { "type": "number", "description": "Qty of this fill attributed to the trade." },
+          "price": { "type": "number" }
+        }
+      },
+      "TradeRow": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "accountId": { "type": "integer" },
+          "account": { "type": "string" },
+          "firm": { "type": ["string", "null"] },
+          "symbol": { "type": "string" },
+          "symbolRoot": { "type": "string" },
+          "direction": { "type": "string", "enum": ["long", "short"] },
+          "qty": { "type": "number" },
+          "entryPrice": { "type": "number" },
+          "exitPrice": { "type": ["number", "null"] },
+          "entryTime": { "type": "string", "format": "date-time" },
+          "exitTime": { "type": ["string", "null"], "format": "date-time" },
+          "grossPnl": { "type": ["number", "null"], "description": "null for stub instruments awaiting tick setup." },
+          "commission": { "type": ["number", "null"] },
+          "netPnl": { "type": ["number", "null"] },
+          "status": { "type": "string" },
+          "retired": { "type": "boolean", "description": "Trade is on a retired account." },
+          "hasJournal": { "type": "boolean" },
+          "journalTag": { "type": "string" },
+          "groupCount": { "type": "integer", "description": "Number of group entries that include this trade." }
+        }
+      },
+      "TradeDetail": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "integer" },
+          "accountId": { "type": "integer" },
+          "account": { "type": "string" },
+          "firm": { "type": ["string", "null"] },
+          "symbol": { "type": "string" },
+          "symbolRoot": { "type": "string" },
+          "direction": { "type": "string", "enum": ["long", "short"] },
+          "qty": { "type": "number" },
+          "entryPrice": { "type": "number" },
+          "exitPrice": { "type": ["number", "null"] },
+          "entryTime": { "type": "string", "format": "date-time" },
+          "exitTime": { "type": ["string", "null"], "format": "date-time" },
+          "grossPnl": { "type": ["number", "null"] },
+          "commission": { "type": ["number", "null"] },
+          "netPnl": { "type": ["number", "null"] },
+          "status": { "type": "string" },
+          "brokerTradeId": { "type": ["string", "null"] },
+          "hasJournal": { "type": "boolean" },
+          "journalEntryId": { "type": ["integer", "null"] },
+          "journalTag": { "type": "string" },
+          "groupCount": { "type": "integer" },
+          "executions": { "type": "array", "items": { "$ref": "#/components/schemas/Execution" } },
+          "chart": { "type": "object", "description": "Cached OHLC bars + entry/exit markers per contract panel." },
+          "chartPng": { "type": "string" }
+        }
+      },
+      "JournalCreate": {
+        "type": "object",
+        "required": ["scope"],
+        "description": "Create body. The required scope-specific field depends on scope: day->date, week->week, trade->tradeId, group->tradeIds.",
+        "properties": {
+          "scope": { "type": "string", "enum": ["day", "week", "trade", "group"] },
+          "body": { "type": "string", "description": "Markdown. Required for day/week/trade; optional for group." },
+          "tag": { "type": "string", "enum": ["good", "neutral", "bad"] },
+          "mood": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Day scope only." },
+          "strategyId": { "type": "integer", "description": "Optional; must be owned." },
+          "date": { "type": "string", "example": "2026-06-02", "description": "scope=day (YYYY-MM-DD, trading tz; not future)." },
+          "week": { "type": "string", "example": "2026-W23", "description": "scope=week (YYYY-Www)." },
+          "tradeId": { "type": "integer", "description": "scope=trade (must be owned)." },
+          "tradeIds": { "type": "array", "items": { "type": "integer" }, "description": "scope=group (>=1; non-owned ids dropped)." }
+        }
       }
     }
   },
@@ -123,6 +203,18 @@
             } } }
           }
         }
+      },
+      "post": {
+        "summary": "Create a journal entry (day/week/trade/group). Day/week/trade are singletons -> 409 if one already exists (use the notes endpoint to append); group always creates.",
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalCreate" } } }
+        },
+        "responses": {
+          "201": { "description": "Created (returns the entry in the GET /journal/{id} shape; Location header set)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalDetail" } } } },
+          "400": { "description": "Validation error (missing/invalid field for the scope)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "409": { "description": "An entry already exists for this date/week/trade", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "entryId": { "type": "integer" } } } } } }
+        }
       }
     },
     "/journal/{id}": {
@@ -175,6 +267,56 @@
         "responses": {
           "200": { "description": "Image bytes", "content": { "image/png": {}, "image/jpeg": {}, "image/gif": {}, "image/webp": {} } },
           "404": { "description": "Not found / not owned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/trades": {
+      "get": {
+        "summary": "List trades (filtered, paged; page size 50).",
+        "parameters": [
+          { "name": "symbol_root", "in": "query", "schema": { "type": "string" }, "description": "e.g. MES" },
+          { "name": "direction", "in": "query", "schema": { "type": "string", "enum": ["long", "short"] } },
+          { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["win", "loss", "breakeven"] } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" } },
+          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" } },
+          { "name": "account_id", "in": "query", "schema": { "type": "integer" } },
+          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
+          { "name": "show_retired", "in": "query", "schema": { "type": "boolean" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "items": { "type": "array", "items": { "$ref": "#/components/schemas/TradeRow" } },
+                "page": { "type": "object", "properties": { "page": { "type": "integer" }, "pageSize": { "type": "integer" }, "pages": { "type": "integer" }, "total": { "type": "integer" } } }
+              }
+            } } }
+          }
+        }
+      }
+    },
+    "/trades/{id}": {
+      "get": {
+        "summary": "Trade detail: fills, linked journal entry id, group count, and cached chart data.",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TradeDetail" } } } },
+          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/trades/{id}/chart.png": {
+      "get": {
+        "summary": "Server-rendered candlestick PNG of the trade's chart (cached data only).",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
+          { "name": "contract", "in": "query", "schema": { "type": "string" }, "description": "Pick a contract/root; defaults to the first with data." }
+        ],
+        "responses": {
+          "200": { "description": "PNG image", "content": { "image/png": { "schema": { "type": "string", "format": "binary" } } } },
+          "404": { "description": "No cached chart data", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     }
