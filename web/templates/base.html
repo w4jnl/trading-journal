@@ -206,6 +206,10 @@
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 21 C 2 16 5 14 9 14 C 13 14 16 16 16 21"/><circle cx="17" cy="10" r="2.5"/><path d="M14 21 C 14 17.5 16 16 18 16 C 20 16 22 17.5 22 21"/></svg>
         Users
       </a>
+      <a href="/admin/market-data" class="sidebar-link {{if eq .NavActive "admin_market_data"}}active{{end}}">
+        <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="20" x2="20" y2="20"/><rect x="6" y="11" width="3" height="6"/><rect x="11" y="6" width="3" height="11"/><rect x="16" y="13" width="3" height="4"/></svg>
+        Market data
+      </a>
       {{end}}
 
       <div class="sidebar-footer">
@@ -303,6 +307,7 @@
   <script src="/static/js/toast.js" defer></script>
   <script src="/static/js/journal_editor.js" defer></script>
   <script src="/static/js/trade_sheet.js" defer></script>
+  <script src="/static/js/trade-chart.js" defer></script>
 </body>
 </html>
 {{end}}

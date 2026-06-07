@@ -9,6 +9,11 @@
     AllowUnlink   bool          (true for group scope — adds × buttons)
     EntryID       int64         (only used when AllowUnlink is true)
     EmptyMessage  string        (text when no trades, e.g. "No trades on this day")
+
+  Trade rows are informational only (not clickable). A journal entry journals
+  the day / week / group / trade as a whole; opening a per-trade modal journal
+  from inside another journal entry was redundant and confusing. To inspect a
+  single trade, use the /trades page.
 */}}
 {{define "journal_summary"}}
 <div class="card" style="margin-top: 16px;">
@@ -54,10 +59,7 @@
     </thead>
     <tbody>
       {{range .Trades}}
-      <tr class="trade-row" data-trade-id="{{.ID}}"
-          hx-get="/trades/{{.ID}}"
-          hx-target="#trade-sheet-content"
-          hx-swap="innerHTML">
+      <tr>
         <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
         <td>{{.AccountName}}</td>
         <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>

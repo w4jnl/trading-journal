@@ -21,6 +21,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -45,6 +46,14 @@ type Handlers struct {
 	// ActAs is the admin "browse as another user" helper. Nil disables
 	// the feature (and the /admin/act-as routes return 500-ish).
 	ActAs *auth.ActAs
+
+	// MarketData fronts the historical-bar cache for the trade-replay charts.
+	// Nil disables charting entirely (the mount points render nothing).
+	MarketData *marketdata.CachingSource
+
+	// Prefetch is the background bar-cache warmer. The admin backfill action
+	// enqueues missing symbol-days through it. Nil when prefetch is disabled.
+	Prefetch *marketdata.Prefetcher
 
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys

@@ -60,6 +60,10 @@
   "EmptyMessage" "No trades linked yet — add one below."
 )}}
 
+{{if .ChartEnabled}}
+<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
+{{end}}
+
 {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 
 <details class="disclose trade-picker" style="margin-top: 16px; margin-bottom: 16px;">

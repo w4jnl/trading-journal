@@ -119,6 +119,10 @@
   </div>
 </details>
 
+{{if .ChartEnabled}}
+<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
+{{end}}
+
 {{/* When this partial is swapped in via HTMX (e.g., from /trades/journal POST),
      update the sheet title to reflect the trade. */}}
 {{with .Trade}}

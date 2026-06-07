@@ -17,7 +17,20 @@ type Config struct {
 	OIDashboards OIDashboards `yaml:"oi_dashboards"`
 	Auth         Auth         `yaml:"auth"`
 	Backup       Backup       `yaml:"backup"`
+	MarketData   MarketData   `yaml:"market_data"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// MarketData configures the historical price-bar source behind the trade-replay
+// charts. The v1 source is Yahoo Finance v8 (free, no key). Enabled (nil = true)
+// toggles the whole feature; Prefetch (nil = true) toggles only the background
+// warm-on-import worker (set false to keep charts lazy/button-on-miss).
+type MarketData struct {
+	Source         string `yaml:"source"`
+	YahooBaseURL   string `yaml:"yahoo_base_url"`
+	HTTPTimeoutSec int    `yaml:"http_timeout_sec"`
+	Enabled        *bool  `yaml:"enabled"`
+	Prefetch       *bool  `yaml:"prefetch"`
 }
 
 // Backup controls the periodic on-disk snapshot. When Enabled, the app writes
@@ -95,8 +108,9 @@ func defaults() Config {
 				AdminGroup:  "admin",
 			},
 		},
-		Backup:   Backup{Dir: "./backups", Hour: 4, Enabled: true},
-		Timezone: "America/Chicago",
+		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
+		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10},
+		Timezone:   "America/Chicago",
 	}
 }
 
@@ -125,6 +139,14 @@ func (c Config) Validate() error {
 	}
 	if c.Backup.Enabled && (c.Backup.Hour < 0 || c.Backup.Hour > 23) {
 		return fmt.Errorf("backup.hour must be 0-23, got %d", c.Backup.Hour)
+	}
+	switch c.MarketData.Source {
+	case "", "yahoo":
+	default:
+		return fmt.Errorf("market_data.source must be \"yahoo\" or empty, got %q", c.MarketData.Source)
+	}
+	if c.MarketData.HTTPTimeoutSec < 0 {
+		return fmt.Errorf("market_data.http_timeout_sec must be >= 0, got %d", c.MarketData.HTTPTimeoutSec)
 	}
 	return nil
 }

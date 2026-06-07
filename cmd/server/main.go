@@ -22,6 +22,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/db"
 	"github.com/w4jnl/trading-journal/internal/handlers"
 	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -109,6 +110,26 @@ func run() error {
 	}
 
 	queries := models.New(conn)
+
+	// Market-data cache + background prefetch for the trade-replay charts.
+	// Disabled -> nil cache (charts hidden in the UI). Prefetch off -> the cache
+	// is still served (lazy "Load chart"), but no warm-on-import worker runs.
+	var marketCache *marketdata.CachingSource
+	var prefetcher *marketdata.Prefetcher
+	if cfg.MarketData.Enabled == nil || *cfg.MarketData.Enabled {
+		timeout := time.Duration(cfg.MarketData.HTTPTimeoutSec) * time.Second
+		if timeout <= 0 {
+			timeout = 10 * time.Second
+		}
+		marketCache = &marketdata.CachingSource{
+			DB:     conn,
+			Source: &marketdata.Yahoo{BaseURL: cfg.MarketData.YahooBaseURL, Client: &http.Client{Timeout: timeout}},
+			Loc:    tz,
+		}
+		if cfg.MarketData.Prefetch == nil || *cfg.MarketData.Prefetch {
+			prefetcher = marketdata.NewPrefetcher(marketCache, conn, tz)
+		}
+	}
 
 	inbox := filepath.Join(cfg.Imports.Root, "inbox")
 	processed := filepath.Join(cfg.Imports.Root, "processed")
@@ -213,6 +234,11 @@ func run() error {
 		Timezone:     tz,
 		UserID:       bootstrapUserID,
 	}
+	// Assign the concrete prefetcher only when non-nil, so the interface field
+	// doesn't end up holding a typed-nil (which would read as != nil).
+	if prefetcher != nil {
+		importSvc.Prefetch = prefetcher
+	}
 
 	h := &handlers.Handlers{
 		Templates:       web.TemplatesFS,
@@ -225,6 +251,8 @@ func run() error {
 		Timezone:        tz,
 		CSRF:            csrf,
 		ActAs:           actAs,
+		MarketData:      marketCache,
+		Prefetch:        prefetcher,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -247,6 +275,11 @@ func run() error {
 	mux.HandleFunc("GET /trades", h.TradesPage)
 	mux.HandleFunc("GET /trades/{id}", h.TradeDetail)
 	mux.HandleFunc("POST /trades/{id}/journal", h.TradeJournalSave)
+	// Trade-replay charts (JSON) for the trade-detail + journal views.
+	mux.HandleFunc("GET /charts/trade/{id}", h.ChartTrade)
+	mux.HandleFunc("GET /charts/group/{id}", h.ChartGroup)
+	mux.HandleFunc("GET /charts/day/{date}", h.ChartDay)
+	mux.HandleFunc("GET /charts/week/{week}", h.ChartWeek)
 	mux.HandleFunc("GET /accounts", h.AccountsPage)
 	mux.HandleFunc("POST /accounts/save", h.AccountsBulkSave)
 	mux.HandleFunc("POST /accounts/new", h.AccountsCreate)
@@ -311,6 +344,9 @@ func run() error {
 	mux.Handle("POST /admin/users/{id}/delete", auth.RequireAdmin(http.HandlerFunc(h.AdminUsersDelete)))
 	mux.Handle("POST /admin/act-as/{id}", auth.RequireAdmin(http.HandlerFunc(h.AdminActAsStart)))
 	mux.HandleFunc("POST /admin/act-as/clear", h.AdminActAsClear)
+	// Admin market-data: review chart-cache coverage and backfill gaps.
+	mux.Handle("GET /admin/market-data", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataPage)))
+	mux.Handle("POST /admin/market-data/backfill", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataBackfill)))
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {
@@ -355,6 +391,12 @@ func run() error {
 			ImportsRoot: cfg.Imports.Root,
 			DB:          conn,
 		})
+	}
+
+	// Background market-data prefetch worker - warms the chart bar cache for
+	// accounts touched by imports. Stops on ctx cancellation like the others.
+	if prefetcher != nil {
+		go prefetcher.Run(ctx)
 	}
 
 	// Start the inbox watcher. Errors during individual imports are logged

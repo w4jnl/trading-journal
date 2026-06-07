@@ -43,6 +43,34 @@ type ImportService struct {
 	// user (the stub authenticator's bootstrap user). Phase 1c will thread
 	// per-request / per-inbox-subdir ownership through Import* methods.
 	UserID int64
+
+	// Prefetch warms the market-data bar cache for accounts touched by an
+	// import, so trade-replay charts render instantly on first view. Nil
+	// disables prefetch (charts then fall back to their on-view load button).
+	Prefetch BarPrefetcher
+}
+
+// BarPrefetcher warms the historical-bar cache for an account's recent trades
+// after an import. Implemented by internal/marketdata.Prefetcher; defined here
+// (rather than imported) so the importer takes no dependency on marketdata.
+type BarPrefetcher interface {
+	EnqueueAccount(ctx context.Context, accountID int64)
+}
+
+// enqueuePrefetch fires a best-effort, non-blocking prefetch for each distinct
+// account. A no-op when no prefetcher is wired.
+func (s *ImportService) enqueuePrefetch(ctx context.Context, accountIDs ...int64) {
+	if s.Prefetch == nil {
+		return
+	}
+	seen := make(map[int64]bool, len(accountIDs))
+	for _, id := range accountIDs {
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		s.Prefetch.EnqueueAccount(ctx, id)
+	}
 }
 
 // Outcome summarizes what an ImportFile call did.
@@ -349,6 +377,13 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
+
+	// Warm the bar cache for every account that got new fills (best-effort).
+	accountIDs := make([]int64, 0, len(rebuildKeys))
+	for k := range rebuildKeys {
+		accountIDs = append(accountIDs, k.AccountID)
+	}
+	s.enqueuePrefetch(ctx, accountIDs...)
 	return nil
 }
 
@@ -524,6 +559,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
 	}
+	s.enqueuePrefetch(ctx, accountID)
 	return nil
 }
 
