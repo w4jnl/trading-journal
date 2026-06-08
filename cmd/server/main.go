@@ -373,6 +373,11 @@ func run() error {
 	apiKeyAuth := &auth.APIKeyAuth{Queries: queries}
 	root := http.NewServeMux()
 	root.Handle("/api/", apiKeyAuth.Middleware(h.APIMux()))
+	// MCP server for AI clients - same per-user key auth as /api, no CSRF/session.
+	if cfg.MCP.Enabled == nil || *cfg.MCP.Enabled {
+		root.Handle("/mcp", apiKeyAuth.Middleware(h.MCPHandler()))
+		slog.Info("MCP server enabled", "path", "/mcp")
+	}
 	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
 
 	srv := &http.Server{

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -118,16 +119,30 @@ func (h *Handlers) APITradesList(w http.ResponseWriter, r *http.Request) {
 // APITradeDetail: GET /api/v1/trades/{id} - one trade with its fills, linked
 // journal entry id (if any), group count, and cached chart data.
 func (h *Handlers) APITradeDetail(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	t, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)})
-	if err != nil {
+	d, err := h.tradeDetail(r.Context(), id)
+	if errors.Is(err, sql.ErrNoRows) {
 		writeJSONError(w, http.StatusNotFound, "trade not found")
 		return
+	}
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "could not load trade")
+		return
+	}
+	writeJSON(w, http.StatusOK, d)
+}
+
+// tradeDetail assembles the full trade projection (fills, linked journal entry,
+// group count, cached chart). Shared by the REST detail endpoint and the MCP
+// get_trade tool. Returns sql.ErrNoRows when the trade isn't owned/found.
+func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, error) {
+	t, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)})
+	if err != nil {
+		return apiTradeDetail{}, err
 	}
 	d := apiTradeDetail{
 		ID: t.ID, AccountID: t.AccountID, Account: t.AccountName, Firm: t.AccountFirm,
@@ -137,8 +152,6 @@ func (h *Handlers) APITradeDetail(w http.ResponseWriter, r *http.Request) {
 		BrokerTradeID: t.BrokerTradeID,
 		ChartPng:      fmt.Sprintf("/api/v1/trades/%d/chart.png", id),
 	}
-
-	// Linked trade-scope journal entry, if any.
 	if e, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
 		d.HasJournal = true
 		eid := e.ID
@@ -147,31 +160,24 @@ func (h *Handlers) APITradeDetail(w http.ResponseWriter, r *http.Request) {
 			d.JournalTag = *e.Tag
 		}
 	} else if !errors.Is(err, sql.ErrNoRows) {
-		writeJSONError(w, http.StatusInternalServerError, "could not load trade journal")
-		return
+		return apiTradeDetail{}, err
 	}
-
-	// Number of group journal entries that include this trade.
 	_ = h.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM journal_entry_trades WHERE trade_id = ?", id).Scan(&d.GroupCount)
-
 	execs, err := h.Queries.ListExecutionsForTrade(ctx, id)
 	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not load executions")
-		return
+		return apiTradeDetail{}, err
 	}
 	d.Executions = make([]apiExecution, 0, len(execs))
 	for _, e := range execs {
 		d.Executions = append(d.Executions, apiExecution{Time: e.ExecTime, Side: e.Side, Role: e.Role, Qty: e.QtyUsed, Price: e.Price})
 	}
-
 	if h.MarketData != nil {
 		if trades, err := loadOneTrade(ctx, h.DB, id); err == nil {
 			env := h.buildChartEnvelope(ctx, trades, false) // cached bars only; no network
 			d.Chart = &env
 		}
 	}
-
-	writeJSON(w, http.StatusOK, d)
+	return d, nil
 }
 
 // APITradeChartPNG: GET /api/v1/trades/{id}/chart.png - rendered candlestick PNG

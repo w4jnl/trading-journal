@@ -44,6 +44,15 @@ market_data:
   # enabled: true
   # prefetch: true
 
+# Model Context Protocol (MCP) server for AI agents, at POST /mcp. When enabled
+# (default true), it is authenticated by the SAME per-user API keys as /api -- so
+# Claude Code, the Claude app, and ChatGPT can read trades + journal and
+# create/append entries with the key held in the connector config, never in a
+# prompt. The bundled `trading-journal-analyst` skill drives it. See API.md.
+# Set enabled: false to turn it off (the REST API at /api is unaffected).
+mcp:
+  enabled: true
+
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

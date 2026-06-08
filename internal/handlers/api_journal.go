@@ -38,23 +38,33 @@ func (h *Handlers) apiTradesForEntry(ctx context.Context, e models.JournalEntry,
 
 // APIJournalList: GET /api/v1/journal  (filters via parseJournalFilters + paging)
 func (h *Handlers) APIJournalList(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	tz := h.localTZ()
 	filters := parseJournalFilters(r, tz)
 	limit := apiQueryInt(r, "limit", 50, 1, 200)
 	offset := apiQueryInt(r, "offset", 0, 0, 1_000_000)
-
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, offset+limit)
+	items, err := h.journalListItems(r.Context(), filters, offset, limit, tz)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not list journal")
 		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"items": items,
+		"page":  map[string]int{"limit": limit, "offset": offset, "count": len(items)},
+	})
+}
+
+// journalListItems builds the journal-list rows for the given filters + paging.
+// Shared by the REST list endpoint and the MCP list_journal tool.
+func (h *Handlers) journalListItems(ctx context.Context, filters journalFilters, offset, limit int, tz *time.Location) ([]map[string]any, error) {
+	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, offset+limit)
+	if err != nil {
+		return nil, err
 	}
 	if offset < len(rows) {
 		rows = rows[offset:]
 	} else {
 		rows = nil
 	}
-
 	items := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		trades, _ := h.tradesForEntry(ctx, row, tz)
@@ -73,10 +83,7 @@ func (h *Handlers) APIJournalList(w http.ResponseWriter, r *http.Request) {
 			},
 		})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{
-		"items": items,
-		"page":  map[string]int{"limit": limit, "offset": offset, "count": len(items)},
-	})
+	return items, nil
 }
 
 // APIJournalDetail: GET /api/v1/journal/{id}
@@ -91,7 +98,7 @@ func (h *Handlers) APIJournalDetail(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	resp, err := h.journalDetailJSON(r, e, tz)
+	resp, err := h.journalDetailJSON(r.Context(), e, tz)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not load trades")
 		return
@@ -104,16 +111,17 @@ func (h *Handlers) APIJournalDetail(w http.ResponseWriter, r *http.Request) {
 // trades overview + list, cached chart data, attachments, and a chartPng link.
 // Shared by the detail endpoint and the create endpoint so a created entry comes
 // back in exactly the shape a follow-up GET would return.
-func (h *Handlers) journalDetailJSON(r *http.Request, e models.JournalEntry, tz *time.Location) (map[string]any, error) {
-	ctx := r.Context()
+func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry, tz *time.Location) (map[string]any, error) {
 	trades, err := h.apiTradesForEntry(ctx, e, tz)
 	if err != nil {
 		return nil, err
 	}
 	notes, ids := apiRewriteAttachmentRefs(e.Body)
 	var strat *apiStrategyRef
-	if s := h.loadAssignedStrategy(r, e.StrategyID); s != nil {
-		strat = &apiStrategyRef{ID: s.ID, Name: s.Name} // short name only; never the body
+	if e.StrategyID != nil {
+		if s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *e.StrategyID, UserID: userID(ctx)}); err == nil {
+			strat = &apiStrategyRef{ID: s.ID, Name: s.Name} // short name only; never the body
+		}
 	}
 	resp := map[string]any{
 		"id":          e.ID,
@@ -179,10 +187,11 @@ func formatAppendedNote(now time.Time, loc *time.Location, note string) string {
 	return "\n\n---\n\n_Note added " + stamp + "_\n\n" + strings.TrimRight(note, " \t\n") + "\n"
 }
 
-// apiJournalCreateReq is the POST /api/v1/journal body. Which scope-specific
-// field is required depends on `scope`: day->date, week->week, trade->tradeId,
-// group->tradeIds.
-type apiJournalCreateReq struct {
+// apiCreateInput is the create-entry payload, shared by the REST POST /journal
+// handler (JSON-decoded) and the MCP create_journal_entry tool. Which
+// scope-specific field is required depends on `scope`: day->date, week->week,
+// trade->tradeId, group->tradeIds.
+type apiCreateInput struct {
 	Scope      string  `json:"scope"`
 	Body       string  `json:"body"`
 	Tag        *string `json:"tag"`
@@ -194,191 +203,215 @@ type apiJournalCreateReq struct {
 	TradeIDs   []int64 `json:"tradeIds"` // group
 }
 
+// createConflict reports that a singleton (day/week/trade) entry already exists.
+// It is returned instead of an error so callers can surface the existing id.
+type createConflict struct {
+	EntryID int64
+	Message string
+}
+
+// apiValidationError marks a bad-input failure (-> HTTP 400) so callers can
+// distinguish it from an internal error (-> 500).
+type apiValidationError struct{ msg string }
+
+func (e apiValidationError) Error() string { return e.msg }
+
+func badInput(format string, a ...any) error { return apiValidationError{fmt.Sprintf(format, a...)} }
+
 // APIJournalCreate: POST /api/v1/journal - create one entry for any scope. Day,
-// week, and trade entries are singletons: if one already exists for that date /
-// ISO-week / trade, this returns 409 with the existing entryId (use the notes
-// endpoint to append). Group entries have no uniqueness and always create.
+// week, and trade entries are singletons: if one already exists this returns 409
+// with the existing entryId (use the notes endpoint to append). Group entries
+// have no uniqueness and always create.
 func (h *Handlers) APIJournalCreate(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
 	tz := h.localTZ()
-	var req apiJournalCreateReq
-	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+	var in apiCreateInput
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	tag, ok := apiParseTag(req.Tag)
-	if !ok {
-		writeJSONError(w, http.StatusBadRequest, "tag must be one of: good, neutral, bad")
+	e, conflict, err := h.createJournalEntry(r.Context(), in, tz)
+	if conflict != nil {
+		h.apiConflict(w, conflict.Message, conflict.EntryID)
 		return
 	}
-	strategyID, ok := h.apiValidateStrategyID(ctx, req.StrategyID)
-	if !ok {
-		writeJSONError(w, http.StatusBadRequest, "unknown strategyId")
-		return
-	}
-	body := strings.TrimSpace(req.Body)
-
-	switch req.Scope {
-	case "day":
-		h.apiCreateDay(w, r, req, body, tag, strategyID, tz)
-	case "week":
-		h.apiCreateWeek(w, r, req, body, tag, strategyID, tz)
-	case "trade":
-		h.apiCreateTrade(w, r, req, body, tag, strategyID, tz)
-	case "group":
-		h.apiCreateGroup(w, r, req, body, tag, strategyID, tz)
-	default:
-		writeJSONError(w, http.StatusBadRequest, "scope must be one of: day, week, trade, group")
-	}
-}
-
-func (h *Handlers) apiCreateDay(w http.ResponseWriter, r *http.Request, req apiJournalCreateReq, body string, tag *string, strategyID *int64, tz *time.Location) {
-	ctx := r.Context()
-	if body == "" {
-		writeJSONError(w, http.StatusBadRequest, "body is required for a day entry")
-		return
-	}
-	if strings.TrimSpace(req.Date) == "" {
-		writeJSONError(w, http.StatusBadRequest, "date is required for scope=day (YYYY-MM-DD)")
-		return
-	}
-	date, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(req.Date), tz)
 	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad date; expected YYYY-MM-DD")
-		return
-	}
-	now := time.Now().In(tz)
-	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
-	if date.After(today) {
-		writeJSONError(w, http.StatusBadRequest, "journal entries are not allowed on future dates")
-		return
-	}
-	if existing, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date}); err == nil {
-		h.apiConflict(w, "a day entry already exists for "+date.Format("2006-01-02"), existing.ID)
-		return
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		writeJSONError(w, http.StatusInternalServerError, "could not check existing entry")
-		return
-	}
-	mood, ok := apiParseMood(req.Mood)
-	if !ok {
-		writeJSONError(w, http.StatusBadRequest, "mood must be an integer 1-5")
-		return
-	}
-	e, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID: userIDPtr(ctx), TradeID: nil, AccountID: nil, EntryDate: date,
-		Body: body, Mood: mood, Tag: tag, Scope: "day", StrategyID: strategyID,
-	})
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create entry")
-		return
-	}
-	h.apiRespondCreated(w, r, e, tz)
-}
-
-func (h *Handlers) apiCreateWeek(w http.ResponseWriter, r *http.Request, req apiJournalCreateReq, body string, tag *string, strategyID *int64, tz *time.Location) {
-	ctx := r.Context()
-	if body == "" {
-		writeJSONError(w, http.StatusBadRequest, "body is required for a week entry")
-		return
-	}
-	if strings.TrimSpace(req.Week) == "" {
-		writeJSONError(w, http.StatusBadRequest, "week is required for scope=week (YYYY-Www, e.g. 2026-W23)")
-		return
-	}
-	monday, _, _, err := parseISOWeek(strings.TrimSpace(req.Week), tz)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "bad week; expected YYYY-Www (e.g. 2026-W23)")
-		return
-	}
-	if existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday}); err == nil {
-		h.apiConflict(w, "a week entry already exists for "+strings.TrimSpace(req.Week), existing.ID)
-		return
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		writeJSONError(w, http.StatusInternalServerError, "could not check existing entry")
-		return
-	}
-	e, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID: userIDPtr(ctx), TradeID: nil, AccountID: nil, EntryDate: monday,
-		Body: body, Mood: nil, Tag: tag, Scope: "week", StrategyID: strategyID,
-	})
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create entry")
-		return
-	}
-	h.apiRespondCreated(w, r, e, tz)
-}
-
-func (h *Handlers) apiCreateTrade(w http.ResponseWriter, r *http.Request, req apiJournalCreateReq, body string, tag *string, strategyID *int64, tz *time.Location) {
-	ctx := r.Context()
-	if body == "" {
-		writeJSONError(w, http.StatusBadRequest, "body is required for a trade entry")
-		return
-	}
-	if req.TradeID == nil || *req.TradeID <= 0 {
-		writeJSONError(w, http.StatusBadRequest, "tradeId is required for scope=trade")
-		return
-	}
-	trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: *req.TradeID, UserID: userID(ctx)})
-	if err != nil {
-		// Foreign / unknown id - it's a request input, so 400 (not 404).
-		writeJSONError(w, http.StatusBadRequest, "unknown tradeId")
-		return
-	}
-	if existing, err := h.Queries.GetJournalEntryByTradeID(ctx, req.TradeID); err == nil {
-		h.apiConflict(w, "a journal entry already exists for this trade", existing.ID)
-		return
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		writeJSONError(w, http.StatusInternalServerError, "could not check existing entry")
-		return
-	}
-	entryDate := trade.EntryTime
-	if trade.ExitTime != nil {
-		entryDate = *trade.ExitTime
-	}
-	accountID := trade.AccountID
-	e, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID: userIDPtr(ctx), TradeID: req.TradeID, AccountID: &accountID, EntryDate: entryDate,
-		Body: body, Mood: nil, Tag: tag, Scope: "trade", StrategyID: strategyID,
-	})
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create entry")
-		return
-	}
-	h.apiRespondCreated(w, r, e, tz)
-}
-
-func (h *Handlers) apiCreateGroup(w http.ResponseWriter, r *http.Request, req apiJournalCreateReq, body string, tag *string, strategyID *int64, tz *time.Location) {
-	ctx := r.Context()
-	if len(req.TradeIDs) == 0 {
-		writeJSONError(w, http.StatusBadRequest, "tradeIds is required for scope=group (at least one trade)")
-		return
-	}
-	// Keep only trade ids the caller actually owns, so a guessed/foreign id
-	// can't be linked into the user's group entry (mirrors GroupJournalLink).
-	owned := make([]int64, 0, len(req.TradeIDs))
-	for _, id := range req.TradeIDs {
-		var ok int64
-		if err := h.DB.QueryRowContext(ctx,
-			"SELECT 1 FROM trades t JOIN accounts a ON a.id = t.account_id WHERE t.id = ? AND a.user_id = ?",
-			id, userID(ctx),
-		).Scan(&ok); err == nil {
-			owned = append(owned, id)
+		var ve apiValidationError
+		if errors.As(err, &ve) {
+			writeJSONError(w, http.StatusBadRequest, ve.msg)
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "could not create entry")
 		}
-	}
-	if len(owned) == 0 {
-		writeJSONError(w, http.StatusBadRequest, "no owned trades to link")
 		return
 	}
+	h.apiRespondCreated(w, r, e, tz)
+}
 
-	// entry_date = max(exit_time) across the owned trades, in the trading tz.
-	// ORDER BY ... LIMIT 1 keeps the scan on a typed column (same workaround as
-	// GroupJournalCreate). Fall back to now() if none have an exit yet.
-	placeholders := strings.Repeat("?,", len(owned))
+// createJournalEntry validates and creates one entry for any scope. Shared by
+// the REST POST /journal handler and the MCP create_journal_entry tool. It
+// returns a *createConflict (not an error) when a day/week/trade singleton
+// already exists; an apiValidationError for bad input (-> 400); other errors are
+// internal (-> 500).
+func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz *time.Location) (models.JournalEntry, *createConflict, error) {
+	none := models.JournalEntry{}
+	tag, ok := apiParseTag(in.Tag)
+	if !ok {
+		return none, nil, badInput("tag must be one of: good, neutral, bad")
+	}
+	strategyID, ok := h.apiValidateStrategyID(ctx, in.StrategyID)
+	if !ok {
+		return none, nil, badInput("unknown strategyId")
+	}
+	body := strings.TrimSpace(in.Body)
+
+	switch in.Scope {
+	case "day":
+		if body == "" {
+			return none, nil, badInput("body is required for a day entry")
+		}
+		if strings.TrimSpace(in.Date) == "" {
+			return none, nil, badInput("date is required for scope=day (YYYY-MM-DD)")
+		}
+		date, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(in.Date), tz)
+		if err != nil {
+			return none, nil, badInput("bad date; expected YYYY-MM-DD")
+		}
+		now := time.Now().In(tz)
+		today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
+		if date.After(today) {
+			return none, nil, badInput("journal entries are not allowed on future dates")
+		}
+		if existing, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date}); err == nil {
+			return none, &createConflict{EntryID: existing.ID, Message: "a day entry already exists for " + date.Format("2006-01-02")}, nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return none, nil, fmt.Errorf("check existing day entry: %w", err)
+		}
+		mood, ok := apiParseMood(in.Mood)
+		if !ok {
+			return none, nil, badInput("mood must be an integer 1-5")
+		}
+		e, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+			UserID: userIDPtr(ctx), EntryDate: date, Body: body, Mood: mood, Tag: tag, Scope: "day", StrategyID: strategyID,
+		})
+		if err != nil {
+			return none, nil, fmt.Errorf("create entry: %w", err)
+		}
+		return e, nil, nil
+
+	case "week":
+		if body == "" {
+			return none, nil, badInput("body is required for a week entry")
+		}
+		if strings.TrimSpace(in.Week) == "" {
+			return none, nil, badInput("week is required for scope=week (YYYY-Www, e.g. 2026-W23)")
+		}
+		monday, _, _, err := parseISOWeek(strings.TrimSpace(in.Week), tz)
+		if err != nil {
+			return none, nil, badInput("bad week; expected YYYY-Www (e.g. 2026-W23)")
+		}
+		if existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday}); err == nil {
+			return none, &createConflict{EntryID: existing.ID, Message: "a week entry already exists for " + strings.TrimSpace(in.Week)}, nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return none, nil, fmt.Errorf("check existing week entry: %w", err)
+		}
+		e, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+			UserID: userIDPtr(ctx), EntryDate: monday, Body: body, Tag: tag, Scope: "week", StrategyID: strategyID,
+		})
+		if err != nil {
+			return none, nil, fmt.Errorf("create entry: %w", err)
+		}
+		return e, nil, nil
+
+	case "trade":
+		if body == "" {
+			return none, nil, badInput("body is required for a trade entry")
+		}
+		if in.TradeID == nil || *in.TradeID <= 0 {
+			return none, nil, badInput("tradeId is required for scope=trade")
+		}
+		trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: *in.TradeID, UserID: userID(ctx)})
+		if err != nil {
+			return none, nil, badInput("unknown tradeId") // foreign/unknown id is request input -> 400
+		}
+		if existing, err := h.Queries.GetJournalEntryByTradeID(ctx, in.TradeID); err == nil {
+			return none, &createConflict{EntryID: existing.ID, Message: "a journal entry already exists for this trade"}, nil
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return none, nil, fmt.Errorf("check existing trade entry: %w", err)
+		}
+		entryDate := trade.EntryTime
+		if trade.ExitTime != nil {
+			entryDate = *trade.ExitTime
+		}
+		accountID := trade.AccountID
+		e, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+			UserID: userIDPtr(ctx), TradeID: in.TradeID, AccountID: &accountID, EntryDate: entryDate,
+			Body: body, Tag: tag, Scope: "trade", StrategyID: strategyID,
+		})
+		if err != nil {
+			return none, nil, fmt.Errorf("create entry: %w", err)
+		}
+		return e, nil, nil
+
+	case "group":
+		if len(in.TradeIDs) == 0 {
+			return none, nil, badInput("tradeIds is required for scope=group (at least one trade)")
+		}
+		// Keep only trade ids the caller owns, so a guessed/foreign id can't be
+		// linked into the user's group entry (mirrors GroupJournalLink).
+		owned := make([]int64, 0, len(in.TradeIDs))
+		for _, id := range in.TradeIDs {
+			var one int64
+			if err := h.DB.QueryRowContext(ctx,
+				"SELECT 1 FROM trades t JOIN accounts a ON a.id = t.account_id WHERE t.id = ? AND a.user_id = ?",
+				id, userID(ctx),
+			).Scan(&one); err == nil {
+				owned = append(owned, id)
+			}
+		}
+		if len(owned) == 0 {
+			return none, nil, badInput("no owned trades to link")
+		}
+		entryDate, err := h.maxExitDate(ctx, owned, tz)
+		if err != nil {
+			return none, nil, err
+		}
+		tx, err := h.DB.BeginTx(ctx, nil)
+		if err != nil {
+			return none, nil, fmt.Errorf("begin: %w", err)
+		}
+		defer tx.Rollback()
+		q := h.Queries.WithTx(tx)
+		e, err := q.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
+			UserID: userIDPtr(ctx), EntryDate: entryDate, Body: body, Tag: tag, Scope: "group", StrategyID: strategyID,
+		})
+		if err != nil {
+			return none, nil, fmt.Errorf("create entry: %w", err)
+		}
+		for _, id := range owned {
+			if _, err := tx.ExecContext(ctx,
+				"INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)",
+				e.ID, id,
+			); err != nil {
+				return none, nil, fmt.Errorf("link trade %d: %w", id, err)
+			}
+		}
+		if err := tx.Commit(); err != nil {
+			return none, nil, fmt.Errorf("commit: %w", err)
+		}
+		return e, nil, nil
+
+	default:
+		return none, nil, badInput("scope must be one of: day, week, trade, group")
+	}
+}
+
+// maxExitDate returns the trading-tz date of the latest exit among the given
+// owned trade ids (now() if none have exited yet) - used as a group entry's date.
+func (h *Handlers) maxExitDate(ctx context.Context, ids []int64, tz *time.Location) (time.Time, error) {
+	placeholders := strings.Repeat("?,", len(ids))
 	placeholders = placeholders[:len(placeholders)-1]
-	args := make([]any, 0, len(owned)+1)
+	args := make([]any, 0, len(ids)+1)
 	args = append(args, userID(ctx))
-	for _, id := range owned {
+	for _, id := range ids {
 		args = append(args, id)
 	}
 	var maxExit time.Time
@@ -390,48 +423,17 @@ func (h *Handlers) apiCreateGroup(w http.ResponseWriter, r *http.Request, req ap
 		if errors.Is(err, sql.ErrNoRows) {
 			maxExit = time.Now().In(tz)
 		} else {
-			writeJSONError(w, http.StatusInternalServerError, "could not resolve entry date")
-			return
+			return time.Time{}, fmt.Errorf("resolve entry date: %w", err)
 		}
 	}
 	y, m, d := maxExit.In(tz).Date()
-	entryDate := time.Date(y, m, d, 0, 0, 0, 0, tz)
-
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not begin transaction")
-		return
-	}
-	defer tx.Rollback()
-	q := h.Queries.WithTx(tx)
-	e, err := q.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID: userIDPtr(ctx), TradeID: nil, AccountID: nil, EntryDate: entryDate,
-		Body: body, Mood: nil, Tag: tag, Scope: "group", StrategyID: strategyID,
-	})
-	if err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not create entry")
-		return
-	}
-	for _, id := range owned {
-		if _, err := tx.ExecContext(ctx,
-			"INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)",
-			e.ID, id,
-		); err != nil {
-			writeJSONError(w, http.StatusInternalServerError, "could not link trade")
-			return
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		writeJSONError(w, http.StatusInternalServerError, "could not commit")
-		return
-	}
-	h.apiRespondCreated(w, r, e, tz)
+	return time.Date(y, m, d, 0, 0, 0, 0, tz), nil
 }
 
 // apiRespondCreated writes 201 + Location with the created entry rendered through
 // the same projection a GET /journal/{id} would return.
 func (h *Handlers) apiRespondCreated(w http.ResponseWriter, r *http.Request, e models.JournalEntry, tz *time.Location) {
-	resp, err := h.journalDetailJSON(r, e, tz)
+	resp, err := h.journalDetailJSON(r.Context(), e, tz)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "entry created but could not render it")
 		return
@@ -515,12 +517,15 @@ func (h *Handlers) APIJournalChartPNG(w http.ResponseWriter, r *http.Request) {
 	h.writeChartPNG(w, r, env, tz)
 }
 
-// writeChartPNG renders one panel of a chart envelope as a PNG. ?contract= picks
-// the panel (by contract code or symbol root) when the entry/trade spans several;
-// otherwise the first panel with cached bars wins. Writes a 404 JSON error when
-// nothing is cached. Shared by the journal and trade chart.png endpoints.
-func (h *Handlers) writeChartPNG(w http.ResponseWriter, r *http.Request, env chartEnvelope, tz *time.Location) {
-	want := strings.TrimSpace(r.URL.Query().Get("contract"))
+// errNoChartData means no panel in the envelope had cached bars to render.
+var errNoChartData = errors.New("no cached chart data")
+
+// chartEnvelopePNG renders one panel of an envelope as PNG bytes. contract picks
+// the panel (by contract code or symbol root) when several exist; otherwise the
+// first panel with cached bars wins. Returns errNoChartData when nothing is
+// cached. Shared by the chart.png endpoints and the MCP get_chart_image tool.
+func (h *Handlers) chartEnvelopePNG(env chartEnvelope, contract string, tz *time.Location) ([]byte, error) {
+	want := strings.TrimSpace(contract)
 	var chosen *chartPanel
 	for i := range env.Panels {
 		p := &env.Panels[i]
@@ -533,10 +538,20 @@ func (h *Handlers) writeChartPNG(w http.ResponseWriter, r *http.Request, env cha
 		}
 	}
 	if chosen == nil {
+		return nil, errNoChartData
+	}
+	return chartpng.Render(panelToPNG(*chosen, tz), chartpng.Options{})
+}
+
+// writeChartPNG renders one panel of a chart envelope and writes it as a PNG (or
+// a 404 JSON error when nothing is cached). Shared by the journal + trade
+// chart.png endpoints.
+func (h *Handlers) writeChartPNG(w http.ResponseWriter, r *http.Request, env chartEnvelope, tz *time.Location) {
+	out, err := h.chartEnvelopePNG(env, r.URL.Query().Get("contract"), tz)
+	if errors.Is(err, errNoChartData) {
 		writeJSONError(w, http.StatusNotFound, "no cached chart data; open the chart in the UI first")
 		return
 	}
-	out, err := chartpng.Render(panelToPNG(*chosen, tz), chartpng.Options{})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("render chart png: %w", err))
 		return

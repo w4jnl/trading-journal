@@ -446,6 +446,37 @@ trade. The `chart` field has the same shape as the journal
 `GET /api/v1/trades/{id}/chart.png` - same renderer and `?contract=` rule as the
 journal chart image; `image/png` or `404` when nothing is cached.
 
+## MCP server (for AI agents)
+
+Beyond the REST API, the app exposes an **MCP** (Model Context Protocol) server at
+`POST /mcp`, authenticated by the **same per-user keys** (`Authorization: Bearer
+tj_...`). It's a thin tool surface over the same logic, so AI clients call tools
+with the key held in the connector config — never pasted into a prompt. Toggle it
+with `mcp.enabled` (default true) in `config.yaml`.
+
+Tools: `list_trades`, `get_trade`, `list_journal`, `get_journal_entry`,
+`list_strategies`, `get_strategy`, `get_chart_image` (returns the rendered PNG as
+image content), `create_journal_entry`, `append_note`.
+
+Connect:
+
+```bash
+# Claude Code
+claude mcp add trading-journal --transport http https://YOUR_HOST/mcp \
+  --header "Authorization: Bearer tj_..."
+```
+
+- **Claude app**: add a custom connector pointing at `https://YOUR_HOST/mcp` with
+  the `Authorization` header. (Header-key auth; OAuth on `/mcp` is not implemented
+  yet, so if your app build requires OAuth use Claude Code / ChatGPT for now.)
+- **ChatGPT**: use the OpenAPI spec as a Custom GPT Action (or an MCP connector on
+  plans that support it).
+
+A ready-made daily-review workflow ships as the **`trading-journal-analyst`**
+skill (`.claude/skills/trading-journal-analyst/`) — it clusters copytrader
+fan-out into group entries, writes each analysis once (idempotent via a marker),
+and synthesizes the daily journal.
+
 ## Status codes
 
 | Code | Meaning |

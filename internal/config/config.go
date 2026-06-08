@@ -18,7 +18,14 @@ type Config struct {
 	Auth         Auth         `yaml:"auth"`
 	Backup       Backup       `yaml:"backup"`
 	MarketData   MarketData   `yaml:"market_data"`
+	MCP          MCP          `yaml:"mcp"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// MCP toggles the Model Context Protocol server at /mcp (for AI clients). It
+// reuses the same per-user api_keys as the REST API. Enabled (nil = true).
+type MCP struct {
+	Enabled *bool `yaml:"enabled"`
 }
 
 // MarketData configures the historical price-bar source behind the trade-replay
