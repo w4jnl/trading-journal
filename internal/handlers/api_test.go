@@ -189,3 +189,31 @@ func TestToInt64(t *testing.T) {
 		}
 	}
 }
+
+func TestClusterCopytraderCrossInstrument(t *testing.T) {
+	base := time.Date(2026, 5, 12, 17, 25, 43, 0, time.UTC)
+	mk := func(id int64, root string, acct int64, at time.Time) prepDayTrade {
+		return prepDayTrade{ID: id, SymbolRoot: root, Direction: "short", AccountID: acct, EntryTime: at}
+	}
+	// Master trades ES; followers get the micro MES at the same instant -> one
+	// copytrader decision (ES and MES share the ES=F underlying).
+	groups, solos := clusterCopytrader([]prepDayTrade{
+		mk(1, "ES", 10, base),
+		mk(2, "MES", 11, base.Add(200*time.Millisecond)),
+		mk(3, "MES", 12, base.Add(400*time.Millisecond)),
+	})
+	if len(groups) != 1 || len(solos) != 0 {
+		t.Fatalf("ES+MES: got %d groups / %d solos, want 1/0", len(groups), len(solos))
+	}
+	if n := distinctAccounts(groups[0]); n != 3 {
+		t.Errorf("group accounts = %d, want 3", n)
+	}
+	if lbl := clusterLabel(groups[0]); !strings.Contains(lbl, "ES") || !strings.Contains(lbl, "MES") {
+		t.Errorf("label %q should name both roots", lbl)
+	}
+	// Different underlyings at the same instant must NOT merge.
+	g2, s2 := clusterCopytrader([]prepDayTrade{mk(1, "ES", 10, base), mk(2, "NQ", 11, base)})
+	if len(g2) != 0 || len(s2) != 2 {
+		t.Errorf("ES+NQ same instant: got %d groups / %d solos, want 0/2", len(g2), len(s2))
+	}
+}

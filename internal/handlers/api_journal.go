@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/chartpng"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -774,24 +775,27 @@ func (h *Handlers) loadDayTradesForPrep(ctx context.Context, day time.Time, tz *
 }
 
 // clusterCopytrader groups trades that look like one decision fanned across
-// accounts: same symbol_root + direction, entries within ~2s, on >=2 distinct
-// accounts. Those clusters become group entries; everything else is a solo.
+// accounts: same underlying + direction, entries within ~2s, on >=2 distinct
+// accounts. Micros fold into the full-size series (see copyClusterKey), so a
+// master's ES and a follower's MES at the same instant count as one cluster.
+// Those clusters become group entries; everything else is a solo.
 func clusterCopytrader(trs []prepDayTrade) (groups [][]prepDayTrade, solos []prepDayTrade) {
 	const window = 2 * time.Second
+	key := func(t prepDayTrade) string { return copyClusterKey(t.SymbolRoot) }
 	sort.SliceStable(trs, func(i, j int) bool {
-		a, b := trs[i], trs[j]
-		if a.SymbolRoot != b.SymbolRoot {
-			return a.SymbolRoot < b.SymbolRoot
+		ki, kj := key(trs[i]), key(trs[j])
+		if ki != kj {
+			return ki < kj
 		}
-		if a.Direction != b.Direction {
-			return a.Direction < b.Direction
+		if trs[i].Direction != trs[j].Direction {
+			return trs[i].Direction < trs[j].Direction
 		}
-		return a.EntryTime.Before(b.EntryTime)
+		return trs[i].EntryTime.Before(trs[j].EntryTime)
 	})
 	for i := 0; i < len(trs); {
 		j := i + 1
 		for j < len(trs) &&
-			trs[j].SymbolRoot == trs[i].SymbolRoot &&
+			key(trs[j]) == key(trs[i]) &&
 			trs[j].Direction == trs[i].Direction &&
 			trs[j].EntryTime.Sub(trs[i].EntryTime) <= window {
 			j++
@@ -805,6 +809,17 @@ func clusterCopytrader(trs []prepDayTrade) (groups [][]prepDayTrade, solos []pre
 		i = j
 	}
 	return groups, solos
+}
+
+// copyClusterKey is the underlying-price key for copytrader grouping: micros fold
+// into their full-size series (MES->ES=F, MNQ->NQ=F, ...) so a master's ES and a
+// follower's MES at the same time are one decision. Unmapped roots key on
+// themselves.
+func copyClusterKey(symbolRoot string) string {
+	if sym, ok := marketdata.YahooSymbol(symbolRoot); ok {
+		return sym
+	}
+	return strings.ToUpper(strings.TrimSpace(symbolRoot))
 }
 
 func distinctAccounts(c []prepDayTrade) int {
@@ -839,7 +854,22 @@ func sumNet(c []prepDayTrade) *float64 {
 }
 
 func clusterLabel(c []prepDayTrade) string {
-	return fmt.Sprintf("%s %s x%d accts", c[0].SymbolRoot, c[0].Direction, distinctAccounts(c))
+	return fmt.Sprintf("%s %s x%d accts", strings.Join(distinctRoots(c), "/"), c[0].Direction, distinctAccounts(c))
+}
+
+// distinctRoots returns the unique symbol roots in a cluster (sorted), so a
+// cross-instrument copytrader group reads as e.g. "ES/MES".
+func distinctRoots(c []prepDayTrade) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, t := range c {
+		if !seen[t.SymbolRoot] {
+			seen[t.SymbolRoot] = true
+			out = append(out, t.SymbolRoot)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // findGroupForTrades returns the id of an existing group entry (owned by the
