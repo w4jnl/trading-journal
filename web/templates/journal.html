@@ -3,7 +3,10 @@
 {{define "content"}}
 {{template "back_button" .}}
 
-<h1>Journal <span class="muted" style="font-weight:400;">· {{.DateNice}}</span></h1>
+<div class="journal-title-row">
+  <h1>Journal <span class="muted" style="font-weight:400;">· {{.DateNice}}</span></h1>
+  {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
+</div>
 
 <div class="row-sm" style="margin-bottom: 16px;">
   <a href="/journal/{{.PrevDay}}" class="btn btn--secondary btn--sm">‹ Prev</a>
@@ -21,8 +24,9 @@
 </div>
 {{end}}
 
-<section>
-  <form method="post" action="/journal/{{.Date}}">
+<section class="journal-entry" data-journal-entry>
+  {{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag)}}{{end}}
+  <form method="post" action="/journal/{{.Date}}" class="journal-form"{{if .Entry.Body}} hidden{{end}}>
     {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
     <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
       <div>
@@ -45,6 +49,7 @@
 
     <div class="row" style="margin-top: 12px;">
       <button type="submit" class="btn btn--primary">Save</button>
+      {{if .Entry.Body}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
       {{if .HasEntry}}
         {{/* Same endpoint as Save; the _action flag routes to delete in the
              handler. Done this way because the obvious URL pattern
@@ -101,9 +106,5 @@
   .recent-list .preview { color: var(--fg-muted); font-size: 12px; display: block; margin-top: 2px;
                           overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
                           -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
-  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
-  .markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
-  .markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
-  .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
 </style>
 {{end}}

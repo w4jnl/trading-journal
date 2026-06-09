@@ -105,3 +105,29 @@
   <div class="markdown-preview">{{markdown .Body}}</div>
 </div>
 {{end}}
+
+{{/* id_ref — a compact, click-to-copy chip surfacing a trade or journal entry
+     ID, so it can be referenced to the AI (e.g. "analyze trade 4412"). Copies
+     the bare number; id_copy.js (global, delegated) handles the click + toast.
+     Dict: Label ("Trade" | "Entry"), ID (int64). */}}
+{{define "id_ref"}}
+<button type="button" class="id-ref" data-copy-id="{{.ID}}" data-copy-kind="{{.Label}}"
+        title="Copy {{.Label}} ID {{.ID}} (to reference it to the AI)">{{.Label}} <span class="id-ref__hash">#</span>{{.ID}}</button>
+{{end}}
+
+{{/* journal_view — the read-only render of a saved journal entry: the body as
+     markdown plus an Edit button (and the tag pill, for context). The entry-ID
+     chip lives on the page title line (see .journal-title-row), not here. Sits
+     inside a [data-journal-entry] section next to the (initially hidden) edit
+     form; journal_view.js swaps the two. Dict: Body (string), Tag (string, may
+     be empty). Render this only when the entry has a non-empty body - a
+     new/empty entry shows the form directly. */}}
+{{define "journal_view"}}
+<div class="journal-view" data-journal-view>
+  <div class="journal-view__bar">
+    {{if .Tag}}<span class="pill journal-view__tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
+    <button type="button" class="btn btn--secondary btn--sm journal-view__edit" data-journal-edit>Edit</button>
+  </div>
+  <div class="markdown-preview">{{markdown .Body}}</div>
+</div>
+{{end}}

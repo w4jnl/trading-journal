@@ -1730,3 +1730,39 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
     border: 0;
   }
 }
+
+/* Rendered markdown (journal bodies, strategy cards). Centralized here so
+   every journal/strategy view renders consistently; was previously duplicated
+   inline per page (and missing on the trade/week pages). */
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
+.markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
+.markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
+.markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
+
+/* Journal entry view<->edit toggle (mirrors the Library row): a saved entry
+   renders as read-only markdown with an Edit button; the form is revealed by
+   journal_view.js, Cancel hides it again. */
+.journal-entry { margin-bottom: 8px; }
+.journal-view__bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.journal-view__bar .journal-view__edit { margin-left: auto; }
+.journal-view__tag { text-transform: capitalize; }
+.journal-view__tag.tag-good    { background: var(--pos-soft); color: var(--pos); }
+.journal-view__tag.tag-neutral { background: var(--bg-sunken); color: var(--fg-muted); }
+.journal-view__tag.tag-bad     { background: var(--neg-soft); color: var(--neg); }
+
+/* id-ref: a compact, click-to-copy chip surfacing a trade/journal entry ID
+   (handy for referencing it to the AI). Copy handler + toast in id_copy.js. */
+.id-ref { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted);
+          background: var(--bg-sunken); border: 1px solid var(--border);
+          border-radius: var(--r-pill); padding: 2px 8px; line-height: 1.4;
+          cursor: pointer; white-space: nowrap;
+          transition: border-color var(--t-fast), color var(--t-fast), background var(--t-fast); }
+.id-ref:hover { border-color: var(--border-strong); color: var(--fg); }
+.id-ref:active { background: var(--bg-hover); }
+.id-ref .id-ref__hash { opacity: 0.5; }
+
+/* Page title line with a right-aligned ID chip (journal entry detail views).
+   The chip sits on the first line opposite the heading. */
+.journal-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.journal-title-row h1 { margin: 0; }
+.journal-title-row .id-ref { margin-left: auto; }
