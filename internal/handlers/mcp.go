@@ -4,15 +4,18 @@ import (
 	"context"
 	"database/sql"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -43,6 +46,15 @@ func (h *Handlers) MCPHandler() http.Handler {
 }
 
 func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
+	s.AddTool(mcpgo.NewTool("prepare_day",
+		mcpgo.WithDescription("Prepare a trading day for review: clusters copytrader fan-out into group entries and solos into trade entries, CREATES the missing journal entries (idempotent - reuses existing), and returns them. You then analyze each returned entry by its entryId (get_chart_image + append_note) and NEVER handle raw trade ids yourself. This is the entry point for the daily review. Defaults to the last trading day before today."),
+		mcpgo.WithString("date", mcpgo.Description("YYYY-MM-DD; default = the last trading day before today (skips weekends/holidays/no-trade days).")),
+	), h.mcpPrepareDay)
+
+	s.AddTool(mcpgo.NewTool("server_info",
+		mcpgo.WithDescription("Identify this server instance: service name, instance label (e.g. prod/dev), and the authenticated user. Call this first if multiple trading-journal connectors might be configured, and use only ONE instance for a whole run."),
+	), h.mcpServerInfo)
+
 	s.AddTool(mcpgo.NewTool("list_trades",
 		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) plus entryTime, direction, account and entryPrice (use them to cluster copytrader copies: same symbolRoot+direction+entryTime within ~2s across >=2 accounts). Page size 50."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day YYYY-MM-DD; sets from=to=day. Use for 'yesterday'.")),
@@ -110,9 +122,32 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithString("note", mcpgo.Required(), mcpgo.Description("Markdown to append.")),
 	), h.mcpAppendNote)
+
+	s.AddTool(mcpgo.NewTool("assign_strategy",
+		mcpgo.WithDescription("Assign a strategy to a journal entry, but ONLY if it has none yet - an existing assignment is never changed (assigned=false then). Use right after prepare_day for an entry you just created (created=true) when one of the caller's strategies clearly fits the trade; skip it otherwise and never call it for pre-existing entries."),
+		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
+		mcpgo.WithNumber("strategyId", mcpgo.Required(), mcpgo.Description("Strategy id to assign (must be owned).")),
+	), h.mcpAssignStrategy)
 }
 
 // ---- tool handlers (reuse the same ctx-based logic as the REST API) ----
+
+func (h *Handlers) mcpPrepareDay(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	resp, err := h.prepareDayEntries(ctx, req.GetString("date", ""), h.localTZ())
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
+	return mcpJSON(resp)
+}
+
+func (h *Handlers) mcpServerInfo(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	u := auth.MustUser(ctx)
+	return mcpJSON(map[string]any{
+		"service":         "trading-journal",
+		"instanceLabel":   h.MCPInstanceLabel,
+		"authenticatedAs": map[string]any{"id": u.ID, "username": u.Username},
+	})
+}
 
 func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 	f := tradeFilters{Page: req.GetInt("page", 1)}
@@ -309,6 +344,22 @@ func (h *Handlers) mcpCreateJournalEntry(ctx context.Context, req mcpgo.CallTool
 	return mcpJSON(resp)
 }
 
+func (h *Handlers) mcpAssignStrategy(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	eid, err := req.RequireInt("entryId")
+	if err != nil {
+		return mcpgo.NewToolResultError("entryId is required"), nil
+	}
+	sid, err := req.RequireInt("strategyId")
+	if err != nil {
+		return mcpgo.NewToolResultError("strategyId is required"), nil
+	}
+	assigned, err := h.assignStrategyIfUnset(ctx, int64(eid), int64(sid))
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
+	return mcpJSON(map[string]any{"entryId": eid, "strategyId": sid, "assigned": assigned})
+}
+
 func (h *Handlers) mcpAppendNote(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 	id, err := req.RequireInt("entryId")
 	if err != nil {
@@ -360,9 +411,8 @@ func mcpOptInt(req mcpgo.CallToolRequest, key string) *int64 {
 	if !ok || v == nil {
 		return nil
 	}
-	if f, ok := v.(float64); ok {
-		i := int64(f)
-		return &i
+	if n, ok := toInt64(v); ok {
+		return &n
 	}
 	return nil
 }
@@ -374,11 +424,35 @@ func mcpInt64Slice(req mcpgo.CallToolRequest, key string) []int64 {
 	}
 	out := make([]int64, 0, len(raw))
 	for _, x := range raw {
-		if f, ok := x.(float64); ok {
-			out = append(out, int64(f))
+		if n, ok := toInt64(x); ok {
+			out = append(out, n)
 		}
 	}
 	return out
+}
+
+// toInt64 coerces a JSON-decoded tool argument to int64. MCP args usually arrive
+// as float64, but be tolerant of clients that encode numbers as json.Number, a
+// plain int, or a numeric string, so e.g. an array of trade ids can't silently
+// come back empty (which previously read as "no owned trades").
+func toInt64(v any) (int64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return int64(n), true
+	case int64:
+		return n, true
+	case int:
+		return int64(n), true
+	case json.Number:
+		if i, err := n.Int64(); err == nil {
+			return i, true
+		}
+	case string:
+		if i, err := strconv.ParseInt(strings.TrimSpace(n), 10, 64); err == nil {
+			return i, true
+		}
+	}
+	return 0, false
 }
 
 // mcpDateRange parses day/from/to (YYYY-MM-DD, UTC) into a trade-filter window

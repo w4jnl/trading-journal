@@ -122,9 +122,10 @@ func run() error {
 			timeout = 10 * time.Second
 		}
 		marketCache = &marketdata.CachingSource{
-			DB:     conn,
-			Source: &marketdata.Yahoo{BaseURL: cfg.MarketData.YahooBaseURL, Client: &http.Client{Timeout: timeout}},
-			Loc:    tz,
+			DB:          conn,
+			Source:      &marketdata.Yahoo{BaseURL: cfg.MarketData.YahooBaseURL, Client: &http.Client{Timeout: timeout}},
+			Loc:         tz,
+			IntradayTTL: time.Duration(cfg.MarketData.IntradayRefreshMin) * time.Minute,
 		}
 		if cfg.MarketData.Prefetch == nil || *cfg.MarketData.Prefetch {
 			prefetcher = marketdata.NewPrefetcher(marketCache, conn, tz)
@@ -241,18 +242,19 @@ func run() error {
 	}
 
 	h := &handlers.Handlers{
-		Templates:       web.TemplatesFS,
-		DB:              conn,
-		ImportSvc:       importSvc,
-		Queries:         queries,
-		UploadsDir:      uploads,
-		AttachmentsDir:  attachments,
-		OIDashboardsDir: cfg.OIDashboards.Root,
-		Timezone:        tz,
-		CSRF:            csrf,
-		ActAs:           actAs,
-		MarketData:      marketCache,
-		Prefetch:        prefetcher,
+		Templates:        web.TemplatesFS,
+		DB:               conn,
+		ImportSvc:        importSvc,
+		Queries:          queries,
+		UploadsDir:       uploads,
+		AttachmentsDir:   attachments,
+		OIDashboardsDir:  cfg.OIDashboards.Root,
+		Timezone:         tz,
+		CSRF:             csrf,
+		ActAs:            actAs,
+		MarketData:       marketCache,
+		Prefetch:         prefetcher,
+		MCPInstanceLabel: cfg.MCP.InstanceLabel,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -413,6 +415,10 @@ func run() error {
 	// accounts touched by imports. Stops on ctx cancellation like the others.
 	if prefetcher != nil {
 		go prefetcher.Run(ctx)
+		if h, m, ok := cfg.MarketData.NightlyRefreshHM(); ok {
+			go prefetcher.ScheduleNightly(ctx, h, m)
+			slog.Info("market-data nightly refresh scheduled", "at", cfg.MarketData.NightlyRefresh)
+		}
 	}
 
 	// Start the inbox watcher. Errors during individual imports are logged

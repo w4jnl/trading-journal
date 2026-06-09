@@ -18,6 +18,14 @@ are the OpenAPI Action operations on the same endpoints (see
 [chatgpt-setup.md](chatgpt-setup.md)). Names below are the MCP tools, REST path in
 parentheses:
 
+- `prepare_day` (`POST /journal/prepare-day`) - **the daily entry point.** Clusters
+  the day's copytrader fan-out into **group** entries + solos into **trade**
+  entries, CREATES the missing ones (idempotent), and returns them with
+  `entryId, scope, created, alreadyAnalyzed, label, symbolRoot, direction, netPnl,
+  tradeIds`. The server does the clustering and id handling - you only analyze the
+  entries it returns. Defaults to the last trading day before today.
+- `server_info` - service + instance label (e.g. prod/dev) + the authenticated
+  user; call first if several connectors might be configured.
 - `list_trades` (`GET /trades`) - rows carry `hasJournal`, `groupCount`,
   `entryTime`, `direction`, `account`, `entryPrice`, `netPnl`. Page size 50.
 - `get_trade` (`GET /trades/{id}`) - fills + linked entry + chart data.
@@ -28,6 +36,8 @@ parentheses:
 - `list_strategies` / `get_strategy` (`GET /strategies/{id}`) - full playbook.
 - `create_journal_entry` (`POST /journal`) - scope `day|week|trade|group`.
 - `append_note` (`POST /journal/{id}/notes`) - append-only.
+- `assign_strategy` (`POST /journal/{id}/strategy`) - set an entry's strategy
+  **only if it has none** (never overwrites). For tagging newly-created entries.
 
 ## The once-only marker
 
@@ -56,72 +66,64 @@ Write each analysis under a visible heading so a human sees who wrote it:
 
 ## Mode: daily review (default = "yesterday" = last trading day)
 
-**Target date** = the **last trading day before today** in the trading timezone
-(America/Chicago). This is *not* the calendar yesterday: on a Monday it is the
-previous **Friday**, and any weekend / holiday / day with no trades is skipped.
-Resolve it from the data, not the calendar (step 1). If the user names a date,
-use that. Do the steps in order, then print the overview.
+`prepare_day` does the date resolution, copytrader clustering, and entry creation
+on the **server** - you never cluster trades or pass raw trade ids yourself; you
+only analyze the entries it returns. The target date defaults to the **last
+trading day before today** (trading tz - so on a Monday it's the previous Friday,
+and weekends/holidays/no-trade days are skipped); pass an explicit `date` to
+override. Do the steps in order, then print the overview.
 
-### 1. Resolve the day, then pull its trades
-If the user gave an explicit date, use it. Otherwise find the last trading day:
-call `list_trades` with **no** date filter (rows come back newest-first by entry
-time) and take the most recent row whose `exitTime`, in the trading tz, is
-**strictly before today** — that date is your target. Because it's data-driven,
-this automatically lands on Friday after a weekend and skips holidays / no-trade
-days.
+### 1. Prepare the day
+Call `prepare_day` (no args for the default last-trading-day, or
+`date="YYYY-MM-DD"`). It clusters copytrader fan-out into group entries + solos
+into trade entries, creates the missing ones, and returns `entries[]` - each
+`{entryId, scope, created, alreadyAnalyzed, label, symbolRoot, direction, netPnl,
+tradeIds}`. You work only from these entry ids.
 
-Then pull that day's trades: `list_trades` with `day=<date>` (page through
-`page=2,3,…` until fewer than 50 rows). Trades are stored in UTC, so also fetch
-`day=<date+1>` and keep only rows whose `exitTime`, in the trading tz, falls on
-the target date.
+### 2. Analyze each entry (once)
+Fetch your strategies once with `list_strategies` (id + name + full playbook) so
+you can match a trade to one.
 
-### 2. Cluster copytrader fan-out, then cover every trade (create once)
-Copytrader replicates one decision across many accounts. **Cluster** rows that
-share `symbolRoot` + `direction` + `entryTime` (within ~2 seconds) + `entryPrice`
-(within a tick) across **≥2 distinct accounts**.
+For every returned entry with `alreadyAnalyzed: false`:
+- `get_chart_image(entryId=…)` and **look at** the candles/markers;
+  `get_journal_entry(entryId)` for its `notes` + any assigned `strategy`.
+- **Strategy — new entries only:** if the entry was **just created this run**
+  (`created: true`) and has **no** strategy yet, and one of your strategies
+  *clearly* fits the trade, `assign_strategy(entryId, strategyId)`. If nothing
+  clearly fits, leave it unassigned — don't force a fit. **Never** assign or
+  change a strategy on a pre-existing entry (`created: false`); leave its
+  strategy exactly as the user set it. (`assign_strategy` also refuses to
+  overwrite, as a backstop.)
+- Judge the trade against the relevant playbook (`get_strategy(id)` for the one
+  you just assigned or that was already set), then
+  `append_note(entryId, note=<your analysis ending in the marker>)`.
 
-- **Each cluster (≥2 accounts) = one group entry.** If **no** member has
-  `groupCount > 0`, create it:
-  `create_journal_entry(scope="group", tradeIds=[…all cluster trade ids…],
-  body=<analysis>, tag=<good|neutral|bad>)`. If any member already has
-  `groupCount > 0`, a group exists - skip creation (it'll be handled in step 3).
-- **Each solo trade (1 account) = one trade entry.** If `hasJournal` is false,
-  create it: `create_journal_entry(scope="trade", tradeId=<id>, body=<analysis>)`.
-  If `hasJournal` is true, skip (handled in step 3).
+Skip entries where `alreadyAnalyzed: true` (unless the user said force) - that is
+the once-only guarantee. You never pass trade ids; only the `entryId`s that
+`prepare_day` returned.
 
-The `body` you pass **is** the analysis (see the rubric) and **ends with the
-marker**. Use `get_chart_image` (one representative trade per cluster) and, for a
-trade with an assigned strategy later, `get_strategy`, to inform it.
+### 3. Synthesize the daily journal
+From the day's entries + their `netPnl`, write a day-level synthesis (themes,
+what repeated, net result, one thing to fix tomorrow):
+- `create_journal_entry(scope="day", date=<the date prepare_day returned>,
+  body=<synthesis + marker>)`.
+- If it returns `{alreadyExists:true, entryId}` and that entry's `notes` lack
+  `tj-ai:v1`, `append_note(entryId, <synthesis + marker>)`; otherwise leave it.
 
-### 3. Analyze pre-existing entries (strategy-aware)
-Call `list_journal(day=<date>)`. For every entry **you did not just create**,
-`get_journal_entry`; if its `notes` lacks `tj-ai:v1`:
-- If it has a `strategy`, `get_strategy(strategy.id)` and judge the trades
-  against that playbook.
-- `get_chart_image(entryId=…)` and analyze the trades.
-- `append_note(entryId, note=<analysis ending in the marker>)`.
-
-(Entries you created in step 2 already contain the marker, so they're skipped
-here - no double analysis.)
-
-### 4. Synthesize the daily journal
-Read every analyzed entry for the day (`list_journal` + `get_journal_entry`).
-Write a day-level synthesis (themes, what repeated, net result, one thing to fix
-tomorrow) and:
-- `create_journal_entry(scope="day", date=<date>, body=<synthesis + marker>)`.
-- If that returns `{alreadyExists:true, entryId}`: only if that day entry's
-  `notes` lacks `tj-ai:v1`, `append_note(entryId, <synthesis + marker>)`;
-  otherwise leave it.
-
-### 5. Overview in chat
+### 4. Overview in chat
 Print a concise digest (don't just say "done"):
-- Net / gross P&L, # trades, win rate; # group + # trade entries created; #
-  pre-existing entries analyzed.
-- Best and worst trade/cluster.
+- Net / gross P&L, # trades, win rate; # group + # trade entries (created vs
+  already there); best and worst.
 - 2-4 recurring observations (timing, sizing, strategy adherence, copytrader
   consistency across accounts).
-- Anything that needs the user's attention (a stub instrument with no P&L, an
-  entry you skipped because it was already analyzed, etc.).
+- Anything needing attention (a stub instrument with no P&L, entries skipped as
+  already analyzed).
+
+If a tool returns "not found" for an id, re-fetch (`prepare_day` / `list_journal`)
+and use the exact value - do **not** invent ids or conclude a backend problem
+(trade ids, entry ids, and account ids are different namespaces). If several
+trading-journal connectors are configured, call `server_info` first and use one
+instance for the whole run.
 
 ---
 

@@ -106,15 +106,22 @@ func TestCacheFetchDayCoverage(t *testing.T) {
 		t.Errorf("covered window refetched: fake called %d times, want 1", fake.calls)
 	}
 
-	// Today: bars stored but never permanently covered (forming session).
+	// Today: bars stored AND marked covered while fresh (within IntradayTTL), so
+	// the chart renders and reopens hold; once older than the TTL it re-fetches.
+	c.IntradayTTL = time.Hour
 	if err := c.FetchDay(ctx, "ES=F", today); err != nil {
 		t.Fatalf("FetchDay today: %v", err)
 	}
-	if present, _ := c.dayPresent(ctx, "ES=F", today); present {
-		t.Error("today must not be marked covered")
+	if present, _ := c.dayPresent(ctx, "ES=F", today); !present {
+		t.Error("a freshly-fetched today should be marked covered")
 	}
+	if cov, _ := c.WindowCovered(ctx, "ES=F", today.Add(time.Hour), today.Add(2*time.Hour)); !cov {
+		t.Error("a freshly-fetched today window should be covered")
+	}
+	// A tiny TTL makes the just-fetched copy immediately stale -> not covered.
+	c.IntradayTTL = time.Nanosecond
 	if cov, _ := c.WindowCovered(ctx, "ES=F", today.Add(time.Hour), today.Add(2*time.Hour)); cov {
-		t.Error("a window including today must not be covered")
+		t.Error("a stale today window must not be covered")
 	}
 }
 
@@ -137,13 +144,69 @@ func TestPrefetcherSkipsCovered(t *testing.T) {
 	p.delay = 0 // no throttle in tests
 
 	// Trade spans [entry_day-1 .. exit_day+1] = 3 past days for ES=F.
-	p.processAccount(ctx, 1)
+	p.processAccount(ctx, 1, 0)
 	if fake.calls != 3 {
 		t.Fatalf("first pass fetched %d days, want 3", fake.calls)
 	}
 	// Second pass: everything already covered -> no new fetches.
-	p.processAccount(ctx, 1)
+	p.processAccount(ctx, 1, 0)
 	if fake.calls != 3 {
 		t.Errorf("second pass refetched: %d calls, want 3", fake.calls)
+	}
+}
+
+func TestTradeDaysIncludesToday(t *testing.T) {
+	loc := time.UTC
+	now := time.Now()
+	today := startOfDay(now, loc)
+	exit := today.Add(11 * time.Hour)
+	days := TradeDays(today.Add(10*time.Hour), &exit, loc, now)
+	var hasToday, hasFuture bool
+	for _, d := range days {
+		if d.Equal(today) {
+			hasToday = true
+		}
+		if d.After(today) {
+			hasFuture = true
+		}
+	}
+	if !hasToday {
+		t.Error("TradeDays should include today")
+	}
+	if hasFuture {
+		t.Error("TradeDays must not include future days")
+	}
+}
+
+func TestPrefetcherForceRefetchesRecent(t *testing.T) {
+	db := testDB(t)
+	ctx := context.Background()
+	now := time.Now()
+	loc := time.UTC
+	recent := startOfDay(now.AddDate(0, 0, -1), loc) // yesterday
+	if _, err := db.Exec(
+		`INSERT INTO trades (account_id, symbol_root, entry_time, exit_time) VALUES (1,'ES',?,?)`,
+		recent.Add(10*time.Hour), recent.Add(11*time.Hour)); err != nil {
+		t.Fatalf("insert trade: %v", err)
+	}
+	fake := &fakeSource{bars: dayBars(recent, 30)}
+	c := &CachingSource{DB: db, Source: fake, Loc: loc}
+	p := NewPrefetcher(c, db, loc)
+	p.delay = 0
+
+	p.processAccount(ctx, 1, 0)
+	n1 := fake.calls
+	if n1 == 0 {
+		t.Fatal("first pass fetched nothing")
+	}
+	// Non-force second pass: recent days are covered/fresh -> nothing re-fetched.
+	p.processAccount(ctx, 1, 0)
+	if fake.calls != n1 {
+		t.Errorf("non-force pass refetched: %d, want %d", fake.calls, n1)
+	}
+	// Force the last 3 days -> a covered recent day is re-fetched (completes partials).
+	p.processAccount(ctx, 1, 3)
+	if fake.calls <= n1 {
+		t.Errorf("force pass did not re-fetch a covered recent day: calls=%d, was %d", fake.calls, n1)
 	}
 }

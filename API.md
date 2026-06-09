@@ -454,9 +454,11 @@ tj_...`). It's a thin tool surface over the same logic, so AI clients call tools
 with the key held in the connector config — never pasted into a prompt. Toggle it
 with `mcp.enabled` (default true) in `config.yaml`.
 
-Tools: `list_trades`, `get_trade`, `list_journal`, `get_journal_entry`,
-`list_strategies`, `get_strategy`, `get_chart_image` (returns the rendered PNG as
-image content), `create_journal_entry`, `append_note`.
+Tools: `prepare_day` (cluster a day's copytrader fan-out + create the journal
+entries to analyze - the daily-review entry point), `server_info`, `list_trades`,
+`get_trade`, `list_journal`, `get_journal_entry`, `list_strategies`,
+`get_strategy`, `get_chart_image` (returns the rendered PNG as image content),
+`create_journal_entry`, `append_note`.
 
 Connect:
 

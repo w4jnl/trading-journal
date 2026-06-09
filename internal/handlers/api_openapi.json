@@ -217,6 +217,44 @@
         }
       }
     },
+    "/journal/prepare-day": {
+      "post": {
+        "summary": "Prepare a day for review: cluster copytrader fan-out into group entries and solos into trade entries, create the missing ones (idempotent), and return them to analyze (by entryId). Defaults to the last trading day before today.",
+        "requestBody": {
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": { "date": { "type": "string", "example": "2026-05-12", "description": "YYYY-MM-DD; default = last trading day before today." } }
+          } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "date": { "type": "string" },
+                "entries": { "type": "array", "items": {
+                  "type": "object",
+                  "properties": {
+                    "entryId": { "type": "integer" },
+                    "scope": { "type": "string", "enum": ["group", "trade"] },
+                    "created": { "type": "boolean" },
+                    "alreadyAnalyzed": { "type": "boolean" },
+                    "label": { "type": "string" },
+                    "symbolRoot": { "type": "string" },
+                    "direction": { "type": "string" },
+                    "accounts": { "type": "integer" },
+                    "netPnl": { "type": ["number", "null"] },
+                    "tradeIds": { "type": "array", "items": { "type": "integer" } }
+                  }
+                } },
+                "note": { "type": "string" }
+              }
+            } } }
+          }
+        }
+      }
+    },
     "/journal/{id}": {
       "get": {
         "summary": "Journal entry detail (notes, tag, mood, strategy short name, trades overview + list, chart data, attachments).",
@@ -244,6 +282,25 @@
           } } } },
           "400": { "description": "Empty/invalid note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Entry not found (the API does not create entries)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/journal/{id}/strategy": {
+      "post": {
+        "summary": "Assign a strategy to the entry, but only if it has none yet - an existing assignment is never changed (assigned=false then).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "required": ["strategyId"],
+            "properties": { "strategyId": { "type": "integer" } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
+          } } } },
+          "400": { "description": "Unknown entry/strategy or missing strategyId", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },

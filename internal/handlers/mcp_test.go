@@ -44,9 +44,10 @@ func TestMCPToolsList(t *testing.T) {
 		got[tl.Name] = true
 	}
 	want := []string{
+		"prepare_day", "server_info",
 		"list_trades", "get_trade", "list_journal", "get_journal_entry",
 		"list_strategies", "get_strategy", "get_chart_image",
-		"create_journal_entry", "append_note",
+		"create_journal_entry", "append_note", "assign_strategy",
 	}
 	for _, w := range want {
 		if !got[w] {

@@ -43,6 +43,14 @@ market_data:
   # Both default to true when omitted.
   # enabled: true
   # prefetch: true
+  # The current day ("today") is cached + auto-rendered and persists across
+  # reopens; it re-fetches only when older than this many minutes, so an
+  # in-progress session stays reasonably current. Default 15.
+  intraday_refresh_min: 15
+  # Nightly catch-up at this local HH:MM: re-fetches the last couple of days (so
+  # a session only seen mid-day is completed once it closes) and backfills any
+  # missing recent days. Empty string disables it. Default "00:30".
+  nightly_refresh: "00:30"
 
 # Model Context Protocol (MCP) server for AI agents, at POST /mcp. When enabled
 # (default true), it is authenticated by the SAME per-user API keys as /api -- so
@@ -52,6 +60,9 @@ market_data:
 # Set enabled: false to turn it off (the REST API at /api is unaffected).
 mcp:
   enabled: true
+  # Optional label (e.g. "prod" / "dev") reported by the MCP server_info tool so
+  # an AI client configured with several connectors can tell instances apart.
+  instance_label: ""
 
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.

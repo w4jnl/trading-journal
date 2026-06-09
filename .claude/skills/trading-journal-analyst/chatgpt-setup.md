@@ -20,12 +20,14 @@ stored in the tool config (never pasted into a chat). Two options:
 
    | SKILL.md tool | Action operation |
    |---|---|
+   | `prepare_day` | `POST /journal/prepare-day` |
    | `list_trades` | `GET /trades` |
    | `get_trade` | `GET /trades/{id}` |
    | `list_journal` / `get_journal_entry` | `GET /journal` / `GET /journal/{id}` |
    | `list_strategies` / `get_strategy` | `GET /strategies` / `GET /strategies/{id}` |
    | `create_journal_entry` | `POST /journal` |
    | `append_note` | `POST /journal/{id}/notes` |
+   | `assign_strategy` | `POST /journal/{id}/strategy` |
 
 6. **Charts**: Actions return JSON, so ChatGPT reasons from the numeric `chart`
    field on the journal/trade detail (OHLC bars + entry/exit markers) rather than

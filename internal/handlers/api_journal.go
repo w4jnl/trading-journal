@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -330,7 +331,9 @@ func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz
 		}
 		trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: *in.TradeID, UserID: userID(ctx)})
 		if err != nil {
-			return none, nil, badInput("unknown tradeId") // foreign/unknown id is request input -> 400
+			// Foreign/unknown id is request input -> 400. Be specific so a client
+			// self-corrects (re-list) instead of assuming a backend problem.
+			return none, nil, badInput("tradeId %d not found on your accounts; re-list with list_trades and pass an exact trade id (not an entry or account id)", *in.TradeID)
 		}
 		if existing, err := h.Queries.GetJournalEntryByTradeID(ctx, in.TradeID); err == nil {
 			return none, &createConflict{EntryID: existing.ID, Message: "a journal entry already exists for this trade"}, nil
@@ -368,7 +371,7 @@ func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz
 			}
 		}
 		if len(owned) == 0 {
-			return none, nil, badInput("no owned trades to link")
+			return none, nil, badInput("none of the given tradeIds were found on your accounts (got %v); they may be entry ids or from a different day - re-list with list_trades and pass exact trade ids", in.TradeIDs)
 		}
 		entryDate, err := h.maxExitDate(ctx, owned, tz)
 		if err != nil {
@@ -612,4 +615,340 @@ func apiSnippet(s string, n int) string {
 		return s
 	}
 	return strings.TrimSpace(string(r[:n])) + "..."
+}
+
+// ---- prepare_day: server-side copytrader clustering + idempotent entry creation
+//
+// The analyst workflow used to make the model cluster a day's trades and pass raw
+// trade-id arrays to create_journal_entry - which weaker models get wrong
+// (mis-transcribed ids surface as "unknown tradeId" and look like a backend bug).
+// prepareDayEntries does the clustering + creation in Go so the model only has to
+// analyze the entries it gets back (by entryId), never raw trade ids.
+
+const (
+	aiMarker          = "tj-ai:v1"
+	aiPlaceholderBody = "_(AI analysis pending - add it with append_note)_"
+)
+
+// prepDayTrade is one closed trade on the target day plus what the clusterer needs.
+type prepDayTrade struct {
+	ID         int64
+	Symbol     string
+	SymbolRoot string
+	Direction  string
+	EntryTime  time.Time
+	EntryPrice float64
+	AccountID  int64
+	Account    string
+	NetPnl     *float64
+}
+
+// preparedEntry is one journal entry day-prep produced (created or reused).
+type preparedEntry struct {
+	EntryID         int64    `json:"entryId"`
+	Scope           string   `json:"scope"`
+	Created         bool     `json:"created"`
+	AlreadyAnalyzed bool     `json:"alreadyAnalyzed"`
+	Label           string   `json:"label"`
+	SymbolRoot      string   `json:"symbolRoot,omitempty"`
+	Direction       string   `json:"direction,omitempty"`
+	Accounts        int      `json:"accounts,omitempty"`
+	NetPnl          *float64 `json:"netPnl,omitempty"`
+	TradeIDs        []int64  `json:"tradeIds,omitempty"`
+}
+
+// prepareDayEntries clusters the target day's trades (copytrader fan-out -> group,
+// solo -> trade), creates the missing entries idempotently, and returns them.
+// date "" resolves to the last trading day before today.
+func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *time.Location) (map[string]any, error) {
+	var day time.Time
+	if s := strings.TrimSpace(dateStr); s != "" {
+		d, err := time.ParseInLocation("2006-01-02", s, tz)
+		if err != nil {
+			return nil, badInput("bad date; expected YYYY-MM-DD")
+		}
+		day = d
+	} else {
+		d, err := h.lastTradingDay(ctx, tz)
+		if err != nil {
+			return nil, err
+		}
+		if d.IsZero() {
+			return map[string]any{"date": "", "entries": []preparedEntry{}, "note": "no closed trades found on any prior day"}, nil
+		}
+		day = d
+	}
+
+	trades, err := h.loadDayTradesForPrep(ctx, day, tz)
+	if err != nil {
+		return nil, err
+	}
+	groups, solos := clusterCopytrader(trades)
+
+	entries := make([]preparedEntry, 0, len(groups)+len(solos))
+	for _, g := range groups {
+		ids := tradeIDsOf(g)
+		pe := preparedEntry{
+			Scope: "group", Label: clusterLabel(g), SymbolRoot: g[0].SymbolRoot,
+			Direction: g[0].Direction, Accounts: distinctAccounts(g), NetPnl: sumNet(g), TradeIDs: ids,
+		}
+		if eid, ok, err := h.findGroupForTrades(ctx, ids); err != nil {
+			return nil, err
+		} else if ok {
+			pe.EntryID, pe.Created, pe.AlreadyAnalyzed = eid, false, h.entryHasMarker(ctx, eid)
+		} else {
+			e, _, err := h.createJournalEntry(ctx, apiCreateInput{Scope: "group", TradeIDs: ids, Body: aiPlaceholderBody}, tz)
+			if err != nil {
+				return nil, err
+			}
+			pe.EntryID, pe.Created = e.ID, true
+		}
+		entries = append(entries, pe)
+	}
+	for _, t := range solos {
+		tid := t.ID
+		pe := preparedEntry{
+			Scope: "trade", Label: t.SymbolRoot + " " + t.Direction + " (" + t.Account + ")",
+			SymbolRoot: t.SymbolRoot, Direction: t.Direction, NetPnl: t.NetPnl, TradeIDs: []int64{tid},
+		}
+		e, conflict, err := h.createJournalEntry(ctx, apiCreateInput{Scope: "trade", TradeID: &tid, Body: aiPlaceholderBody}, tz)
+		if err != nil {
+			return nil, err
+		}
+		if conflict != nil {
+			pe.EntryID, pe.Created, pe.AlreadyAnalyzed = conflict.EntryID, false, h.entryHasMarker(ctx, conflict.EntryID)
+		} else {
+			pe.EntryID, pe.Created = e.ID, true
+		}
+		entries = append(entries, pe)
+	}
+
+	return map[string]any{
+		"date":    day.Format("2006-01-02"),
+		"entries": entries,
+		"note":    "For each entry with alreadyAnalyzed=false: get_chart_image(entryId=...) (+ get_strategy if one is assigned), then append_note(entryId, analysis ending in <!-- " + aiMarker + " -->). Then synthesize the day. Only ever pass the entryId values above - never raw trade ids.",
+	}, nil
+}
+
+// lastTradingDay returns the trading-tz date of the most recent closed trade
+// strictly before today (zero time if none).
+func (h *Handlers) lastTradingDay(ctx context.Context, tz *time.Location) (time.Time, error) {
+	now := time.Now().In(tz)
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
+	var et time.Time
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT t.exit_time FROM trades t JOIN accounts a ON a.id = t.account_id
+		 WHERE a.user_id = ? AND a.active = 1 AND t.status = 'closed' AND t.exit_time IS NOT NULL AND t.exit_time < ?
+		 ORDER BY t.exit_time DESC LIMIT 1`, userID(ctx), today).Scan(&et)
+	if errors.Is(err, sql.ErrNoRows) {
+		return time.Time{}, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("resolve last trading day: %w", err)
+	}
+	y, m, d := et.In(tz).Date()
+	return time.Date(y, m, d, 0, 0, 0, 0, tz), nil
+}
+
+func (h *Handlers) loadDayTradesForPrep(ctx context.Context, day time.Time, tz *time.Location) ([]prepDayTrade, error) {
+	end := day.AddDate(0, 0, 1)
+	rows, err := h.DB.QueryContext(ctx, `
+		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.entry_time, t.entry_price, t.account_id, a.name, t.net_pnl
+		FROM trades t JOIN accounts a ON a.id = t.account_id
+		WHERE t.status = 'closed' AND t.exit_time IS NOT NULL AND a.active = 1 AND a.user_id = ?
+		  AND t.exit_time >= ? AND t.exit_time < ?
+		ORDER BY t.entry_time ASC, t.id ASC`, userID(ctx), day, end)
+	if err != nil {
+		return nil, fmt.Errorf("load day trades: %w", err)
+	}
+	defer rows.Close()
+	var out []prepDayTrade
+	for rows.Next() {
+		var t prepDayTrade
+		if err := rows.Scan(&t.ID, &t.Symbol, &t.SymbolRoot, &t.Direction, &t.EntryTime, &t.EntryPrice, &t.AccountID, &t.Account, &t.NetPnl); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// clusterCopytrader groups trades that look like one decision fanned across
+// accounts: same symbol_root + direction, entries within ~2s, on >=2 distinct
+// accounts. Those clusters become group entries; everything else is a solo.
+func clusterCopytrader(trs []prepDayTrade) (groups [][]prepDayTrade, solos []prepDayTrade) {
+	const window = 2 * time.Second
+	sort.SliceStable(trs, func(i, j int) bool {
+		a, b := trs[i], trs[j]
+		if a.SymbolRoot != b.SymbolRoot {
+			return a.SymbolRoot < b.SymbolRoot
+		}
+		if a.Direction != b.Direction {
+			return a.Direction < b.Direction
+		}
+		return a.EntryTime.Before(b.EntryTime)
+	})
+	for i := 0; i < len(trs); {
+		j := i + 1
+		for j < len(trs) &&
+			trs[j].SymbolRoot == trs[i].SymbolRoot &&
+			trs[j].Direction == trs[i].Direction &&
+			trs[j].EntryTime.Sub(trs[i].EntryTime) <= window {
+			j++
+		}
+		cluster := trs[i:j]
+		if distinctAccounts(cluster) >= 2 {
+			groups = append(groups, cluster)
+		} else {
+			solos = append(solos, cluster...)
+		}
+		i = j
+	}
+	return groups, solos
+}
+
+func distinctAccounts(c []prepDayTrade) int {
+	seen := map[int64]bool{}
+	for _, t := range c {
+		seen[t.AccountID] = true
+	}
+	return len(seen)
+}
+
+func tradeIDsOf(c []prepDayTrade) []int64 {
+	ids := make([]int64, len(c))
+	for i, t := range c {
+		ids[i] = t.ID
+	}
+	return ids
+}
+
+func sumNet(c []prepDayTrade) *float64 {
+	var sum float64
+	present := false
+	for _, t := range c {
+		if t.NetPnl != nil {
+			sum += *t.NetPnl
+			present = true
+		}
+	}
+	if !present {
+		return nil
+	}
+	return &sum
+}
+
+func clusterLabel(c []prepDayTrade) string {
+	return fmt.Sprintf("%s %s x%d accts", c[0].SymbolRoot, c[0].Direction, distinctAccounts(c))
+}
+
+// findGroupForTrades returns the id of an existing group entry (owned by the
+// caller) that already includes any of the given trades, so day-prep reuses it
+// rather than creating a duplicate group.
+func (h *Handlers) findGroupForTrades(ctx context.Context, ids []int64) (int64, bool, error) {
+	if len(ids) == 0 {
+		return 0, false, nil
+	}
+	ph := strings.Repeat("?,", len(ids))
+	ph = ph[:len(ph)-1]
+	args := make([]any, 0, len(ids)+1)
+	args = append(args, userID(ctx))
+	for _, id := range ids {
+		args = append(args, id)
+	}
+	var eid int64
+	err := h.DB.QueryRowContext(ctx,
+		`SELECT jet.journal_entry_id FROM journal_entry_trades jet
+		 JOIN journal_entries je ON je.id = jet.journal_entry_id
+		 WHERE je.user_id = ? AND je.scope = 'group' AND jet.trade_id IN (`+ph+`) LIMIT 1`, args...).Scan(&eid)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, false, nil
+	}
+	if err != nil {
+		return 0, false, fmt.Errorf("find group for trades: %w", err)
+	}
+	return eid, true, nil
+}
+
+func (h *Handlers) entryHasMarker(ctx context.Context, entryID int64) bool {
+	e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: userIDPtr(ctx)})
+	if err != nil {
+		return false
+	}
+	return strings.Contains(e.Body, aiMarker)
+}
+
+// APIPrepareDay: POST /api/v1/journal/prepare-day  {date?: "YYYY-MM-DD"}
+func (h *Handlers) APIPrepareDay(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Date string `json:"date"`
+	}
+	if r.Body != nil {
+		_ = json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body)
+	}
+	resp, err := h.prepareDayEntries(r.Context(), body.Date, h.localTZ())
+	if err != nil {
+		var ve apiValidationError
+		if errors.As(err, &ve) {
+			writeJSONError(w, http.StatusBadRequest, ve.msg)
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "could not prepare day")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// assignStrategyIfUnset sets an entry's strategy ONLY when it currently has none,
+// so an existing assignment is never changed (assigned=false then). Returns an
+// apiValidationError for an unknown entry or strategy. Used by the analyst to
+// tag freshly-created entries with a fitting strategy without ever touching the
+// strategy of entries the user already authored.
+func (h *Handlers) assignStrategyIfUnset(ctx context.Context, entryID, strategyID int64) (bool, error) {
+	uid := userIDPtr(ctx)
+	if _, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: uid}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, badInput("entry %d not found", entryID)
+		}
+		return false, fmt.Errorf("load entry: %w", err)
+	}
+	if _, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: strategyID, UserID: userID(ctx)}); err != nil {
+		return false, badInput("unknown strategyId %d", strategyID)
+	}
+	res, err := h.DB.ExecContext(ctx,
+		"UPDATE journal_entries SET strategy_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND strategy_id IS NULL",
+		strategyID, entryID, *uid)
+	if err != nil {
+		return false, fmt.Errorf("assign strategy: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// APIJournalAssignStrategy: POST /api/v1/journal/{id}/strategy  {strategyId}
+// Assigns a strategy only if the entry has none yet (never overwrites).
+func (h *Handlers) APIJournalAssignStrategy(w http.ResponseWriter, r *http.Request) {
+	id, ok := apiPathID(r)
+	if !ok {
+		writeJSONError(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	var body struct {
+		StrategyID int64 `json:"strategyId"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil || body.StrategyID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "strategyId is required")
+		return
+	}
+	assigned, err := h.assignStrategyIfUnset(r.Context(), id, body.StrategyID)
+	if err != nil {
+		var ve apiValidationError
+		if errors.As(err, &ve) {
+			writeJSONError(w, http.StatusBadRequest, ve.msg)
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "could not assign strategy")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "assigned": assigned})
 }
