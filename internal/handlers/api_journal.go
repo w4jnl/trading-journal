@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"sort"
 	"strconv"
@@ -724,6 +725,15 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 		entries = append(entries, pe)
 	}
 
+	created := 0
+	for _, e := range entries {
+		if e.Created {
+			created++
+		}
+	}
+	slog.Debug("prepare_day", "date", day.Format("2006-01-02"), "trades", len(trades),
+		"groups", len(groups), "solos", len(solos), "entries", len(entries), "created", created)
+
 	return map[string]any{
 		"date":    day.Format("2006-01-02"),
 		"entries": entries,
@@ -977,6 +987,61 @@ func (h *Handlers) APIJournalAssignStrategy(w http.ResponseWriter, r *http.Reque
 			writeJSONError(w, http.StatusBadRequest, ve.msg)
 		} else {
 			writeJSONError(w, http.StatusInternalServerError, "could not assign strategy")
+		}
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"id": id, "assigned": assigned})
+}
+
+// assignTagIfUnset sets an entry's tag (good|neutral|bad) ONLY when it has none
+// yet, so an existing tag is never changed (assigned=false then). Mirrors
+// assignStrategyIfUnset; lets the analyst classify freshly-created entries
+// without touching tags the user already set.
+func (h *Handlers) assignTagIfUnset(ctx context.Context, entryID int64, tag string) (bool, error) {
+	switch tag {
+	case "good", "neutral", "bad":
+	default:
+		return false, badInput("tag must be one of: good, neutral, bad")
+	}
+	uid := userIDPtr(ctx)
+	if _, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: uid}); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, badInput("entry %d not found", entryID)
+		}
+		return false, fmt.Errorf("load entry: %w", err)
+	}
+	res, err := h.DB.ExecContext(ctx,
+		"UPDATE journal_entries SET tag = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND tag IS NULL",
+		tag, entryID, *uid)
+	if err != nil {
+		return false, fmt.Errorf("assign tag: %w", err)
+	}
+	n, _ := res.RowsAffected()
+	return n > 0, nil
+}
+
+// APIJournalAssignTag: POST /api/v1/journal/{id}/tag  {tag}
+// Sets the tag only if the entry has none yet (never overwrites).
+func (h *Handlers) APIJournalAssignTag(w http.ResponseWriter, r *http.Request) {
+	id, ok := apiPathID(r)
+	if !ok {
+		writeJSONError(w, http.StatusBadRequest, "bad id")
+		return
+	}
+	var body struct {
+		Tag string `json:"tag"`
+	}
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&body); err != nil || body.Tag == "" {
+		writeJSONError(w, http.StatusBadRequest, "tag is required")
+		return
+	}
+	assigned, err := h.assignTagIfUnset(r.Context(), id, body.Tag)
+	if err != nil {
+		var ve apiValidationError
+		if errors.As(err, &ve) {
+			writeJSONError(w, http.StatusBadRequest, ve.msg)
+		} else {
+			writeJSONError(w, http.StatusInternalServerError, "could not assign tag")
 		}
 		return
 	}

@@ -24,6 +24,7 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m.HandleFunc("GET /api/v1/journal/{id}", h.APIJournalDetail)
 	m.HandleFunc("POST /api/v1/journal/{id}/notes", h.APIJournalAppendNote)
 	m.HandleFunc("POST /api/v1/journal/{id}/strategy", h.APIJournalAssignStrategy)
+	m.HandleFunc("POST /api/v1/journal/{id}/tag", h.APIJournalAssignTag)
 	m.HandleFunc("GET /api/v1/journal/{id}/chart.png", h.APIJournalChartPNG)
 	m.HandleFunc("GET /api/v1/trades", h.APITradesList)
 	m.HandleFunc("GET /api/v1/trades/{id}", h.APITradeDetail)

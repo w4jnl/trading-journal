@@ -28,6 +28,7 @@ stored in the tool config (never pasted into a chat). Two options:
    | `create_journal_entry` | `POST /journal` |
    | `append_note` | `POST /journal/{id}/notes` |
    | `assign_strategy` | `POST /journal/{id}/strategy` |
+   | `set_tag` | `POST /journal/{id}/tag` |
 
 6. **Charts**: Actions return JSON, so ChatGPT reasons from the numeric `chart`
    field on the journal/trade detail (OHLC bars + entry/exit markers) rather than

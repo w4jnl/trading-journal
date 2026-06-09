@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -70,16 +71,19 @@ func (a *APIKeyAuth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		tok := parseBearer(r)
 		if tok == "" || !strings.HasPrefix(tok, "tj_") {
+			slog.Debug("api auth rejected", "reason", "missing or malformed key", "method", r.Method, "path", r.URL.Path)
 			writeAPIError(w, http.StatusUnauthorized, "missing or malformed API key")
 			return
 		}
 		row, err := a.Queries.GetAPIKeyBySHA256(r.Context(), HashAPIKey(tok))
 		if err != nil {
 			// sql.ErrNoRows (unknown OR revoked key) and any other error -> 401.
+			slog.Debug("api auth rejected", "reason", "unknown or revoked key", "method", r.Method, "path", r.URL.Path)
 			writeAPIError(w, http.StatusUnauthorized, "invalid API key")
 			return
 		}
 		if row.IsActive == 0 {
+			slog.Debug("api auth rejected", "reason", "account disabled", "user", row.Username, "method", r.Method, "path", r.URL.Path)
 			writeAPIError(w, http.StatusUnauthorized, "account disabled")
 			return
 		}

@@ -37,7 +37,9 @@ parentheses:
 - `create_journal_entry` (`POST /journal`) - scope `day|week|trade|group`.
 - `append_note` (`POST /journal/{id}/notes`) - append-only.
 - `assign_strategy` (`POST /journal/{id}/strategy`) - set an entry's strategy
-  **only if it has none** (never overwrites). For tagging newly-created entries.
+  **only if it has none** (never overwrites). For newly-created entries.
+- `set_tag` (`POST /journal/{id}/tag`) - set `good|neutral|bad` **only if the
+  entry has none** (never overwrites). For newly-created entries.
 
 ## The once-only marker
 
@@ -87,13 +89,16 @@ you can match a trade to one.
 For every returned entry with `alreadyAnalyzed: false`:
 - `get_chart_image(entryId=…)` and **look at** the candles/markers;
   `get_journal_entry(entryId)` for its `notes` + any assigned `strategy`.
-- **Strategy — new entries only:** if the entry was **just created this run**
-  (`created: true`) and has **no** strategy yet, and one of your strategies
-  *clearly* fits the trade, `assign_strategy(entryId, strategyId)`. If nothing
-  clearly fits, leave it unassigned — don't force a fit. **Never** assign or
-  change a strategy on a pre-existing entry (`created: false`); leave its
-  strategy exactly as the user set it. (`assign_strategy` also refuses to
-  overwrite, as a backstop.)
+- **Classify — new entries only:** if the entry was **just created this run**
+  (`created: true`), you may set its strategy and/or tag — only when each is
+  appropriate and only on entries that have none yet:
+  - `assign_strategy(entryId, strategyId)` if one of your strategies *clearly*
+    fits the trade; if nothing clearly fits, leave it unassigned — don't force it.
+  - `set_tag(entryId, "good"|"neutral"|"bad")` if your analysis warrants a clear
+    verdict; if it's ambiguous, leave it untagged.
+  **Never** assign or change a strategy or tag on a pre-existing entry
+  (`created: false`) — leave them exactly as the user set them. (Both calls also
+  refuse to overwrite, as a backstop.)
 - Judge the trade against the relevant playbook (`get_strategy(id)` for the one
   you just assigned or that was already set), then
   `append_note(entryId, note=<your analysis ending in the marker>)`.

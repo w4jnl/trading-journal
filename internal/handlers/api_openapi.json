@@ -304,6 +304,25 @@
         }
       }
     },
+    "/journal/{id}/tag": {
+      "post": {
+        "summary": "Set the entry's tag (good|neutral|bad), but only if it has none yet - an existing tag is never changed (assigned=false then).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "required": ["tag"],
+            "properties": { "tag": { "type": "string", "enum": ["good", "neutral", "bad"] } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
+          } } } },
+          "400": { "description": "Unknown entry or bad/missing tag", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/journal/{id}/chart.png": {
       "get": {
         "summary": "Server-rendered candlestick PNG of the entry's chart (cached data only).",

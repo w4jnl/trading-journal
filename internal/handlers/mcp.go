@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -35,6 +36,7 @@ import (
 func (h *Handlers) MCPHandler() http.Handler {
 	s := mcpserver.NewMCPServer("trading-journal", "v1",
 		mcpserver.WithToolCapabilities(true),
+		mcpserver.WithToolHandlerMiddleware(h.mcpDebugMW),
 	)
 	h.registerMCPTools(s)
 	return mcpserver.NewStreamableHTTPServer(s,
@@ -43,6 +45,31 @@ func (h *Handlers) MCPHandler() http.Handler {
 			return r.Context() // already carries auth.User from APIKeyAuth.Middleware
 		}),
 	)
+}
+
+// mcpDebugMW logs every tool call at debug level: tool name, the calling user,
+// the raw arguments, whether the result was an error, and the duration. One hook
+// for all tools (the tool name comes from the request). Near no-op when debug is
+// off. Invaluable for tracing what an AI client actually sent and got back.
+func (h *Handlers) mcpDebugMW(next mcpserver.ToolHandlerFunc) mcpserver.ToolHandlerFunc {
+	return func(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+		if !slog.Default().Enabled(ctx, slog.LevelDebug) {
+			return next(ctx, req)
+		}
+		start := time.Now()
+		res, err := next(ctx, req)
+		user := ""
+		if u := auth.UserFrom(ctx); u != nil {
+			user = u.Username
+		}
+		slog.Debug("mcp tool call",
+			"tool", req.Params.Name,
+			"user", user,
+			"args", req.GetArguments(),
+			"isError", err != nil || (res != nil && res.IsError),
+			"dur", time.Since(start).String())
+		return res, err
+	}
 }
 
 func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
@@ -128,6 +155,12 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithNumber("strategyId", mcpgo.Required(), mcpgo.Description("Strategy id to assign (must be owned).")),
 	), h.mcpAssignStrategy)
+
+	s.AddTool(mcpgo.NewTool("set_tag",
+		mcpgo.WithDescription("Set an entry's tag (good|neutral|bad), but ONLY if it has none yet - an existing tag is never changed (assigned=false then). Use right after prepare_day for an entry you just created (created=true) when your analysis warrants a verdict; skip it otherwise and never call it for pre-existing entries."),
+		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
+		mcpgo.WithString("tag", mcpgo.Required(), mcpgo.Enum("good", "neutral", "bad")),
+	), h.mcpSetTag)
 }
 
 // ---- tool handlers (reuse the same ctx-based logic as the REST API) ----
@@ -358,6 +391,22 @@ func (h *Handlers) mcpAssignStrategy(ctx context.Context, req mcpgo.CallToolRequ
 		return mcpgo.NewToolResultError(err.Error()), nil
 	}
 	return mcpJSON(map[string]any{"entryId": eid, "strategyId": sid, "assigned": assigned})
+}
+
+func (h *Handlers) mcpSetTag(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	eid, err := req.RequireInt("entryId")
+	if err != nil {
+		return mcpgo.NewToolResultError("entryId is required"), nil
+	}
+	tag, err := req.RequireString("tag")
+	if err != nil {
+		return mcpgo.NewToolResultError("tag is required"), nil
+	}
+	assigned, err := h.assignTagIfUnset(ctx, int64(eid), tag)
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
+	return mcpJSON(map[string]any{"entryId": eid, "tag": tag, "assigned": assigned})
 }
 
 func (h *Handlers) mcpAppendNote(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {

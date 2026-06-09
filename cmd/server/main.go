@@ -34,6 +34,7 @@ Run the server (default):
   -config PATH   Path to config.yaml (default: ./config.yaml).
                  If the file is missing the server boots with built-in
                  defaults; see config.example.yaml for the full schema.
+  -d             Verbose debug logging: api/mcp requests and AI tool calls.
 
 User management:
   trading-journal users -h
@@ -84,9 +85,50 @@ func main() {
 	}
 }
 
+// statusRecorder captures the response status for debug logging. It forwards
+// Flush so the MCP streamable-HTTP (SSE) transport keeps working when wrapped.
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (s *statusRecorder) WriteHeader(code int) { s.status = code; s.ResponseWriter.WriteHeader(code) }
+
+func (s *statusRecorder) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+// debugHTTP logs each API/MCP request (method, path, status, duration, user) at
+// debug level. Mounted inside the key-auth chain so the user is resolved; a
+// near no-op when debug logging is off.
+func debugHTTP(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !slog.Default().Enabled(r.Context(), slog.LevelDebug) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(rec, r)
+		user := ""
+		if u := auth.UserFrom(r.Context()); u != nil {
+			user = u.Username
+		}
+		slog.Debug("api request", "method", r.Method, "path", r.URL.Path,
+			"status", rec.status, "dur", time.Since(start).String(), "user", user)
+	})
+}
+
 func run() error {
 	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
+	debug := flag.Bool("d", false, "verbose debug logging (api/mcp requests + AI tool calls)")
 	flag.Parse()
+	if *debug {
+		slog.SetLogLoggerLevel(slog.LevelDebug)
+		slog.Debug("debug logging enabled")
+	}
 
 	cfg, err := config.Load(*cfgPath)
 	if err != nil {
@@ -374,10 +416,10 @@ func run() error {
 	// does not strip the prefix, so the API mux registers full /api/v1/... paths.
 	apiKeyAuth := &auth.APIKeyAuth{Queries: queries}
 	root := http.NewServeMux()
-	root.Handle("/api/", apiKeyAuth.Middleware(h.APIMux()))
+	root.Handle("/api/", apiKeyAuth.Middleware(debugHTTP(h.APIMux())))
 	// MCP server for AI clients - same per-user key auth as /api, no CSRF/session.
 	if cfg.MCP.Enabled == nil || *cfg.MCP.Enabled {
-		root.Handle("/mcp", apiKeyAuth.Middleware(h.MCPHandler()))
+		root.Handle("/mcp", apiKeyAuth.Middleware(debugHTTP(h.MCPHandler())))
 		slog.Info("MCP server enabled", "path", "/mcp")
 	}
 	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
