@@ -172,14 +172,32 @@ func (h *Handlers) APIJournalAppendNote(w http.ResponseWriter, r *http.Request) 
 	if !ok {
 		return
 	}
-	block := formatAppendedNote(time.Now(), h.localTZ(), note)
-	if err := h.Queries.AppendJournalEntryBody(ctx, models.AppendJournalEntryBodyParams{
-		Body: block, ID: e.ID, UserID: userIDPtr(ctx),
-	}); err != nil {
+	if err := h.appendOrSeedJournalNote(ctx, e, note); err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not append note")
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": e.ID, "appended": true})
+}
+
+// appendOrSeedJournalNote adds note to an entry's body. While the entry is still
+// the prepare_day placeholder (created but not yet analyzed), the note REPLACES it -
+// keeping the leading "---" divider but dropping the "pending" line - so an analyzed
+// entry never carries a stale placeholder above the real review. Otherwise the note
+// is appended as a dated, divider-separated block (the existing append-only
+// behavior). Both the REST and MCP append paths funnel through here.
+func (h *Handlers) appendOrSeedJournalNote(ctx context.Context, entry models.JournalEntry, note string) error {
+	note = strings.TrimSpace(note)
+	if strings.TrimSpace(entry.Body) == strings.TrimSpace(aiPlaceholderBody) {
+		seeded := "---\n\n" + strings.TrimRight(note, " \t\n") + "\n"
+		_, err := h.DB.ExecContext(ctx,
+			"UPDATE journal_entries SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
+			seeded, entry.ID, userIDPtr(ctx))
+		return err
+	}
+	block := formatAppendedNote(time.Now(), h.localTZ(), note)
+	return h.Queries.AppendJournalEntryBody(ctx, models.AppendJournalEntryBodyParams{
+		Body: block, ID: entry.ID, UserID: userIDPtr(ctx),
+	})
 }
 
 // formatAppendedNote builds the dated markdown block appended to a journal body:
@@ -629,7 +647,7 @@ func apiSnippet(s string, n int) string {
 
 const (
 	aiMarker          = "tj-ai:v1"
-	aiPlaceholderBody = "_(AI analysis pending - add it with append_note)_"
+	aiPlaceholderBody = "---\n\n_AI review_"
 )
 
 // prepDayTrade is one closed trade on the target day plus what the clusterer needs.

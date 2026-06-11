@@ -425,8 +425,7 @@ func (h *Handlers) mcpAppendNote(ctx context.Context, req mcpgo.CallToolRequest)
 	if err != nil {
 		return mcpgo.NewToolResultError("could not load entry"), nil
 	}
-	block := formatAppendedNote(time.Now(), h.localTZ(), note)
-	if err := h.Queries.AppendJournalEntryBody(ctx, models.AppendJournalEntryBodyParams{Body: block, ID: e.ID, UserID: userIDPtr(ctx)}); err != nil {
+	if err := h.appendOrSeedJournalNote(ctx, e, note); err != nil {
 		return mcpgo.NewToolResultError("could not append note"), nil
 	}
 	return mcpJSON(map[string]any{"id": e.ID, "appended": true})
