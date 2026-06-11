@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	_ "embed"
 	"net/http"
 
@@ -39,7 +40,34 @@ func (h *Handlers) APIIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 // APIOpenAPI: GET /api/v1/openapi.json - the embedded spec (behind key auth).
-func (h *Handlers) APIOpenAPI(w http.ResponseWriter, _ *http.Request) {
+//
+// The committed spec carries a RELATIVE server URL ("/api/v1"). Some importers -
+// notably ChatGPT custom-GPT Actions - require an ABSOLUTE https URL or they refuse
+// the schema. We rewrite the server to an absolute URL derived from the request
+// (honoring the X-Forwarded-* headers Traefik sets), so the spec imports as-is.
+// Falls back to the embedded relative URL when the host can't be determined.
+func (h *Handlers) APIOpenAPI(w http.ResponseWriter, r *http.Request) {
+	spec := apiOpenAPISpec
+	if base := requestBaseURL(r); base != "" {
+		spec = bytes.Replace(spec, []byte(`"url": "/api/v1"`), []byte(`"url": "`+base+`/api/v1"`), 1)
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = w.Write(apiOpenAPISpec)
+	_, _ = w.Write(spec)
+}
+
+// requestBaseURL reconstructs the public scheme://host the request arrived on,
+// preferring the X-Forwarded-* headers a reverse proxy sets. Empty when unknown.
+func requestBaseURL(r *http.Request) string {
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		return ""
+	}
+	scheme := "http"
+	if r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + host
 }

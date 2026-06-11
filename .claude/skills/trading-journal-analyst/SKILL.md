@@ -172,7 +172,9 @@ in a prompt.
   `https://YOUR_HOST/mcp` with the `Authorization: Bearer tj_...` header. (If your
   app build requires OAuth for connectors, use Claude Code or the ChatGPT path
   for now - header-key auth on `/mcp` is what's implemented.)
-- **ChatGPT**: see [chatgpt-setup.md](chatgpt-setup.md).
+- **ChatGPT**: a Custom GPT with an Action on the REST API — paste
+  [chatgpt-instructions.md](chatgpt-instructions.md) into the GPT's Instructions as-is;
+  full steps in [chatgpt-setup.md](chatgpt-setup.md).
 
 ## Scheduling (daily, automatic)
 - **Claude Code routine** (recommended): use the `schedule` skill to run this each
