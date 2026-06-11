@@ -6,6 +6,8 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -18,7 +20,17 @@ type Config struct {
 	Auth         Auth         `yaml:"auth"`
 	Backup       Backup       `yaml:"backup"`
 	MarketData   MarketData   `yaml:"market_data"`
+	MCP          MCP          `yaml:"mcp"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// MCP toggles the Model Context Protocol server at /mcp (for AI clients). It
+// reuses the same per-user api_keys as the REST API. Enabled (nil = true).
+type MCP struct {
+	Enabled *bool `yaml:"enabled"`
+	// InstanceLabel (e.g. "prod" / "dev") is reported by the MCP server_info
+	// tool so an AI client can tell which instance it is connected to.
+	InstanceLabel string `yaml:"instance_label"`
 }
 
 // MarketData configures the historical price-bar source behind the trade-replay
@@ -31,6 +43,31 @@ type MarketData struct {
 	HTTPTimeoutSec int    `yaml:"http_timeout_sec"`
 	Enabled        *bool  `yaml:"enabled"`
 	Prefetch       *bool  `yaml:"prefetch"`
+	// IntradayRefreshMin bounds how long the current day's chart is served from
+	// cache before re-fetching (minutes; default 15). NightlyRefresh is the local
+	// HH:MM for a daily catch-up that completes recent days + backfills gaps
+	// ("" disables it; default "00:30").
+	IntradayRefreshMin int    `yaml:"intraday_refresh_min"`
+	NightlyRefresh     string `yaml:"nightly_refresh"`
+}
+
+// NightlyRefreshHM parses NightlyRefresh ("HH:MM") into hour+minute. ok is false
+// when it is empty (disabled) or malformed.
+func (m MarketData) NightlyRefreshHM() (hour, min int, ok bool) {
+	s := strings.TrimSpace(m.NightlyRefresh)
+	if s == "" {
+		return 0, 0, false
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	h, err1 := strconv.Atoi(strings.TrimSpace(parts[0]))
+	mn, err2 := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if err1 != nil || err2 != nil || h < 0 || h > 23 || mn < 0 || mn > 59 {
+		return 0, 0, false
+	}
+	return h, mn, true
 }
 
 // Backup controls the periodic on-disk snapshot. When Enabled, the app writes
@@ -109,7 +146,7 @@ func defaults() Config {
 			},
 		},
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
-		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10},
+		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30"},
 		Timezone:   "America/Chicago",
 	}
 }
@@ -147,6 +184,11 @@ func (c Config) Validate() error {
 	}
 	if c.MarketData.HTTPTimeoutSec < 0 {
 		return fmt.Errorf("market_data.http_timeout_sec must be >= 0, got %d", c.MarketData.HTTPTimeoutSec)
+	}
+	if c.MarketData.NightlyRefresh != "" {
+		if _, _, ok := c.MarketData.NightlyRefreshHM(); !ok {
+			return fmt.Errorf("market_data.nightly_refresh must be \"HH:MM\" (00:00-23:59) or empty, got %q", c.MarketData.NightlyRefresh)
+		}
 	}
 	return nil
 }

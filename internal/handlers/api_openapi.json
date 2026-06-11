@@ -6,11 +6,10 @@
     "description": "Read strategies and journal entries, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content)."
   },
   "servers": [{ "url": "/api/v1" }],
-  "security": [{ "bearerApiKey": [] }, { "apiKeyHeader": [] }],
+  "security": [{ "bearerApiKey": [] }],
   "components": {
     "securitySchemes": {
-      "bearerApiKey": { "type": "http", "scheme": "bearer", "description": "Authorization: Bearer tj_..." },
-      "apiKeyHeader": { "type": "apiKey", "in": "header", "name": "X-API-Key" }
+      "bearerApiKey": { "type": "http", "scheme": "bearer", "description": "Authorization: Bearer tj_... (the API also accepts the key in an X-API-Key header at runtime, but the spec advertises one scheme since ChatGPT supports only one)." }
     },
     "schemas": {
       "Error": { "type": "object", "properties": { "error": { "type": "string" } }, "required": ["error"] },
@@ -156,6 +155,7 @@
   "paths": {
     "/strategies": {
       "get": {
+        "operationId": "listStrategies",
         "summary": "List the caller's strategies (name + full markdown + image URLs).",
         "responses": {
           "200": {
@@ -171,6 +171,7 @@
     },
     "/strategies/{id}": {
       "get": {
+        "operationId": "getStrategy",
         "summary": "Strategy detail.",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
@@ -181,6 +182,7 @@
     },
     "/journal": {
       "get": {
+        "operationId": "listJournal",
         "summary": "List journal entries (summary rows).",
         "parameters": [
           { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["day", "week", "trade", "group"] }, "description": "Repeatable." },
@@ -205,6 +207,7 @@
         }
       },
       "post": {
+        "operationId": "createJournalEntry",
         "summary": "Create a journal entry (day/week/trade/group). Day/week/trade are singletons -> 409 if one already exists (use the notes endpoint to append); group always creates.",
         "requestBody": {
           "required": true,
@@ -217,8 +220,48 @@
         }
       }
     },
+    "/journal/prepare-day": {
+      "post": {
+        "operationId": "prepareDay",
+        "summary": "Prepare a day for review: cluster copytrader fan-out into group entries and solos into trade entries, create the missing ones (idempotent), and return them to analyze (by entryId). Defaults to the last trading day before today.",
+        "requestBody": {
+          "content": { "application/json": { "schema": {
+            "type": "object",
+            "properties": { "date": { "type": "string", "example": "2026-05-12", "description": "YYYY-MM-DD; default = last trading day before today." } }
+          } } }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": { "application/json": { "schema": {
+              "type": "object",
+              "properties": {
+                "date": { "type": "string" },
+                "entries": { "type": "array", "items": {
+                  "type": "object",
+                  "properties": {
+                    "entryId": { "type": "integer" },
+                    "scope": { "type": "string", "enum": ["group", "trade"] },
+                    "created": { "type": "boolean" },
+                    "alreadyAnalyzed": { "type": "boolean" },
+                    "label": { "type": "string" },
+                    "symbolRoot": { "type": "string" },
+                    "direction": { "type": "string" },
+                    "accounts": { "type": "integer" },
+                    "netPnl": { "type": ["number", "null"] },
+                    "tradeIds": { "type": "array", "items": { "type": "integer" } }
+                  }
+                } },
+                "note": { "type": "string" }
+              }
+            } } }
+          }
+        }
+      }
+    },
     "/journal/{id}": {
       "get": {
+        "operationId": "getJournalEntry",
         "summary": "Journal entry detail (notes, tag, mood, strategy short name, trades overview + list, chart data, attachments).",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
@@ -229,6 +272,7 @@
     },
     "/journal/{id}/notes": {
       "post": {
+        "operationId": "appendNote",
         "summary": "Append a dated note to the entry's body. Append-only: existing content is never removed.",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "requestBody": {
@@ -247,8 +291,49 @@
         }
       }
     },
+    "/journal/{id}/strategy": {
+      "post": {
+        "operationId": "assignStrategy",
+        "summary": "Assign a strategy to the entry, but only if it has none yet - an existing assignment is never changed (assigned=false then).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "required": ["strategyId"],
+            "properties": { "strategyId": { "type": "integer" } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
+          } } } },
+          "400": { "description": "Unknown entry/strategy or missing strategyId", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/journal/{id}/tag": {
+      "post": {
+        "operationId": "setTag",
+        "summary": "Set the entry's tag (good|neutral|bad), but only if it has none yet - an existing tag is never changed (assigned=false then).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": {
+            "type": "object", "required": ["tag"],
+            "properties": { "tag": { "type": "string", "enum": ["good", "neutral", "bad"] } }
+          } } }
+        },
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
+          } } } },
+          "400": { "description": "Unknown entry or bad/missing tag", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/journal/{id}/chart.png": {
       "get": {
+        "operationId": "getJournalChart",
         "summary": "Server-rendered candlestick PNG of the entry's chart (cached data only).",
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
@@ -262,6 +347,7 @@
     },
     "/attachments/{id}": {
       "get": {
+        "operationId": "getAttachment",
         "summary": "Fetch an embedded image referenced by a strategy/journal body the caller owns.",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
@@ -272,6 +358,7 @@
     },
     "/trades": {
       "get": {
+        "operationId": "listTrades",
         "summary": "List trades (filtered, paged; page size 50).",
         "parameters": [
           { "name": "symbol_root", "in": "query", "schema": { "type": "string" }, "description": "e.g. MES" },
@@ -299,6 +386,7 @@
     },
     "/trades/{id}": {
       "get": {
+        "operationId": "getTrade",
         "summary": "Trade detail: fills, linked journal entry id, group count, and cached chart data.",
         "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
         "responses": {
@@ -309,6 +397,7 @@
     },
     "/trades/{id}/chart.png": {
       "get": {
+        "operationId": "getTradeChart",
         "summary": "Server-rendered candlestick PNG of the trade's chart (cached data only).",
         "parameters": [
           { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	_ "embed"
 	"net/http"
 
@@ -23,8 +24,11 @@ func (h *Handlers) APIIndex(w http.ResponseWriter, r *http.Request) {
 			{"method": "GET", "path": "/api/v1/strategies/{id}", "summary": "Strategy detail (name + full markdown)"},
 			{"method": "GET", "path": "/api/v1/journal", "summary": "List journal entries"},
 			{"method": "POST", "path": "/api/v1/journal", "summary": "Create an entry (day/week/trade/group)"},
+			{"method": "POST", "path": "/api/v1/journal/prepare-day", "summary": "Cluster a day's trades + create the journal entries to analyze"},
 			{"method": "GET", "path": "/api/v1/journal/{id}", "summary": "Journal entry detail"},
 			{"method": "POST", "path": "/api/v1/journal/{id}/notes", "summary": "Append a dated note (append-only)"},
+			{"method": "POST", "path": "/api/v1/journal/{id}/strategy", "summary": "Assign a strategy (only if the entry has none; never overwrites)"},
+			{"method": "POST", "path": "/api/v1/journal/{id}/tag", "summary": "Set a tag good|neutral|bad (only if the entry has none; never overwrites)"},
 			{"method": "GET", "path": "/api/v1/journal/{id}/chart.png", "summary": "Rendered chart PNG"},
 			{"method": "GET", "path": "/api/v1/trades", "summary": "List trades (filtered, paged)"},
 			{"method": "GET", "path": "/api/v1/trades/{id}", "summary": "Trade detail (fills + chart)"},
@@ -36,7 +40,34 @@ func (h *Handlers) APIIndex(w http.ResponseWriter, r *http.Request) {
 }
 
 // APIOpenAPI: GET /api/v1/openapi.json - the embedded spec (behind key auth).
-func (h *Handlers) APIOpenAPI(w http.ResponseWriter, _ *http.Request) {
+//
+// The committed spec carries a RELATIVE server URL ("/api/v1"). Some importers -
+// notably ChatGPT custom-GPT Actions - require an ABSOLUTE https URL or they refuse
+// the schema. We rewrite the server to an absolute URL derived from the request
+// (honoring the X-Forwarded-* headers Traefik sets), so the spec imports as-is.
+// Falls back to the embedded relative URL when the host can't be determined.
+func (h *Handlers) APIOpenAPI(w http.ResponseWriter, r *http.Request) {
+	spec := apiOpenAPISpec
+	if base := requestBaseURL(r); base != "" {
+		spec = bytes.Replace(spec, []byte(`"url": "/api/v1"`), []byte(`"url": "`+base+`/api/v1"`), 1)
+	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	_, _ = w.Write(apiOpenAPISpec)
+	_, _ = w.Write(spec)
+}
+
+// requestBaseURL reconstructs the public scheme://host the request arrived on,
+// preferring the X-Forwarded-* headers a reverse proxy sets. Empty when unknown.
+func requestBaseURL(r *http.Request) string {
+	host := r.Header.Get("X-Forwarded-Host")
+	if host == "" {
+		host = r.Host
+	}
+	if host == "" {
+		return ""
+	}
+	scheme := "http"
+	if r.Header.Get("X-Forwarded-Proto") == "https" || r.TLS != nil {
+		scheme = "https"
+	}
+	return scheme + "://" + host
 }

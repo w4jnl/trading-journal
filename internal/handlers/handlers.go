@@ -55,6 +55,11 @@ type Handlers struct {
 	// enqueues missing symbol-days through it. Nil when prefetch is disabled.
 	Prefetch *marketdata.Prefetcher
 
+	// MCPInstanceLabel is surfaced by the MCP server_info tool (e.g. "prod" /
+	// "dev") so an AI client can tell which instance it is connected to when
+	// several trading-journal connectors are configured.
+	MCPInstanceLabel string
+
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
 	// distinguish page renders ("page:<name>") from partial renders

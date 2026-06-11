@@ -243,6 +243,16 @@ OpenAPI 3.1 spec at `GET /api/v1/openapi.json`, both behind the key.
 Full reference — authentication, every endpoint, JSON shapes, and a
 worked example — lives in **[API.md](API.md)**.
 
+For AI agents the app also speaks **MCP** (Model Context Protocol) at
+`/mcp`, authenticated by the same per-user keys — so Claude Code, the
+Claude app, and ChatGPT can read trades/journal and write entries with
+the key held in the connector config, never in a prompt. A ready-made
+analysis workflow ships as the **`trading-journal-analyst`** skill
+(`.claude/skills/trading-journal-analyst/`): it reviews a trading day,
+groups copytrader fan-out, writes the per-trade/group analysis once, and
+synthesizes the daily journal. See **[API.md](API.md)** for the MCP tool
+list and setup.
+
 ## Quick start (Docker)
 
 A container-based deployment is in `Docker/`:

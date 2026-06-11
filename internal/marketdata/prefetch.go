@@ -60,8 +60,73 @@ func (p *Prefetcher) Run(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case accountID := <-p.jobs:
-			p.processAccount(ctx, accountID)
+			p.processAccount(ctx, accountID, 0)
 		}
+	}
+}
+
+// ScheduleNightly runs a full refresh once a day at hh:mm local, until ctx is
+// cancelled. It force-completes the last couple of days (a session only seen
+// mid-day becomes a complete past day once it closes) and backfills any missing
+// recent days. Mirrors backup.Schedule's daily-timer pattern.
+func (p *Prefetcher) ScheduleNightly(ctx context.Context, hour, min int) {
+	if p == nil {
+		return
+	}
+	loc := p.Loc
+	if loc == nil {
+		loc = time.UTC
+	}
+	for {
+		next := nextDaily(time.Now().In(loc), hour, min, loc)
+		t := time.NewTimer(time.Until(next))
+		select {
+		case <-ctx.Done():
+			t.Stop()
+			return
+		case <-t.C:
+		}
+		p.logger().Info("marketdata: nightly refresh starting")
+		p.RefreshAll(ctx, 2)
+	}
+}
+
+// nextDaily returns the next hh:mm local instant strictly after now.
+func nextDaily(now time.Time, hour, min int, loc *time.Location) time.Time {
+	n := time.Date(now.Year(), now.Month(), now.Day(), hour, min, 0, 0, loc)
+	if !n.After(now) {
+		n = n.AddDate(0, 0, 1)
+	}
+	return n
+}
+
+// RefreshAll warms the cache for every active account's recent trade days,
+// forcing a re-fetch of the last forceRecentDays days (to complete partials) and
+// backfilling anything else still missing/upgradable. Best-effort; logs failures.
+func (p *Prefetcher) RefreshAll(ctx context.Context, forceRecentDays int) {
+	if p == nil {
+		return
+	}
+	rows, err := p.DB.QueryContext(ctx, `SELECT id FROM accounts WHERE active = 1`)
+	if err != nil {
+		p.logger().Warn("marketdata: nightly enumerate accounts", "err", err)
+		return
+	}
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			p.logger().Warn("marketdata: nightly scan account", "err", err)
+			continue
+		}
+		ids = append(ids, id)
+	}
+	rows.Close()
+	for _, id := range ids {
+		if ctx.Err() != nil {
+			return
+		}
+		p.processAccount(ctx, id, forceRecentDays)
 	}
 }
 
@@ -75,13 +140,14 @@ type prefetchJob struct {
 // uncovered completed day with a polite throttle. Days older than ~45 days are
 // ignored (Yahoo no longer serves fine intraday for them, so eager fetch adds
 // little) and today/future are left to the lazy on-view path.
-func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
+func (p *Prefetcher) processAccount(ctx context.Context, accountID int64, forceRecentDays int) {
 	loc := p.Loc
 	if loc == nil {
 		loc = time.UTC
 	}
 	now := time.Now()
 	cutoff := now.AddDate(0, 0, -45)
+	forceCutoff := startOfDay(now, loc).AddDate(0, 0, -forceRecentDays)
 
 	rows, err := p.DB.QueryContext(ctx,
 		`SELECT symbol_root, entry_time, exit_time
@@ -128,8 +194,14 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
 		if ctx.Err() != nil {
 			return
 		}
-		if need, err := p.Cache.dayNeedsFetch(ctx, j.sym, j.day, now); err == nil && !need {
-			continue
+		// Force a re-fetch of the most recent days (the nightly catch-up) so a
+		// session only seen mid-day is completed once it closes; otherwise skip
+		// any day already cached and current.
+		forced := forceRecentDays > 0 && !j.day.Before(forceCutoff)
+		if !forced {
+			if need, err := p.Cache.dayNeedsFetch(ctx, j.sym, j.day, now); err == nil && !need {
+				continue
+			}
 		}
 		if err := p.Cache.FetchDay(ctx, j.sym, j.day); err != nil {
 			if err == ErrRateLimited {
@@ -147,12 +219,12 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64) {
 	}
 }
 
-// TradeDays returns the completed exchange-tz trading days a trade spans, padded
-// by one day on each side (entry_day-1 .. exit_day+1) and excluding today and
-// the future (an in-progress session is fetched lazily, not prefetched). A nil
-// exit means the trade is still open, so the span runs to now. Shared by the
-// prefetch worker and the admin coverage review so both agree on which days a
-// trade needs.
+// TradeDays returns the exchange-tz trading days a trade spans, padded by one day
+// on each side (entry_day-1 .. exit_day+1) and including today but excluding the
+// future (no data exists yet; today is warmed so its chart renders on first view,
+// kept current by the cache's freshness TTL). A nil exit means the trade is still
+// open, so the span runs to now. Shared by the prefetch worker and the admin
+// coverage review so both agree on which days a trade needs.
 func TradeDays(entry time.Time, exit *time.Time, loc *time.Location, now time.Time) []time.Time {
 	if loc == nil {
 		loc = time.UTC
@@ -166,7 +238,7 @@ func TradeDays(entry time.Time, exit *time.Time, loc *time.Location, now time.Ti
 	d1 := startOfDay(end, loc).AddDate(0, 0, 1)
 	var out []time.Time
 	for d := d0; !d.After(d1); d = d.AddDate(0, 0, 1) {
-		if d.Before(today) {
+		if !d.After(today) {
 			out = append(out, d)
 		}
 	}
