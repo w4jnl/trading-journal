@@ -462,6 +462,9 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 // behave.
 func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	idStr := r.PathValue("id")
 	tradeID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
@@ -548,15 +551,15 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		h.renderTradeDetail(w, r, flash)
 		return
 	}
-	target := fmt.Sprintf("/journal/trade/%d?flash=%s", tradeID, flash)
+	// Stay on the entry page so the just-saved entry shows in preview mode (matching the
+	// day/week/group editors); carry `back` as a query param so the page's Back button
+	// still returns to wherever the user came from.
+	q := url.Values{}
+	q.Set("flash", flash)
 	if v := r.FormValue("back"); v != "" && strings.HasPrefix(v, "/") && !strings.HasPrefix(v, "//") {
-		sep := "?"
-		if strings.Contains(v, "?") {
-			sep = "&"
-		}
-		target = v + sep + "flash=" + flash
+		q.Set("back", v)
 	}
-	http.Redirect(w, r, target, http.StatusSeeOther)
+	http.Redirect(w, r, fmt.Sprintf("/journal/trade/%d?%s", tradeID, q.Encode()), http.StatusSeeOther)
 }
 
 // listTradesFiltered + countTradesFiltered build a SQL WHERE clause from

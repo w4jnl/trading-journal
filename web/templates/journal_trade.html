@@ -29,7 +29,7 @@
 {{end}}
 
 <section class="journal-entry" data-journal-entry>
-{{if .JournalBody}}{{template "journal_view" (dict "Body" .JournalBody "Tag" $.JournalTag)}}{{end}}
+{{if .JournalBody}}{{template "journal_view" (dict "Body" .JournalBody "Tag" $.JournalTag "ID" .JournalEntryID)}}{{end}}
 <form method="post" action="/trades/{{.TradeID}}/journal" class="journal-form"{{if .JournalBody}} hidden{{end}}>
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
   <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">

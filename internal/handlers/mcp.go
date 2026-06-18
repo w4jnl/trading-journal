@@ -151,13 +151,13 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	), h.mcpAppendNote)
 
 	s.AddTool(mcpgo.NewTool("assign_strategy",
-		mcpgo.WithDescription("Assign a strategy to a journal entry, but ONLY if it has none yet - an existing assignment is never changed (assigned=false then). Use right after prepare_day for an entry you just created (created=true) when one of the caller's strategies clearly fits the trade; skip it otherwise and never call it for pre-existing entries."),
+		mcpgo.WithDescription("Assign a strategy to a journal entry, but ONLY if it has none yet - an existing assignment is never changed (assigned=false then). Call it for ANY entry (newly created or pre-existing) that has no strategy when one of the caller's strategies clearly fits the trade's setup; if nothing clearly fits, skip it - don't force one. Only trade and group entries take a strategy (a day/week spans mixed setups and is rejected)."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithNumber("strategyId", mcpgo.Required(), mcpgo.Description("Strategy id to assign (must be owned).")),
 	), h.mcpAssignStrategy)
 
 	s.AddTool(mcpgo.NewTool("set_tag",
-		mcpgo.WithDescription("Set an entry's tag (good|neutral|bad), but ONLY if it has none yet - an existing tag is never changed (assigned=false then). Use right after prepare_day for an entry you just created (created=true) when your analysis warrants a verdict; skip it otherwise and never call it for pre-existing entries."),
+		mcpgo.WithDescription("Set an entry's tag (good|neutral|bad), but ONLY if it has none yet - an existing tag is never changed (assigned=false then). Call it for ANY entry (newly created or pre-existing) that is untagged when your analysis warrants a clear verdict; if it's ambiguous, leave it untagged - don't force one."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithString("tag", mcpgo.Required(), mcpgo.Enum("good", "neutral", "bad")),
 	), h.mcpSetTag)

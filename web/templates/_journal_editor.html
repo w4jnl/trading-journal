@@ -120,12 +120,22 @@
      chip lives on the page title line (see .journal-title-row), not here. Sits
      inside a [data-journal-entry] section next to the (initially hidden) edit
      form; journal_view.js swaps the two. Dict: Body (string), Tag (string, may
-     be empty). Render this only when the entry has a non-empty body - a
-     new/empty entry shows the form directly. */}}
+     be empty), ID (int64), HideAnalyze (bool, optional - suppress the built-in
+     Analyze button when the surrounding view already provides one, e.g. the
+     trade sheet). The Analyze button also hides itself once Body carries the
+     local AI marker (aiAnalyzed). Render this only when the entry has a non-empty
+     body - a new/empty entry shows the form directly. */}}
 {{define "journal_view"}}
 <div class="journal-view" data-journal-view>
   <div class="journal-view__bar">
     {{if .Tag}}<span class="pill journal-view__tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
+    {{if and aiEnabled .ID (not .HideAnalyze) (not (aiAnalyzed .Body))}}
+    <button type="button" class="btn btn--secondary btn--sm"
+            hx-post="/ai/entry/{{.ID}}" hx-swap="none"
+            hx-disabled-elt="this" hx-indicator="#ai-entry-spin"
+            title="Append an AI review of these trades to this entry, and fill in an unset tag/strategy that fits">✨ Analyze</button>
+    <span id="ai-entry-spin" class="htmx-indicator ai-spinner" aria-hidden="true"></span>
+    {{end}}
     <button type="button" class="btn btn--secondary btn--sm journal-view__edit" data-journal-edit>Edit</button>
   </div>
   <div class="markdown-preview">{{markdown .Body}}</div>

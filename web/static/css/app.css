@@ -1766,3 +1766,13 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .journal-title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .journal-title-row h1 { margin: 0; }
 .journal-title-row .id-ref { margin-left: auto; }
+
+/* In-app AI analysis controls: the journal day panel, the day-job status fragment,
+   and the spinner (shared by the running fragment + the htmx button indicators). */
+.ai-panel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
+            padding: 10px 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); }
+.ai-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-muted); }
+.ai-status__err { color: var(--neg); }
+.ai-spinner { width: 14px; height: 14px; border: 2px solid var(--border-strong); border-top-color: var(--accent);
+              border-radius: 50%; display: inline-block; animation: ai-spin 0.7s linear infinite; flex-shrink: 0; }
+@keyframes ai-spin { to { transform: rotate(360deg); } }

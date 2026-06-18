@@ -1,0 +1,31 @@
+{{/*
+  ai_status - HTMX status fragment for the day-analysis job. Dict:
+    Status   (ai.JobStatus: State, Done, Total, Current, Err)
+    DatePath (the {date} segment for the /ai/day/{date}/... URLs; "last" or YYYY-MM-DD)
+  While running the div self-polls every 2s (it replaces itself outerHTML). Idle
+  renders empty. "Show results" reloads the page so appended analyses render.
+*/}}
+{{define "ai_status"}}
+{{- $s := .Status -}}
+<div id="ai-status" class="ai-status ai-status--{{$s.State}}"
+     {{- if eq $s.State "running"}} hx-get="/ai/day/{{.DatePath}}/status" hx-trigger="every 2s" hx-target="#ai-status" hx-swap="outerHTML"{{end}}>
+  {{if eq $s.State "running"}}
+    <span class="ai-spinner" aria-hidden="true"></span>
+    <span>Analyzing… <span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>{{if $s.Current}} · {{$s.Current}}{{end}}</span>
+    <button type="button" class="btn btn--danger btn--sm"
+            hx-post="/ai/day/{{.DatePath}}/cancel" hx-target="#ai-status" hx-swap="outerHTML">Cancel</button>
+  {{else if eq $s.State "done"}}
+    <span>✓ AI analysis complete (<span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>).</span>
+    <button type="button" class="btn btn--secondary btn--sm" onclick="window.location.reload()">Show results</button>
+  {{else if eq $s.State "cancelled"}}
+    <span>Cancelled at <span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>.</span>
+    <button type="button" class="btn btn--secondary btn--sm"
+            hx-post="/ai/day/{{.DatePath}}" hx-target="#ai-status" hx-swap="outerHTML">Continue</button>
+    <button type="button" class="btn btn--ghost btn--sm" onclick="window.location.reload()">Show results</button>
+  {{else if eq $s.State "error"}}
+    <span class="ai-status__err">AI error: {{$s.Err}}</span>
+    <button type="button" class="btn btn--secondary btn--sm"
+            hx-post="/ai/day/{{.DatePath}}" hx-target="#ai-status" hx-swap="outerHTML">Retry</button>
+  {{end}}
+</div>
+{{end}}

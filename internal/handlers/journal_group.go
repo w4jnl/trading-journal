@@ -528,6 +528,9 @@ func loadLinkableTrades(ctx context.Context, db *sql.DB, userID, entryID int64, 
 // entry (its junction rows go via ON DELETE CASCADE).
 func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	idStr := r.PathValue("id")
 	id, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {
