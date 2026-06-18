@@ -36,9 +36,10 @@ ones — **never overwrite**). You analyze each trade/group/entry **exactly once
 - **createJournalEntry** (`POST /journal`) — scope `day|week|trade|group`.
 - **appendNote** (`POST /journal/{id}/notes`) — append-only.
 - **assignStrategy** (`POST /journal/{id}/strategy`) — set an entry's strategy **only
-  if it has none** (never overwrites). For newly-created entries.
+  if it has none** (never overwrites), on any entry when one clearly fits. Trade/group
+  entries only (a day/week is rejected).
 - **setTag** (`POST /journal/{id}/tag`) — set `good|neutral|bad` **only if the entry
-  has none** (never overwrites). For newly-created entries.
+  has none** (never overwrites), on any entry when your analysis warrants a clear verdict.
 
 **Charts:** judge entries/exits from the `chart` field on **getTrade** /
 **getJournalEntry** (OHLC + markers). Do **not** call the `*/chart.png` operations —
@@ -49,11 +50,11 @@ Every analysis you write **ends with** this exact HTML comment (renders blank in
 journal UI, detectable in raw `notes`):
 
 ```
-<!-- tj-ai:v1 -->
+<!-- tj-ai-mcp:v1 -->
 ```
 
 **Before analyzing anything, check for it.** If an entry's `notes` already contain
-`tj-ai:v1`, it's done — skip it (unless the user says "re-analyze" / "force"). This is
+`tj-ai-mcp:v1`, it's done — skip it (unless the user says "re-analyze" / "force"). This is
 what makes a re-run safe. Write each analysis under a visible heading so a human sees
 who wrote it:
 
@@ -62,7 +63,7 @@ who wrote it:
 
 <your analysis>
 
-<!-- tj-ai:v1 -->
+<!-- tj-ai-mcp:v1 -->
 ```
 
 ---
@@ -82,16 +83,16 @@ Fetch your strategies once with **listStrategies** (id + name + full playbook) s
 can match a trade to one. For every returned entry with `alreadyAnalyzed: false`:
 - **getJournalEntry(id)** for its `notes` (confirm no marker) + `chart` data + any
   assigned `strategy`; judge entries/exits from the `chart` field.
-- **Classify — new entries only:** if the entry was **just created this run**
-  (`created: true`), you may set its strategy and/or tag — only when each is
-  appropriate and only on entries that have none yet:
+- **Classify (any entry, only-if-unset, only-if-fitting):** set a strategy and/or tag
+  on an entry that has none yet — whether you just created it (`created: true`) or it
+  pre-existed — but only when each clearly applies:
   - **assignStrategy(entryId, strategyId)** if one of your strategies *clearly* fits;
-    if nothing clearly fits, leave it unassigned — don't force it.
+    if nothing clearly fits, leave it unassigned — don't force it. Trade/group entries
+    only (a day/week spans mixed setups and is rejected).
   - **setTag(entryId, "good"|"neutral"|"bad")** if your analysis warrants a clear
     verdict; if it's ambiguous, leave it untagged.
-  **Never** assign or change a strategy or tag on a pre-existing entry
-  (`created: false`) — leave them exactly as the user set them. (Both calls also
-  refuse to overwrite, as a backstop.)
+  You **never overwrite** a strategy or tag that's already set (the user's or a prior
+  run's) — both calls refuse to, as a backstop — so you only fill in blanks.
 - Judge the trade against the relevant playbook (**getStrategy(id)** for the one you
   just assigned or that was already set), then **appendNote(entryId, note=<your
   analysis ending in the marker>)**.
@@ -105,7 +106,7 @@ repeated, net result, one thing to fix tomorrow):
 - **createJournalEntry(scope="day", date=<the date prepareDay returned>, body=<synthesis
   + marker>)**.
 - If it returns `{alreadyExists:true, entryId}` and that entry's `notes` lack
-  `tj-ai:v1`, **appendNote(entryId, <synthesis + marker>)**; otherwise leave it.
+  `tj-ai-mcp:v1`, **appendNote(entryId, <synthesis + marker>)**; otherwise leave it.
 
 ### 4. Overview in chat
 Print a concise digest (don't just say "done"):

@@ -68,4 +68,4 @@ auth flow depend on your ChatGPT plan/build.)
 - The key is full-access to your own data; revoke it in `/settings` if exposed.
 - Writes are additive only (create entry / append note). The API never overwrites or
   deletes, so an agent can't damage existing journal content.
-- Re-runs are safe: the `<!-- tj-ai:v1 -->` marker stops a day from being analyzed twice.
+- Re-runs are safe: the `<!-- tj-ai-mcp:v1 -->` marker stops a day from being analyzed twice.
