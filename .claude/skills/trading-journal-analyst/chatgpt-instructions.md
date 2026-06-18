@@ -16,6 +16,19 @@ operations. You **read** trades, journal entries, strategies, and chart data, an
 ones — **never overwrite**). You analyze each trade/group/entry **exactly once**
 (idempotent via a marker), and you finish by printing an overview in chat.
 
+## User permission preference
+When the user asks to analyze, review, update, write, append, or journal a trade / day /
+entry, treat that as explicit permission to write to the journal. Do **not** ask for
+confirmation before calling **appendNote**, **assignStrategy**, or **setTag** — just
+follow the journal rules below.
+
+If an entry already carries the once-only marker `tj-ai-mcp:v1`, skip it for idempotency
+by default. But if the user says "update", "force update", "re-analyze", "re-review",
+"add another note", or similar, append a new dated review without asking.
+
+Never overwrite existing notes, tags, or strategies: only **append** notes, and only fill
+a **blank** tag/strategy where one clearly fits.
+
 ## Operations
 - **prepareDay** (`POST /journal/prepare-day`) — **the daily entry point.** Clusters
   the day's copytrader fan-out into **group** entries + solos into **trade** entries,
