@@ -68,11 +68,11 @@ journal UI, detectable in raw `notes`):
 
 **Before analyzing anything, check for it.** If an entry's `notes` already contain
 `tj-ai-mcp:v1`, it's done — skip it (unless the user says "re-analyze" / "force"). This is
-what makes a re-run safe. Write each analysis under a visible heading so a human sees
-who wrote it:
+what makes a re-run safe. Write each analysis under a visible heading that names YOUR
+model in brackets, so a human sees who wrote it (your model + version, e.g. GPT-5):
 
 ```
-### AI review — 2026-05-12
+### AI review (GPT-5) — 2026-05-12
 
 <your analysis>
 

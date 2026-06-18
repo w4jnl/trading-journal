@@ -56,10 +56,11 @@ the journal UI, detectable in raw `notes`):
 contains `tj-ai-mcp:v1`, it's done - skip it (unless the user says "re-analyze" /
 "force"). This is what makes a scheduled re-run safe.
 
-Write each analysis under a visible heading so a human sees who wrote it:
+Write each analysis under a visible heading that names YOUR model in brackets, so a
+human sees who wrote it (your model + version, e.g. Opus 4.8):
 
 ```
-### AI review — 2026-05-12
+### AI review (Opus 4.8) — 2026-05-12
 
 <your analysis>
 
