@@ -39,22 +39,38 @@
 </div>
 {{end}}
 
-<section data-trade-journal>
+<section data-trade-journal data-journal-entry>
   <div class="row-sm" style="justify-content: space-between; margin-bottom: 8px;">
     <div class="row-sm" style="gap: 8px; align-items: center;">
       <h3 style="margin: 0;">Journal</h3>
       {{if $.JournalEntryID}}{{template "id_ref" (dict "Label" "Entry" "ID" $.JournalEntryID)}}{{end}}
+      {{if and aiEnabled (not (aiAnalyzed $.JournalBody))}}
+      <button type="button" class="btn btn--secondary btn--sm"
+              hx-post="/ai/trade/{{$.TradeID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
+              hx-disabled-elt="this" hx-indicator="#ai-trade-spin"
+              title="Analyze this trade with AI (creates or appends to its journal entry)">✨ Analyze</button>
+      <span id="ai-trade-spin" class="htmx-indicator ai-spinner" aria-hidden="true"></span>
+      {{end}}
     </div>
     <span class="muted" style="font-size: 11px;">Empty body deletes the entry.</span>
   </div>
   {{if eq $.Flash "saved"}}<div class="flash saved">Saved.</div>{{end}}
+  {{if eq $.Flash "analyzed"}}<div class="flash saved">✨ AI review added.</div>{{end}}
   {{if eq $.Flash "deleted"}}<div class="flash deleted">Entry deleted (body was empty).</div>{{end}}
   {{if eq $.Flash "empty"}}<div class="flash empty">Nothing to save — body was empty.</div>{{end}}
+
+  {{/* Existing entry opens in read-only preview; Edit reveals the form, Save
+       returns to preview. A new/empty entry shows the form directly. Mirrors the
+       day/week journal views - journal_view.js toggles view<->form within
+       [data-journal-entry]. The sheet's header Analyze button drives AI, so
+       journal_view's built-in one is suppressed (HideAnalyze). */}}
+  {{if $.JournalBody}}{{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true)}}{{end}}
 
   <form hx-post="/trades/{{$.TradeID}}/journal"
         hx-target="#trade-sheet-content"
         hx-swap="innerHTML"
-        hx-encoding="application/x-www-form-urlencoded">
+        hx-encoding="application/x-www-form-urlencoded"
+        class="journal-form"{{if $.JournalBody}} hidden{{end}}>
     <div class="row-sm" style="margin-bottom: 8px; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
       <div>
         <span class="label" style="margin-right: 4px;">Tag</span>
@@ -74,11 +90,12 @@
     )}}
     <div class="row" style="margin-top: 8px;">
       <button type="submit" class="btn btn--primary">Save</button>
+      {{if $.JournalBody}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
       <span class="muted" style="font-size: 11px;">⌘S to save</span>
     </div>
   </form>
 
-  {{if or (eq $.Flash "saved") (eq $.Flash "deleted")}}
+  {{if or (eq $.Flash "saved") (eq $.Flash "deleted") (eq $.Flash "analyzed")}}
   <script>window.__journalChanged = true;</script>
   {{end}}
 

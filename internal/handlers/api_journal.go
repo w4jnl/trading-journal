@@ -646,7 +646,11 @@ func apiSnippet(s string, n int) string {
 // analyze the entries it gets back (by entryId), never raw trade ids.
 
 const (
-	aiMarker          = "tj-ai:v1"
+	// aiMarkerLocal tags analyses written by the in-app (local) AI; aiMarkerMCP tags those
+	// written by an external AI through the MCP server / analyst skill. Separate markers let
+	// each analyze an entry independently - one's review never makes the other skip it.
+	aiMarkerLocal     = "tj-ai:v1"
+	aiMarkerMCP       = "tj-ai-mcp:v1"
 	aiPlaceholderBody = "---\n\n_AI review_"
 )
 
@@ -715,7 +719,7 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 		if eid, ok, err := h.findGroupForTrades(ctx, ids); err != nil {
 			return nil, err
 		} else if ok {
-			pe.EntryID, pe.Created, pe.AlreadyAnalyzed = eid, false, h.entryHasMarker(ctx, eid)
+			pe.EntryID, pe.Created, pe.AlreadyAnalyzed = eid, false, h.entryHasMarker(ctx, eid, aiMarkerMCP)
 		} else {
 			e, _, err := h.createJournalEntry(ctx, apiCreateInput{Scope: "group", TradeIDs: ids, Body: aiPlaceholderBody}, tz)
 			if err != nil {
@@ -736,7 +740,7 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 			return nil, err
 		}
 		if conflict != nil {
-			pe.EntryID, pe.Created, pe.AlreadyAnalyzed = conflict.EntryID, false, h.entryHasMarker(ctx, conflict.EntryID)
+			pe.EntryID, pe.Created, pe.AlreadyAnalyzed = conflict.EntryID, false, h.entryHasMarker(ctx, conflict.EntryID, aiMarkerMCP)
 		} else {
 			pe.EntryID, pe.Created = e.ID, true
 		}
@@ -755,7 +759,7 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 	return map[string]any{
 		"date":    day.Format("2006-01-02"),
 		"entries": entries,
-		"note":    "For each entry with alreadyAnalyzed=false: get_chart_image(entryId=...) (+ get_strategy if one is assigned), then append_note(entryId, analysis ending in <!-- " + aiMarker + " -->). Then synthesize the day. Only ever pass the entryId values above - never raw trade ids.",
+		"note":    "For each entry with alreadyAnalyzed=false: get_chart_image(entryId=...) (+ get_strategy if one is assigned), then append_note(entryId, analysis ending in <!-- " + aiMarkerMCP + " -->). Then synthesize the day. Only ever pass the entryId values above - never raw trade ids.",
 	}, nil
 }
 
@@ -928,12 +932,12 @@ func (h *Handlers) findGroupForTrades(ctx context.Context, ids []int64) (int64, 
 	return eid, true, nil
 }
 
-func (h *Handlers) entryHasMarker(ctx context.Context, entryID int64) bool {
+func (h *Handlers) entryHasMarker(ctx context.Context, entryID int64, marker string) bool {
 	e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: userIDPtr(ctx)})
 	if err != nil {
 		return false
 	}
-	return strings.Contains(e.Body, aiMarker)
+	return strings.Contains(e.Body, marker)
 }
 
 // APIPrepareDay: POST /api/v1/journal/prepare-day  {date?: "YYYY-MM-DD"}
@@ -958,17 +962,24 @@ func (h *Handlers) APIPrepareDay(w http.ResponseWriter, r *http.Request) {
 }
 
 // assignStrategyIfUnset sets an entry's strategy ONLY when it currently has none,
-// so an existing assignment is never changed (assigned=false then). Returns an
-// apiValidationError for an unknown entry or strategy. Used by the analyst to
-// tag freshly-created entries with a fitting strategy without ever touching the
-// strategy of entries the user already authored.
+// so an existing assignment is never changed (assigned=false then). It applies to
+// trade and group entries only - a strategy describes a single setup, while a
+// day/week entry spans mixed setups. Returns an apiValidationError for an unknown
+// entry/strategy or a day/week scope. Used by the analyst (and the in-app AI) to
+// fill in a fitting strategy on any entry without touching one the user set.
 func (h *Handlers) assignStrategyIfUnset(ctx context.Context, entryID, strategyID int64) (bool, error) {
 	uid := userIDPtr(ctx)
-	if _, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: uid}); err != nil {
+	e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: uid})
+	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return false, badInput("entry %d not found", entryID)
 		}
 		return false, fmt.Errorf("load entry: %w", err)
+	}
+	// A strategy describes a single setup, so it only applies to a trade or a group (one
+	// copytrader cluster). A day/week entry spans mixed setups - never attach one.
+	if e.Scope != "trade" && e.Scope != "group" {
+		return false, badInput("strategy applies to trade or group entries, not %s", e.Scope)
 	}
 	if _, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: strategyID, UserID: userID(ctx)}); err != nil {
 		return false, badInput("unknown strategyId %d", strategyID)

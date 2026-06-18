@@ -64,6 +64,31 @@ mcp:
   # an AI client configured with several connectors can tell instances apart.
   instance_label: ""
 
+# In-app AI analysis (server-side). When enabled, the app calls an AI endpoint to
+# generate journal analyses itself -- the inward counterpart to the MCP server (which
+# lets EXTERNAL AIs do it). It speaks the OpenAI chat-completions format, so it works
+# with a local MLX server, OpenAI, OpenRouter and other aggregators, LM Studio, vLLM,
+# etc. Disabled by default.
+ai:
+  enabled: false
+  # Only "openai" (OpenAI-compatible) for now.
+  provider: "openai"
+  # Chat-completions base URL. Default points at a local MLX server; for OpenAI use
+  # "https://api.openai.com/v1", for OpenRouter "https://openrouter.ai/api/v1".
+  base_url: "http://0.0.0.0:8080/v1"
+  # Model id the endpoint serves (local model name, "gpt-4o-mini",
+  # "anthropic/claude-3.5-sonnet" on OpenRouter, ...).
+  model: ""
+  # Bearer key (blank for a local server). Override with the TJ_AI_API_KEY env var so
+  # you can keep this file in git and inject the secret at runtime.
+  api_key: ""
+  # Per-request timeout (seconds), max output tokens, sampling temperature.
+  timeout_sec: 120
+  max_tokens: 1024
+  temperature: 0.4
+  # Optional extra request headers (e.g. OpenRouter's HTTP-Referer / X-Title).
+  headers: {}
+
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

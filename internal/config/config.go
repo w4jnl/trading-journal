@@ -21,6 +21,7 @@ type Config struct {
 	Backup       Backup       `yaml:"backup"`
 	MarketData   MarketData   `yaml:"market_data"`
 	MCP          MCP          `yaml:"mcp"`
+	AI           AI           `yaml:"ai"`
 	Timezone     string       `yaml:"timezone"`
 }
 
@@ -31,6 +32,23 @@ type MCP struct {
 	// InstanceLabel (e.g. "prod" / "dev") is reported by the MCP server_info
 	// tool so an AI client can tell which instance it is connected to.
 	InstanceLabel string `yaml:"instance_label"`
+}
+
+// AI configures the in-app analysis engine (server-side journal analysis). It calls
+// an OpenAI-compatible chat-completions endpoint: v1 targets a local MLX server but
+// the same client speaks to OpenAI, OpenRouter and other aggregators, LM Studio,
+// vLLM - anything exposing /chat/completions. Disabled by default; the whole feature
+// is gated on Enabled. APIKey can be injected via the TJ_AI_API_KEY env var.
+type AI struct {
+	Enabled     bool              `yaml:"enabled"`
+	Provider    string            `yaml:"provider"`
+	BaseURL     string            `yaml:"base_url"`
+	Model       string            `yaml:"model"`
+	APIKey      string            `yaml:"api_key"`
+	TimeoutSec  int               `yaml:"timeout_sec"`
+	MaxTokens   int               `yaml:"max_tokens"`
+	Temperature float64           `yaml:"temperature"`
+	Headers     map[string]string `yaml:"headers"`
 }
 
 // MarketData configures the historical price-bar source behind the trade-replay
@@ -147,6 +165,7 @@ func defaults() Config {
 		},
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
 		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30"},
+		AI:         AI{Provider: "openai", BaseURL: "http://0.0.0.0:8080/v1", TimeoutSec: 120, MaxTokens: 1024, Temperature: 0.4},
 		Timezone:   "America/Chicago",
 	}
 }
@@ -190,6 +209,22 @@ func (c Config) Validate() error {
 			return fmt.Errorf("market_data.nightly_refresh must be \"HH:MM\" (00:00-23:59) or empty, got %q", c.MarketData.NightlyRefresh)
 		}
 	}
+	if c.AI.Enabled {
+		switch c.AI.Provider {
+		case "", "openai":
+		default:
+			return fmt.Errorf("ai.provider must be \"openai\" (OpenAI-compatible) for now, got %q", c.AI.Provider)
+		}
+		if c.AI.BaseURL == "" {
+			return fmt.Errorf("ai.enabled requires ai.base_url")
+		}
+		if c.AI.Model == "" {
+			return fmt.Errorf("ai.enabled requires ai.model")
+		}
+		if c.AI.TimeoutSec < 0 {
+			return fmt.Errorf("ai.timeout_sec must be >= 0, got %d", c.AI.TimeoutSec)
+		}
+	}
 	return nil
 }
 
@@ -216,6 +251,9 @@ func Load(cfgPath string) (Config, error) {
 
 	if v := os.Getenv("TJ_SESSION_SECRET"); v != "" {
 		cfg.Auth.SessionSecret = v
+	}
+	if v := os.Getenv("TJ_AI_API_KEY"); v != "" {
+		cfg.AI.APIKey = v
 	}
 
 	return cfg, nil

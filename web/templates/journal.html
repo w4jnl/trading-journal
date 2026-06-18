@@ -15,6 +15,18 @@
   <input type="date" value="{{.Date}}" onchange="if (this.value) window.location.href='/journal/'+this.value" style="margin-left: 8px;">
 </div>
 
+{{if aiEnabled}}
+<div class="ai-panel">
+  <button type="button" class="btn btn--primary btn--sm"
+          hx-post="/ai/day/{{.Date}}" hx-target="#ai-status" hx-swap="outerHTML"
+          title="Generate AI analysis for this day's entries that don't have one yet">✨ AI: analyze this day</button>
+  <button type="button" class="btn btn--secondary btn--sm"
+          hx-post="/ai/day/{{.Date}}?mode=all" hx-target="#ai-status" hx-swap="outerHTML"
+          title="Re-analyze every entry on this day, even ones already reviewed">Regenerate all</button>
+  <div id="ai-status" class="ai-status" hx-get="/ai/day/{{.Date}}/status" hx-trigger="load" hx-swap="outerHTML"></div>
+</div>
+{{end}}
+
 {{if .Flash}}
 <div class="flash {{.Flash}}">
   {{if eq .Flash "saved"}}Entry saved.
@@ -25,7 +37,7 @@
 {{end}}
 
 <section class="journal-entry" data-journal-entry>
-  {{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag)}}{{end}}
+  {{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID)}}{{end}}
   <form method="post" action="/journal/{{.Date}}" class="journal-form"{{if .Entry.Body}} hidden{{end}}>
     {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
     <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">

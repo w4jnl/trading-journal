@@ -16,6 +16,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/backup"
 	"github.com/w4jnl/trading-journal/internal/config"
@@ -174,6 +175,29 @@ func run() error {
 		}
 	}
 
+	// In-app AI analysis (server-side). Both nil when disabled; the handlers gate
+	// every AI route + UI affordance on AIJobs being non-nil.
+	var aiClient ai.Client
+	var aiJobs *ai.JobManager
+	if cfg.AI.Enabled {
+		c, err := ai.New(ai.Options{
+			Provider:    cfg.AI.Provider,
+			BaseURL:     cfg.AI.BaseURL,
+			Model:       cfg.AI.Model,
+			APIKey:      cfg.AI.APIKey,
+			Timeout:     time.Duration(cfg.AI.TimeoutSec) * time.Second,
+			MaxTokens:   cfg.AI.MaxTokens,
+			Temperature: cfg.AI.Temperature,
+			Headers:     cfg.AI.Headers,
+		})
+		if err != nil {
+			return fmt.Errorf("ai: %w", err)
+		}
+		aiClient = c
+		aiJobs = ai.NewJobManager()
+		slog.Info("AI analysis enabled", "provider", cfg.AI.Provider, "base_url", cfg.AI.BaseURL, "model", cfg.AI.Model)
+	}
+
 	inbox := filepath.Join(cfg.Imports.Root, "inbox")
 	processed := filepath.Join(cfg.Imports.Root, "processed")
 	failed := filepath.Join(cfg.Imports.Root, "failed")
@@ -297,6 +321,8 @@ func run() error {
 		MarketData:       marketCache,
 		Prefetch:         prefetcher,
 		MCPInstanceLabel: cfg.MCP.InstanceLabel,
+		AI:               aiClient,
+		AIJobs:           aiJobs,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -375,6 +401,12 @@ func run() error {
 	mux.HandleFunc("POST /journal/group/{id}/unlink", h.GroupJournalUnlink)
 	mux.HandleFunc("GET /journal/{date}", h.JournalPage)
 	mux.HandleFunc("POST /journal/{date}", h.JournalSave)
+	// In-app AI analysis (handlers 404 when ai.enabled is false).
+	mux.HandleFunc("POST /ai/day/{date}", h.AIDayStart)
+	mux.HandleFunc("GET /ai/day/{date}/status", h.AIDayStatus)
+	mux.HandleFunc("POST /ai/day/{date}/cancel", h.AIDayCancel)
+	mux.HandleFunc("POST /ai/entry/{id}", h.AIAnalyzeEntry)
+	mux.HandleFunc("POST /ai/trade/{id}", h.AIAnalyzeTrade)
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)

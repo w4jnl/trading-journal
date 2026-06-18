@@ -631,6 +631,9 @@ func parseTag(s string) *string {
 // "Back to calendar" round-trip survives the save.
 func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	dateStr := r.PathValue("date")
 	date, err := time.ParseInLocation("2006-01-02", dateStr, h.localTZ())
 	if err != nil {
@@ -886,6 +889,9 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 // WeekJournalSave handles POST /journal/week/{week_id}.
 func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	weekID := r.PathValue("week")
 	monday, _, _, err := parseISOWeek(weekID, h.localTZ())
 	if err != nil {

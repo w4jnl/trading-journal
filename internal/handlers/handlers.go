@@ -19,6 +19,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
@@ -59,6 +60,12 @@ type Handlers struct {
 	// "dev") so an AI client can tell which instance it is connected to when
 	// several trading-journal connectors are configured.
 	MCPInstanceLabel string
+
+	// AI is the in-app analysis client (OpenAI-compatible); AIJobs tracks the
+	// per-user day-analysis job. Both nil disables server-side AI analysis; wired
+	// from cfg.AI when ai.enabled.
+	AI     ai.Client
+	AIJobs *ai.JobManager
 
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
@@ -175,6 +182,13 @@ func (h *Handlers) funcMap() template.FuncMap {
 		loc = time.UTC
 	}
 	return template.FuncMap{
+		// aiEnabled gates the in-app AI-analysis UI affordances; true only when
+		// ai.enabled wired a job manager.
+		"aiEnabled": func() bool { return h.AIJobs != nil },
+		// aiAnalyzed reports whether a body already carries the LOCAL AI marker, so the
+		// in-app Analyze button hides on an already-analyzed entry (re-running it is a
+		// no-op - analyzeEntry skips a marked entry).
+		"aiAnalyzed": func(body string) bool { return strings.Contains(body, aiMarkerLocal) },
 		"hasPrefix":  strings.HasPrefix,
 		"trimPrefix": strings.TrimPrefix,
 		"formatQty":  formatQty, // trailing-zero-free trade quantity
