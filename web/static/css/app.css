@@ -1780,6 +1780,13 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */
 .lib-item--archived { opacity: 0.6; }
-.lib-item-actions { display: flex; gap: 8px; align-items: center; }
+/* Strategy row actions: a top-right cluster (Archive/Un-archive then Delete) so the two
+   lifecycle actions sit together, extending the single-button top-right pattern the
+   template rows use. The nested Delete form drops its own absolute positioning; the
+   summary reserves extra right padding so a long title can't run under the cluster. */
+.lib-item-actions { position: absolute; top: 8px; right: 12px; display: flex; gap: 6px; align-items: center; }
+.lib-item-actions form { margin: 0; }
+.lib-item-actions .lib-item-delete { position: static; top: auto; right: auto; }
+.lib-item--strat .lib-row > summary { padding-right: 170px; }
 .pill--retired { background: var(--bg-elev); color: var(--fg-muted); border: 1px solid var(--border);
                  text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }

@@ -149,7 +149,7 @@
   </details>
 
   {{range .Strategies}}
-  <div class="lib-item{{if .ArchivedAt}} lib-item--archived{{end}}">
+  <div class="lib-item lib-item--strat{{if .ArchivedAt}} lib-item--archived{{end}}">
     <details class="lib-row">
       <summary class="lib-row-head">
         <span class="lib-row-title"><strong>{{.Name}}</strong>{{if .ArchivedAt}} <span class="pill pill--retired">retired</span>{{end}} <span class="muted num" style="font-size:11px;">updated {{ltime .UpdatedAt "date"}}</span></span>
