@@ -1046,22 +1046,22 @@ func (h *Handlers) JournalPreview(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(renderMarkdown(body)))
 }
 
-// markdownRenderer is shared across renderMarkdown calls. The HTML renderer
-// only carries config (the Flags above), no per-render state, so reuse is safe.
-// Parsers, by contrast, hold internal state and must be created per parse.
-var markdownRenderer = mdHtml.NewRenderer(mdHtml.RendererOptions{
-	Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
-})
-
-// renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown
-// with default extensions (CommonMark + tables, fenced code blocks). The
-// output is sanitized via html/template's auto-escape further up — but we
-// trust gomarkdown's HTML output here because the input is the user's own
-// journal content (single-user app).
+// renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown with
+// CommonMark extensions (tables, fenced code blocks) + AutoHeadingIDs. The output is
+// sanitized via html/template's auto-escape further up - but we trust gomarkdown's HTML
+// output here because the input is the user's own journal content (single-user app).
+//
+// Both the parser AND the renderer are created per call. With AutoHeadingIDs the renderer
+// keeps a per-render heading-ID dedup map (EnsureUniqueHeadingID), so a shared
+// *html.Renderer is NOT goroutine-safe: concurrent requests rendering markdown race on
+// that map and crash the process with "fatal error: concurrent map writes".
 func renderMarkdown(src string) string {
 	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
 	doc := p.Parse([]byte(src))
-	return string(markdown.Render(doc, markdownRenderer))
+	renderer := mdHtml.NewRenderer(mdHtml.RendererOptions{
+		Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
+	})
+	return string(markdown.Render(doc, renderer))
 }
 
 func (h *Handlers) localTZ() *time.Location {
