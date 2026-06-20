@@ -9,10 +9,26 @@ import (
 	"context"
 )
 
+const archiveStrategy = `-- name: ArchiveStrategy :exec
+UPDATE strategies
+SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND user_id = ?
+`
+
+type ArchiveStrategyParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+func (q *Queries) ArchiveStrategy(ctx context.Context, arg ArchiveStrategyParams) error {
+	_, err := q.db.ExecContext(ctx, archiveStrategy, arg.ID, arg.UserID)
+	return err
+}
+
 const createStrategy = `-- name: CreateStrategy :one
 INSERT INTO strategies (user_id, name, body)
 VALUES (?, ?, ?)
-RETURNING id, user_id, name, body, created_at, updated_at
+RETURNING id, user_id, name, body, created_at, updated_at, archived_at
 `
 
 type CreateStrategyParams struct {
@@ -31,6 +47,7 @@ func (q *Queries) CreateStrategy(ctx context.Context, arg CreateStrategyParams) 
 		&i.Body,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
@@ -50,7 +67,7 @@ func (q *Queries) DeleteStrategy(ctx context.Context, arg DeleteStrategyParams) 
 }
 
 const getStrategy = `-- name: GetStrategy :one
-SELECT id, user_id, name, body, created_at, updated_at FROM strategies WHERE id = ? AND user_id = ?
+SELECT id, user_id, name, body, created_at, updated_at, archived_at FROM strategies WHERE id = ? AND user_id = ?
 `
 
 type GetStrategyParams struct {
@@ -68,14 +85,52 @@ func (q *Queries) GetStrategy(ctx context.Context, arg GetStrategyParams) (Strat
 		&i.Body,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ArchivedAt,
 	)
 	return i, err
 }
 
-const listStrategies = `-- name: ListStrategies :many
-SELECT id, user_id, name, body, created_at, updated_at FROM strategies WHERE user_id = ? ORDER BY name
+const listActiveStrategies = `-- name: ListActiveStrategies :many
+SELECT id, user_id, name, body, created_at, updated_at, archived_at FROM strategies WHERE user_id = ? AND archived_at IS NULL ORDER BY name
 `
 
+// Only non-archived strategies: the set offered for assignment and shown to AI analyzers.
+func (q *Queries) ListActiveStrategies(ctx context.Context, userID int64) ([]Strategy, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveStrategies, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Strategy
+	for rows.Next() {
+		var i Strategy
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Body,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ArchivedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listStrategies = `-- name: ListStrategies :many
+SELECT id, user_id, name, body, created_at, updated_at, archived_at FROM strategies WHERE user_id = ? ORDER BY (archived_at IS NOT NULL), name
+`
+
+// All of the user's strategies, active first then archived (retired), each by name.
 func (q *Queries) ListStrategies(ctx context.Context, userID int64) ([]Strategy, error) {
 	rows, err := q.db.QueryContext(ctx, listStrategies, userID)
 	if err != nil {
@@ -92,6 +147,7 @@ func (q *Queries) ListStrategies(ctx context.Context, userID int64) ([]Strategy,
 			&i.Body,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ArchivedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -104,6 +160,22 @@ func (q *Queries) ListStrategies(ctx context.Context, userID int64) ([]Strategy,
 		return nil, err
 	}
 	return items, nil
+}
+
+const unarchiveStrategy = `-- name: UnarchiveStrategy :exec
+UPDATE strategies
+SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND user_id = ?
+`
+
+type UnarchiveStrategyParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+func (q *Queries) UnarchiveStrategy(ctx context.Context, arg UnarchiveStrategyParams) error {
+	_, err := q.db.ExecContext(ctx, unarchiveStrategy, arg.ID, arg.UserID)
+	return err
 }
 
 const updateStrategy = `-- name: UpdateStrategy :exec

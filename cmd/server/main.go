@@ -375,6 +375,8 @@ func run() error {
 	mux.HandleFunc("POST /library/strategies", h.StrategyCreate)
 	mux.HandleFunc("POST /library/strategies/{id}", h.StrategyUpdate)
 	mux.HandleFunc("POST /library/strategies/{id}/delete", h.StrategyDelete)
+	mux.HandleFunc("POST /library/strategies/{id}/archive", h.StrategyArchive)
+	mux.HandleFunc("POST /library/strategies/{id}/unarchive", h.StrategyUnarchive)
 	mux.HandleFunc("POST /library/playbook", h.PlaybookSave)
 	// Settings: per-user API key management (session + CSRF chain).
 	mux.HandleFunc("GET /settings", h.SettingsPage)

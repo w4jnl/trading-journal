@@ -23,7 +23,7 @@ func (h *Handlers) apiStrategyObj(s models.Strategy) apiStrategy {
 // APIStrategiesList: GET /api/v1/strategies
 func (h *Handlers) APIStrategiesList(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	rows, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	rows, err := h.Queries.ListActiveStrategies(ctx, userID(ctx))
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not list strategies")
 		return

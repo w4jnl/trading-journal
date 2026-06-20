@@ -1776,3 +1776,10 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .ai-spinner { width: 14px; height: 14px; border: 2px solid var(--border-strong); border-top-color: var(--accent);
               border-radius: 50%; display: inline-block; animation: ai-spin 0.7s linear infinite; flex-shrink: 0; }
 @keyframes ai-spin { to { transform: rotate(360deg); } }
+
+/* Archived (retired) strategies: dimmed Library row, an action row, and a muted
+   "retired" badge reused on the entry's strategy card + (as text) the picker. */
+.lib-item--archived { opacity: 0.6; }
+.lib-item-actions { display: flex; gap: 8px; align-items: center; }
+.pill--retired { background: var(--bg-elev); color: var(--fg-muted); border: 1px solid var(--border);
+                 text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }

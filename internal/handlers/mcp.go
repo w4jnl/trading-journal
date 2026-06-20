@@ -285,7 +285,7 @@ func (h *Handlers) mcpGetJournalEntry(ctx context.Context, req mcpgo.CallToolReq
 }
 
 func (h *Handlers) mcpListStrategies(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	rows, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	rows, err := h.Queries.ListActiveStrategies(ctx, userID(ctx))
 	if err != nil {
 		return mcpgo.NewToolResultError("could not list strategies"), nil
 	}

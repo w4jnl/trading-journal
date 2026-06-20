@@ -507,8 +507,9 @@ func (h *Handlers) apiValidateStrategyID(ctx context.Context, id *int64) (*int64
 	if id == nil || *id == 0 {
 		return nil, true
 	}
-	if _, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *id, UserID: userID(ctx)}); err != nil {
-		return nil, false
+	s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *id, UserID: userID(ctx)})
+	if err != nil || s.ArchivedAt != nil {
+		return nil, false // unknown/foreign, or archived (retired strategies aren't assignable)
 	}
 	v := *id
 	return &v, true
@@ -981,8 +982,12 @@ func (h *Handlers) assignStrategyIfUnset(ctx context.Context, entryID, strategyI
 	if e.Scope != "trade" && e.Scope != "group" {
 		return false, badInput("strategy applies to trade or group entries, not %s", e.Scope)
 	}
-	if _, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: strategyID, UserID: userID(ctx)}); err != nil {
+	s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: strategyID, UserID: userID(ctx)})
+	if err != nil {
 		return false, badInput("unknown strategyId %d", strategyID)
+	}
+	if s.ArchivedAt != nil {
+		return false, badInput("strategy %d is archived (retired) and cannot be assigned", strategyID)
 	}
 	res, err := h.DB.ExecContext(ctx,
 		"UPDATE journal_entries SET strategy_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND strategy_id IS NULL",

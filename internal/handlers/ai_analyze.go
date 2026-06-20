@@ -167,7 +167,7 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 			out["assignedStrategy"] = map[string]any{"id": s.ID, "name": s.Name, "playbook": s.Body}
 		}
 	}
-	if strats, err := h.Queries.ListStrategies(ctx, userID(ctx)); err == nil && len(strats) > 0 {
+	if strats, err := h.Queries.ListActiveStrategies(ctx, userID(ctx)); err == nil && len(strats) > 0 {
 		list := make([]map[string]any, 0, len(strats))
 		for _, s := range strats {
 			list = append(list, map[string]any{"id": s.ID, "name": s.Name, "playbook": aiTruncate(s.Body, 600)})
@@ -224,7 +224,7 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	}
 	var resolvedSID int64
 	if v.Strategy != "" {
-		strats, _ := h.Queries.ListStrategies(ctx, userID(ctx))
+		strats, _ := h.Queries.ListActiveStrategies(ctx, userID(ctx))
 		if resolvedSID = resolveStrategyID(v.Strategy, strats); resolvedSID > 0 {
 			if ok, err := h.assignStrategyIfUnset(ctx, entryID, resolvedSID); err == nil && ok {
 				res.StrategyID = resolvedSID
