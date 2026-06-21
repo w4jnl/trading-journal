@@ -11,6 +11,8 @@
   {{if eq .Flash "saved"}}Saved.
   {{else if eq .Flash "cloned"}}Template cloned — edit your copy below.
   {{else if eq .Flash "deleted"}}Deleted.
+  {{else if eq .Flash "archived"}}Strategy archived (retired) — moved to the bottom and no longer assignable.
+  {{else if eq .Flash "unarchived"}}Strategy restored — assignable again.
   {{else}}{{.Flash}}{{end}}
 </div>
 {{end}}
@@ -147,10 +149,10 @@
   </details>
 
   {{range .Strategies}}
-  <div class="lib-item">
+  <div class="lib-item lib-item--strat{{if .ArchivedAt}} lib-item--archived{{end}}">
     <details class="lib-row">
       <summary class="lib-row-head">
-        <span class="lib-row-title"><strong>{{.Name}}</strong> <span class="muted num" style="font-size:11px;">updated {{ltime .UpdatedAt "date"}}</span></span>
+        <span class="lib-row-title"><strong>{{.Name}}</strong>{{if .ArchivedAt}} <span class="pill pill--retired">retired</span>{{end}} <span class="muted num" style="font-size:11px;">updated {{ltime .UpdatedAt "date"}}</span></span>
         <span class="lib-row-edit">▾</span>
       </summary>
       <div class="lib-preview">
@@ -175,11 +177,24 @@
         </div>
       </form>
     </details>
-    <form method="post" action="/library/strategies/{{.ID}}/delete" class="lib-item-delete"
-          onsubmit="return confirm('Delete strategy {{.Name}}? Entries using it keep their note but lose the link.');">
-      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
-      <button type="submit" class="btn btn--danger btn--sm">Delete</button>
-    </form>
+    <div class="lib-item-actions">
+      {{if .ArchivedAt}}
+      <form method="post" action="/library/strategies/{{.ID}}/unarchive">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button type="submit" class="btn btn--secondary btn--sm">Un-archive</button>
+      </form>
+      {{else}}
+      <form method="post" action="/library/strategies/{{.ID}}/archive">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button type="submit" class="btn btn--secondary btn--sm">Archive</button>
+      </form>
+      {{end}}
+      <form method="post" action="/library/strategies/{{.ID}}/delete" class="lib-item-delete"
+            onsubmit="return confirm('Delete strategy {{.Name}}? Entries using it keep their note but lose the link.');">
+        <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+        <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+      </form>
+    </div>
   </div>
   {{else}}
   <p class="muted lib-empty">No strategies yet — create one above.</p>

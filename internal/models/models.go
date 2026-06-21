@@ -178,12 +178,13 @@ type SizeClass struct {
 }
 
 type Strategy struct {
-	ID        int64     `json:"id"`
-	UserID    int64     `json:"user_id"`
-	Name      string    `json:"name"`
-	Body      string    `json:"body"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	Name       string     `json:"name"`
+	Body       string     `json:"body"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+	ArchivedAt *time.Time `json:"archived_at"`
 }
 
 type StrategyPlaybook struct {

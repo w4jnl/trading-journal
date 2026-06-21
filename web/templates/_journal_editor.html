@@ -76,7 +76,9 @@
 {{/* strategy_picker — a <select> for attaching one trading strategy to a
      journal entry. Dict: Strategies ([]Strategy), StrategyID (*int64 current,
      may be nil). Submits strategy_id; empty value = detach. Renders a
-     "manage" hint linking to /library when the user has no strategies yet. */}}
+     "manage" hint linking to /library when the user has no strategies yet.
+     Archived (retired) strategies are not offered, except the one already
+     assigned to this entry (kept, shown "(retired)", so saving won't drop it). */}}
 {{define "strategy_picker"}}
 <label class="field je-strategy-field">
   <span class="field-label">Strategy</span>
@@ -84,7 +86,9 @@
   <select name="strategy_id" class="je-strategy-select">
     <option value="">— none —</option>
     {{range .Strategies}}
-      <option value="{{.ID}}" {{if eq $.StrategyID .ID}}selected{{end}}>{{.Name}}</option>
+      {{if or (not .ArchivedAt) (eq $.StrategyID .ID)}}
+      <option value="{{.ID}}" {{if eq $.StrategyID .ID}}selected{{end}}>{{.Name}}{{if .ArchivedAt}} (retired){{end}}</option>
+      {{end}}
     {{end}}
   </select>
   {{else}}
@@ -99,7 +103,7 @@
 {{define "strategy_card"}}
 <div class="card strategy-card" style="margin-top:16px;">
   <div class="row-sm" style="justify-content:space-between; align-items:center; margin-bottom:8px;">
-    <h3 style="margin:0; font-size:14px;">Strategy · {{.Name}}</h3>
+    <h3 style="margin:0; font-size:14px;">Strategy · {{.Name}}{{if .ArchivedAt}} <span class="pill pill--retired">retired</span>{{end}}</h3>
     <a href="/library?tab=strategies" class="muted" style="font-size:11px;">edit in Library</a>
   </div>
   <div class="markdown-preview">{{markdown .Body}}</div>

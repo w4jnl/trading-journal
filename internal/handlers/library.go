@@ -284,6 +284,38 @@ func (h *Handlers) StrategyDelete(w http.ResponseWriter, r *http.Request) {
 	redirectLibrary(w, r, "strategies", "deleted", "")
 }
 
+// StrategyArchive soft-retires a strategy: it drops to the bottom of the Library,
+// stops being assignable in journal entries, and is hidden from the AI analyzers.
+// Entries that already reference it keep the link (shown as "retired").
+func (h *Handlers) StrategyArchive(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.Queries.ArchiveStrategy(ctx, models.ArchiveStrategyParams{ID: id, UserID: userID(ctx)}); err != nil {
+		h.serverError(w, fmt.Errorf("archive strategy: %w", err))
+		return
+	}
+	redirectLibrary(w, r, "strategies", "archived", "")
+}
+
+// StrategyUnarchive restores an archived strategy to active (assignable again).
+func (h *Handlers) StrategyUnarchive(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := h.Queries.UnarchiveStrategy(ctx, models.UnarchiveStrategyParams{ID: id, UserID: userID(ctx)}); err != nil {
+		h.serverError(w, fmt.Errorf("unarchive strategy: %w", err))
+		return
+	}
+	redirectLibrary(w, r, "strategies", "unarchived", "")
+}
+
 // strategyIDValue maps an entry's *int64 strategy_id to a plain int64
 // (0 = none) for the picker's selected-option comparison in templates.
 func strategyIDValue(p *int64) int64 {
