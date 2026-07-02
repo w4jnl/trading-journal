@@ -78,7 +78,32 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 			RawData:      encodeRow(header, row),
 		})
 	}
+	disambiguateCoTicketFills(fills)
 	return fills, nil
+}
+
+// disambiguateCoTicketFills makes BrokerExecID unique per (account, ticket) when one order
+// fills in multiple lots and MotiveWave emits a row per lot sharing the Ticket. The importer
+// dedups on (account_id, broker_exec_id) via INSERT OR IGNORE, so without this the 2nd+ lots
+// collapse into the first and are silently dropped - which understates the position and can
+// suppress trades (verified against an IBKR statement: the co-ticket rows are genuine
+// separate fills). The first occurrence keeps the bare ticket so re-importing an
+// already-imported file still matches existing rows; the 2nd, 3rd, ... get a "#2"/"#3"
+// suffix. Numbering follows file order, which MotiveWave keeps stable across re-exports, so
+// the mapped id set is deterministic and the whole thing stays idempotent on re-import.
+// (Tickets are numeric, so the "#" suffix can never collide with a real one.)
+func disambiguateCoTicketFills(fills []Fill) {
+	seen := make(map[string]int, len(fills))
+	for i := range fills {
+		if fills[i].BrokerExecID == "" {
+			continue
+		}
+		key := fills[i].AccountRef + "\x00" + fills[i].BrokerExecID
+		seen[key]++
+		if n := seen[key]; n > 1 {
+			fills[i].BrokerExecID = fills[i].BrokerExecID + "#" + strconv.Itoa(n)
+		}
+	}
 }
 
 func motivewaveSide(action string) (string, error) {

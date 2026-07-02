@@ -2,8 +2,50 @@ package importer
 
 import (
 	"os"
+	"strings"
 	"testing"
 )
+
+// TestParseMotiveWaveCoTicketFills covers the multi-lot dedup fix: when one order fills in
+// several lots, MotiveWave emits a row per lot sharing the Ticket. The parser must keep them
+// all by suffixing the 2nd+ occurrence's BrokerExecID, so the (account_id, broker_exec_id)
+// dedup doesn't collapse genuine fills. Occurrence 1 stays the bare ticket (re-import matches
+// existing rows); re-parsing the same input is idempotent; distinct tickets are untouched.
+func TestParseMotiveWaveCoTicketFills(t *testing.T) {
+	const csv = `Account,Ticket,Underlying,Symbol,Exchange,Time,Action,Quantity,Price,Source
+U10000001,1295767185,MES,MESU6,CME,06/18/2026 22:45:49.000+0200,BOT,1,7572.5,Rithmic
+U10000001,1295767185,MES,MESU6,CME,06/18/2026 22:45:49.000+0200,BOT,1,7572.5,Rithmic
+U10000001,9999,MES,MESU6,CME,06/18/2026 22:46:00.000+0200,SLD,1,7573,Rithmic
+`
+	fills, err := ParseMotiveWave(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("ParseMotiveWave: %v", err)
+	}
+	if len(fills) != 3 {
+		t.Fatalf("got %d fills, want 3 (both co-ticket lots kept)", len(fills))
+	}
+	if fills[0].BrokerExecID != "1295767185" {
+		t.Errorf("occurrence 1 = %q, want bare ticket %q", fills[0].BrokerExecID, "1295767185")
+	}
+	if fills[1].BrokerExecID != "1295767185#2" {
+		t.Errorf("occurrence 2 = %q, want %q", fills[1].BrokerExecID, "1295767185#2")
+	}
+	if fills[2].BrokerExecID != "9999" {
+		t.Errorf("distinct ticket = %q, want untouched %q", fills[2].BrokerExecID, "9999")
+	}
+
+	// Idempotent: re-parsing the same input yields the same id set (so a re-import can't
+	// double the fills).
+	again, err := ParseMotiveWave(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("re-parse: %v", err)
+	}
+	for i := range fills {
+		if again[i].BrokerExecID != fills[i].BrokerExecID {
+			t.Errorf("re-parse fill %d id = %q, want stable %q", i, again[i].BrokerExecID, fills[i].BrokerExecID)
+		}
+	}
+}
 
 const (
 	motivewaveFixture = "../../exportData/MotivewaveExport.csv"
