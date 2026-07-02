@@ -23,7 +23,7 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, is_admin, display_name)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at
+RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language
 `
 
 type CreateUserParams struct {
@@ -55,6 +55,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.DisplayName,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.AiLanguage,
 	)
 	return i, err
 }
@@ -73,7 +74,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at FROM users WHERE id = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language FROM users WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -89,12 +90,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.DisplayName,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.AiLanguage,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at FROM users WHERE username = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language FROM users WHERE username = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -110,12 +112,13 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.DisplayName,
 		&i.CreatedAt,
 		&i.LastLoginAt,
+		&i.AiLanguage,
 	)
 	return i, err
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at FROM users ORDER BY username
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -137,6 +140,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.DisplayName,
 			&i.CreatedAt,
 			&i.LastLoginAt,
+			&i.AiLanguage,
 		); err != nil {
 			return nil, err
 		}
@@ -149,6 +153,21 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const setUserAILanguage = `-- name: SetUserAILanguage :exec
+UPDATE users SET ai_language = ? WHERE id = ?
+`
+
+type SetUserAILanguageParams struct {
+	AiLanguage string `json:"ai_language"`
+	ID         int64  `json:"id"`
+}
+
+// Language the in-app AI analyzer writes reviews in. Empty = model default.
+func (q *Queries) SetUserAILanguage(ctx context.Context, arg SetUserAILanguageParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAILanguage, arg.AiLanguage, arg.ID)
+	return err
 }
 
 const setUserActive = `-- name: SetUserActive :exec

@@ -10,7 +10,37 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
-// SettingsPage: GET /settings - lists the user's API keys + a generate form.
+// aiLanguageOption is one choice in the Settings language picker. Value is what gets
+// stored and fed to the AI prompt (an English language name, or "" for the model default);
+// Label is what the user sees.
+type aiLanguageOption struct{ Value, Label string }
+
+// aiLanguageOptions is the curated set offered in Settings (and the server-side allow-list
+// the save handler validates against, so a stored value can never be arbitrary text).
+var aiLanguageOptions = []aiLanguageOption{
+	{"", "English (default)"},
+	{"Czech", "Czech — Čeština"},
+	{"Slovak", "Slovak — Slovenčina"},
+	{"Dutch", "Dutch — Nederlands"},
+	{"German", "German — Deutsch"},
+	{"French", "French — Français"},
+	{"Spanish", "Spanish — Español"},
+	{"Italian", "Italian — Italiano"},
+	{"Polish", "Polish — Polski"},
+	{"Portuguese", "Portuguese — Português"},
+}
+
+// allowedAILanguage reports whether v is one of the offered language values.
+func allowedAILanguage(v string) bool {
+	for _, o := range aiLanguageOptions {
+		if o.Value == v {
+			return true
+		}
+	}
+	return false
+}
+
+// SettingsPage: GET /settings - the user's API keys + AI-review language.
 func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	h.renderSettings(w, r, "")
 }
@@ -26,12 +56,35 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		return
 	}
 	h.renderPage(w, r, "settings.html", map[string]any{
-		"NavActive": "settings",
-		"Keys":      keys,
-		"NewKey":    newKey,
-		"Flash":     r.URL.Query().Get("flash"),
-		"Err":       r.URL.Query().Get("err"),
+		"NavActive":   "settings",
+		"Keys":        keys,
+		"NewKey":      newKey,
+		"AILanguage":  h.userAILanguage(ctx),
+		"AILanguages": aiLanguageOptions,
+		"AIEnabled":   h.AIJobs != nil,
+		"Flash":       r.URL.Query().Get("flash"),
+		"Err":         r.URL.Query().Get("err"),
 	})
+}
+
+// SettingsLanguageSave: POST /settings/language - set the language the in-app AI analyzer
+// writes reviews in. Validated against the offered list; empty = the model default.
+func (h *Handlers) SettingsLanguageSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	lang := strings.TrimSpace(r.PostFormValue("ai_language"))
+	if !allowedAILanguage(lang) {
+		http.Redirect(w, r, "/settings?err=unsupported+language", http.StatusSeeOther)
+		return
+	}
+	if err := h.Queries.SetUserAILanguage(ctx, models.SetUserAILanguageParams{AiLanguage: lang, ID: userID(ctx)}); err != nil {
+		h.serverError(w, fmt.Errorf("set ai language: %w", err))
+		return
+	}
+	http.Redirect(w, r, "/settings?flash=language", http.StatusSeeOther)
 }
 
 // APIKeyCreate: POST /settings/api-keys - generate a key and show it once.

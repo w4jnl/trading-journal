@@ -38,12 +38,32 @@ Interpret the numbers; do not just restate them. Never invent prices or times no
 // aiSystemPrompt returns the analyst system prompt. It always asks for a trailing
 // machine-readable verdict line; analyzeEntry uses it to fill in an UNSET tag/strategy
 // (never overwriting your choice) and only when one clearly fits - the model returns
-// "none" otherwise, so nothing is forced.
-func aiSystemPrompt() string {
-	return aiSystemBase + "\n\n" + `End with EXACTLY one final line - a machine-readable verdict (it is removed before saving):
+// "none" otherwise, so nothing is forced. language (e.g. "Czech"), when non-empty, makes
+// the model write the review prose in that language; empty = the model default (English).
+func aiSystemPrompt(language string) string {
+	verdict := "\n\n" + `End with EXACTLY one final line - a machine-readable verdict (it is removed before saving):
 <!-- tj-ai:verdict tag=<good|neutral|bad|none> strategy=<id|none> -->
 - tag: your honest read - good / neutral / bad. Use none ONLY when a good/neutral/bad verdict genuinely does not apply.
 - strategy: identify the SINGLE best-fitting entry from "availableStrategies" and give its id or exact name. Weigh the trade (structure, direction, timing) AND the trader's own notes - a note like "3bar" points to a "Three-Bar Reversal". The trader has NOT pre-tagged one, so choosing the fit is YOUR job: do not answer none just because nothing was tagged or you are not fully certain. Use none only when nothing in the list is plausibly related (and always for a whole day or a group of mixed setups). Use only an id or name from that list; never invent one.`
+	if language == "" {
+		return aiSystemBase + verdict
+	}
+	// Local models tend to default to English when the language directive is buried at the
+	// end of a long English prompt, so LEAD and CLOSE with it. The verdict line is parsed,
+	// so it is the explicit exception that stays in English.
+	lead := "WRITE YOUR ENTIRE REVIEW IN " + language + ". Every sentence, every bold section label, and every bullet must be in " + language + " - even though these instructions are written in English. The ONLY part that stays in English is the final machine-readable verdict line (the literal <!-- tj-ai:verdict ... --> comment and its keywords).\n\n"
+	tail := "\n\nReminder: everything above the verdict line - all prose and labels - must be written in " + language + ", not English."
+	return lead + aiSystemBase + verdict + tail
+}
+
+// userAILanguage returns the calling user's configured AI-review language (e.g. "Czech"),
+// or "" when unset or unavailable - in which case the model uses its default (English).
+func (h *Handlers) userAILanguage(ctx context.Context) string {
+	u, err := h.Queries.GetUserByID(ctx, userID(ctx))
+	if err != nil {
+		return ""
+	}
+	return u.AiLanguage
 }
 
 // aiVerdictRe matches the trailing machine-readable verdict line, e.g.
@@ -204,7 +224,13 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	if err != nil {
 		return res, err
 	}
-	out, err := h.AI.Generate(ctx, aiSystemPrompt(), userPrompt)
+	// Restate the language directive at the top of the USER turn too - some local models
+	// follow the user message more closely than the system prompt for output language.
+	lang := h.userAILanguage(ctx)
+	if lang != "" {
+		userPrompt = "Reply in " + lang + " (write the whole review in " + lang + "; keep only the verdict line in English).\n\n" + userPrompt
+	}
+	out, err := h.AI.Generate(ctx, aiSystemPrompt(lang), userPrompt)
 	if err != nil {
 		return res, fmt.Errorf("ai generate: %w", err)
 	}

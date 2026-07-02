@@ -383,6 +383,7 @@ func run() error {
 	mux.HandleFunc("POST /settings/api-keys", h.APIKeyCreate)
 	mux.HandleFunc("POST /settings/api-keys/{id}/revoke", h.APIKeyRevoke)
 	mux.HandleFunc("POST /settings/api-keys/{id}/delete", h.APIKeyDelete)
+	mux.HandleFunc("POST /settings/language", h.SettingsLanguageSave)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)

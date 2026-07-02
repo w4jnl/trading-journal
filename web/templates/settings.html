@@ -13,7 +13,27 @@
 
 {{if eq .Flash "revoked"}}<div class="flash saved" style="margin-bottom: 16px;">Key revoked.</div>{{end}}
 {{if eq .Flash "deleted"}}<div class="flash saved" style="margin-bottom: 16px;">Key deleted.</div>{{end}}
+{{if eq .Flash "language"}}<div class="flash saved" style="margin-bottom: 16px;">Language saved.</div>{{end}}
 {{if .Err}}<div class="flash empty" style="margin-bottom: 16px;">{{.Err}}</div>{{end}}
+
+{{if .AIEnabled}}
+<div class="card" style="margin-bottom: 16px;">
+  <div class="card-title">AI analysis language</div>
+  <p class="muted" style="font-size: 12px;">
+    The in-app AI writes journal reviews in this language. This does not change the app
+    interface or the external (Claude/ChatGPT) analyzers.
+  </p>
+  <form method="post" action="/settings/language" class="row-sm" style="margin: 10px 0; gap: 8px; flex-wrap: wrap;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <select name="ai_language" style="max-width: 280px;">
+      {{range .AILanguages}}
+      <option value="{{.Value}}" {{if eq .Value $.AILanguage}}selected{{end}}>{{.Label}}</option>
+      {{end}}
+    </select>
+    <button type="submit" class="btn btn--primary btn--sm">Save</button>
+  </form>
+</div>
+{{end}}
 
 <div class="card">
   <div class="card-title">API keys</div>
