@@ -10,8 +10,27 @@ import (
 	"time"
 )
 
+const countOpenPositions = `-- name: CountOpenPositions :one
+SELECT COUNT(*) FROM (
+    SELECT 1
+    FROM executions e
+    JOIN accounts a ON a.id = e.account_id
+    WHERE a.user_id = ? AND e.deleted_at IS NULL
+    GROUP BY e.account_id, e.symbol
+    HAVING SUM(CASE WHEN e.side = 'buy' THEN e.qty ELSE -e.qty END) <> 0
+)
+`
+
+// Cheap count for the always-on nav badge (same rule as ListOpenPositions).
+func (q *Queries) CountOpenPositions(ctx context.Context, userID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOpenPositions, userID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getExecutionByBrokerID = `-- name: GetExecutionByBrokerID :one
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions WHERE account_id = ? AND broker_exec_id = ?
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at FROM executions WHERE account_id = ? AND broker_exec_id = ?
 `
 
 type GetExecutionByBrokerIDParams struct {
@@ -34,6 +53,68 @@ func (q *Queries) GetExecutionByBrokerID(ctx context.Context, arg GetExecutionBy
 		&i.Commission,
 		&i.ExecTime,
 		&i.RawData,
+		&i.DeletedAt,
+		&i.Manual,
+		&i.EditedAt,
+	)
+	return i, err
+}
+
+const getExecutionForUser = `-- name: GetExecutionForUser :one
+SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, a.account_ref, a.commission_source, a.user_id AS owner_id
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE e.id = ? AND a.user_id = ?
+`
+
+type GetExecutionForUserParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+type GetExecutionForUserRow struct {
+	ID               int64      `json:"id"`
+	AccountID        int64      `json:"account_id"`
+	BrokerExecID     string     `json:"broker_exec_id"`
+	Symbol           string     `json:"symbol"`
+	SymbolRoot       string     `json:"symbol_root"`
+	Side             string     `json:"side"`
+	Qty              float64    `json:"qty"`
+	Price            float64    `json:"price"`
+	Commission       *float64   `json:"commission"`
+	ExecTime         time.Time  `json:"exec_time"`
+	RawData          *string    `json:"raw_data"`
+	DeletedAt        *time.Time `json:"deleted_at"`
+	Manual           int64      `json:"manual"`
+	EditedAt         *time.Time `json:"edited_at"`
+	AccountRef       string     `json:"account_ref"`
+	CommissionSource string     `json:"commission_source"`
+	OwnerID          int64      `json:"owner_id"`
+}
+
+// One execution plus the owning account's ref + commission_source (for the inline
+// guard), scoped so a user can only read their own.
+func (q *Queries) GetExecutionForUser(ctx context.Context, arg GetExecutionForUserParams) (GetExecutionForUserRow, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionForUser, arg.ID, arg.UserID)
+	var i GetExecutionForUserRow
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.BrokerExecID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Side,
+		&i.Qty,
+		&i.Price,
+		&i.Commission,
+		&i.ExecTime,
+		&i.RawData,
+		&i.DeletedAt,
+		&i.Manual,
+		&i.EditedAt,
+		&i.AccountRef,
+		&i.CommissionSource,
+		&i.OwnerID,
 	)
 	return i, err
 }
@@ -77,8 +158,61 @@ func (q *Queries) InsertExecution(ctx context.Context, arg InsertExecutionParams
 	return result.RowsAffected()
 }
 
+const insertManualExecution = `-- name: InsertManualExecution :one
+INSERT INTO executions (
+    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, manual
+) VALUES (
+    ?, ?, ?, ?, ?, ?, ?, ?, 1
+)
+RETURNING id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at
+`
+
+type InsertManualExecutionParams struct {
+	AccountID    int64     `json:"account_id"`
+	BrokerExecID string    `json:"broker_exec_id"`
+	Symbol       string    `json:"symbol"`
+	SymbolRoot   string    `json:"symbol_root"`
+	Side         string    `json:"side"`
+	Qty          float64   `json:"qty"`
+	Price        float64   `json:"price"`
+	ExecTime     time.Time `json:"exec_time"`
+}
+
+// Hand-created fill from the reconcile editor. broker_exec_id is a synthetic MANUAL-...
+// id the caller mints; manual=1 tags it. Returns the row (for the rebuild that follows).
+func (q *Queries) InsertManualExecution(ctx context.Context, arg InsertManualExecutionParams) (Execution, error) {
+	row := q.db.QueryRowContext(ctx, insertManualExecution,
+		arg.AccountID,
+		arg.BrokerExecID,
+		arg.Symbol,
+		arg.SymbolRoot,
+		arg.Side,
+		arg.Qty,
+		arg.Price,
+		arg.ExecTime,
+	)
+	var i Execution
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.BrokerExecID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Side,
+		&i.Qty,
+		&i.Price,
+		&i.Commission,
+		&i.ExecTime,
+		&i.RawData,
+		&i.DeletedAt,
+		&i.Manual,
+		&i.EditedAt,
+	)
+	return i, err
+}
+
 const listExecutionsByAccount = `-- name: ListExecutionsByAccount :many
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions WHERE account_id = ? ORDER BY exec_time, id
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at FROM executions WHERE account_id = ? ORDER BY exec_time, id
 `
 
 func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) ([]Execution, error) {
@@ -102,6 +236,9 @@ func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) 
 			&i.Commission,
 			&i.ExecTime,
 			&i.RawData,
+			&i.DeletedAt,
+			&i.Manual,
+			&i.EditedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -114,4 +251,131 @@ func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const listOpenPositions = `-- name: ListOpenPositions :many
+SELECT a.id AS account_id, a.name AS account_name, a.account_ref, a.firm,
+       e.symbol, e.symbol_root,
+       CAST(SUM(CASE WHEN e.side = 'buy' THEN e.qty ELSE -e.qty END) AS REAL) AS net_qty,
+       MAX(e.exec_time) AS last_exec_time
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE a.user_id = ? AND e.deleted_at IS NULL
+GROUP BY e.account_id, e.symbol
+HAVING SUM(CASE WHEN e.side = 'buy' THEN e.qty ELSE -e.qty END) <> 0
+ORDER BY a.name, e.symbol
+`
+
+type ListOpenPositionsRow struct {
+	AccountID    int64       `json:"account_id"`
+	AccountName  string      `json:"account_name"`
+	AccountRef   string      `json:"account_ref"`
+	Firm         *string     `json:"firm"`
+	Symbol       string      `json:"symbol"`
+	SymbolRoot   string      `json:"symbol_root"`
+	NetQty       float64     `json:"net_qty"`
+	LastExecTime interface{} `json:"last_exec_time"`
+}
+
+// Per (account, contract) net signed quantity, only where it does not net flat. A
+// nonzero net means an open (or carried, or data-gap) position. Soft-deleted fills are
+// excluded. Scoped to the user's own accounts. Inline (TopstepX) accounts net flat by
+// construction, so they never appear here.
+func (q *Queries) ListOpenPositions(ctx context.Context, userID int64) ([]ListOpenPositionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenPositions, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenPositionsRow
+	for rows.Next() {
+		var i ListOpenPositionsRow
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.AccountName,
+			&i.AccountRef,
+			&i.Firm,
+			&i.Symbol,
+			&i.SymbolRoot,
+			&i.NetQty,
+			&i.LastExecTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const softDeleteExecution = `-- name: SoftDeleteExecution :exec
+UPDATE executions
+SET deleted_at = CURRENT_TIMESTAMP
+WHERE executions.id = ? AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?)
+`
+
+type SoftDeleteExecutionParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// Tombstone a fill (retained so re-import cannot resurrect it). User-scoped.
+func (q *Queries) SoftDeleteExecution(ctx context.Context, arg SoftDeleteExecutionParams) error {
+	_, err := q.db.ExecContext(ctx, softDeleteExecution, arg.ID, arg.UserID)
+	return err
+}
+
+const undeleteExecution = `-- name: UndeleteExecution :exec
+UPDATE executions
+SET deleted_at = NULL
+WHERE executions.id = ? AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?)
+`
+
+type UndeleteExecutionParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+func (q *Queries) UndeleteExecution(ctx context.Context, arg UndeleteExecutionParams) error {
+	_, err := q.db.ExecContext(ctx, undeleteExecution, arg.ID, arg.UserID)
+	return err
+}
+
+const updateExecution = `-- name: UpdateExecution :exec
+UPDATE executions
+SET symbol = ?, symbol_root = ?, side = ?, qty = ?, price = ?, exec_time = ?,
+    edited_at = CURRENT_TIMESTAMP
+WHERE executions.id = ? AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?)
+`
+
+type UpdateExecutionParams struct {
+	Symbol     string    `json:"symbol"`
+	SymbolRoot string    `json:"symbol_root"`
+	Side       string    `json:"side"`
+	Qty        float64   `json:"qty"`
+	Price      float64   `json:"price"`
+	ExecTime   time.Time `json:"exec_time"`
+	ID         int64     `json:"id"`
+	UserID     int64     `json:"user_id"`
+}
+
+// Edit an existing fill (manual or imported), scoped to the user via the account. Sets
+// edited_at as an audit marker. The caller rebuilds the affected (account, symbol) after.
+func (q *Queries) UpdateExecution(ctx context.Context, arg UpdateExecutionParams) error {
+	_, err := q.db.ExecContext(ctx, updateExecution,
+		arg.Symbol,
+		arg.SymbolRoot,
+		arg.Side,
+		arg.Qty,
+		arg.Price,
+		arg.ExecTime,
+		arg.ID,
+		arg.UserID,
+	)
+	return err
 }

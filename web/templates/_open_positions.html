@@ -1,0 +1,28 @@
+{{/* open_positions — shared flat/open-position summary. Dict/context is a list of
+     ListOpenPositionsRow (.AccountName, .AccountRef, .Firm, .Symbol, .SymbolRoot,
+     .NetQty). Empty list => flat. Each open row links into the reconcile editor
+     pre-filtered to that account + contract. Used on the dashboard and at the top of
+     /admin/transactions. */}}
+{{define "open_positions"}}
+<div class="card open-pos {{if .}}open-pos--open{{else}}open-pos--flat{{end}}">
+  {{if .}}
+  <div class="card-title-row">
+    <span class="card-title">Open positions</span>
+    <span class="muted" style="font-size:11px;">nonzero net = open / carried / missing fills</span>
+  </div>
+  <ul class="open-pos__list">
+    {{range .}}
+    <li>
+      <a href="/admin/transactions?account_id={{.AccountID}}&amp;symbol={{.Symbol}}">
+        <span class="open-pos__acct">{{.AccountName}}{{if .Firm}} · <code>{{derefStr .Firm}}</code>{{end}}</span>
+        <span class="open-pos__sym">{{.Symbol}}</span>
+        <span class="pill {{if gt .NetQty 0.0}}dir-long{{else}}dir-short{{end}}">{{posLabel .NetQty}}</span>
+      </a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <div class="open-pos__flat"><span class="open-pos__tick">✓</span> Flat — all positions closed.</div>
+  {{end}}
+</div>
+{{end}}

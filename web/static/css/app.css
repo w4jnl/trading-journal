@@ -1790,3 +1790,59 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .lib-item--strat .lib-row > summary { padding-right: 170px; }
 .pill--retired { background: var(--bg-elev); color: var(--fg-muted); border: 1px solid var(--border);
                  text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+
+/* Sidebar open-position badge: a small count pill on the Reconcile link, always visible. */
+.nav-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+             background: var(--neg); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px;
+             text-align: center; display: inline-block; }
+
+/* Open-positions panel (dashboard + reconcile header) + shared list rows. */
+.open-pos { margin: 12px 0 16px; padding: 12px 14px; }
+.open-pos--flat { border-color: var(--pos); }
+.open-pos__flat { color: var(--pos); font-weight: 600; font-size: 13px; }
+.open-pos__tick { font-weight: 800; margin-right: 4px; }
+.open-pos__list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.open-pos__list a { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px;
+                    border: 1px solid var(--border); border-radius: var(--r-md); color: var(--fg);
+                    text-decoration: none; transition: border-color var(--t-fast); }
+.open-pos__list a:hover { border-color: var(--border-strong); }
+.open-pos__acct { min-width: 160px; }
+.open-pos__sym { font-weight: 600; }
+
+/* Reconcile editor: filter bar, create/edit form grid, transaction rows. */
+.txn-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
+.txn-new { margin-bottom: 16px; }
+.txn-new > summary { list-style: none; cursor: pointer; }
+.txn-new > summary::-webkit-details-marker { display: none; }
+.txn-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
+/* Reconcile table: read-only by default; the Edit button adds #recon.editing, which hides
+   the .tv view spans and reveals the .te inputs/checkboxes (one Save posts the whole form). */
+table.reconcile { width: 100%; border-collapse: collapse; }
+table.reconcile th, table.reconcile td { padding: 6px 8px; font-size: 13px; vertical-align: middle;
+                                          border-bottom: 1px solid var(--border); text-align: left; }
+table.reconcile th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+table.reconcile .te { display: none; }
+table.reconcile input, table.reconcile select { height: 28px; padding: 4px 6px; font-size: 12px;
+                                                 width: 100%; box-sizing: border-box; }
+/* The Side <select> needs room for "sell" plus the native dropdown arrow, else the text
+   clips to "se"/"bu" in the narrow column. min-width also widens the column in edit mode. */
+table.reconcile select { min-width: 80px; padding-right: 4px; }
+#recon.editing .tv { display: none; }
+#recon.editing .te { display: inline-block; }
+#recon.editing .recon-del { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+table.reconcile .recon-del input[type=checkbox] { width: auto; height: auto; }
+.recon-del-col { width: 84px; }
+tr.txn-item--deleted { opacity: 0.55; }
+
+/* Trade horizon pill (derived from holding time): Scalp / Intraday / Swing / Long-term.
+   Tinted so each reads at a glance next to the long/short direction pill. */
+.pill-horizon { text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; font-weight: 600; border: 1px solid transparent; }
+.horizon-scalp     { background: rgba(245, 158, 11, 0.16); color: #b45309; }   /* amber - fast */
+.horizon-intraday  { background: rgba(59, 130, 246, 0.16); color: #1d4ed8; }   /* blue - one day */
+.horizon-swing     { background: rgba(139, 92, 246, 0.16); color: #6d28d9; }   /* violet - days */
+.horizon-long-term { background: rgba(20, 184, 166, 0.16); color: #0f766e; }   /* teal - weeks+ */
+
+/* Build version in the sidebar footer, under the Theme toggle. Small, muted, unobtrusive. */
+.sidebar-version { padding: 6px 12px 2px; font-size: 10px; color: var(--fg-subtle);
+                   text-align: center; letter-spacing: 0.02em; user-select: text;
+                   white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

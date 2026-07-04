@@ -23,6 +23,8 @@ type tradeFilters struct {
 	Account    accountFilter
 	SymbolRoot *string
 	Direction  *string
+	// Horizon filters by holding time (derived, not stored): scalp|intraday|swing|long-term.
+	Horizon *string
 	// Outcome filters by net P&L sign: "win" (net>0), "loss" (net<0),
 	// "breakeven" (net=0). nil = no filter. Trades with NULL net_pnl
 	// (stub instruments) are excluded by any non-nil outcome filter.
@@ -632,6 +634,13 @@ func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64
 // Retired accounts (accounts.active = 0) are hidden unless f.IncludeRetired
 // is true. The caller's user_id is ALWAYS included via a parent-account
 // subquery so the user can never see trades on someone else's accounts.
+// tradeHoldDaysSQL is a trade's holding time in DAYS. Times are stored as Go strings
+// ("2006-01-02 15:04:05.9 -0700 MST"); substr(...,1,19) yields "YYYY-MM-DD HH:MM:SS", the
+// datetime form julianday() parses - the full string's " -0700 MST" tail would make it NULL.
+// Both entry_time and exit_time are UTC, so the difference is elapsed time. Mirrors
+// tradeHorizon()'s bands so the /trades horizon filter matches the per-trade label.
+const tradeHoldDaysSQL = "(julianday(substr(t.exit_time,1,19)) - julianday(substr(t.entry_time,1,19)))"
+
 func buildWhere(f tradeFilters, uid int64) (string, []any) {
 	clauses := []string{"t.status = 'closed'"}
 	// Scope to the user's accounts up front.
@@ -660,6 +669,24 @@ func buildWhere(f tradeFilters, uid int64) (string, []any) {
 	if f.Direction != nil {
 		clauses = append(clauses, "t.direction = ?")
 		args = append(args, *f.Direction)
+	}
+	if f.Horizon != nil {
+		// Bands must match tradeHorizon(): Scalp <10m, Intraday <1d, Swing <14d, else Long-term.
+		// tradeHoldDaysSQL is the holding time in DAYS.
+		switch *f.Horizon {
+		case "scalp":
+			clauses = append(clauses, tradeHoldDaysSQL+" < ?")
+			args = append(args, 10.0/1440.0)
+		case "intraday":
+			clauses = append(clauses, tradeHoldDaysSQL+" >= ? AND "+tradeHoldDaysSQL+" < ?")
+			args = append(args, 10.0/1440.0, 1.0)
+		case "swing":
+			clauses = append(clauses, tradeHoldDaysSQL+" >= ? AND "+tradeHoldDaysSQL+" < ?")
+			args = append(args, 1.0, 14.0)
+		case "long-term":
+			clauses = append(clauses, tradeHoldDaysSQL+" >= ?")
+			args = append(args, 14.0)
+		}
 	}
 	if f.Outcome != nil {
 		switch *f.Outcome {
@@ -715,6 +742,9 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	if v := strings.TrimSpace(q.Get("direction")); v == "long" || v == "short" {
 		f.Direction = &v
 	}
+	if v := strings.TrimSpace(q.Get("horizon")); v == "scalp" || v == "intraday" || v == "swing" || v == "long-term" {
+		f.Horizon = &v
+	}
 	if v := strings.TrimSpace(q.Get("outcome")); v == "win" || v == "loss" || v == "breakeven" {
 		f.Outcome = &v
 	}
@@ -754,6 +784,9 @@ func filtersAsForm(f tradeFilters) map[string]string {
 	}
 	if f.Direction != nil {
 		out["Direction"] = *f.Direction
+	}
+	if f.Horizon != nil {
+		out["Horizon"] = *f.Horizon
 	}
 	if f.Outcome != nil {
 		out["Outcome"] = *f.Outcome

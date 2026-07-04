@@ -1177,6 +1177,29 @@ func (s *ImportService) RebuildTradesForCommissionCell(ctx context.Context, firm
 	return tx.Commit()
 }
 
+// RebuildTradesForAccountSymbol re-runs the FIFO builder for a single (account, symbol)
+// after a manual execution change in the /admin/transactions reconcile editor. userID is
+// the acting web user, passed EXPLICITLY (not via effectiveUserID, which falls back to the
+// watch-folder owner in the web layer). The Builder scopes its account lookup by this
+// userID, so passing the wrong one just fails the rebuild rather than touching foreign data.
+func (s *ImportService) RebuildTradesForAccountSymbol(ctx context.Context, userID, accountID int64, symbol string) error {
+	tx, err := s.DB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	defer tx.Rollback()
+	q := s.Queries.WithTx(tx)
+	tz := s.Timezone
+	if tz == nil {
+		tz = time.UTC
+	}
+	builder := &positions.Builder{Queries: q, Timezone: tz, UserID: userID}
+	if _, err := builder.Rebuild(ctx, []positions.Key{{AccountID: accountID, Symbol: symbol}}); err != nil {
+		return fmt.Errorf("rebuild %d/%s: %w", accountID, symbol, err)
+	}
+	return tx.Commit()
+}
+
 // runRebuild is the shared "build a positions.Builder with the service
 // timezone, replay these keys" body used by all three Rebuild* helpers.
 func (s *ImportService) runRebuild(ctx context.Context, q *models.Queries, keys []positions.Key) error {

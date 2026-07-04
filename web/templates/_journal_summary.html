@@ -52,6 +52,7 @@
         <th>Account</th>
         <th>Symbol</th>
         <th>Dir</th>
+        <th>Horizon</th>
         <th class="tabular">Qty</th>
         <th class="tabular">Net P&amp;L</th>
         {{if $allowUnlink}}<th></th>{{end}}
@@ -64,6 +65,7 @@
         <td>{{.AccountName}}</td>
         <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
         <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td>{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
         <td class="tabular num">{{.Qty}}</td>
         <td class="tabular num">{{pnlChip .NetPnl}}</td>
         {{if $allowUnlink}}

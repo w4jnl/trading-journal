@@ -1,0 +1,173 @@
+{{define "title"}}Transactions — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+<h1>Transactions <span class="muted" style="font-weight:400;">· reconcile</span></h1>
+<p class="muted" style="font-size:12px; max-width:70ch;">
+  Executions are the source of truth; trades rebuild automatically after every change.
+  Deletes are soft (kept as a tombstone so a re-import can't resurrect them). Use this to fix
+  fills a broker export dropped or duplicated.
+</p>
+
+{{if .Flash}}<div class="flash saved" style="margin:12px 0;">{{.Flash}}</div>{{end}}
+{{if .FlashErr}}<div class="flash empty" role="alert" style="margin:12px 0;">{{.FlashErr}}</div>{{end}}
+
+{{template "open_positions" .OpenPositions}}
+
+{{/* ---- filter ---- */}}
+<form method="get" action="/admin/transactions" class="card txn-filter">
+  <label class="field"><span class="field-label">Account</span>
+    <select name="account_id">
+      <option value="0">All accounts</option>
+      {{range .Accounts}}
+        <option value="{{.ID}}" {{if eq $.Filter.AccountID .ID}}selected{{end}}>{{.Name}} ({{.AccountRef}}){{if eq .CommissionSource "inline"}} · read-only{{end}}</option>
+      {{end}}
+    </select>
+  </label>
+  <label class="field"><span class="field-label">Contract</span>
+    <input type="text" name="symbol" value="{{.Filter.Symbol}}" placeholder="e.g. MESU26" style="width:130px;"></label>
+  <label class="field"><span class="field-label">From</span>
+    <input type="date" name="from" value="{{.Filter.From}}"></label>
+  <label class="field"><span class="field-label">To</span>
+    <input type="date" name="to" value="{{.Filter.To}}"></label>
+  <label class="field"><span class="field-label">Side</span>
+    <select name="side">
+      <option value="">any</option>
+      <option value="buy" {{if eq .Filter.Side "buy"}}selected{{end}}>buy</option>
+      <option value="sell" {{if eq .Filter.Side "sell"}}selected{{end}}>sell</option>
+    </select>
+  </label>
+  <label class="field" style="flex-direction:row; align-items:center; gap:6px;">
+    <input type="checkbox" name="deleted" value="1" {{if .Filter.IncludeDeleted}}checked{{end}}>
+    <span class="field-label" style="margin:0;">show deleted</span></label>
+  <div class="row-sm">
+    <button type="submit" class="btn btn--primary btn--sm">Apply</button>
+    <a href="/admin/transactions" class="btn btn--ghost btn--sm">Clear</a>
+  </div>
+</form>
+
+{{/* ---- create ---- */}}
+<details class="card txn-new">
+  <summary><span class="btn btn--primary btn--sm">+ New transaction</span></summary>
+  <form method="post" action="/admin/transactions?{{.FilterQuery}}" class="txn-form">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="txn-form-grid">
+      <label class="field"><span class="field-label">Account</span>
+        <select name="account_id" required>
+          <option value="">— pick —</option>
+          {{range .Accounts}}{{if ne .CommissionSource "inline"}}
+            <option value="{{.ID}}" {{if eq $.Filter.AccountID .ID}}selected{{end}}>{{.Name}} ({{.AccountRef}})</option>
+          {{end}}{{end}}
+        </select>
+      </label>
+      <label class="field"><span class="field-label">Contract</span>
+        <input type="text" name="symbol" placeholder="MESU26" value="{{.Filter.Symbol}}" required></label>
+      <label class="field"><span class="field-label">Root</span>
+        <input type="text" name="symbol_root" placeholder="MES" required></label>
+      <label class="field"><span class="field-label">Side</span>
+        <select name="side"><option value="buy">buy</option><option value="sell">sell</option></select></label>
+      <label class="field"><span class="field-label">Qty</span>
+        <input type="number" name="qty" step="any" min="0" placeholder="1" required></label>
+      <label class="field"><span class="field-label">Price</span>
+        <input type="number" name="price" step="any" min="0" placeholder="0.00" required></label>
+      <label class="field"><span class="field-label">Time (trading tz)</span>
+        <input type="datetime-local" name="exec_time" value="{{.NowLocal}}" step="1" required></label>
+      <label class="field"><span class="field-label">Broker ID <span class="muted" style="font-weight:400;">(optional)</span></span>
+        <input type="text" name="broker_exec_id" placeholder="auto — or paste a broker ticket"></label>
+    </div>
+    <div class="row" style="margin-top:10px;"><button type="submit" class="btn btn--primary btn--sm">Create fill</button></div>
+  </form>
+</details>
+
+{{/* ---- list: flat table, one Edit toggle reveals inputs on every row, one Save ---- */}}
+<div class="row-sm" style="margin:14px 0 8px; align-items:center;">
+  <strong>Transactions</strong> <span class="muted">({{len .Rows}})</span>
+  <div class="row-sm" style="margin-left:auto;">
+    <button type="button" class="btn btn--secondary btn--sm" id="recon-edit">Edit</button>
+    <button type="submit" form="txn-form" class="btn btn--primary btn--sm recon-editbtn" style="display:none;">Save changes</button>
+    <button type="button" class="btn btn--ghost btn--sm recon-editbtn" id="recon-cancel" style="display:none;">Cancel</button>
+  </div>
+</div>
+
+{{/* The bulk-save form lives outside the table; row inputs reference it via form="txn-form"
+     (avoids table-in-form browser quirks - same approach as the Accounts page). */}}
+<form id="txn-form" method="post" action="/admin/transactions/save?{{.FilterQuery}}">
+  <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+</form>
+
+<div id="recon" class="table-scroll">
+  <table class="reconcile">
+    <thead>
+      <tr>
+        <th>Time</th><th>Contract</th><th>Root</th><th>Side</th>
+        <th class="tabular">Qty</th><th class="tabular">Price</th><th>Account</th><th>Broker ID</th><th class="recon-del-col"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Rows}}
+      <tr class="{{if .Deleted}}txn-item--deleted{{end}}">
+        <td>
+          <span class="tv num muted">{{ltime .ExecTime "datetime-sec"}}</span>
+          {{if not .Inline}}<input class="te" form="txn-form" type="datetime-local" step="1" name="txn.{{.ID}}.exec_time" value="{{dtlocal .ExecTime}}">{{end}}
+        </td>
+        <td>
+          <span class="tv"><strong>{{.Symbol}}</strong></span>
+          {{if not .Inline}}<input class="te" form="txn-form" type="text" name="txn.{{.ID}}.symbol" value="{{.Symbol}}">{{end}}
+        </td>
+        <td>
+          <span class="tv muted">{{.SymbolRoot}}</span>
+          {{if not .Inline}}<input class="te" form="txn-form" type="text" name="txn.{{.ID}}.symbol_root" value="{{.SymbolRoot}}">{{end}}
+        </td>
+        <td>
+          <span class="tv"><span class="pill {{if eq .Side "buy"}}dir-long{{else}}dir-short{{end}}">{{.Side}}</span></span>
+          {{if not .Inline}}<select class="te" form="txn-form" name="txn.{{.ID}}.side"><option value="buy" {{if eq .Side "buy"}}selected{{end}}>buy</option><option value="sell" {{if eq .Side "sell"}}selected{{end}}>sell</option></select>{{end}}
+        </td>
+        <td class="tabular">
+          <span class="tv num">{{.Qty}}</span>
+          {{if not .Inline}}<input class="te" form="txn-form" type="number" step="any" min="0" name="txn.{{.ID}}.qty" value="{{.Qty}}">{{end}}
+        </td>
+        <td class="tabular">
+          <span class="tv num">{{printf "%.2f" .Price}}</span>
+          {{if not .Inline}}<input class="te" form="txn-form" type="number" step="any" min="0" name="txn.{{.ID}}.price" value="{{.Price}}">{{end}}
+        </td>
+        <td class="muted" style="font-size:12px;">
+          {{.AccountName}}
+          {{if .Manual}}<span class="pill pill--retired">manual</span>{{end}}
+          {{if .Edited}}<span class="pill pill--retired">edited</span>{{end}}
+          {{if .Deleted}}<span class="pill dir-short">deleted</span>{{end}}
+          {{if .Inline}}<span class="pill" title="TopstepX trades-CSV account - synthetic executions, edit at source">read-only</span>{{end}}
+        </td>
+        <td><code class="num muted" style="font-size:11px;" title="Broker fill id / ticket - the dedup key">{{.BrokerExecID}}</code></td>
+        <td class="recon-del-col">
+          {{if not .Inline}}
+            {{if .Deleted}}
+            <label class="te recon-del"><input type="checkbox" form="txn-form" name="txn.{{.ID}}.restore"> restore</label>
+            {{else}}
+            <label class="te recon-del"><input type="checkbox" form="txn-form" name="txn.{{.ID}}.delete"> delete</label>
+            {{end}}
+          {{end}}
+        </td>
+      </tr>
+      {{else}}
+      <tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">No transactions match the filter.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+
+<script>
+  (function () {
+    var wrap = document.getElementById('recon');
+    var editBtn = document.getElementById('recon-edit');
+    if (!wrap || !editBtn) return;
+    var editActions = document.querySelectorAll('.recon-editbtn');
+    editBtn.addEventListener('click', function () {
+      wrap.classList.add('editing');
+      editBtn.style.display = 'none';
+      editActions.forEach(function (b) { b.style.display = ''; });
+    });
+    var cancel = document.getElementById('recon-cancel');
+    if (cancel) cancel.addEventListener('click', function () { location.reload(); });
+  })();
+</script>
+{{end}}

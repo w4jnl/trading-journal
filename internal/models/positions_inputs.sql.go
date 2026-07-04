@@ -60,8 +60,8 @@ func (q *Queries) ListDistinctSymbolsForAccount(ctx context.Context, accountID i
 }
 
 const listExecutionsForAccountSymbol = `-- name: ListExecutionsForAccountSymbol :many
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data FROM executions
-WHERE account_id = ? AND symbol = ?
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at FROM executions
+WHERE account_id = ? AND symbol = ? AND deleted_at IS NULL
 ORDER BY exec_time, id
 `
 
@@ -70,6 +70,8 @@ type ListExecutionsForAccountSymbolParams struct {
 	Symbol    string `json:"symbol"`
 }
 
+// FIFO builder input. Soft-deleted rows (deleted_at set via the reconcile editor)
+// are excluded so a manual delete actually removes the fill from trade reconstruction.
 func (q *Queries) ListExecutionsForAccountSymbol(ctx context.Context, arg ListExecutionsForAccountSymbolParams) ([]Execution, error) {
 	rows, err := q.db.QueryContext(ctx, listExecutionsForAccountSymbol, arg.AccountID, arg.Symbol)
 	if err != nil {
@@ -91,6 +93,9 @@ func (q *Queries) ListExecutionsForAccountSymbol(ctx context.Context, arg ListEx
 			&i.Commission,
 			&i.ExecTime,
 			&i.RawData,
+			&i.DeletedAt,
+			&i.Manual,
+			&i.EditedAt,
 		); err != nil {
 			return nil, err
 		}
