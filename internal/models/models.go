@@ -71,17 +71,20 @@ type DailyStat struct {
 }
 
 type Execution struct {
-	ID           int64     `json:"id"`
-	AccountID    int64     `json:"account_id"`
-	BrokerExecID string    `json:"broker_exec_id"`
-	Symbol       string    `json:"symbol"`
-	SymbolRoot   string    `json:"symbol_root"`
-	Side         string    `json:"side"`
-	Qty          float64   `json:"qty"`
-	Price        float64   `json:"price"`
-	Commission   *float64  `json:"commission"`
-	ExecTime     time.Time `json:"exec_time"`
-	RawData      *string   `json:"raw_data"`
+	ID           int64      `json:"id"`
+	AccountID    int64      `json:"account_id"`
+	BrokerExecID string     `json:"broker_exec_id"`
+	Symbol       string     `json:"symbol"`
+	SymbolRoot   string     `json:"symbol_root"`
+	Side         string     `json:"side"`
+	Qty          float64    `json:"qty"`
+	Price        float64    `json:"price"`
+	Commission   *float64   `json:"commission"`
+	ExecTime     time.Time  `json:"exec_time"`
+	RawData      *string    `json:"raw_data"`
+	DeletedAt    *time.Time `json:"deleted_at"`
+	Manual       int64      `json:"manual"`
+	EditedAt     *time.Time `json:"edited_at"`
 }
 
 type Instrument struct {

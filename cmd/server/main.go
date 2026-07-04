@@ -125,6 +125,7 @@ func debugHTTP(next http.Handler) http.Handler {
 func run() error {
 	cfgPath := flag.String("config", "config.yaml", "path to config.yaml")
 	debug := flag.Bool("d", false, "verbose debug logging (api/mcp requests + AI tool calls)")
+	devUser := flag.String("dev", "", "DEV ONLY: authenticate every request as this username, bypassing login (mimics a proxy Remote-User header). For local development without a proxy - NEVER expose such an instance.")
 	flag.Parse()
 	if *debug {
 		slog.SetLogLoggerLevel(slog.LevelDebug)
@@ -245,10 +246,27 @@ func run() error {
 		slog.Warn("auth.cookie_secure = false; session cookie will be sent over plain HTTP (only safe on a trusted private network)")
 	}
 
-	// Authenticator selection from cfg.Auth.Mode. Defaults to local.
+	// Authenticator selection. The -dev flag short-circuits config.Auth.Mode: it
+	// authenticates EVERY request as the given user (auth.Stub), so you can run
+	// locally without a proxy or a login/password. It bypasses all authentication,
+	// so it must never front a real deployment - hence the loud warning and the
+	// "DEV ONLY" flag help.
 	var authn auth.Authenticator
 	var bootstrapUserID int64
-	switch cfg.Auth.Mode {
+	authMode := cfg.Auth.Mode
+	if *devUser != "" {
+		authMode = "dev"
+	}
+	switch authMode {
+	case "dev":
+		stub, err := auth.NewStub(conn, *devUser)
+		if err != nil {
+			return fmt.Errorf("dev auth: resolve user %q: %w", *devUser, err)
+		}
+		authn = stub
+		bootstrapUserID = stub.User.ID
+		slog.Warn("DEV AUTH ENABLED - every request is authenticated as this user with no login; do NOT expose this instance to an untrusted network",
+			"user", stub.User.Username, "admin", stub.User.IsAdmin)
 	case "", "local":
 		la := &auth.LocalAuth{
 			DB:       conn,
@@ -316,6 +334,7 @@ func run() error {
 		AttachmentsDir:   attachments,
 		OIDashboardsDir:  cfg.OIDashboards.Root,
 		Timezone:         tz,
+		Version:          appVersion(),
 		CSRF:             csrf,
 		ActAs:            actAs,
 		MarketData:       marketCache,
@@ -429,6 +448,10 @@ func run() error {
 	mux.Handle("POST /admin/act-as/{id}", auth.RequireAdmin(http.HandlerFunc(h.AdminActAsStart)))
 	mux.HandleFunc("POST /admin/act-as/clear", h.AdminActAsClear)
 	// Admin market-data: review chart-cache coverage and backfill gaps.
+	mux.Handle("GET /admin/transactions", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionsPage)))
+	mux.Handle("POST /admin/transactions", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionCreate)))
+	mux.Handle("POST /admin/transactions/save", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionsBulkSave)))
+
 	mux.Handle("GET /admin/market-data", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataPage)))
 	mux.Handle("POST /admin/market-data/backfill", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataBackfill)))
 
@@ -515,7 +538,7 @@ func run() error {
 	}()
 
 	go func() {
-		slog.Info("server listening", "addr", srv.Addr, "auth_mode", cfg.Auth.Mode)
+		slog.Info("server listening", "addr", srv.Addr, "auth_mode", authMode)
 		if err := srv.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			slog.Error("listen", "err", err)
 			stop()

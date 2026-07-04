@@ -38,6 +38,7 @@ type Handlers struct {
 	OIDashboardsDir string // root folder containing daily OI dashboards (dashboard-YYYY-MM-DD.{html,pdf})
 	Timezone       *time.Location
 	Logger         *slog.Logger
+	Version         string // build version shown in the sidebar; set from cmd/server appVersion()
 
 	// CSRF mints + verifies session-bound CSRF tokens. main wires this from
 	// cfg.Auth.SessionSecret. Nil = no CSRF (acceptable in proxy mode where
@@ -98,6 +99,15 @@ func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page strin
 			if _, exists := m["OriginalUser"]; !exists {
 				if orig := auth.OriginalUserFrom(r.Context()); orig != nil {
 					m["OriginalUser"] = orig
+				}
+			}
+			// Always-on open-position badge in the sidebar. Cheap indexed count; the
+			// badge is non-critical, so any error just leaves it unset (no badge).
+			if _, exists := m["OpenPositionCount"]; !exists {
+				if u := auth.UserFrom(r.Context()); u != nil {
+					if n, err := h.Queries.CountOpenPositions(r.Context(), u.ID); err == nil {
+						m["OpenPositionCount"] = n
+					}
 				}
 			}
 		}
@@ -189,9 +199,27 @@ func (h *Handlers) funcMap() template.FuncMap {
 		// in-app Analyze button hides on an already-analyzed entry (re-running it is a
 		// no-op - analyzeEntry skips a marked entry).
 		"aiAnalyzed": func(body string) bool { return strings.Contains(body, aiMarkerLocal) },
-		"hasPrefix":  strings.HasPrefix,
-		"trimPrefix": strings.TrimPrefix,
-		"formatQty":  formatQty, // trailing-zero-free trade quantity
+		// posLabel renders a signed net position (open-positions panel/badge) as
+		// "long N" / "short N" with the absolute quantity.
+		"posLabel": func(net float64) string {
+			if net > 0 {
+				return fmt.Sprintf("long %g", net)
+			}
+			return fmt.Sprintf("short %g", -net)
+		},
+		// dtlocal formats a UTC time in the trading tz for a datetime-local input, at second
+		// precision so an unedited reconcile row round-trips to the same string on save.
+		"dtlocal": func(t time.Time) string { return t.In(loc).Format("2006-01-02T15:04:05") },
+		// tradeHorizon classifies a closed trade by holding time (Scalp/Intraday/Swing/
+		// Long-term); heldFor is the human duration for its tooltip; lower lowercases the
+		// horizon into a CSS class suffix.
+		"tradeHorizon": tradeHorizon,
+		"heldFor":      heldFor,
+		"lower":        strings.ToLower,
+		"appVersion":   func() string { return h.Version }, // build string in the sidebar footer
+		"hasPrefix":    strings.HasPrefix,
+		"trimPrefix":   strings.TrimPrefix,
+		"formatQty":    formatQty, // trailing-zero-free trade quantity
 		// lt / ltp render a timestamp as a <time class="lt"> carrying the UTC
 		// instant; a small client script (base.html) rewrites the text to the
 		// browser's local timezone. The inner text is a UTC fallback for no-JS.

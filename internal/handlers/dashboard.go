@@ -153,20 +153,28 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 	today := todayLocal(tz)
 	isStale := stats.HasTrades && !stats.Date.Equal(today)
 
+	// Open-position summary: nonzero (account, contract) nets = open/carried/data-gap
+	// positions. Empty list => the user is flat. Non-fatal; a lookup error just hides it.
+	openPositions, err := h.Queries.ListOpenPositions(ctx, userID(ctx))
+	if err != nil {
+		h.logger().Warn("dashboard open positions", "err", err)
+	}
+
 	h.renderPage(w, r, "dashboard.html", map[string]any{
-		"NavActive":    "dashboard",
-		"BackHref":     validBackHref(r),
-		"Stats":        stats,
-		"Equity":       equity,
-		"DateLabel":    stats.Date.Format("Mon, 2 Jan 2006"),
-		"IsStale":      isStale,
-		"LastSyncs":    lastSyncs,
-		"RecentTrades": recent,
-		"Trailing":     trailing,
-		"CurveXs":      curveXs,
-		"CurveYs":      curveYs,
-		"CurveTotal":   curveTotal,
-		"CurveHasData": len(curveXs) > 0,
+		"NavActive":     "dashboard",
+		"OpenPositions": openPositions,
+		"BackHref":      validBackHref(r),
+		"Stats":         stats,
+		"Equity":        equity,
+		"DateLabel":     stats.Date.Format("Mon, 2 Jan 2006"),
+		"IsStale":       isStale,
+		"LastSyncs":     lastSyncs,
+		"RecentTrades":  recent,
+		"Trailing":      trailing,
+		"CurveXs":       curveXs,
+		"CurveYs":       curveYs,
+		"CurveTotal":    curveTotal,
+		"CurveHasData":  len(curveXs) > 0,
 	})
 }
 

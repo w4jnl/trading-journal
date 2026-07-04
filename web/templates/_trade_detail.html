@@ -4,6 +4,7 @@
   <span class="num" style="font-size: 18px; font-weight: 600;">{{.Symbol}}</span>
   <span class="muted">({{.SymbolRoot}})</span>
   {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
+  {{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Holding time: {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}
   <span style="margin-left: auto;">{{template "id_ref" (dict "Label" "Trade" "ID" $.TradeID)}}</span>
 </div>
 <div class="muted" style="margin-bottom: 12px; font-size: 12px;">

@@ -414,7 +414,7 @@ func (q *Queries) ListDistinctSymbolRoots(ctx context.Context, userID int64) ([]
 }
 
 const listExecutionsForTrade = `-- name: ListExecutionsForTrade :many
-SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, te.role, te.qty_used
+SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, te.role, te.qty_used
 FROM executions e
 JOIN trade_executions te ON te.execution_id = e.id
 WHERE te.trade_id = ?
@@ -422,19 +422,22 @@ ORDER BY te.role ASC, e.exec_time, e.id
 `
 
 type ListExecutionsForTradeRow struct {
-	ID           int64     `json:"id"`
-	AccountID    int64     `json:"account_id"`
-	BrokerExecID string    `json:"broker_exec_id"`
-	Symbol       string    `json:"symbol"`
-	SymbolRoot   string    `json:"symbol_root"`
-	Side         string    `json:"side"`
-	Qty          float64   `json:"qty"`
-	Price        float64   `json:"price"`
-	Commission   *float64  `json:"commission"`
-	ExecTime     time.Time `json:"exec_time"`
-	RawData      *string   `json:"raw_data"`
-	Role         string    `json:"role"`
-	QtyUsed      float64   `json:"qty_used"`
+	ID           int64      `json:"id"`
+	AccountID    int64      `json:"account_id"`
+	BrokerExecID string     `json:"broker_exec_id"`
+	Symbol       string     `json:"symbol"`
+	SymbolRoot   string     `json:"symbol_root"`
+	Side         string     `json:"side"`
+	Qty          float64    `json:"qty"`
+	Price        float64    `json:"price"`
+	Commission   *float64   `json:"commission"`
+	ExecTime     time.Time  `json:"exec_time"`
+	RawData      *string    `json:"raw_data"`
+	DeletedAt    *time.Time `json:"deleted_at"`
+	Manual       int64      `json:"manual"`
+	EditedAt     *time.Time `json:"edited_at"`
+	Role         string     `json:"role"`
+	QtyUsed      float64    `json:"qty_used"`
 }
 
 func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]ListExecutionsForTradeRow, error) {
@@ -458,6 +461,9 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 			&i.Commission,
 			&i.ExecTime,
 			&i.RawData,
+			&i.DeletedAt,
+			&i.Manual,
+			&i.EditedAt,
 			&i.Role,
 			&i.QtyUsed,
 		); err != nil {
