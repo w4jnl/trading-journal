@@ -48,26 +48,26 @@ type tradeFilters struct {
 // rows can flag which trades already have an entry. There's at most one
 // trade-level entry per trade in v1.
 type tradeRow struct {
-	ID          int64
-	AccountID   int64
-	Symbol      string
-	SymbolRoot  string
-	Direction   string
-	Qty         float64
-	EntryPrice  float64
-	ExitPrice   *float64
-	EntryTime   time.Time
-	ExitTime    *time.Time
-	GrossPnl    *float64
-	Commission  *float64
-	NetPnl      *float64
-	Status      string
-	AccountName string
-	AccountFirm *string
-	AccountRetired bool   // true when account.active = 0; renders a "retired" pill + dimmed row
-	HasJournal  bool
-	JournalTag  string // "" if no entry or no tag set
-	GroupCount  int64  // number of group-journal entries that include this trade
+	ID             int64
+	AccountID      int64
+	Symbol         string
+	SymbolRoot     string
+	Direction      string
+	Qty            float64
+	EntryPrice     float64
+	ExitPrice      *float64
+	EntryTime      time.Time
+	ExitTime       *time.Time
+	GrossPnl       *float64
+	Commission     *float64
+	NetPnl         *float64
+	Status         string
+	AccountName    string
+	AccountFirm    *string
+	AccountRetired bool // true when account.active = 0; renders a "retired" pill + dimmed row
+	HasJournal     bool
+	JournalTag     string // "" if no entry or no tag set
+	GroupCount     int64  // number of group-journal entries that include this trade
 }
 
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
@@ -183,10 +183,10 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"FilterCount":      filters.Account.SelectedCount,
 		"PrevPage":         pageRef(r, filters.Page-1, pages),
 		"NextPage":         pageRef(r, filters.Page+1, pages),
-		"ChartXs":          chartXs,    // []int64 Unix timestamps (seconds)
-		"ChartYs":          chartYs,    // []float64 cumulative net P&L
-		"ChartTitle":       chartTitle, // empty string when chart is suppressed
-		"ChartTotal":       chartTotal, // final cumulative — drives stroke colour
+		"ChartXs":          chartXs,       // []int64 Unix timestamps (seconds)
+		"ChartYs":          chartYs,       // []float64 cumulative net P&L
+		"ChartTitle":       chartTitle,    // empty string when chart is suppressed
+		"ChartTotal":       chartTotal,    // final cumulative — drives stroke colour
 		"TradeBalances":    tradeBalances, // map[trade_id]float64, missing = no anchor
 		"ShowRetired":      filters.IncludeRetired,
 		"RetiredAuto":      retiredAutoOn,
@@ -508,7 +508,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 			break
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID:    userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			TradeID:    &tradeID,
 			AccountID:  &trade.AccountID,
 			EntryDate:  entryDate,
@@ -533,7 +533,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 			flash = "deleted"
 		} else {
 			if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID: userIDPtr(ctx),
+				UserID:     userIDPtr(ctx),
 				Body:       body,
 				Mood:       existing.Mood, // preserve mood; trade entries don't expose it in v1
 				Tag:        tag,

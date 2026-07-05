@@ -25,14 +25,14 @@ var firmsForCommissions = []string{"apex", "lucid", "topstep", "amp", "ibkr"}
 // orphanReason groups orphaned trades by why they're missing a commission,
 // so the diagnostics banner can show one row per fixable problem.
 type orphanReason struct {
-	Kind         string // "symbol_uncategorized" | "account_firm_missing" | "rate_missing"
-	SymbolRoot   string // populated for symbol_uncategorized and rate_missing
-	AccountID    int64  // populated for account_firm_missing
-	AccountName  string // populated for account_firm_missing
-	Firm         string // populated for rate_missing
-	AssetClass   string // populated for rate_missing
-	SizeClass    string // populated for rate_missing
-	TradeCount   int64
+	Kind        string // "symbol_uncategorized" | "account_firm_missing" | "rate_missing"
+	SymbolRoot  string // populated for symbol_uncategorized and rate_missing
+	AccountID   int64  // populated for account_firm_missing
+	AccountName string // populated for account_firm_missing
+	Firm        string // populated for rate_missing
+	AssetClass  string // populated for rate_missing
+	SizeClass   string // populated for rate_missing
+	TradeCount  int64
 }
 
 // CommissionsPage renders the /commissions admin page: diagnostics banner at
@@ -70,9 +70,9 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 	// Bucket orphans by reason. A single (account, symbol) row can only fall
 	// into one bucket — the LEFT JOIN with `cr.per_contract_per_side IS NULL` filter
 	// already excludes trades that have a matching rate row.
-	symAccum := map[string]int64{}              // symbol_root -> count (uncategorized symbol)
-	firmAccum := map[int64]*orphanReason{}      // account_id -> entry (missing firm)
-	rateAccum := map[string]*orphanReason{}     // "asset_class|firm|size_class" -> entry
+	symAccum := map[string]int64{}          // symbol_root -> count (uncategorized symbol)
+	firmAccum := map[int64]*orphanReason{}  // account_id -> entry (missing firm)
+	rateAccum := map[string]*orphanReason{} // "asset_class|firm|size_class" -> entry
 	for _, o := range orphanRows {
 		switch {
 		case o.AccountFirm == nil:
@@ -173,15 +173,15 @@ func (h *Handlers) CommissionsClassCreate(w http.ResponseWriter, r *http.Request
 
 // CommissionsBulkSave handles POST /commissions/save. One submission carries
 // edits to both rates and instrument categorization. The handler:
-//   1. Parses form fields keyed "rate.<asset_class>|<firm>|<size_class>.per_contract_per_side"
-//      (legacy "per_contract_rt" still accepted for in-flight tabs) and
-//      "instrument.<symbol_root>.<field>".
-//   2. Diffs each against the current DB value.
-//   3. For changed rates, upserts and queues a per-cell rebuild.
-//   4. For changed instrument categorizations, upserts and queues a per-symbol
-//      rebuild.
-//   5. Dedups rebuild work (a single (account_id, symbol) may be hit by both
-//      types of change).
+//  1. Parses form fields keyed "rate.<asset_class>|<firm>|<size_class>.per_contract_per_side"
+//     (legacy "per_contract_rt" still accepted for in-flight tabs) and
+//     "instrument.<symbol_root>.<field>".
+//  2. Diffs each against the current DB value.
+//  3. For changed rates, upserts and queues a per-cell rebuild.
+//  4. For changed instrument categorizations, upserts and queues a per-symbol
+//     rebuild.
+//  5. Dedups rebuild work (a single (account_id, symbol) may be hit by both
+//     types of change).
 func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := r.ParseForm(); err != nil {
@@ -218,8 +218,8 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 		Multiplier string
 		seen       map[string]bool
 	}
-	rateInputs := map[string]string{}         // key -> rate string
-	instInputs := map[string]*instInput{}     // symbol_root -> fields
+	rateInputs := map[string]string{}     // key -> rate string
+	instInputs := map[string]*instInput{} // symbol_root -> fields
 	getInst := func(sym string) *instInput {
 		if v, ok := instInputs[sym]; ok {
 			return v

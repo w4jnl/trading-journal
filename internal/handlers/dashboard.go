@@ -36,13 +36,13 @@ type dashboardStats struct {
 type dashboardTrailing struct {
 	HasData bool
 
-	NetPnl     float64
-	NetSpark   []float64 // daily cumulative net P&L, 30 entries
+	NetPnl   float64
+	NetSpark []float64 // daily cumulative net P&L, 30 entries
 
-	Trades     int64
+	Trades      int64
 	TradesSpark []float64 // daily trade count, 30 entries
 
-	WinRate     float64 // 0..1
+	WinRate      float64   // 0..1
 	WinRateSpark []float64 // 7-day rolling win rate, 30 entries
 
 	AvgWin  float64
@@ -55,11 +55,11 @@ type dashboardTrailing struct {
 // dailyPnL is one trading day inside the 60-day window. Used both for the
 // hero equity-curve series and for computing the trailing stat strip.
 type dailyPnL struct {
-	Date    time.Time
-	Net     float64
-	Trades  int64
-	Wins    int64
-	Losses  int64
+	Date   time.Time
+	Net    float64
+	Trades int64
+	Wins   int64
+	Losses int64
 }
 
 // dashboardEquity is the at-a-glance equity tile shown atop the dashboard.

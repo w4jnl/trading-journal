@@ -31,9 +31,9 @@ type BalanceAnchor struct {
 type AccountBalance struct {
 	Known       bool
 	Balance     float64
-	AsOf        time.Time     // the "today" date the balance was computed for
-	LatestDate  time.Time     // the latest anchor's anchor_date that drove the result
-	HasNoChange bool          // true when no closed trades have exited since the anchor
+	AsOf        time.Time // the "today" date the balance was computed for
+	LatestDate  time.Time // the latest anchor's anchor_date that drove the result
+	HasNoChange bool      // true when no closed trades have exited since the anchor
 	Anchors     []BalanceAnchor
 }
 
@@ -146,18 +146,18 @@ func dayStart(t time.Time, tz *time.Location) time.Time {
 // those rows.
 //
 // Algorithm — for each account independently:
-//   1. Sort the account's closed trades by exit_time ASC.
-//   2. Sort its anchors by anchor_date ASC. The anchor balance is taken to
-//      mean "end-of-day on anchor_date" (every trade exited on or before
-//      that day's last instant is already baked into it).
-//   3. For each trade, pick the relevant anchor: the latest anchor whose date
-//      is ≤ the trade's exit-day, or — if all anchors are in the future —
-//      the earliest anchor (back-fill).
-//   4. Compute balance_after via a cumulative net-P&L array:
-//      - trade at index i ≤ anchorEndIdx  (trade is in the anchor's past):
-//          balance = anchor.Balance − Σ net_pnl(j) for j in (i, anchorEndIdx]
-//      - trade at index i > anchorEndIdx  (trade is in the anchor's future):
-//          balance = anchor.Balance + Σ net_pnl(j) for j in (anchorEndIdx, i]
+//  1. Sort the account's closed trades by exit_time ASC.
+//  2. Sort its anchors by anchor_date ASC. The anchor balance is taken to
+//     mean "end-of-day on anchor_date" (every trade exited on or before
+//     that day's last instant is already baked into it).
+//  3. For each trade, pick the relevant anchor: the latest anchor whose date
+//     is ≤ the trade's exit-day, or — if all anchors are in the future —
+//     the earliest anchor (back-fill).
+//  4. Compute balance_after via a cumulative net-P&L array:
+//     - trade at index i ≤ anchorEndIdx  (trade is in the anchor's past):
+//     balance = anchor.Balance − Σ net_pnl(j) for j in (i, anchorEndIdx]
+//     - trade at index i > anchorEndIdx  (trade is in the anchor's future):
+//     balance = anchor.Balance + Σ net_pnl(j) for j in (anchorEndIdx, i]
 func (h *Handlers) loadTradeBalances(ctx context.Context) (map[int64]*float64, error) {
 	tz := h.localTZ()
 
@@ -398,4 +398,3 @@ func (h *Handlers) renderBalanceCell(w http.ResponseWriter, r *http.Request, acc
 		"Currency": acct.Currency,
 	})
 }
-

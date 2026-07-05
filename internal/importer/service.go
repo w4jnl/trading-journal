@@ -238,8 +238,9 @@ func ensureClaimCompatible(ctx context.Context, q *models.Queries, userID, accou
 //
 // TopstepX ships two distinct shapes — the legacy orders export and the
 // newer per-trade export. We tell them apart by the second header column:
-//   Id,AccountName,…  → orders export
-//   Id,ContractName,… → trades export
+//
+//	Id,AccountName,…  → orders export
+//	Id,ContractName,… → trades export
 func DetectFormat(content []byte) Format {
 	content = stripBOMBytes(content)
 	end := bytes.IndexByte(content, '\n')
@@ -593,13 +594,13 @@ func upsertExecutionReturningID(ctx context.Context, q *models.Queries, p models
 
 // resolveTopstepAccount picks (or creates) the TopStep account a trades CSV
 // belongs to. Order of preference:
-//   1. Filename is a recognizable account ref → use it (create the account
-//      on first sight). Recognized shapes:
-//         - starts with "topstep_" / "topstepx_" (user-prefix convention)
-//         - or starts with "EXPRESS-" (TopstepX's own ref shape)
-//      In both cases the `_trades` suffix is also stripped.
-//   2. No recognizable ref. If exactly one TopStep account exists → use it.
-//   3. Else create TOPSTEP-DEFAULT with needs_setup=1.
+//  1. Filename is a recognizable account ref → use it (create the account
+//     on first sight). Recognized shapes:
+//     - starts with "topstep_" / "topstepx_" (user-prefix convention)
+//     - or starts with "EXPRESS-" (TopstepX's own ref shape)
+//     In both cases the `_trades` suffix is also stripped.
+//  2. No recognizable ref. If exactly one TopStep account exists → use it.
+//  3. Else create TOPSTEP-DEFAULT with needs_setup=1.
 //
 // All TopstepX-sourced accounts share `import_source = "topstepx_csv"` so the
 // trades export and the legacy orders export converge on the same row when
@@ -682,10 +683,10 @@ func (s *ImportService) resolveTopstepAccount(ctx context.Context, q *models.Que
 // ExtractTopstepAccountRef recovers a TopstepX account_ref from a filename
 // when the user explicitly signaled one. Two recognized conventions:
 //
-//   1. Prefix: "topstep_<ref>[_trades].csv" or "topstepx_<ref>[_trades].csv"
-//      → ref is everything between the prefix and the optional suffix.
-//   2. Native shape: "EXPRESS-<rest>[_trades].csv" — TopstepX's own account
-//      naming convention as seen in their exports.
+//  1. Prefix: "topstep_<ref>[_trades].csv" or "topstepx_<ref>[_trades].csv"
+//     → ref is everything between the prefix and the optional suffix.
+//  2. Native shape: "EXPRESS-<rest>[_trades].csv" — TopstepX's own account
+//     naming convention as seen in their exports.
 //
 // Anything else returns "" — we don't try to guess so a generic filename
 // like `topstepTrades.csv` doesn't accidentally invent a phantom account.

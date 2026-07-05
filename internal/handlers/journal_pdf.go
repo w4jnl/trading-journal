@@ -52,12 +52,12 @@ type pdfEntry struct {
 
 // page geometry, in mm.
 const (
-	pageMarginX        = 18.0
-	pageMarginTop      = 16.0
-	pageMarginBottom   = 18.0
-	bodyFontSize       = 11.0
-	bodyLineHeight     = 5.6 // ~1.5 line-height at 11pt
-	smallFontSize      = 9.0
+	pageMarginX      = 18.0
+	pageMarginTop    = 16.0
+	pageMarginBottom = 18.0
+	bodyFontSize     = 11.0
+	bodyLineHeight   = 5.6 // ~1.5 line-height at 11pt
+	smallFontSize    = 9.0
 )
 
 // RenderJournalPDF writes a complete PDF document to w. Returns an error
@@ -133,10 +133,10 @@ func RenderJournalPDF(w io.Writer, header pdfHeader, entries []pdfEntry) error {
 type pdfRenderer struct {
 	pdf          *fpdf.Fpdf
 	header       pdfHeader
-	pageWidth    float64               // mm; cached from GetPageSize
-	pageHeight   float64               // mm
-	contentWidth float64               // page width minus left+right margins
-	tr           func(string) string   // UTF-8 → CP1252; called before any text reaches the PDF
+	pageWidth    float64             // mm; cached from GetPageSize
+	pageHeight   float64             // mm
+	contentWidth float64             // page width minus left+right margins
+	tr           func(string) string // UTF-8 → CP1252; called before any text reaches the PDF
 }
 
 func (r *pdfRenderer) renderCover() {

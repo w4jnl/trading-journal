@@ -29,15 +29,15 @@ import (
 // Handlers groups every HTTP handler with its shared deps. main.go injects
 // concrete values; tests can swap any field.
 type Handlers struct {
-	Templates      fs.FS // embedded template tree; pages live at templates/<name>
-	DB             *sql.DB // raw connection for hand-written dynamic queries
-	ImportSvc      *importer.ImportService
-	Queries        *models.Queries
-	UploadsDir     string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
-	AttachmentsDir string // where journal-attached images are stored on disk
+	Templates       fs.FS   // embedded template tree; pages live at templates/<name>
+	DB              *sql.DB // raw connection for hand-written dynamic queries
+	ImportSvc       *importer.ImportService
+	Queries         *models.Queries
+	UploadsDir      string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
+	AttachmentsDir  string // where journal-attached images are stored on disk
 	OIDashboardsDir string // root folder containing daily OI dashboards (dashboard-YYYY-MM-DD.{html,pdf})
-	Timezone       *time.Location
-	Logger         *slog.Logger
+	Timezone        *time.Location
+	Logger          *slog.Logger
 	Version         string // build version shown in the sidebar; set from cmd/server appVersion()
 
 	// CSRF mints + verifies session-bound CSRF tokens. main wires this from
@@ -387,14 +387,24 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return ""
 		},
-		"mul":         func(a, b float64) float64 { return a * b },
-		"div":         func(a, b float64) float64 { if b == 0 { return 0 }; return a / b },
-		"abs":         func(f float64) float64 { if f < 0 { return -f }; return f },
-		"i64ToFloat":  func(i int64) float64 { return float64(i) },
-		"i64ToInt":    func(i int64) int { return int(i) },
-		"intToFloat":  func(i int) float64 { return float64(i) },
-		"negFloat":    func(f float64) float64 { return -f },
-		"isInf":       func(f float64) bool { return math.IsInf(f, 0) },
+		"mul": func(a, b float64) float64 { return a * b },
+		"div": func(a, b float64) float64 {
+			if b == 0 {
+				return 0
+			}
+			return a / b
+		},
+		"abs": func(f float64) float64 {
+			if f < 0 {
+				return -f
+			}
+			return f
+		},
+		"i64ToFloat": func(i int64) float64 { return float64(i) },
+		"i64ToInt":   func(i int64) int { return int(i) },
+		"intToFloat": func(i int) float64 { return float64(i) },
+		"negFloat":   func(f float64) float64 { return -f },
+		"isInf":      func(f float64) bool { return math.IsInf(f, 0) },
 		// barWidth returns 0..100 — the percentage to use as a CSS bar width.
 		// Used by the horizontal bar charts (Duration / Win Rate Analysis).
 		"barWidth": func(v, max float64) float64 {
@@ -552,8 +562,10 @@ func (h *Handlers) retiredAccountSet(ctx context.Context) (map[int64]bool, error
 
 // accountFilter holds the parsed multi-select filter shared by /trades,
 // /calendar, and /analytics. The `filter` query param accepts multiple values:
-//   acc:<id>      — include this exact account
-//   type:<slug>   — include every account whose `type` matches
+//
+//	acc:<id>      — include this exact account
+//	type:<slug>   — include every account whose `type` matches
+//
 // The resolved AccountIDs is the OR-union of both kinds. Active is true iff
 // the user selected anything, even if the union is empty (then "show none").
 // RawValues is the original list of selections, for re-rendering the

@@ -297,10 +297,10 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 	tz := h.localTZ()
 	for rows.Next() {
 		var (
-			id    int64
-			date  time.Time
-			body  string
-			tag   *string
+			id   int64
+			date time.Time
+			body string
+			tag  *string
 		)
 		if err := rows.Scan(&id, &date, &body, &tag); err != nil {
 			h.serverError(w, fmt.Errorf("scan recent: %w", err))

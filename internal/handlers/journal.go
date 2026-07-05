@@ -305,14 +305,14 @@ func exportQueryString(f journalFilters) string {
 // journalFilters carries the parsed feed filters: date range + scope + tag +
 // strategy.
 type journalFilters struct {
-	from, to      *time.Time
+	from, to       *time.Time
 	fromStr, toStr string
-	scopes        []string // "day" | "trade" | "week"
-	scopeSet      map[string]bool
+	scopes         []string // "day" | "trade" | "week"
+	scopeSet       map[string]bool
 	// tags is the set the user picked. Special value "" stands for "untagged"
 	// (tag column IS NULL). The DB tag values are good/neutral/bad.
-	tags    []string
-	tagSet  map[string]bool
+	tags   []string
+	tagSet map[string]bool
 	// strategies are the selected strategy ids; strategyNone selects entries
 	// with no strategy attached (strategy_id IS NULL).
 	strategies   []int64
@@ -702,7 +702,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID:    userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			TradeID:    nil,
 			AccountID:  nil,
 			EntryDate:  date,
@@ -729,7 +729,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID: userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			Body:       body,
 			Mood:       mood,
 			Tag:        tag,
@@ -924,7 +924,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID:    userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			TradeID:    nil,
 			AccountID:  nil,
 			EntryDate:  monday,
@@ -950,7 +950,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID: userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			Body:       body,
 			Mood:       existing.Mood,
 			Tag:        tag,
@@ -1101,10 +1101,12 @@ const exportTradeListCap = 5
 // tradesForEntry returns the trades relevant to a feed-row's entry, in the
 // shared linkedTrade shape. Dispatches based on scope so every entry in the
 // export can show the same "context-trades" block under its body:
-//   day   → trades closed on that local-tz day
-//   week  → trades closed within the ISO week starting at entry_date
-//   trade → the single trade pointed to by trade_id
-//   group → linked trades via journal_entry_trades
+//
+//	day   → trades closed on that local-tz day
+//	week  → trades closed within the ISO week starting at entry_date
+//	trade → the single trade pointed to by trade_id
+//	group → linked trades via journal_entry_trades
+//
 // Returns (nil, nil) when there's nothing to show — the caller suppresses
 // the section entirely in that case.
 func (h *Handlers) tradesForEntry(ctx context.Context, row feedRow, tz *time.Location) ([]linkedTrade, error) {
