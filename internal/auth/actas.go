@@ -19,6 +19,11 @@ import (
 
 const actAsCookieName = "act_as"
 
+// actAsTTL bounds how long a single act-as grant is valid. The expiry is baked
+// into the signed token (not just the cookie Expires attribute) so a captured
+// cookie value can't be replayed indefinitely until the signing secret rotates.
+const actAsTTL = 24 * time.Hour
+
 // ActAs lets an admin temporarily browse the app as another user. The
 // admin's underlying session stays intact; a separate signed cookie
 // carries the target user id. Every request consults this cookie AFTER
@@ -102,7 +107,8 @@ func (a *ActAs) SetCookie(w http.ResponseWriter, targetID int64) {
 	if a == nil || a.Secret == nil {
 		return
 	}
-	token := signActAsToken(targetID, a.Secret)
+	exp := time.Now().Add(actAsTTL)
+	token := signActAsToken(targetID, exp, a.Secret)
 	http.SetCookie(w, &http.Cookie{
 		Name:     actAsCookieName,
 		Value:    token,
@@ -110,7 +116,7 @@ func (a *ActAs) SetCookie(w http.ResponseWriter, targetID int64) {
 		HttpOnly: true,
 		Secure:   a.Secure,
 		SameSite: http.SameSiteLaxMode,
-		Expires:  time.Now().Add(24 * time.Hour),
+		Expires:  exp,
 	})
 }
 
@@ -127,9 +133,10 @@ func (a *ActAs) ClearCookie(w http.ResponseWriter) {
 	})
 }
 
-// signActAsToken returns base64(userID|hmac).
-func signActAsToken(userID int64, secret []byte) string {
-	payload := strconv.FormatInt(userID, 10)
+// signActAsToken returns base64(userID|expUnix|hmac). The HMAC covers
+// "userID|expUnix" so neither the target nor the expiry can be tampered with.
+func signActAsToken(userID int64, exp time.Time, secret []byte) string {
+	payload := strconv.FormatInt(userID, 10) + "|" + strconv.FormatInt(exp.Unix(), 10)
 	mac := hmac.New(sha256.New, secret)
 	mac.Write([]byte(payload))
 	sig := mac.Sum(nil)
@@ -137,25 +144,33 @@ func signActAsToken(userID int64, secret []byte) string {
 	return base64.RawURLEncoding.EncodeToString([]byte(raw))
 }
 
-// verifyActAsToken parses + verifies the token; returns (id, true) on
-// success, (0, false) on any mismatch.
+// verifyActAsToken parses + verifies the token; returns (id, true) on success,
+// (0, false) on any mismatch, malformed input, or expiry.
 func verifyActAsToken(tok string, secret []byte) (int64, bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(tok)
 	if err != nil {
 		return 0, false
 	}
-	parts := strings.SplitN(string(raw), "|", 2)
-	if len(parts) != 2 {
+	parts := strings.SplitN(string(raw), "|", 3)
+	if len(parts) != 3 {
 		return 0, false
 	}
 	id, err := strconv.ParseInt(parts[0], 10, 64)
 	if err != nil || id <= 0 {
 		return 0, false
 	}
+	expUnix, err := strconv.ParseInt(parts[1], 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	// Verify the signature over "userID|expUnix" before trusting the expiry.
 	want := hmac.New(sha256.New, secret)
-	want.Write([]byte(parts[0]))
+	want.Write([]byte(parts[0] + "|" + parts[1]))
 	wantB64 := base64.RawURLEncoding.EncodeToString(want.Sum(nil))
-	if !hmac.Equal([]byte(wantB64), []byte(parts[1])) {
+	if !hmac.Equal([]byte(wantB64), []byte(parts[2])) {
+		return 0, false
+	}
+	if time.Now().Unix() > expUnix {
 		return 0, false
 	}
 	return id, true
