@@ -15,6 +15,7 @@ import (
 	"github.com/gomarkdown/markdown"
 	mdHtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/microcosm-cc/bluemonday"
 
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -1046,10 +1047,29 @@ func (h *Handlers) JournalPreview(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(renderMarkdown(body)))
 }
 
-// renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown with
-// CommonMark extensions (tables, fenced code blocks) + AutoHeadingIDs. The output is
-// sanitized via html/template's auto-escape further up - but we trust gomarkdown's HTML
-// output here because the input is the user's own journal content (single-user app).
+// mdSanitizer strips dangerous HTML from rendered markdown. This app is
+// multi-user (proxy auto-provisioning, admin act-as impersonation), so a
+// journal/strategy body is untrusted input that another principal - notably an
+// admin using act-as - may render in their own browser. gomarkdown passes raw
+// inline HTML through and does not filter "javascript:" link URLs, and the
+// result is emitted via template.HTML (bypassing html/template escaping), so
+// without this pass a stored <script>/onerror=/javascript: payload would run in
+// the viewer's session. UGCPolicy keeps everything a journal needs (images,
+// links, tables, code, headings) while dropping scripts, event handlers, and
+// unsafe URL schemes. A built Policy is immutable and safe for concurrent use.
+var mdSanitizer = func() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	// Open external links in a new tab with a safe rel; images embed uploaded
+	// chart screenshots via relative /journal/attachments/ URLs (UGCPolicy
+	// allows relative + http(s), but not data: URIs - an SVG/XSS vector).
+	p.AddTargetBlankToFullyQualifiedLinks(true)
+	p.RequireNoReferrerOnFullyQualifiedLinks(true)
+	return p
+}()
+
+// renderMarkdown converts a markdown string into sanitized HTML. Uses gomarkdown
+// with CommonMark extensions (tables, fenced code blocks) + AutoHeadingIDs, then
+// runs the output through mdSanitizer (see its doc comment for the XSS rationale).
 //
 // Both the parser AND the renderer are created per call. With AutoHeadingIDs the renderer
 // keeps a per-render heading-ID dedup map (EnsureUniqueHeadingID), so a shared
@@ -1061,7 +1081,8 @@ func renderMarkdown(src string) string {
 	renderer := mdHtml.NewRenderer(mdHtml.RendererOptions{
 		Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
 	})
-	return string(markdown.Render(doc, renderer))
+	unsafe := markdown.Render(doc, renderer)
+	return string(mdSanitizer.SanitizeBytes(unsafe))
 }
 
 func (h *Handlers) localTZ() *time.Location {
