@@ -64,7 +64,6 @@ func accountTypeOptions() []accountTypeOption {
 	}
 }
 
-
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
 // back to /accounts/{id} to update the row in place via HTMX.
 func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
@@ -704,4 +703,3 @@ func boolToInt(b bool) int64 {
 	}
 	return 0
 }
-

@@ -116,6 +116,16 @@ func (a *LocalAuth) PostLogout(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
 }
 
+// dummyHash is compared against when the username is unknown so that a missing
+// user and a wrong password take the same time - defeating username enumeration
+// by timing. It is generated at bcrypt.DefaultCost, the SAME cost HashPassword
+// uses, on purpose: a mismatched cost (e.g. the old hardcoded $2a$12$ string
+// against cost-10 real hashes) makes the "no such user" branch measurably slower
+// and reintroduces the very signal this defends against. If the password cost is
+// ever raised, do it as a coordinated rehash-on-login migration so real hashes
+// and this dummy move together.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-defense-placeholder"), bcrypt.DefaultCost)
+
 // verify looks up the user by username, checks the bcrypt hash, and returns
 // the user on success.
 func (a *LocalAuth) verify(ctx context.Context, username, password string) (*User, error) {
@@ -125,9 +135,9 @@ func (a *LocalAuth) verify(ctx context.Context, username, password string) (*Use
 	row, err := a.Queries.GetUserByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			// Run a bcrypt compare against a dummy hash so the timing of a
-			// missing username matches a wrong-password attempt.
-			_ = bcrypt.CompareHashAndPassword([]byte("$2a$12$invalidinvalidinvalidinvalidinvalidinvalidinvalidinval"), []byte(password))
+			// Run a bcrypt compare against a same-cost dummy hash so the timing
+			// of a missing username matches a wrong-password attempt.
+			_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
 			return nil, errors.New("no such user")
 		}
 		return nil, err

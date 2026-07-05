@@ -104,10 +104,10 @@ type Backup struct {
 // of all pre-multiuser data; it must be present on first boot and is then
 // inert.
 type Auth struct {
-	Mode            string    `yaml:"mode"`
-	BootstrapUser   string    `yaml:"bootstrap_user"`
-	SessionSecret   string    `yaml:"session_secret"`
-	SessionTTLHours int       `yaml:"session_ttl_hours"`
+	Mode            string `yaml:"mode"`
+	BootstrapUser   string `yaml:"bootstrap_user"`
+	SessionSecret   string `yaml:"session_secret"`
+	SessionTTLHours int    `yaml:"session_ttl_hours"`
 	// CookieSecure marks the session cookie Secure (browser only sends it
 	// over HTTPS). Nil = default true. Set to false for plain-HTTP deploys
 	// on a trusted VPN where TLS isn't terminated in front of the app.
@@ -157,10 +157,10 @@ func defaults() Config {
 			BootstrapUser:   "admin",
 			SessionTTLHours: 168,
 			Proxy: ProxyAuth{
-				UserHeader:  "Remote-User",
-				EmailHeader: "Remote-Email",
+				UserHeader:   "Remote-User",
+				EmailHeader:  "Remote-Email",
 				GroupsHeader: "Remote-Groups",
-				AdminGroup:  "admin",
+				AdminGroup:   "admin",
 			},
 		},
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},

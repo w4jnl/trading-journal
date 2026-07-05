@@ -30,13 +30,13 @@ func stripBOMBytes(b []byte) []byte {
 // after normalization. The ImportService turns these into rows in the
 // `executions` table.
 type Fill struct {
-	AccountRef   string    // raw account string from CSV (e.g. "APEX-100001-28")
-	BrokerExecID string    // unique fill/order id within (account, source)
-	Symbol       string    // contract code, e.g. "ESM6"; left as-is per source even when SymbolRoot is canonicalized
-	SymbolRoot   string    // canonicalized root, e.g. "ES"; CQG's "EP" is mapped to "ES"
-	Exchange     string    // optional; empty for TopstepX
-	Source       string    // data-feed origin from the export (MotiveWave Source col: "Rithmic", "AMP Global Clearing - CQG", …); empty for TopstepX
-	Side         string    // "buy" or "sell"
+	AccountRef   string // raw account string from CSV (e.g. "APEX-100001-28")
+	BrokerExecID string // unique fill/order id within (account, source)
+	Symbol       string // contract code, e.g. "ESM6"; left as-is per source even when SymbolRoot is canonicalized
+	SymbolRoot   string // canonicalized root, e.g. "ES"; CQG's "EP" is mapped to "ES"
+	Exchange     string // optional; empty for TopstepX
+	Source       string // data-feed origin from the export (MotiveWave Source col: "Rithmic", "AMP Global Clearing - CQG", …); empty for TopstepX
+	Side         string // "buy" or "sell"
 	Qty          float64
 	Price        float64
 	ExecTime     time.Time // UTC
@@ -47,10 +47,10 @@ type Fill struct {
 type Format string
 
 const (
-	FormatMotiveWave       Format = "motivewave_csv"
-	FormatTopstepX         Format = "topstepx_csv"        // legacy orders export
-	FormatTopstepXTrades   Format = "topstepx_trades_csv" // newer per-trade export
-	FormatUnknown          Format = ""
+	FormatMotiveWave     Format = "motivewave_csv"
+	FormatTopstepX       Format = "topstepx_csv"        // legacy orders export
+	FormatTopstepXTrades Format = "topstepx_trades_csv" // newer per-trade export
+	FormatUnknown        Format = ""
 )
 
 // TradeRecord is a pre-aggregated trade row from a CSV that already carries
@@ -61,10 +61,10 @@ const (
 // this shape; Apex/Lucid trades exports (if they ever land) would slot in
 // identically.
 type TradeRecord struct {
-	BrokerTradeID string    // file's stable Id — dedup key per account
-	Symbol        string    // contract code, e.g. "ESM6"
-	SymbolRoot    string    // canonical root, e.g. "ES"
-	Direction     string    // "long" / "short"
+	BrokerTradeID string // file's stable Id — dedup key per account
+	Symbol        string // contract code, e.g. "ESM6"
+	SymbolRoot    string // canonical root, e.g. "ES"
+	Direction     string // "long" / "short"
 	Qty           float64
 	EntryPrice    float64
 	ExitPrice     float64

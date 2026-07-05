@@ -40,15 +40,15 @@ type analyticsTrade struct {
 // analyticsBucket aggregates trades by some grouping key (symbol, direction,
 // day-of-week, etc).
 type analyticsBucket struct {
-	Key       string
-	Trades    int64
-	Wins      int64
-	Losses    int64
-	Net       float64
-	Gross     float64
-	Best      float64
-	Worst     float64
-	HasBW     bool // whether Best/Worst have valid values
+	Key    string
+	Trades int64
+	Wins   int64
+	Losses int64
+	Net    float64
+	Gross  float64
+	Best   float64
+	Worst  float64
+	HasBW  bool // whether Best/Worst have valid values
 }
 
 // AnalyticsPage renders /analytics — aggregate metrics plus per-symbol /
@@ -832,11 +832,11 @@ type durationBucket struct {
 // dowStat is the day-of-week summary shown in the "Most Active" / "Most
 // Profitable" / "Least Profitable" tiles.
 type dowStat struct {
-	DOW           string
-	ActiveDates   int64
-	TotalTrades   int64
-	AvgPerDay     float64
-	Net           float64
+	DOW         string
+	ActiveDates int64
+	TotalTrades int64
+	AvgPerDay   float64
+	Net         float64
 }
 
 // tradeBlurb is the small payload rendered in the Best / Worst trade tiles.
@@ -856,9 +856,9 @@ type tradeBlurb struct {
 // isn't already in headlineMetrics. Held in its own struct so the handler can
 // pass it as one template variable.
 type dashboardMetrics struct {
-	DayWinPct          float64       // % of active days with net > 0
-	BestDayPctOfProfit float64       // max(positive_day_net) / sum(positive_day_nets)
-	TotalLots          float64       // sum(trade.qty)
+	DayWinPct          float64 // % of active days with net > 0
+	BestDayPctOfProfit float64 // max(positive_day_net) / sum(positive_day_nets)
+	TotalLots          float64 // sum(trade.qty)
 	AvgTradeDuration   time.Duration
 	AvgWinDuration     time.Duration
 	AvgLossDuration    time.Duration

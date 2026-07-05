@@ -31,4 +31,3 @@ func Open(path string) (*sql.DB, error) {
 	}
 	return conn, nil
 }
-

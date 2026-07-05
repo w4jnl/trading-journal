@@ -15,7 +15,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // Maximum size for a single attachment upload. Chart screenshots from a 4K
@@ -274,16 +275,16 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 			excludeID = n
 		}
 	}
-	q := `SELECT id, entry_date, body, tag FROM journal_entries
-	      WHERE scope = ? AND id != ? AND user_id = ?
-	      ORDER BY entry_date DESC, id DESC
-	      LIMIT ?`
-	rows, err := h.DB.QueryContext(r.Context(), q, scope, excludeID, userID(r.Context()), limit)
+	rows, err := h.Queries.ListRecentJournalEntriesForEditor(r.Context(), models.ListRecentJournalEntriesForEditorParams{
+		Scope:  scope,
+		ID:     excludeID,
+		UserID: userIDPtr(r.Context()),
+		Limit:  int64(limit),
+	})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list recent: %w", err))
 		return
 	}
-	defer rows.Close()
 
 	type recent struct {
 		ID        int64  `json:"id"`
@@ -293,33 +294,23 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 		Body      string `json:"body"`       // full body for preview
 		Tag       string `json:"tag,omitempty"`
 	}
-	var out []recent
+	out := make([]recent, 0, len(rows))
 	tz := h.localTZ()
-	for rows.Next() {
-		var (
-			id    int64
-			date  time.Time
-			body  string
-			tag   *string
-		)
-		if err := rows.Scan(&id, &date, &body, &tag); err != nil {
-			h.serverError(w, fmt.Errorf("scan recent: %w", err))
-			return
-		}
-		d := date.In(tz)
-		snip := strings.TrimSpace(body)
-		if r := []rune(snip); len(r) > 140 {
-			snip = string(r[:140]) + "…"
+	for _, row := range rows {
+		d := row.EntryDate.In(tz)
+		snip := strings.TrimSpace(row.Body)
+		if rs := []rune(snip); len(rs) > 140 {
+			snip = string(rs[:140]) + "…"
 		}
 		entry := recent{
-			ID:        id,
+			ID:        row.ID,
 			EntryDate: d.Format("2006-01-02"),
 			DateLabel: d.Format("Mon, 2 Jan 2006"),
 			Snippet:   snip,
-			Body:      body,
+			Body:      row.Body,
 		}
-		if tag != nil {
-			entry.Tag = *tag
+		if row.Tag != nil {
+			entry.Tag = *row.Tag
 		}
 		out = append(out, entry)
 	}
@@ -333,7 +324,10 @@ func (h *Handlers) JournalTemplatesList(w http.ResponseWriter, r *http.Request) 
 	scope := strings.TrimSpace(r.URL.Query().Get("scope"))
 	// Templates are global (builtin=1, user_id NULL) plus per-user customs
 	// (builtin=0, user_id = me). Build the WHERE around that ownership rule
-	// first; an optional scope filter narrows the list further.
+	// first; an optional scope filter narrows the list further. Kept as raw SQL
+	// (not sqlc) because the scope clause is conditionally appended - sqlc's
+	// generated queries have a fixed parameter list and can't express an
+	// optional WHERE.
 	q := `SELECT id, name, scope, body, builtin FROM journal_templates
 	      WHERE (builtin = 1 OR user_id = ?)`
 	args := []any{userID(r.Context())}

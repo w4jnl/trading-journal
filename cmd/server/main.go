@@ -101,6 +101,39 @@ func (s *statusRecorder) Flush() {
 	}
 }
 
+// contentSecurityPolicy is deliberately permissive on inline script/style
+// ('unsafe-inline') because base.html carries several inline <script>/<style>
+// blocks and an inline chart-data blob; the primary XSS control is server-side
+// sanitization of rendered markdown (see handlers.renderMarkdown). script-src
+// still restricts *sources* to self plus the htmx CDN, and
+// frame-ancestors/base-uri/object-src/form-action add clickjacking and
+// injection protections independent of inline handling. Follow-up to tighten:
+// self-host htmx and nonce the inline scripts, then drop 'unsafe-inline'.
+const contentSecurityPolicy = "default-src 'self'; " +
+	"script-src 'self' 'unsafe-inline' https://unpkg.com; " +
+	"style-src 'self' 'unsafe-inline'; " +
+	"img-src 'self' data:; " +
+	"font-src 'self'; " +
+	"connect-src 'self'; " +
+	"frame-ancestors 'none'; " +
+	"base-uri 'self'; " +
+	"form-action 'self'; " +
+	"object-src 'none'"
+
+// securityHeaders sets defense-in-depth response headers on every response.
+// HSTS is intentionally omitted: this process commonly runs plain HTTP behind a
+// TLS-terminating reverse proxy, which is the correct place to own HSTS.
+func securityHeaders(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		h := w.Header()
+		h.Set("X-Content-Type-Options", "nosniff")
+		h.Set("X-Frame-Options", "DENY")
+		h.Set("Referrer-Policy", "same-origin")
+		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		next.ServeHTTP(w, r)
+	})
+}
+
 // debugHTTP logs each API/MCP request (method, path, status, duration, user) at
 // debug level. Mounted inside the key-auth chain so the user is resolved; a
 // near no-op when debug logging is off.
@@ -484,7 +517,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           root,
+		Handler:           securityHeaders(root),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

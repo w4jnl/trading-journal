@@ -15,6 +15,7 @@ import (
 	"github.com/gomarkdown/markdown"
 	mdHtml "github.com/gomarkdown/markdown/html"
 	"github.com/gomarkdown/markdown/parser"
+	"github.com/microcosm-cc/bluemonday"
 
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -304,14 +305,14 @@ func exportQueryString(f journalFilters) string {
 // journalFilters carries the parsed feed filters: date range + scope + tag +
 // strategy.
 type journalFilters struct {
-	from, to      *time.Time
+	from, to       *time.Time
 	fromStr, toStr string
-	scopes        []string // "day" | "trade" | "week"
-	scopeSet      map[string]bool
+	scopes         []string // "day" | "trade" | "week"
+	scopeSet       map[string]bool
 	// tags is the set the user picked. Special value "" stands for "untagged"
 	// (tag column IS NULL). The DB tag values are good/neutral/bad.
-	tags    []string
-	tagSet  map[string]bool
+	tags   []string
+	tagSet map[string]bool
 	// strategies are the selected strategy ids; strategyNone selects entries
 	// with no strategy attached (strategy_id IS NULL).
 	strategies   []int64
@@ -701,7 +702,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID:    userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			TradeID:    nil,
 			AccountID:  nil,
 			EntryDate:  date,
@@ -728,7 +729,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID: userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			Body:       body,
 			Mood:       mood,
 			Tag:        tag,
@@ -923,7 +924,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID:    userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			TradeID:    nil,
 			AccountID:  nil,
 			EntryDate:  monday,
@@ -949,7 +950,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID: userIDPtr(ctx),
+			UserID:     userIDPtr(ctx),
 			Body:       body,
 			Mood:       existing.Mood,
 			Tag:        tag,
@@ -1046,10 +1047,29 @@ func (h *Handlers) JournalPreview(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write([]byte(renderMarkdown(body)))
 }
 
-// renderMarkdown converts a markdown string into safe HTML. Uses gomarkdown with
-// CommonMark extensions (tables, fenced code blocks) + AutoHeadingIDs. The output is
-// sanitized via html/template's auto-escape further up - but we trust gomarkdown's HTML
-// output here because the input is the user's own journal content (single-user app).
+// mdSanitizer strips dangerous HTML from rendered markdown. This app is
+// multi-user (proxy auto-provisioning, admin act-as impersonation), so a
+// journal/strategy body is untrusted input that another principal - notably an
+// admin using act-as - may render in their own browser. gomarkdown passes raw
+// inline HTML through and does not filter "javascript:" link URLs, and the
+// result is emitted via template.HTML (bypassing html/template escaping), so
+// without this pass a stored <script>/onerror=/javascript: payload would run in
+// the viewer's session. UGCPolicy keeps everything a journal needs (images,
+// links, tables, code, headings) while dropping scripts, event handlers, and
+// unsafe URL schemes. A built Policy is immutable and safe for concurrent use.
+var mdSanitizer = func() *bluemonday.Policy {
+	p := bluemonday.UGCPolicy()
+	// Open external links in a new tab with a safe rel; images embed uploaded
+	// chart screenshots via relative /journal/attachments/ URLs (UGCPolicy
+	// allows relative + http(s), but not data: URIs - an SVG/XSS vector).
+	p.AddTargetBlankToFullyQualifiedLinks(true)
+	p.RequireNoReferrerOnFullyQualifiedLinks(true)
+	return p
+}()
+
+// renderMarkdown converts a markdown string into sanitized HTML. Uses gomarkdown
+// with CommonMark extensions (tables, fenced code blocks) + AutoHeadingIDs, then
+// runs the output through mdSanitizer (see its doc comment for the XSS rationale).
 //
 // Both the parser AND the renderer are created per call. With AutoHeadingIDs the renderer
 // keeps a per-render heading-ID dedup map (EnsureUniqueHeadingID), so a shared
@@ -1061,7 +1081,8 @@ func renderMarkdown(src string) string {
 	renderer := mdHtml.NewRenderer(mdHtml.RendererOptions{
 		Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
 	})
-	return string(markdown.Render(doc, renderer))
+	unsafe := markdown.Render(doc, renderer)
+	return string(mdSanitizer.SanitizeBytes(unsafe))
 }
 
 func (h *Handlers) localTZ() *time.Location {
@@ -1080,10 +1101,12 @@ const exportTradeListCap = 5
 // tradesForEntry returns the trades relevant to a feed-row's entry, in the
 // shared linkedTrade shape. Dispatches based on scope so every entry in the
 // export can show the same "context-trades" block under its body:
-//   day   → trades closed on that local-tz day
-//   week  → trades closed within the ISO week starting at entry_date
-//   trade → the single trade pointed to by trade_id
-//   group → linked trades via journal_entry_trades
+//
+//	day   → trades closed on that local-tz day
+//	week  → trades closed within the ISO week starting at entry_date
+//	trade → the single trade pointed to by trade_id
+//	group → linked trades via journal_entry_trades
+//
 // Returns (nil, nil) when there's nothing to show — the caller suppresses
 // the section entirely in that case.
 func (h *Handlers) tradesForEntry(ctx context.Context, row feedRow, tz *time.Location) ([]linkedTrade, error) {

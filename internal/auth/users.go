@@ -53,12 +53,12 @@ type PurgeUserOptions struct {
 //
 // Returns counts so the caller can show a useful confirmation.
 type PurgeStats struct {
-	Accounts        int64
-	Trades          int64
-	Attachments     int64 // attachment FILES removed (DB rows are wiped too)
-	DirsRemoved     int64
-	FailedFiles     int64 // count of files we couldn't unlink; check logs
-	FailedDirs      int64
+	Accounts    int64
+	Trades      int64
+	Attachments int64 // attachment FILES removed (DB rows are wiped too)
+	DirsRemoved int64
+	FailedFiles int64 // count of files we couldn't unlink; check logs
+	FailedDirs  int64
 }
 
 func PurgeUser(ctx context.Context, db *sql.DB, userID int64, opts PurgeUserOptions) (PurgeStats, error) {
