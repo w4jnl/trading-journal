@@ -380,6 +380,62 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, arg ListRecentJo
 	return items, nil
 }
 
+const listRecentJournalEntriesForEditor = `-- name: ListRecentJournalEntriesForEditor :many
+SELECT id, entry_date, body, tag FROM journal_entries
+WHERE scope = ? AND id != ? AND user_id = ?
+ORDER BY entry_date DESC, id DESC
+LIMIT ?
+`
+
+type ListRecentJournalEntriesForEditorParams struct {
+	Scope  string `json:"scope"`
+	ID     int64  `json:"id"`
+	UserID *int64 `json:"user_id"`
+	Limit  int64  `json:"limit"`
+}
+
+type ListRecentJournalEntriesForEditorRow struct {
+	ID        int64     `json:"id"`
+	EntryDate time.Time `json:"entry_date"`
+	Body      string    `json:"body"`
+	Tag       *string   `json:"tag"`
+}
+
+// Backs the editor's "Recall" dropdown: recent entries of one scope, excluding
+// the entry currently being edited. Ordered newest-first. Scoped by owner.
+func (q *Queries) ListRecentJournalEntriesForEditor(ctx context.Context, arg ListRecentJournalEntriesForEditorParams) ([]ListRecentJournalEntriesForEditorRow, error) {
+	rows, err := q.db.QueryContext(ctx, listRecentJournalEntriesForEditor,
+		arg.Scope,
+		arg.ID,
+		arg.UserID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListRecentJournalEntriesForEditorRow
+	for rows.Next() {
+		var i ListRecentJournalEntriesForEditorRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntryDate,
+			&i.Body,
+			&i.Tag,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listWeekJournalsInRange = `-- name: ListWeekJournalsInRange :many
 SELECT entry_date, tag FROM journal_entries
 WHERE user_id = ? AND scope = 'week' AND entry_date >= ? AND entry_date < ?

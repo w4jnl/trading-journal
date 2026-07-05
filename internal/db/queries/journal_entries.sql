@@ -34,6 +34,14 @@ WHERE user_id = ? AND scope = 'day'
 ORDER BY entry_date DESC, id DESC
 LIMIT ?;
 
+-- name: ListRecentJournalEntriesForEditor :many
+-- Backs the editor's "Recall" dropdown: recent entries of one scope, excluding
+-- the entry currently being edited. Ordered newest-first. Scoped by owner.
+SELECT id, entry_date, body, tag FROM journal_entries
+WHERE scope = ? AND id != ? AND user_id = ?
+ORDER BY entry_date DESC, id DESC
+LIMIT ?;
+
 -- name: ListDayJournalsInRange :many
 -- Used by /calendar to flag which dates have day-level entries.
 SELECT entry_date, tag FROM journal_entries
