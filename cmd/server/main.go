@@ -13,6 +13,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -123,13 +124,25 @@ const contentSecurityPolicy = "default-src 'self'; " +
 // securityHeaders sets defense-in-depth response headers on every response.
 // HSTS is intentionally omitted: this process commonly runs plain HTTP behind a
 // TLS-terminating reverse proxy, which is the correct place to own HSTS.
+//
+// The /oi/file/ subtree is special-cased: those are self-contained HTML/PDF
+// dashboards produced by an external pipeline and displayed inside a same-origin
+// <iframe> on /oi. The app's default-src 'self' CSP would block the dashboard's
+// own inline/loaded assets, and X-Frame-Options: DENY / frame-ancestors 'none'
+// would stop the iframe from rendering at all. So for that subtree we allow
+// same-origin framing and don't impose the content CSP.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
-		h.Set("X-Frame-Options", "DENY")
 		h.Set("Referrer-Policy", "same-origin")
-		h.Set("Content-Security-Policy", contentSecurityPolicy)
+		if strings.HasPrefix(r.URL.Path, "/oi/file/") {
+			h.Set("X-Frame-Options", "SAMEORIGIN")
+			h.Set("Content-Security-Policy", "frame-ancestors 'self'")
+		} else {
+			h.Set("X-Frame-Options", "DENY")
+			h.Set("Content-Security-Policy", contentSecurityPolicy)
+		}
 		next.ServeHTTP(w, r)
 	})
 }
