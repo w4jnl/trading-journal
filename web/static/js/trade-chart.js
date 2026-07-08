@@ -45,6 +45,41 @@
     };
   }
 
+  // tradingTZ reads the configured trading timezone (IANA name) that base.html
+  // exposes in <meta name="trading-tz">. Empty/missing -> undefined, which makes
+  // the Intl formatters fall back to the browser's local timezone.
+  function tradingTZ() {
+    var m = document.querySelector('meta[name="trading-tz"]');
+    var tz = m && m.getAttribute("content");
+    return tz && tz.trim() ? tz.trim() : undefined;
+  }
+
+  // tzFormatters builds Intl.DateTimeFormat instances bound to the trading tz.
+  // lightweight-charts renders its time axis in UTC by default; we override the
+  // axis-tick and crosshair formatters with these so times match the rest of the
+  // app. Chart `time` values are UNIX seconds (UTC instants) -> *1000 for Intl.
+  function tzFormatters(tz) {
+    var base = tz ? { timeZone: tz } : {};
+    function f(opts) { return new Intl.DateTimeFormat([], Object.assign({}, opts, base)); }
+    return {
+      year: f({ year: "numeric" }),
+      month: f({ month: "short" }),
+      day: f({ month: "short", day: "numeric" }),
+      time: f({ hour: "2-digit", minute: "2-digit", hour12: false }),
+      timeSec: f({ hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false }),
+      full: f({ year: "numeric", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false }),
+    };
+  }
+
+  // tickToMs converts a lightweight-charts tick time to milliseconds. Our series
+  // use numeric UNIX-second timestamps; the BusinessDay {year,month,day} branch
+  // is defensive (we never emit it) and treats the day as UTC midnight.
+  function tickToMs(time) {
+    if (typeof time === "number") return time * 1000;
+    if (time && time.year != null) return Date.UTC(time.year, (time.month || 1) - 1, time.day || 1);
+    return Date.now();
+  }
+
   function injectStyles() {
     if (document.getElementById("trade-chart-styles")) return;
     var s = document.createElement("style");
@@ -204,12 +239,31 @@
     var LWC = window.LightweightCharts;
     if (!LWC) return null;
     var c = themeColors();
+    var fmts = tzFormatters(tradingTZ());
     var chart = LWC.createChart(holder, {
       autoSize: true,
       layout: { background: { color: c.bg }, textColor: c.fg, attributionLogo: false },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       rightPriceScale: { borderColor: c.grid },
-      timeScale: { borderColor: c.grid, timeVisible: true, rightOffset: 3 },
+      // Render the time axis + crosshair in the configured trading timezone
+      // rather than lightweight-charts' UTC default.
+      localization: { timeFormatter: function (t) { return fmts.full.format(tickToMs(t)); } },
+      timeScale: {
+        borderColor: c.grid,
+        timeVisible: true,
+        rightOffset: 3,
+        tickMarkFormatter: function (time, tickMarkType) {
+          // TickMarkType: 0 Year, 1 Month, 2 DayOfMonth, 3 Time, 4 TimeWithSeconds.
+          var ms = tickToMs(time);
+          switch (tickMarkType) {
+            case 4: return fmts.timeSec.format(ms);
+            case 3: return fmts.time.format(ms);
+            case 1: return fmts.month.format(ms);
+            case 0: return fmts.year.format(ms);
+            default: return fmts.day.format(ms);
+          }
+        },
+      },
       crosshair: { mode: LWC.CrosshairMode ? LWC.CrosshairMode.Normal : 0 },
     });
 

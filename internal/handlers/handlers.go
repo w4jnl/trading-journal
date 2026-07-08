@@ -217,9 +217,13 @@ func (h *Handlers) funcMap() template.FuncMap {
 		"heldFor":      heldFor,
 		"lower":        strings.ToLower,
 		"appVersion":   func() string { return h.Version }, // build string in the sidebar footer
-		"hasPrefix":    strings.HasPrefix,
-		"trimPrefix":   strings.TrimPrefix,
-		"formatQty":    formatQty, // trailing-zero-free trade quantity
+		// tradingTZ is the configured trading timezone as an IANA name (e.g.
+		// "America/Chicago"), exposed to the client so chart libraries can render
+		// their time axes in it instead of UTC. See web/static/js/trade-chart.js.
+		"tradingTZ":  func() string { return loc.String() },
+		"hasPrefix":  strings.HasPrefix,
+		"trimPrefix": strings.TrimPrefix,
+		"formatQty":  formatQty, // trailing-zero-free trade quantity
 		// lt / ltp render a timestamp as a <time class="lt"> carrying the UTC
 		// instant; a small client script (base.html) rewrites the text to the
 		// browser's local timezone. The inner text is a UTC fallback for no-JS.

@@ -24,6 +24,9 @@
     })();
   </script>
   <meta name="csrf-token" content="{{.CSRFToken}}">
+  {{/* Configured trading timezone (IANA name) so chart libraries can render
+       their time axes in it instead of UTC. */}}
+  <meta name="trading-tz" content="{{tradingTZ}}">
   <link rel="preload" href="/static/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/JetBrainsMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/static/css/app.css">
