@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -124,7 +125,21 @@ func (a *LocalAuth) PostLogout(w http.ResponseWriter, r *http.Request) {
 // and reintroduces the very signal this defends against. If the password cost is
 // ever raised, do it as a coordinated rehash-on-login migration so real hashes
 // and this dummy move together.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("timing-defense-placeholder"), bcrypt.DefaultCost)
+//
+// Computed lazily via sync.OnceValue: bcrypt at DefaultCost costs ~50ms, which
+// a package-level init would charge to EVERY process start (server, CLI
+// subcommands, all test binaries) even when verify() never runs. A generation
+// error panics rather than being discarded - it can only mean crypto/rand is
+// broken (session-ID minting is equally dead then), and the silent alternative
+// is a nil hash whose compare fails instantly, quietly re-opening the timing
+// side channel.
+var dummyHash = sync.OnceValue(func() []byte {
+	h, err := bcrypt.GenerateFromPassword([]byte("timing-defense-placeholder"), bcrypt.DefaultCost)
+	if err != nil {
+		panic(fmt.Sprintf("auth: generate timing-defense dummy hash: %v", err))
+	}
+	return h
+})
 
 // verify looks up the user by username, checks the bcrypt hash, and returns
 // the user on success.
@@ -137,7 +152,7 @@ func (a *LocalAuth) verify(ctx context.Context, username, password string) (*Use
 		if errors.Is(err, sql.ErrNoRows) {
 			// Run a bcrypt compare against a same-cost dummy hash so the timing
 			// of a missing username matches a wrong-password attempt.
-			_ = bcrypt.CompareHashAndPassword(dummyHash, []byte(password))
+			_ = bcrypt.CompareHashAndPassword(dummyHash(), []byte(password))
 			return nil, errors.New("no such user")
 		}
 		return nil, err

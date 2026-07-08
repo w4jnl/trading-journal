@@ -8,13 +8,12 @@ import (
 	"testing"
 )
 
-// okHandler records whether the wrapped handler was reached.
-func okHandler(reached *bool) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		*reached = true
-		w.WriteHeader(http.StatusOK)
-	})
-}
+// okHandler is the terminal handler behind the middleware under test: reaching
+// it yields 200, so rec.Code alone distinguishes "request allowed" (200) from
+// "middleware rejected" (403/401 written by the middleware itself).
+var okHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusOK)
+})
 
 // TestCSRFEnforcement covers the mutating-request guard: without a matching
 // token a POST from an authenticated session must be rejected, and a correct
@@ -27,13 +26,11 @@ func TestCSRFEnforcement(t *testing.T) {
 	sessionCookie := &http.Cookie{Name: sessionCookieName, Value: sid}
 
 	newPost := func(withCookie bool, form url.Values, header string) *http.Request {
-		var body *strings.Reader
+		body := ""
 		if form != nil {
-			body = strings.NewReader(form.Encode())
-		} else {
-			body = strings.NewReader("")
+			body = form.Encode()
 		}
-		req := httptest.NewRequest(http.MethodPost, "/journal/1", body)
+		req := httptest.NewRequest(http.MethodPost, "/journal/1", strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		if withCookie {
 			req.AddCookie(sessionCookie)
@@ -45,27 +42,23 @@ func TestCSRFEnforcement(t *testing.T) {
 	}
 
 	cases := []struct {
-		name   string
-		req    *http.Request
-		wantOK bool // handler reached (request allowed)
+		name string
+		req  *http.Request
+		want int // 200 = allowed through to the handler, 403 = CSRF-rejected
 	}{
-		{"safe GET bypasses", httptest.NewRequest(http.MethodGet, "/journal/1", nil), true},
-		{"no session cookie passes to auth", newPost(false, nil, ""), true},
-		{"session but no token rejected", newPost(true, nil, ""), false},
-		{"session but wrong token rejected", newPost(true, url.Values{"csrf_token": {"wrong"}}, ""), false},
-		{"correct token in form passes", newPost(true, url.Values{"csrf_token": {goodTok}}, ""), true},
-		{"correct token in header passes", newPost(true, nil, goodTok), true},
+		{"safe GET bypasses", httptest.NewRequest(http.MethodGet, "/journal/1", nil), http.StatusOK},
+		{"no session cookie passes to auth", newPost(false, nil, ""), http.StatusOK},
+		{"session but no token rejected", newPost(true, nil, ""), http.StatusForbidden},
+		{"session but wrong token rejected", newPost(true, url.Values{"csrf_token": {"wrong"}}, ""), http.StatusForbidden},
+		{"correct token in form passes", newPost(true, url.Values{"csrf_token": {goodTok}}, ""), http.StatusOK},
+		{"correct token in header passes", newPost(true, nil, goodTok), http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var reached bool
 			rec := httptest.NewRecorder()
-			c.Middleware(okHandler(&reached)).ServeHTTP(rec, tc.req)
-			if reached != tc.wantOK {
-				t.Fatalf("reached=%v want %v (status %d)", reached, tc.wantOK, rec.Code)
-			}
-			if !tc.wantOK && rec.Code != http.StatusForbidden {
-				t.Errorf("rejected request status = %d, want 403", rec.Code)
+			c.Middleware(okHandler).ServeHTTP(rec, tc.req)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
 			}
 		})
 	}
@@ -79,10 +72,9 @@ func TestCSRFExemptLoginLogout(t *testing.T) {
 	for _, path := range []string{"/login", "/logout"} {
 		req := httptest.NewRequest(http.MethodPost, path, strings.NewReader(""))
 		req.AddCookie(&http.Cookie{Name: sessionCookieName, Value: "stale"})
-		var reached bool
 		rec := httptest.NewRecorder()
-		c.Middleware(okHandler(&reached)).ServeHTTP(rec, req)
-		if !reached {
+		c.Middleware(okHandler).ServeHTTP(rec, req)
+		if rec.Code != http.StatusOK {
 			t.Errorf("%s was blocked by CSRF (status %d); must be exempt", path, rec.Code)
 		}
 	}
@@ -91,28 +83,24 @@ func TestCSRFExemptLoginLogout(t *testing.T) {
 // TestRequireAdmin rejects non-admins and missing users, admits admins.
 func TestRequireAdmin(t *testing.T) {
 	cases := []struct {
-		name   string
-		user   *User
-		wantOK bool
+		name string
+		user *User
+		want int
 	}{
-		{"no user", nil, false},
-		{"non-admin", &User{ID: 1, Username: "u", IsAdmin: false}, false},
-		{"admin", &User{ID: 2, Username: "a", IsAdmin: true}, true},
+		{"no user", nil, http.StatusForbidden},
+		{"non-admin", &User{ID: 1, Username: "u", IsAdmin: false}, http.StatusForbidden},
+		{"admin", &User{ID: 2, Username: "a", IsAdmin: true}, http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var reached bool
 			req := httptest.NewRequest(http.MethodGet, "/admin/users", nil)
 			if tc.user != nil {
 				req = req.WithContext(WithUser(req.Context(), tc.user))
 			}
 			rec := httptest.NewRecorder()
-			RequireAdmin(okHandler(&reached)).ServeHTTP(rec, req)
-			if reached != tc.wantOK {
-				t.Fatalf("reached=%v want %v (status %d)", reached, tc.wantOK, rec.Code)
-			}
-			if !tc.wantOK && rec.Code != http.StatusForbidden {
-				t.Errorf("status = %d, want 403", rec.Code)
+			RequireAdmin(okHandler).ServeHTTP(rec, req)
+			if rec.Code != tc.want {
+				t.Fatalf("status = %d, want %d", rec.Code, tc.want)
 			}
 		})
 	}
@@ -134,16 +122,12 @@ func TestAPIKeyMissingOrMalformed(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			var reached bool
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/trades", nil)
 			if tc.auth != "" {
 				req.Header.Set("Authorization", tc.auth)
 			}
 			rec := httptest.NewRecorder()
-			a.Middleware(okHandler(&reached)).ServeHTTP(rec, req)
-			if reached {
-				t.Fatal("handler reached; malformed key must be rejected before dispatch")
-			}
+			a.Middleware(okHandler).ServeHTTP(rec, req)
 			if rec.Code != http.StatusUnauthorized {
 				t.Errorf("status = %d, want 401", rec.Code)
 			}

@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path"
 	"path/filepath"
 	"strings"
 	"syscall"
@@ -106,14 +107,18 @@ func (s *statusRecorder) Flush() {
 // ('unsafe-inline') because base.html carries several inline <script>/<style>
 // blocks and an inline chart-data blob; the primary XSS control is server-side
 // sanitization of rendered markdown (see handlers.renderMarkdown). script-src
-// still restricts *sources* to self plus the htmx CDN, and
-// frame-ancestors/base-uri/object-src/form-action add clickjacking and
-// injection protections independent of inline handling. Follow-up to tighten:
-// self-host htmx and nonce the inline scripts, then drop 'unsafe-inline'.
+// still restricts *sources* to self plus the two chart/htmx CDNs the templates
+// actually use (unpkg: htmx + lightweight-charts; jsdelivr: uPlot JS+CSS on
+// the dashboard/analytics/trades pages). img-src allows https: because journal
+// markdown may embed external images and the sanitizer deliberately preserves
+// http(s) <img> tags - the two layers must agree. frame-ancestors/base-uri/
+// object-src/form-action add clickjacking and injection protections
+// independent of inline handling. Follow-up to tighten: self-host the CDN
+// libraries and nonce the inline scripts, then drop 'unsafe-inline'.
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline' https://unpkg.com; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data:; " +
+	"script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; " +
+	"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+	"img-src 'self' data: https:; " +
 	"font-src 'self'; " +
 	"connect-src 'self'; " +
 	"frame-ancestors 'none'; " +
@@ -121,28 +126,37 @@ const contentSecurityPolicy = "default-src 'self'; " +
 	"form-action 'self'; " +
 	"object-src 'none'"
 
+// oiFileCSP governs the /oi/file/ subtree: self-contained HTML dashboards
+// produced by an external pipeline and displayed inside a same-origin <iframe>
+// on /oi (plus their PDF twins). The files are inert HTML+CSS - one <style>
+// block, inline style attributes, data:-URI images, zero <script> tags - so
+// this policy is STRICTER than the app's (default-src 'none' blocks all script
+// execution outright, guarding against a compromised pipeline injecting JS)
+// while still permitting the same-origin framing the /oi page needs.
+const oiFileCSP = "default-src 'none'; " +
+	"img-src 'self' data:; " +
+	"style-src 'unsafe-inline'; " +
+	"frame-ancestors 'self'"
+
 // securityHeaders sets defense-in-depth response headers on every response.
 // HSTS is intentionally omitted: this process commonly runs plain HTTP behind a
 // TLS-terminating reverse proxy, which is the correct place to own HSTS.
 //
-// The /oi/file/ subtree is special-cased: those are self-contained HTML/PDF
-// dashboards produced by an external pipeline and displayed inside a same-origin
-// <iframe> on /oi. The app's default-src 'self' CSP would block the dashboard's
-// own inline/loaded assets, and X-Frame-Options: DENY / frame-ancestors 'none'
-// would stop the iframe from rendering at all. So for that subtree we allow
-// same-origin framing and don't impose the content CSP.
+// The policy choice keys on the CLEANED request path: this middleware wraps the
+// ServeMux, which canonicalizes dirty paths (e.g. /oi/file/../../dashboard)
+// with a 301 only AFTER we run, so matching on the raw path would stamp the
+// relaxed headers onto that redirect.
 func securityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		frameOptions, csp := "DENY", contentSecurityPolicy
+		if strings.HasPrefix(path.Clean(r.URL.Path), "/oi/file/") {
+			frameOptions, csp = "SAMEORIGIN", oiFileCSP
+		}
 		h := w.Header()
 		h.Set("X-Content-Type-Options", "nosniff")
 		h.Set("Referrer-Policy", "same-origin")
-		if strings.HasPrefix(r.URL.Path, "/oi/file/") {
-			h.Set("X-Frame-Options", "SAMEORIGIN")
-			h.Set("Content-Security-Policy", "frame-ancestors 'self'")
-		} else {
-			h.Set("X-Frame-Options", "DENY")
-			h.Set("Content-Security-Policy", contentSecurityPolicy)
-		}
+		h.Set("X-Frame-Options", frameOptions)
+		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
 }

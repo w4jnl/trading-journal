@@ -20,7 +20,7 @@ func TestDummyHashCostMatchesRealHashes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("cost of real hash: %v", err)
 	}
-	dummyCost, err := bcrypt.Cost(dummyHash)
+	dummyCost, err := bcrypt.Cost(dummyHash())
 	if err != nil {
 		t.Fatalf("cost of dummy hash: %v", err)
 	}
