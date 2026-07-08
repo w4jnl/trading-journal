@@ -6,12 +6,11 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
-	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -20,15 +19,7 @@ import (
 // the tests add their own users on top.
 func newAuthzTestDB(t *testing.T) (*sql.DB, *models.Queries) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "authz.db")
-	conn, err := db.Open(path)
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() { _ = conn.Close() })
-	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: "bootstrap"}); err != nil {
-		t.Fatalf("run migrations: %v", err)
-	}
+	conn := dbtest.Open(t, "bootstrap")
 	return conn, models.New(conn)
 }
 

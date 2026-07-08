@@ -10,31 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 func setupTestService(t *testing.T) (*ImportService, *sql.DB, string, string, string) {
 	t.Helper()
 	tmp := t.TempDir()
-	dbPath := filepath.Join(tmp, "test.db")
-	conn, err := db.Open(dbPath)
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-
-	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: "test"}); err != nil {
-		t.Fatalf("RunMigrations: %v", err)
-	}
+	conn := dbtest.Open(t, "test")
 
 	processed := filepath.Join(tmp, "processed")
 	failed := filepath.Join(tmp, "failed")
 
-	var bootstrapID int64
-	if err := conn.QueryRow(`SELECT id FROM users WHERE username = 'test'`).Scan(&bootstrapID); err != nil {
-		t.Fatalf("load bootstrap user: %v", err)
-	}
+	bootstrapID := dbtest.BootstrapUserID(t, conn, "test")
 
 	loc, _ := time.LoadLocation("America/Chicago")
 	svc := &ImportService{

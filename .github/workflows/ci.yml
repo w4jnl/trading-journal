@@ -31,8 +31,8 @@ jobs:
       - name: go vet
         run: go vet ./...
 
-      - name: build
-        run: go build ./...
-
+      # No standalone `go build ./...`: vet already type-checks the tree and
+      # `go test -race ./...` compiles every package (including no-test ones),
+      # so a separate build step is a redundant full-module compile.
       - name: test
         run: go test -race ./...

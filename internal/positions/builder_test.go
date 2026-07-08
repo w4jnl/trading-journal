@@ -3,11 +3,10 @@ package positions
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -24,22 +23,11 @@ type synthFill struct {
 
 func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 	t.Helper()
-	tmp := t.TempDir()
-	conn, err := db.Open(filepath.Join(tmp, "t.db"))
-	if err != nil {
-		t.Fatalf("db.Open: %v", err)
-	}
-	t.Cleanup(func() { conn.Close() })
-	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: "test"}); err != nil {
-		t.Fatalf("RunMigrations: %v", err)
-	}
+	conn := dbtest.Open(t, "test")
 	q := models.New(conn)
 
 	// Look up the bootstrap user the migration created.
-	var bootstrapID int64
-	if err := conn.QueryRow(`SELECT id FROM users WHERE username = 'test'`).Scan(&bootstrapID); err != nil {
-		t.Fatalf("load bootstrap user: %v", err)
-	}
+	bootstrapID := dbtest.BootstrapUserID(t, conn, "test")
 
 	// Create a test account with firm=apex (so commission lookups have a match).
 	apex := "apex"

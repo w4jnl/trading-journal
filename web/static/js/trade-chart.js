@@ -45,19 +45,31 @@
     };
   }
 
-  // tradingTZ reads the configured trading timezone (IANA name) that base.html
-  // exposes in <meta name="trading-tz">. Empty/missing -> undefined, which makes
-  // the Intl formatters fall back to the browser's local timezone.
-  function tradingTZ() {
+  // resolvedTradingTZ reads the configured trading timezone (IANA name) that
+  // base.html exposes in <meta name="trading-tz"> and validates that Intl
+  // accepts it. Go's time.LoadLocation allows names Intl rejects (notably
+  // "Local"), and an invalid timeZone makes Intl.DateTimeFormat THROW - which
+  // would otherwise turn every chart into "Chart unavailable". Invalid or
+  // missing -> undefined, falling back to the browser's local timezone.
+  function resolvedTradingTZ() {
     var m = document.querySelector('meta[name="trading-tz"]');
     var tz = m && m.getAttribute("content");
-    return tz && tz.trim() ? tz.trim() : undefined;
+    tz = tz && tz.trim() ? tz.trim() : undefined;
+    if (!tz) return undefined;
+    try {
+      new Intl.DateTimeFormat([], { timeZone: tz });
+      return tz;
+    } catch (e) {
+      console.warn("trade-chart: invalid trading-tz " + JSON.stringify(tz) + "; using browser timezone");
+      return undefined;
+    }
   }
 
-  // tzFormatters builds Intl.DateTimeFormat instances bound to the trading tz.
-  // lightweight-charts renders its time axis in UTC by default; we override the
-  // axis-tick and crosshair formatters with these so times match the rest of the
-  // app. Chart `time` values are UNIX seconds (UTC instants) -> *1000 for Intl.
+  // tzFormatters builds Intl.DateTimeFormat instances bound to the trading tz
+  // (pre-validated by resolvedTradingTZ). lightweight-charts renders its time
+  // axis in UTC by default; we override the axis-tick and crosshair formatters
+  // with these so times match the rest of the app. Chart `time` values are
+  // UNIX seconds (UTC instants) -> *1000 for Intl.
   function tzFormatters(tz) {
     var base = tz ? { timeZone: tz } : {};
     function f(opts) { return new Intl.DateTimeFormat([], Object.assign({}, opts, base)); }
@@ -71,13 +83,11 @@
     };
   }
 
-  // tickToMs converts a lightweight-charts tick time to milliseconds. Our series
-  // use numeric UNIX-second timestamps; the BusinessDay {year,month,day} branch
-  // is defensive (we never emit it) and treats the day as UTC midnight.
+  // tickToMs converts a lightweight-charts tick time to milliseconds. Every
+  // series is fed numeric UNIX-second timestamps (setData in applyTf), so the
+  // library only ever hands those back to the formatters.
   function tickToMs(time) {
-    if (typeof time === "number") return time * 1000;
-    if (time && time.year != null) return Date.UTC(time.year, (time.month || 1) - 1, time.day || 1);
-    return Date.now();
+    return time * 1000;
   }
 
   function injectStyles() {
@@ -93,6 +103,7 @@
       ".trade-chart__msg{font-size:13px;color:var(--fg-muted);padding:18px 10px;text-align:center}" +
       ".trade-chart__prompt{padding:14px;text-align:center}" +
       ".trade-chart__barsize{display:inline-flex;align-items:center;gap:4px}" +
+      ".trade-chart__tz{margin-left:10px;font-weight:400;font-size:11px;color:var(--fg-muted)}" +
       ".trade-chart__tf{font:inherit;font-weight:600;color:var(--fg);background:var(--bg-elev);border:1px solid var(--border);border-radius:4px;padding:1px 4px;cursor:pointer}";
     document.head.appendChild(s);
   }
@@ -176,6 +187,10 @@
       renderMessage(el, "No market data.");
       return;
     }
+    // One timezone + formatter set for every panel in this render (the trading
+    // tz is app-wide; rebuilding 6 Intl formatters per panel is wasted work).
+    var tz = resolvedTradingTZ();
+    var fmts = tzFormatters(tz);
     env.panels.forEach(function (panel) {
       var card = document.createElement("div");
       card.className = "trade-chart__panel";
@@ -206,6 +221,14 @@
       } else if (panel.timeframe) {
         right.textContent = "Bar size: " + humanTimeframe(panel.timeframe);
       }
+      // Name the timezone the axis is rendered in - the header timestamps on
+      // the same page localize to the BROWSER timezone, so when the two zones
+      // differ this label is what tells the viewer why the clocks disagree.
+      var tzLabel = document.createElement("span");
+      tzLabel.className = "trade-chart__tz";
+      tzLabel.textContent = tz || "browser time";
+      tzLabel.title = "Chart times are shown in this timezone";
+      right.appendChild(tzLabel);
       head.appendChild(right);
       card.appendChild(head);
 
@@ -222,7 +245,7 @@
       el.appendChild(card);
 
       if (panel.bars && panel.bars.length) {
-        var handle = drawPanel(holder, panel);
+        var handle = drawPanel(holder, panel, fmts);
         if (handle) {
           el.__tcCharts.push(handle.chart);
           if (sel) sel.addEventListener("change", function () { handle.applyTf(sel.value); });
@@ -235,11 +258,10 @@
 
   // ---------- rendering ----------
 
-  function drawPanel(holder, panel) {
+  function drawPanel(holder, panel, fmts) {
     var LWC = window.LightweightCharts;
     if (!LWC) return null;
     var c = themeColors();
-    var fmts = tzFormatters(tradingTZ());
     var chart = LWC.createChart(holder, {
       autoSize: true,
       layout: { background: { color: c.bg }, textColor: c.fg, attributionLogo: false },

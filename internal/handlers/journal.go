@@ -1078,8 +1078,14 @@ var mdSanitizer = func() *bluemonday.Policy {
 func renderMarkdown(src string) string {
 	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
 	doc := p.Parse([]byte(src))
+	// No HrefTargetBlank renderer flag: bluemonday strips the bare target
+	// attribute anyway (UGCPolicy doesn't allowlist it) and then re-adds
+	// target="_blank" + rel for fully-qualified links via the mdSanitizer
+	// policy hooks - the flag here would just be a second, dead mechanism.
+	// Net behavior: external links open in a new tab, same-origin links
+	// navigate in place.
 	renderer := mdHtml.NewRenderer(mdHtml.RendererOptions{
-		Flags: mdHtml.CommonFlags | mdHtml.HrefTargetBlank,
+		Flags: mdHtml.CommonFlags,
 	})
 	unsafe := markdown.Render(doc, renderer)
 	return string(mdSanitizer.SanitizeBytes(unsafe))
