@@ -1,7 +1,6 @@
 {{define "title"}}Analytics — Trading Journal{{end}}
 
 {{define "content"}}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
 
 {{template "back_button" .}}
 
@@ -366,7 +365,7 @@
   [data-theme="dark"] .u-axis { color: var(--fg-muted); }
 </style>
 
-<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+{{template "uplot_assets" .}}
 <script>
   // Date-range preset buttons
   (function () {
@@ -396,70 +395,19 @@
   // Chart data is rendered into the page as inline JSON by the handler.
   const chartData = {{.ChartJSON}};
 
-  // Read theme-aware colors from CSS vars so charts adapt to dark/light.
-  function readThemeColors() {
-    const cs = getComputedStyle(document.documentElement);
-    return {
-      accent: cs.getPropertyValue('--accent').trim() || '#4f46e5',
-      pos:    cs.getPropertyValue('--pos').trim()    || '#16a34a',
-      neg:    cs.getPropertyValue('--neg').trim()    || '#dc2626',
-      grid:   cs.getPropertyValue('--border').trim() || '#e4e4e7',
-      label:  cs.getPropertyValue('--fg-muted').trim() || '#71717a',
-    };
-  }
-
   const charts = {};
 
   function buildCharts() {
     Object.values(charts).forEach((u) => { if (u) u.destroy(); });
-    const c = readThemeColors();
+    const c = uplotHelpers.colors();
     const noData = '<div class="muted" style="padding:24px; text-align:center;">No data in selection.</div>';
 
-    function commonAxes() {
-      return [
-        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-      ];
-    }
-
-    // Compact axis values for currency: "52,000" stays "52,000", "152,000"
-    // becomes "152K", "1,250,000" becomes "1.25M". Used by the balance chart
-    // so 6-7 digit equity numbers fit in a reasonable axis gutter.
-    function fmtMoneyShort(v) {
-      if (v == null || Number.isNaN(v)) return '';
-      const abs = Math.abs(v);
-      if (abs >= 1e6) return (v / 1e6).toFixed(2).replace(/\.0+$/, '') + 'M';
-      if (abs >= 1e5) return Math.round(v / 1e3) + 'K';
-      return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-    }
-    function fmtMoneyFull(v) {
-      if (v == null || Number.isNaN(v)) return '—';
-      return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function hexToRgba(hex, a) {
-      // tolerate rgba() input untouched
-      if (hex.startsWith('rgb')) return hex;
-      const h = hex.replace('#', '');
-      const bigint = parseInt(h.length === 3 ? h.split('').map(x => x+x).join('') : h, 16);
-      const r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
-      return `rgba(${r}, ${g}, ${b}, ${a})`;
-    }
-
-    // Money-axis variant: keep the standard X axis but widen the Y gutter and
-    // format ticks compactly. Balance numbers can run into 6-7 digits, which
-    // crops under the default uPlot axis size of 50.
-    function moneyAxes() {
-      return [
-        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-        {
-          stroke: c.label,
-          grid: { stroke: c.grid, width: 1 },
-          size: 70,
-          values: (u, splits) => splits.map(fmtMoneyShort),
-        },
-      ];
-    }
+    /* Colors, axes, and money formatting come from uplotHelpers
+       (web/static/js/uplot-helpers.js) - shared with dashboard + trades. */
+    const fmtMoneyFull = uplotHelpers.fmtMoneyFull;
+    const hexToRgba = uplotHelpers.rgba;
+    const commonAxes = () => uplotHelpers.axes(c);
+    const moneyAxes = () => uplotHelpers.moneyAxes(c);
 
     // Daily Account Balance — actual running equity, anchored per-account.
     // Falls back to the empty-state message when no selected account has a
@@ -518,10 +466,9 @@
   }
 
   buildCharts();
-  /* Re-init on theme change so colors match. */
-  window.addEventListener('themechange', () => {
-    setTimeout(buildCharts, 50);
-  });
+  /* Rebuild on theme change (new token colors) and resize (uPlot sizes are
+     fixed at construction) - shared hook from uplot-helpers.js. */
+  uplotHelpers.onRebuild(buildCharts);
 </script>
 {{end}}
 

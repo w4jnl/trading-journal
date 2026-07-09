@@ -79,19 +79,21 @@
   </form>
 </details>
 
-{{/* ---- list: flat table, one Edit toggle reveals inputs on every row, one Save ---- */}}
+{{/* ---- list: flat table, one Edit toggle reveals inputs on every row.
+     Dirty tracking + the sticky save-bar come from the shared dirty_table.js
+     (same experience as /accounts and /commissions); the small shim below
+     only owns entering/leaving edit mode. ---- */}}
 <div class="row-sm" style="margin:14px 0 8px; align-items:center;">
   <strong>Transactions</strong> <span class="muted">({{len .Rows}})</span>
   <div class="row-sm" style="margin-left:auto;">
     <button type="button" class="btn btn--secondary btn--sm" id="recon-edit">Edit</button>
-    <button type="submit" form="txn-form" class="btn btn--primary btn--sm recon-editbtn" style="display:none;">Save changes</button>
-    <button type="button" class="btn btn--ghost btn--sm recon-editbtn" id="recon-cancel" style="display:none;">Cancel</button>
+    <button type="button" class="btn btn--ghost btn--sm" id="recon-cancel" style="display:none;">Done</button>
   </div>
 </div>
 
 {{/* The bulk-save form lives outside the table; row inputs reference it via form="txn-form"
      (avoids table-in-form browser quirks - same approach as the Accounts page). */}}
-<form id="txn-form" method="post" action="/admin/transactions/save?{{.FilterQuery}}">
+<form id="txn-form" method="post" action="/admin/transactions/save?{{.FilterQuery}}" data-dirty-form>
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 </form>
 
@@ -155,19 +157,36 @@
   </table>
 </div>
 
+{{/* Sticky save-bar (dirty_table.js): appears once any row differs from its
+     loaded value; Discard restores the snapshot without touching edit mode. */}}
+<div class="save-bar" data-dirty-savebar="txn-form">
+  <span class="muted"><strong data-dirty-count class="num">0</strong> row(s) changed.</span>
+  <div class="row-sm" style="margin-left: auto;">
+    <button type="button" data-dirty-reset class="btn btn--ghost btn--sm">Discard</button>
+    <button form="txn-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
+  </div>
+</div>
+
 <script>
   (function () {
     var wrap = document.getElementById('recon');
     var editBtn = document.getElementById('recon-edit');
-    if (!wrap || !editBtn) return;
-    var editActions = document.querySelectorAll('.recon-editbtn');
+    var doneBtn = document.getElementById('recon-cancel');
+    var form = document.getElementById('txn-form');
+    if (!wrap || !editBtn || !doneBtn) return;
     editBtn.addEventListener('click', function () {
       wrap.classList.add('editing');
       editBtn.style.display = 'none';
-      editActions.forEach(function (b) { b.style.display = ''; });
+      doneBtn.style.display = '';
     });
-    var cancel = document.getElementById('recon-cancel');
-    if (cancel) cancel.addEventListener('click', function () { location.reload(); });
+    // Done: restore the loaded values via the shared tracker (no page reload)
+    // and hide the inputs again.
+    doneBtn.addEventListener('click', function () {
+      if (form && form.__dirtyReset) form.__dirtyReset();
+      wrap.classList.remove('editing');
+      doneBtn.style.display = 'none';
+      editBtn.style.display = '';
+    });
   })();
 </script>
 {{end}}

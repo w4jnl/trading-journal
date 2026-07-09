@@ -1,0 +1,11 @@
+{{/*
+uPlot chart assets: library CSS + JS + the shared helpers
+(web/static/js/uplot-helpers.js). Included once per page that draws uPlot
+charts (dashboard, trades, analytics) so the CDN reference and helper code
+live in exactly one place.
+*/}}
+{{define "uplot_assets"}}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
+<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+<script src="/static/js/uplot-helpers.js"></script>
+{{end}}
