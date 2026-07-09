@@ -53,6 +53,12 @@
       saved: ta.value,
     };
 
+    // Draft identity: stable per entry (id), or per page for brand-new
+    // entries (the day/week/trade path uniquely names the surface).
+    ctx.draftKey = "tj-draft:" + ctx.scope + ":" +
+      (ctx.entryId && ctx.entryId !== "0" ? ctx.entryId : location.pathname);
+    offerDraftRestore(ctx);
+
     // Initial preview render.
     schedulePreview(ctx, 0);
 
@@ -86,6 +92,84 @@
       ctx.pv.innerHTML = html;
     }).catch(function (err) {
       ctx.pv.innerHTML = '<p class="journal-editor__preview-empty">Preview unavailable: ' + escapeHtml(String(err)) + "</p>";
+    });
+  }
+
+  // ---------- Draft autosave (localStorage) ----------
+  //
+  // A debounced copy of unsaved text, keyed by scope + entry id (or page path
+  // for brand-new entries), written while typing and cleared on save. If the
+  // tab dies mid-entry, the next visit offers a Restore/Discard bar. Drafts
+  // older than 7 days are pruned so abandoned keys don't accumulate. All
+  // storage access is best-effort (quota / private mode must never break the
+  // editor).
+
+  var DRAFT_TTL_MS = 7 * 24 * 3600 * 1000;
+
+  function draftWrite(ctx) {
+    try {
+      localStorage.setItem(ctx.draftKey, JSON.stringify({ t: Date.now(), v: ctx.ta.value }));
+    } catch (e) { /* best-effort */ }
+  }
+
+  function draftClear(ctx) {
+    try { localStorage.removeItem(ctx.draftKey); } catch (e) { /* best-effort */ }
+  }
+
+  function draftRead(ctx) {
+    try {
+      var raw = localStorage.getItem(ctx.draftKey);
+      if (!raw) return null;
+      var d = JSON.parse(raw);
+      return d && typeof d.v === "string" ? d : null;
+    } catch (e) { return null; }
+  }
+
+  function pruneDrafts() {
+    try {
+      var now = Date.now();
+      for (var i = localStorage.length - 1; i >= 0; i--) {
+        var k = localStorage.key(i);
+        if (!k || k.indexOf("tj-draft:") !== 0) continue;
+        var d = null;
+        try { d = JSON.parse(localStorage.getItem(k)); } catch (e) { /* corrupt */ }
+        if (!d || !d.t || now - d.t > DRAFT_TTL_MS) localStorage.removeItem(k);
+      }
+    } catch (e) { /* best-effort */ }
+  }
+  pruneDrafts();
+
+  // offerDraftRestore shows a Restore/Discard bar above the textarea when a
+  // local draft differs from the server-rendered body.
+  function offerDraftRestore(ctx) {
+    var d = draftRead(ctx);
+    if (!d) return;
+    if (d.v === ctx.ta.value) { draftClear(ctx); return; }
+    var bar = document.createElement("div");
+    bar.className = "je-draftbar";
+    var label = document.createElement("span");
+    label.textContent = "Unsaved draft from " + new Date(d.t).toLocaleString() + ".";
+    var restore = document.createElement("button");
+    restore.type = "button";
+    restore.className = "btn btn--secondary btn--sm";
+    restore.textContent = "Restore";
+    var discard = document.createElement("button");
+    discard.type = "button";
+    discard.className = "btn btn--ghost btn--sm";
+    discard.textContent = "Discard";
+    bar.appendChild(label);
+    bar.appendChild(restore);
+    bar.appendChild(discard);
+    ctx.ta.parentNode.insertBefore(bar, ctx.ta);
+    restore.addEventListener("click", function () {
+      ctx.ta.value = d.v;
+      ctx.ta.dispatchEvent(new Event("input", { bubbles: true }));
+      bar.remove();
+      ctx.ta.focus();
+    });
+    discard.addEventListener("click", function () {
+      draftClear(ctx);
+      bar.remove();
     });
   }
 
@@ -123,6 +207,10 @@
       var dirty = ctx.ta.value !== ctx.saved;
       setStatus(ctx, dirty ? "Unsaved" : "");
       markDirty(ctx, dirty);
+      // Autosave a local draft while dirty (crash/tab-close insurance).
+      clearTimeout(ctx._draftTimer);
+      if (dirty) ctx._draftTimer = setTimeout(function () { draftWrite(ctx); }, 800);
+      else draftClear(ctx);
     });
     // Suppress browser-native form-reset re-render bug. Clearing the dirty
     // flag here (before navigation) also keeps beforeunload quiet on save.
@@ -130,6 +218,8 @@
       ctx.saved = ctx.ta.value;
       setStatus(ctx, "");
       markDirty(ctx, false);
+      clearTimeout(ctx._draftTimer);
+      draftClear(ctx);
     });
   }
 
@@ -397,14 +487,20 @@
     fetchTemplates(ctx).then(function (templates) {
       var box = document.createElement("div");
       box.className = "je-templates";
-      if (!templates || templates.length === 0) {
+      if (templates === null) {
+        var fail = document.createElement("div");
+        fail.className = "je-templates-item";
+        fail.style.color = "var(--neg)";
+        fail.textContent = "Couldn't load templates - server unreachable. Close and retry.";
+        box.appendChild(fail);
+      } else if (templates.length === 0) {
         var empty = document.createElement("div");
         empty.className = "je-templates-item";
         empty.style.color = "var(--fg-muted)";
         empty.textContent = "No templates available";
         box.appendChild(empty);
       }
-      templates.forEach(function (tpl) {
+      (templates || []).forEach(function (tpl) {
         var item = document.createElement("button");
         item.type = "button";
         item.className = "je-templates-item";
@@ -436,10 +532,13 @@
     if (ctx._templates) return Promise.resolve(ctx._templates);
     var url = "/journal/templates";
     if (ctx.scope) url += "?scope=" + encodeURIComponent(ctx.scope);
-    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (j) {
       ctx._templates = (j && j.templates) || [];
       return ctx._templates;
-    }).catch(function () { return []; });
+    }).catch(function () { return null; }); // null = load failed (vs [] = none exist)
   }
 
   function applyTemplate(ctx, body) {
@@ -464,13 +563,19 @@
     fetchRecent(ctx).then(function (entries) {
       var box = document.createElement("div");
       box.className = "je-recall";
-      if (!entries || entries.length === 0) {
+      if (entries === null) {
+        var fail = document.createElement("div");
+        fail.className = "je-recall-empty";
+        fail.style.color = "var(--neg)";
+        fail.textContent = "Couldn't load prior entries - server unreachable. Close and retry.";
+        box.appendChild(fail);
+      } else if (entries.length === 0) {
         var empty = document.createElement("div");
         empty.className = "je-recall-empty";
         empty.textContent = "No prior " + (ctx.scope || "entries") + " entries yet.";
         box.appendChild(empty);
       }
-      entries.forEach(function (e) {
+      (entries || []).forEach(function (e) {
         // A <div role=button>, NOT a <button>: a real button won't lay out
         // multi-line block children reliably (WebKit clips flex buttons at
         // the top and ignores block child heights), which is what made the
@@ -525,9 +630,12 @@
     if (ctx.entryId && ctx.entryId !== "0") {
       url += "&exclude_id=" + encodeURIComponent(ctx.entryId);
     }
-    return fetch(url).then(function (r) { return r.json(); }).then(function (j) {
+    return fetch(url).then(function (r) {
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      return r.json();
+    }).then(function (j) {
       return (j && j.entries) || [];
-    }).catch(function () { return []; });
+    }).catch(function () { return null; }); // null = load failed (vs [] = none exist)
   }
 
   function showPeek(ctx, entry) {

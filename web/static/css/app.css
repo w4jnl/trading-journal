@@ -1860,6 +1860,13 @@ tr.txn-item--deleted { opacity: 0.55; }
 [data-theme="dark"] .horizon-swing     { color: #a78bfa; }
 [data-theme="dark"] .horizon-long-term { color: #2dd4bf; }
 
+/* Restore-draft bar the journal editor injects above its textarea when a
+   newer local draft exists (journal_editor.js offerDraftRestore). */
+.je-draftbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 6px;
+  font-size: 12px; color: var(--warn); background: var(--warn-soft);
+  border: 1px solid var(--warn-border); border-radius: var(--r-md); }
+.je-draftbar span { flex: 1; }
+
 /* Retired-account marker (accounts + trades tables). Shared here so the two
    pages cannot drift; tokens carry the dark variant. */
 .pill.retired-pill {
