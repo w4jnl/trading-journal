@@ -10,7 +10,7 @@
 </p>
 
 {{if .Flash}}<div class="flash saved" style="margin:12px 0;">{{.Flash}}</div>{{end}}
-{{if .FlashErr}}<div class="flash empty" role="alert" style="margin:12px 0;">{{.FlashErr}}</div>{{end}}
+{{if .FlashErr}}<div class="flash error" role="alert" style="margin:12px 0;">{{.FlashErr}}</div>{{end}}
 
 {{template "open_positions" .OpenPositions}}
 

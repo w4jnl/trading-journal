@@ -13,7 +13,7 @@
 </div>
 {{end}}
 {{if .FlashErr}}
-<div class="flash empty" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>
+<div class="flash error" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>
 {{end}}
 
 <div class="table-scroll" style="margin-bottom: 24px;">
@@ -114,7 +114,7 @@
   .users-table tr.row-dim { opacity: 0.55; }
   .users-table .row-actions-menu {
     display: flex; flex-direction: column; gap: 6px;
-    background: var(--bg-elevated); border: 1px solid var(--border);
+    background: var(--bg-elev); border: 1px solid var(--border);
     border-radius: var(--r-md); padding: 8px;
     margin-top: 6px; min-width: 240px;
   }

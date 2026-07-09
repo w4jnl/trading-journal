@@ -409,8 +409,8 @@
     font-weight: 700;
     line-height: 14px;
     border-radius: 7px;
-    background: rgba(168, 85, 247, 0.16);
-    color: #a855f7;
+    background: var(--group-soft);
+    color: var(--group);
     vertical-align: middle;
   }
   /* Selection bar visibility — base layout comes from .sticky-action-bar
@@ -423,17 +423,9 @@
   .retired-toggle:hover { text-decoration: underline; }
   .retired-toggle-note { color: var(--fg-subtle); font-size: 12px; font-style: italic; }
   /* Retired-row dimming + pill — keeps the row scannable but visually
-     deprioritized. The pill uses the warn token so it pops without colliding
+     deprioritized. The retired pill itself is shared in app.css so it pops without colliding
      with the dir/long-short pills. */
   .trade-row--retired { opacity: 0.58; }
   .trade-row--retired:hover { opacity: 1; }
-  .pill.retired-pill {
-    background: rgba(245, 158, 11, 0.18);
-    color: #b45309;
-    margin-left: 6px;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-  }
 </style>
 {{end}}

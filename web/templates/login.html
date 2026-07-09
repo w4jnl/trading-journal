@@ -14,7 +14,7 @@
     </div>
 
     {{if .Error}}
-    <div class="flash empty" role="alert" style="margin-bottom: 16px;">{{.Error}}</div>
+    <div class="flash error" role="alert" style="margin-bottom: 16px;">{{.Error}}</div>
     {{end}}
 
     <form method="post" action="/login" autocomplete="on">
@@ -41,13 +41,13 @@
     padding: 24px;
   }
   .login-card {
-    background: var(--bg-elevated);
+    background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     padding: 32px;
     width: 100%;
     max-width: 380px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.06);
+    box-shadow: var(--shadow-3);
   }
   .login-brand {
     display: flex;

@@ -14,7 +14,7 @@
 {{if eq .Flash "revoked"}}<div class="flash saved" style="margin-bottom: 16px;">Key revoked.</div>{{end}}
 {{if eq .Flash "deleted"}}<div class="flash saved" style="margin-bottom: 16px;">Key deleted.</div>{{end}}
 {{if eq .Flash "language"}}<div class="flash saved" style="margin-bottom: 16px;">Language saved.</div>{{end}}
-{{if .Err}}<div class="flash empty" style="margin-bottom: 16px;">{{.Err}}</div>{{end}}
+{{if .Err}}<div class="flash error" role="alert" style="margin-bottom: 16px;">{{.Err}}</div>{{end}}
 
 {{if .AIEnabled}}
 <div class="card" style="margin-bottom: 16px;">

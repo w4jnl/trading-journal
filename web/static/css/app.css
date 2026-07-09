@@ -72,6 +72,13 @@
   --info:       #2563eb;
   --info-soft:  #eff6ff;
 
+  /* Categorical accents: journal groups (purple) + retired accounts (amber).
+     Referenced by the scope-group chips/badges and .retired-pill. */
+  --group:        #7c3aed;
+  --group-soft:   rgba(168, 85, 247, 0.14);
+  --retired:      #b45309;
+  --retired-soft: rgba(245, 158, 11, 0.18);
+
   /* Calendar P&L heat (light theme) */
   --cal-pos-1: #f0fdf4;
   --cal-pos-2: #dcfce7;
@@ -165,6 +172,11 @@
   --warn-border:rgba(245, 158, 11, 0.30);
   --info:       #60a5fa;
   --info-soft:  rgba(96, 165, 250, 0.12);
+
+  --group:        #c084fc;
+  --group-soft:   rgba(168, 85, 247, 0.20);
+  --retired:      #fbbf24;
+  --retired-soft: rgba(245, 158, 11, 0.16);
 
   --cal-pos-1: rgba(34, 197, 94, 0.08);
   --cal-pos-2: rgba(34, 197, 94, 0.18);
@@ -419,7 +431,7 @@ hr {
   align-items: center;
   gap: 12px;
   padding: 8px 16px;
-  background: color-mix(in srgb, var(--neg) 14%, var(--bg-elevated));
+  background: color-mix(in srgb, var(--neg) 14%, var(--bg-elev));
   border-bottom: 1px solid color-mix(in srgb, var(--neg) 35%, transparent);
   color: var(--fg);
   font-size: 13px;
@@ -608,7 +620,7 @@ hr {
   color: white;
   border-color: var(--neg);
 }
-.btn--danger:hover { background: #b91c1c; border-color: #b91c1c; color: white; }
+.btn--danger:hover { background: var(--neg-strong); border-color: var(--neg-strong); color: white; }
 
 .btn--sm  { height: 28px; padding: 0 10px; font-size: 12px; }
 .btn--lg  { height: 38px; padding: 0 16px; font-size: 14px; }
@@ -1841,6 +1853,23 @@ tr.txn-item--deleted { opacity: 0.55; }
 .horizon-intraday  { background: rgba(59, 130, 246, 0.16); color: #1d4ed8; }   /* blue - one day */
 .horizon-swing     { background: rgba(139, 92, 246, 0.16); color: #6d28d9; }   /* violet - days */
 .horizon-long-term { background: rgba(20, 184, 166, 0.16); color: #0f766e; }   /* teal - weeks+ */
+/* The low-alpha tints work on both themes, but the dark text colors above
+   vanish on a dark background - lighten them. */
+[data-theme="dark"] .horizon-scalp     { color: #fbbf24; }
+[data-theme="dark"] .horizon-intraday  { color: #60a5fa; }
+[data-theme="dark"] .horizon-swing     { color: #a78bfa; }
+[data-theme="dark"] .horizon-long-term { color: #2dd4bf; }
+
+/* Retired-account marker (accounts + trades tables). Shared here so the two
+   pages cannot drift; tokens carry the dark variant. */
+.pill.retired-pill {
+  background: var(--retired-soft);
+  color: var(--retired);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-left: 6px;
+}
 
 /* Build version in the sidebar footer, under the Theme toggle. Small, muted, unobtrusive. */
 .sidebar-version { padding: 6px 12px 2px; font-size: 10px; color: var(--fg-subtle);

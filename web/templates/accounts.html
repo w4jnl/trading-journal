@@ -236,16 +236,8 @@
   details.disclose > summary { list-style: none; }
   details.disclose > summary::-webkit-details-marker { display: none; }
 
-  /* Retired marker — pill in the source/ref cell + slightly dimmed row so a
-     retired account is visually distinct without disappearing from the list. */
-  .pill.retired-pill {
-    background: rgba(245, 158, 11, 0.18);
-    color: #b45309;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    margin-left: 6px;
-  }
+  /* Retired rows are slightly dimmed so a retired account is visually
+     distinct without disappearing (.pill.retired-pill itself lives in app.css). */
   tr.account-row--retired td { opacity: 0.72; }
   tr.account-row--retired td:first-child { opacity: 1; } /* keep "retired" pill at full strength */
 

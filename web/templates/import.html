@@ -77,6 +77,14 @@
       out.innerHTML = '<div class="card"><span class="spinner"></span> importing ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…</div>';
       try {
         const resp = await fetch('/import/upload', { method: 'POST', body: fd });
+        if (!resp.ok) {
+          // Non-2xx bodies are plain-text errors (or a full error page) - never
+          // inject them raw. Show a styled card with the status + a trimmed excerpt.
+          const text = (await resp.text()).slice(0, 300);
+          out.innerHTML = '<div class="card card--neg"><strong>Upload failed</strong> (HTTP ' + resp.status + '): ' +
+            text.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</div>';
+          return;
+        }
         out.innerHTML = await resp.text();
         // Wire up hx-post on the freshly-injected picker forms — raw fetch
         // bypasses HTMX's normal swap pipeline, so the new DOM is invisible
