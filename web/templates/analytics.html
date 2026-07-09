@@ -111,14 +111,7 @@
     </div>
   {{end}}
 </div>
-<style>
-  table.equity-breakdown { width: 100%; max-width: 480px; border-collapse: collapse; margin-top: 4px; }
-  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
-  table.equity-breakdown td.lbl { color: var(--fg-muted); }
-  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
-  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
-  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
-</style>
+{{/* table.equity-breakdown lives in app.css (shared with dashboard). */}}
 
 <!-- Day-of-week stats -->
 <div class="row-3">
@@ -329,7 +322,6 @@
   }
 
   /* Legacy classes — keep so the page still renders cleanly. */
-  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
   .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
   @media (max-width: 800px) {

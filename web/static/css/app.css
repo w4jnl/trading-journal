@@ -38,7 +38,7 @@
   /* Text */
   --fg:         #18181b;
   --fg-muted:   #71717a;
-  --fg-subtle:  #a1a1aa;
+  --fg-subtle:  #8b8b93; /* ~3:1 on --bg; decorative micro-text only (full AA would collapse the 3-tier text hierarchy) */
   --fg-inverse: #fafafa;
 
   /* Border */
@@ -130,6 +130,39 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
   --font-display-size: 36px;
 
+  /* Type scale - every font-size in the app maps to one of these (the value
+     encodes the px so the scale is greppable; add steps deliberately). */
+  --fs-10: 10px;
+  --fs-11: 11px;
+  --fs-12: 12px;
+  --fs-13: 13px;
+  --fs-14: 14px;
+  --fs-15: 15px;
+  --fs-16: 16px;
+  --fs-17: 17px;
+  --fs-18: 18px;
+  --fs-20: 20px;
+  --fs-22: 22px;
+  --fs-24: 24px;
+  --fs-28: 28px;
+
+  /* Weights */
+  --fw-normal:   400;
+  --fw-medium:   500;
+  --fw-semibold: 600;
+  --fw-bold:     700;
+  --fw-heavy:    800;
+
+  /* Z layers (micro-stacking 1-5 stays literal; these are the app layers) */
+  --z-sticky:       20;
+  --z-nav-backdrop: 40;
+  --z-sidebar:      50;
+  --z-nav-toggle:   60;
+  --z-sheet:        100;
+  --z-popover:      150;
+  --z-modal:        200;
+  --z-toast:        300;
+
   /* Safe-area inset (iOS home indicator). Stays 0 on non-notched devices. */
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 }
@@ -219,18 +252,18 @@ html {
 body {
   background: var(--bg);
   color: var(--fg);
-  font-size: 14px;
+  font-size: var(--fs-14);
   line-height: 1.55;
 }
 
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); }
 
-h1, h2, h3, h4 { color: var(--fg); margin-top: 0; line-height: 1.25; font-weight: 600; }
-h1 { font-size: 28px; letter-spacing: -0.01em; }
-h2 { font-size: 20px; letter-spacing: -0.005em; }
-h3 { font-size: 16px; }
-h4 { font-size: 14px; }
+h1, h2, h3, h4 { color: var(--fg); margin-top: 0; line-height: 1.25; font-weight: var(--fw-semibold); }
+h1 { font-size: var(--fs-28); letter-spacing: -0.01em; }
+h2 { font-size: var(--fs-20); letter-spacing: -0.005em; }
+h3 { font-size: var(--fs-16); }
+h4 { font-size: var(--fs-14); }
 
 p { margin: 0 0 12px; }
 
@@ -250,7 +283,7 @@ kbd {
   border-bottom-width: 2px;
   border-radius: var(--r-sm);
   padding: 1px 6px;
-  font-size: 11px;
+  font-size: var(--fs-11);
 }
 
 hr {
@@ -280,7 +313,7 @@ hr {
   top: 0;
   height: 100vh;
   overflow-y: auto;
-  z-index: 50;
+  z-index: var(--z-sidebar);
 }
 
 .sidebar-brand {
@@ -289,8 +322,8 @@ hr {
   gap: 10px;
   padding: 8px 10px 16px;
   color: var(--fg);
-  font-weight: 600;
-  font-size: 15px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-15);
   letter-spacing: -0.01em;
 }
 .sidebar-brand .brand-mark {
@@ -302,11 +335,11 @@ hr {
 [data-theme="dark"] .sidebar-brand .brand-mark { color: #2EBABE; }
 
 .sidebar-section {
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--fg-subtle);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   padding: 14px 10px 6px;
 }
 
@@ -318,8 +351,8 @@ hr {
   padding: 0 10px;
   border-radius: var(--r-md);
   color: var(--fg-muted);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
   transition: background var(--t-fast), color var(--t-fast);
   white-space: nowrap;
 }
@@ -340,7 +373,7 @@ hr {
 }
 .sidebar-footer .sidebar-link kbd {
   margin-left: auto;
-  font-size: 10px;
+  font-size: var(--fs-10);
   padding: 1px 5px;
 }
 .sidebar-user {
@@ -365,8 +398,8 @@ hr {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-weight: 700;
-  font-size: 12px;
+  font-weight: var(--fw-bold);
+  font-size: var(--fs-12);
   text-transform: uppercase;
   line-height: 1;
 }
@@ -378,19 +411,19 @@ hr {
   line-height: 1.2;
 }
 .sidebar-user-name {
-  font-weight: 600;
-  font-size: 13px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-13);
   color: var(--fg);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .sidebar-user-sub {
-  font-size: 10px;
+  font-size: var(--fs-10);
   color: var(--fg-muted);
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -434,10 +467,10 @@ hr {
   background: color-mix(in srgb, var(--neg) 14%, var(--bg-elev));
   border-bottom: 1px solid color-mix(in srgb, var(--neg) 35%, transparent);
   color: var(--fg);
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .actas-banner-text { flex: 1; }
-.actas-banner code { font-family: var(--font-mono); font-size: 12px; }
+.actas-banner code { font-family: var(--font-mono); font-size: var(--fs-12); }
 
 .app-content {
   max-width: var(--content-max);
@@ -464,7 +497,7 @@ hr {
     position: fixed;
     top: 12px;
     left: 12px;
-    z-index: 60;
+    z-index: var(--z-nav-toggle);
     width: 36px;
     height: 36px;
     align-items: center;
@@ -482,7 +515,7 @@ hr {
     position: fixed;
     inset: 0;
     background: var(--backdrop);
-    z-index: 40;
+    z-index: var(--z-nav-backdrop);
   }
   .app-content { padding: 64px 16px 32px; }
 }
@@ -531,12 +564,12 @@ hr {
 
 /* ---- Typography utilities ------------------------------------------------- */
 
-.muted     { color: var(--fg-muted); font-size: 12px; }
-.subtle    { color: var(--fg-subtle); font-size: 12px; }
-.label     { font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; }
-.value     { font-size: 20px; font-weight: 600; color: var(--fg); letter-spacing: -0.005em; }
-.value-lg  { font-size: 28px; font-weight: 600; color: var(--fg); letter-spacing: -0.01em; }
-.sub       { font-size: 12px; color: var(--fg-muted); margin-top: 4px; line-height: 1.45; }
+.muted     { color: var(--fg-muted); font-size: var(--fs-12); }
+.subtle    { color: var(--fg-subtle); font-size: var(--fs-12); }
+.label     { font-size: var(--fs-11); text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: var(--fw-semibold); }
+.value     { font-size: var(--fs-20); font-weight: var(--fw-semibold); color: var(--fg); letter-spacing: -0.005em; }
+.value-lg  { font-size: var(--fs-28); font-weight: var(--fw-semibold); color: var(--fg); letter-spacing: -0.01em; }
+.sub       { font-size: var(--fs-12); color: var(--fg-muted); margin-top: 4px; line-height: 1.45; }
 
 .num       { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
 
@@ -561,11 +594,11 @@ hr {
 .card--info    { border-left: 3px solid var(--info); }
 
 .card-title {
-  font-size: 11px;
+  font-size: var(--fs-11);
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--fg-muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   margin: 0 0 8px;
 }
 
@@ -579,8 +612,8 @@ hr {
   height: 32px;
   padding: 0 12px;
   font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
   line-height: 1;
   border: 1px solid transparent;
   border-radius: var(--r-md);
@@ -622,16 +655,16 @@ hr {
 }
 .btn--danger:hover { background: var(--neg-strong); border-color: var(--neg-strong); color: white; }
 
-.btn--sm  { height: 28px; padding: 0 10px; font-size: 12px; }
-.btn--lg  { height: 38px; padding: 0 16px; font-size: 14px; }
+.btn--sm  { height: 28px; padding: 0 10px; font-size: var(--fs-12); }
+.btn--lg  { height: 38px; padding: 0 16px; font-size: var(--fs-14); }
 .btn--icon { width: 32px; padding: 0; }
 .btn--icon.btn--sm { width: 28px; }
 
 /* For raw <button> elements that haven't migrated yet — match default to secondary. */
 button:not(.btn):not([class*="btn"]) {
   font-family: var(--font-sans);
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
   height: 32px;
   padding: 0 12px;
   border-radius: var(--r-md);
@@ -660,7 +693,7 @@ input[type="url"]:not(.no-style),
 select:not(.no-style),
 textarea:not(.no-style) {
   font-family: var(--font-sans);
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--fg);
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -710,15 +743,15 @@ select:not(.no-style), .select {
   gap: 4px;
 }
 .field-label {
-  font-size: 11px;
-  font-weight: 600;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--fg-muted);
 }
 
 /* Mono-style textareas for journal entries */
-.textarea-mono { font-family: var(--font-mono); font-size: 13px; line-height: 1.55; }
+.textarea-mono { font-family: var(--font-mono); font-size: var(--fs-13); line-height: 1.55; }
 
 /* ---- Pill / badge --------------------------------------------------------- */
 
@@ -728,8 +761,8 @@ select:not(.no-style), .select {
   gap: 4px;
   padding: 2px 8px;
   border-radius: var(--r-pill);
-  font-size: 11px;
-  font-weight: 500;
+  font-size: var(--fs-11);
+  font-weight: var(--fw-medium);
   line-height: 1.5;
   background: var(--bg-sunken);
   color: var(--fg-muted);
@@ -747,15 +780,15 @@ select:not(.no-style), .select {
 .dir-short { background: var(--warn-soft);  color: var(--warn); }
 
 /* Sentiment text classes */
-.pnl-pos { color: var(--pos); font-weight: 600; }
-.pnl-neg { color: var(--neg); font-weight: 600; }
+.pnl-pos { color: var(--pos); font-weight: var(--fw-semibold); }
+.pnl-neg { color: var(--neg); font-weight: var(--fw-semibold); }
 
 /* ---- Flash messages ------------------------------------------------------- */
 
 .flash {
   padding: 10px 14px;
   border-radius: var(--r-md);
-  font-size: 13px;
+  font-size: var(--fs-13);
   margin-bottom: 12px;
   border: 1px solid transparent;
 }
@@ -774,7 +807,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   background: var(--bg-elev);
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -790,8 +823,8 @@ th, td {
 thead th {
   background: var(--bg-sunken);
   color: var(--fg-muted);
-  font-weight: 600;
-  font-size: 11px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-11);
   text-transform: uppercase;
   letter-spacing: 0.04em;
   position: sticky;
@@ -822,9 +855,9 @@ tbody tr:hover { background: var(--bg-hover); }
   display: flex;
   flex-direction: column;
   gap: 4px;
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg-muted);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -854,13 +887,13 @@ tbody tr:hover { background: var(--bg-hover); }
   border: 1px solid var(--border);
   color: var(--fg);
   background: var(--bg-elev);
-  font-size: 13px;
+  font-size: var(--fs-13);
   text-decoration: none;
   transition: background var(--t-fast), color var(--t-fast);
 }
 .pager a:hover { background: var(--bg-hover); color: var(--fg); }
 .pager a.disabled { color: var(--fg-subtle); pointer-events: none; opacity: 0.6; }
-.pager .muted { font-size: 12px; padding: 0 8px; }
+.pager .muted { font-size: var(--fs-12); padding: 0 8px; }
 
 /* ---- Trade-row (clickable table row) ------------------------------------- */
 
@@ -880,7 +913,7 @@ tbody tr:hover { background: var(--bg-hover); }
   color: var(--fg-muted);
   border-radius: var(--r-md);
   text-decoration: none;
-  font-size: 12px;
+  font-size: var(--fs-12);
   margin-bottom: 16px;
   transition: background var(--t-fast), color var(--t-fast);
 }
@@ -890,7 +923,7 @@ tbody tr:hover { background: var(--bg-hover); }
   border: 1px solid var(--border);
   padding: 0 4px;
   border-radius: var(--r-sm);
-  font-size: 10px;
+  font-size: var(--fs-10);
   font-family: var(--font-mono);
   color: var(--fg-muted);
 }
@@ -919,7 +952,8 @@ a:hover > .icon-journal,
 
 /* ---- Spinner -------------------------------------------------------------- */
 
-.spinner {
+.spinner,
+.ai-spinner {
   width: 14px;
   height: 14px;
   border: 2px solid var(--border);
@@ -929,6 +963,8 @@ a:hover > .icon-journal,
   display: inline-block;
   vertical-align: -2px;
 }
+/* Flex-layout variant used inside the AI status rows. */
+.ai-spinner { flex-shrink: 0; vertical-align: baseline; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .htmx-indicator { opacity: 0; transition: opacity 200ms; }
 .htmx-request .htmx-indicator,
@@ -945,8 +981,8 @@ a:hover > .icon-journal,
   color: var(--fg-muted);
 }
 .empty-state .empty-icon { color: var(--fg-subtle); margin-bottom: 12px; }
-.empty-state .empty-title { font-size: 14px; font-weight: 600; color: var(--fg); margin-bottom: 4px; }
-.empty-state .empty-sub   { font-size: 12px; color: var(--fg-muted); margin-bottom: 16px; }
+.empty-state .empty-title { font-size: var(--fs-14); font-weight: var(--fw-semibold); color: var(--fg); margin-bottom: 4px; }
+.empty-state .empty-sub   { font-size: var(--fs-12); color: var(--fg-muted); margin-bottom: 16px; }
 
 /* ---- Command palette (loaded via partial; styles centralized here) -------- */
 
@@ -959,7 +995,7 @@ a:hover > .icon-journal,
   display: none;
   align-items: flex-start;
   justify-content: center;
-  z-index: 200;
+  z-index: var(--z-modal);
   padding-top: 12vh;
 }
 #cmdk-backdrop.show { display: flex; }
@@ -979,7 +1015,7 @@ a:hover > .icon-journal,
   border-bottom: 1px solid var(--border);
   padding: 16px 20px;
   height: auto;
-  font-size: 16px;
+  font-size: var(--fs-16);
   background: transparent;
   color: var(--fg);
   border-radius: 0;
@@ -999,13 +1035,13 @@ a:hover > .icon-journal,
   padding: 8px 12px;
   border-radius: var(--r-md);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--fg);
 }
 .cmdk-item[aria-selected="true"],
 .cmdk-item:hover { background: var(--accent-soft); color: var(--accent); }
-.cmdk-item .cmdk-kind { color: var(--fg-subtle); font-size: 11px; margin-left: auto; text-transform: uppercase; letter-spacing: 0.05em; }
-.cmdk-empty { padding: 20px; text-align: center; color: var(--fg-muted); font-size: 13px; }
+.cmdk-item .cmdk-kind { color: var(--fg-subtle); font-size: var(--fs-11); margin-left: auto; text-transform: uppercase; letter-spacing: 0.05em; }
+.cmdk-empty { padding: 20px; text-align: center; color: var(--fg-muted); font-size: var(--fs-13); }
 
 /* ---- Scrollbar polish (webkit) ------------------------------------------- */
 
@@ -1030,30 +1066,30 @@ a:hover > .icon-journal,
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
   font-size: var(--font-display-size);
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   letter-spacing: -0.02em;
   line-height: 1.05;
 }
 .num--lg {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
-  font-size: 24px;
-  font-weight: 600;
+  font-size: var(--fs-24);
+  font-weight: var(--fw-semibold);
   letter-spacing: -0.01em;
   line-height: 1.15;
 }
 .num--md {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
-  font-size: 16px;
-  font-weight: 600;
+  font-size: var(--fs-16);
+  font-weight: var(--fw-semibold);
   letter-spacing: -0.005em;
 }
 .num--sm {
   font-family: var(--font-sans);
   font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  font-weight: 500;
+  font-size: var(--fs-13);
+  font-weight: var(--fw-medium);
 }
 
 /* ---- Card variants (v2) --------------------------------------------------- */
@@ -1079,10 +1115,10 @@ a:hover > .icon-journal,
 }
 .card-title-row .card-title { margin: 0; }
 .card-title__action {
-  font-size: 12px;
+  font-size: var(--fs-12);
   color: var(--fg-muted);
   text-decoration: none;
-  font-weight: 500;
+  font-weight: var(--fw-medium);
   transition: color var(--t-fast);
 }
 .card-title__action:hover { color: var(--accent); }
@@ -1098,7 +1134,7 @@ a:hover > .icon-journal,
   padding: 4px 10px;
   border-radius: var(--r-md);
   font-variant-numeric: tabular-nums;
-  font-weight: 600;
+  font-weight: var(--fw-semibold);
   letter-spacing: -0.005em;
   line-height: 1.2;
 }
@@ -1110,7 +1146,7 @@ a:hover > .icon-journal,
   border: 1px solid var(--border);
 }
 /* Hero-sized variant for dashboards */
-.pnl-chip--lg { padding: 8px 14px; font-size: 28px; letter-spacing: -0.015em; }
+.pnl-chip--lg { padding: 8px 14px; font-size: var(--fs-28); letter-spacing: -0.015em; }
 .pnl-chip--hero { padding: 12px 18px; font-size: var(--font-display-size); letter-spacing: -0.02em; }
 
 /* Soft variants — same hue family, less aggressive. Use for table cells. */
@@ -1148,7 +1184,7 @@ a:hover > .icon-journal,
   position: fixed;
   top: 16px;
   right: 16px;
-  z-index: 300;
+  z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1162,7 +1198,7 @@ a:hover > .icon-journal,
   border-left: 3px solid var(--info);
   border-radius: var(--r-md);
   padding: 10px 14px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   color: var(--fg);
   box-shadow: var(--shadow-2);
   display: flex;
@@ -1181,7 +1217,7 @@ a:hover > .icon-journal,
   border: 0;
   color: var(--fg-subtle);
   padding: 0;
-  font-size: 16px;
+  font-size: var(--fs-16);
   line-height: 1;
   cursor: pointer;
   margin-left: auto;
@@ -1221,7 +1257,7 @@ a:hover > .icon-journal,
 .sticky-action-bar {
   position: sticky;
   bottom: 0;
-  z-index: 20;
+  z-index: var(--z-sticky);
   background: var(--bg-raised);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
@@ -1314,7 +1350,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 }
 .journal-editor__toolbar .je-spacer { flex: 1 1 auto; }
 .journal-editor__toolbar .je-status {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg-subtle);
   font-variant-numeric: tabular-nums;
 }
@@ -1324,7 +1360,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .je-btn {
   height: 26px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--fs-12);
   border: 1px solid var(--border);
   background: var(--bg-elev);
   color: var(--fg-muted);
@@ -1366,7 +1402,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   background: transparent;
   color: var(--fg);
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1.6;
   resize: none;
   outline: none;
@@ -1378,42 +1414,11 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .journal-editor__preview {
   padding: 14px 18px;
   background: var(--bg-elev);
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1.6;
 }
-.journal-editor__preview h1 { font-size: 20px; margin: 12px 0 8px; }
-.journal-editor__preview h2 { font-size: 17px; margin: 12px 0 6px; }
-.journal-editor__preview h3 { font-size: 14px; margin: 10px 0 4px; }
-.journal-editor__preview p  { margin: 0 0 10px; }
-.journal-editor__preview pre {
-  background: var(--bg-sunken);
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  overflow-x: auto;
-  font-size: 12px;
-}
-.journal-editor__preview code {
-  background: var(--bg-sunken);
-  padding: 1px 5px;
-  border-radius: var(--r-sm);
-  font-size: 12px;
-}
-.journal-editor__preview blockquote {
-  border-left: 3px solid var(--border-strong);
-  padding-left: 12px;
-  color: var(--fg-muted);
-  margin: 8px 0;
-}
-.journal-editor__preview img {
-  max-width: 100%;
-  height: auto;
-  border-radius: var(--r-md);
-  border: 1px solid var(--border);
-  margin: 8px 0;
-  display: block;
-}
-.journal-editor__preview ul, .journal-editor__preview ol { padding-left: 24px; margin: 4px 0 10px; }
-.journal-editor__preview hr { margin: 14px 0; }
+/* Element styling comes from the shared rendered-markdown ruleset below
+   (grouped with .je-peek-body and .markdown-preview). */
 .journal-editor__preview-empty { color: var(--fg-subtle); font-style: italic; }
 
 /* Drag-over feedback when dropping an image onto the editor. */
@@ -1427,8 +1432,8 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   justify-content: center;
   background: var(--accent-soft);
   color: var(--accent);
-  font-size: 14px;
-  font-weight: 600;
+  font-size: var(--fs-14);
+  font-weight: var(--fw-semibold);
   pointer-events: none;
   z-index: 2;
 }
@@ -1443,7 +1448,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   border-radius: var(--r-md);
   box-shadow: var(--shadow-3);
   padding: 4px;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .je-slash-item {
   display: flex;
@@ -1458,7 +1463,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .je-slash-item[aria-selected="true"],
 .je-slash-item:hover { background: var(--accent-soft); color: var(--accent); }
 .je-slash-item .je-slash-kind {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg-subtle);
   margin-left: auto;
   text-transform: uppercase;
@@ -1475,7 +1480,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   /* Above the trade-sheet modal backdrop (z-index 100) so the menu is
      usable when the journal editor is opened inside the trade sheet;
      below the command palette (200) and toast stack (300). */
-  z-index: 150;
+  z-index: var(--z-popover);
   min-width: 260px;
   max-width: 380px;
   max-height: 340px;
@@ -1485,7 +1490,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   border-radius: var(--r-md);
   box-shadow: var(--shadow-3);
   padding: 4px;
-  font-size: 13px;
+  font-size: var(--fs-13);
 }
 .je-templates-item,
 .je-recall-item {
@@ -1524,8 +1529,8 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .je-recall-item:hover { background: var(--accent-soft); color: var(--accent); }
 
 .je-recall-item .je-recall-date {
-  font-weight: 600;
-  font-size: 12px;
+  font-weight: var(--fw-semibold);
+  font-size: var(--fs-12);
   line-height: 1.3;
   white-space: nowrap;
   overflow: hidden;
@@ -1533,7 +1538,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 }
 .je-recall-item .je-recall-snippet {
   color: var(--fg-muted);
-  font-size: 11px;
+  font-size: var(--fs-11);
   line-height: 1.45;
   margin-top: 3px;
   max-height: calc(1.45em * 2);
@@ -1549,7 +1554,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .je-recall-empty {
   padding: 12px 14px;
   color: var(--fg-muted);
-  font-size: 12px;
+  font-size: var(--fs-12);
 }
 
 /* Peek panel — covers the editor area with a rendered prior entry while the
@@ -1572,13 +1577,13 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   border-bottom: 1px solid var(--border);
   flex-wrap: wrap;
 }
-.je-peek-title { font-weight: 600; font-size: 13px; }
+.je-peek-title { font-weight: var(--fw-semibold); font-size: var(--fs-13); }
 .je-peek-close {
   margin-left: auto;
   background: transparent;
   border: 0;
   color: var(--fg-muted);
-  font-size: 18px;
+  font-size: var(--fs-18);
   line-height: 1;
   cursor: pointer;
   padding: 2px 8px;
@@ -1590,27 +1595,9 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   flex: 1 1 auto;
   overflow-y: auto;
   padding: 14px 18px;
-  font-size: 13px;
+  font-size: var(--fs-13);
   line-height: 1.6;
   color: var(--fg);
-}
-.je-peek-body h1 { font-size: 20px; margin: 12px 0 8px; }
-.je-peek-body h2 { font-size: 17px; margin: 12px 0 6px; }
-.je-peek-body h3 { font-size: 14px; margin: 10px 0 4px; }
-.je-peek-body img { max-width: 100%; border-radius: var(--r-md); border: 1px solid var(--border); margin: 8px 0; }
-.je-peek-body pre {
-  background: var(--bg-sunken);
-  padding: 10px 12px;
-  border-radius: var(--r-md);
-  overflow-x: auto;
-  font-size: 12px;
-}
-.je-peek-body code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
-.je-peek-body blockquote {
-  border-left: 3px solid var(--border-strong);
-  padding-left: 12px;
-  color: var(--fg-muted);
-  margin: 8px 0;
 }
 
 /* Stack panes on narrow viewports. */
@@ -1633,7 +1620,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   -webkit-backdrop-filter: blur(2px);
   backdrop-filter: blur(2px);
   display: none;
-  z-index: 100;
+  z-index: var(--z-sheet);
   align-items: center;
   justify-content: center;
   padding: 32px;
@@ -1669,15 +1656,15 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   z-index: 2;
   flex-wrap: wrap;
 }
-.trade-sheet__header h2 { margin: 0; font-size: 17px; }
+.trade-sheet__header h2 { margin: 0; font-size: var(--fs-17); }
 .trade-sheet__keyhint {
-  font-size: 11px;
+  font-size: var(--fs-11);
   color: var(--fg-subtle);
   margin-left: 12px;
   font-family: var(--font-mono);
 }
 .trade-sheet__keyhint kbd {
-  font-size: 10px;
+  font-size: var(--fs-10);
   padding: 0 4px;
   border-bottom-width: 1px;
 }
@@ -1687,11 +1674,11 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   gap: 4px;
   margin-left: auto;
 }
-.trade-sheet__nav .btn { padding: 0 8px; height: 26px; font-size: 12px; }
+.trade-sheet__nav .btn { padding: 0 8px; height: 26px; font-size: var(--fs-12); }
 .trade-sheet__close {
   background: transparent;
   border: 0;
-  font-size: 22px;
+  font-size: var(--fs-22);
   color: var(--fg-muted);
   cursor: pointer;
   padding: 0 4px;
@@ -1723,8 +1710,8 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   border-right: 1px solid var(--border);
 }
 .trade-stat-strip > div:last-child { border-right: 0; }
-.trade-stat-strip .label { margin: 0 0 2px; font-size: 10px; }
-.trade-stat-strip .num   { font-size: 14px; font-weight: 600; font-family: var(--font-mono); }
+.trade-stat-strip .label { margin: 0 0 2px; font-size: var(--fs-10); }
+.trade-stat-strip .num   { font-size: var(--fs-14); font-weight: var(--fw-semibold); font-family: var(--font-mono); }
 @media (max-width: 560px) {
   .trade-stat-strip { grid-template-columns: repeat(3, 1fr); }
   .trade-stat-strip > div:nth-child(3) { border-right: 0; }
@@ -1743,13 +1730,49 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   }
 }
 
-/* Rendered markdown (journal bodies, strategy cards). Centralized here so
-   every journal/strategy view renders consistently; was previously duplicated
-   inline per page (and missing on the trade/week pages). */
-.markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
-.markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
-.markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
-.markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
+/* ---- Rendered-markdown body (shared) --------------------------------------
+   ONE ruleset for every surface that shows renderMarkdown() output: the
+   editor live preview, the recall peek, and the library/strategy/journal
+   cards. Container concerns (padding, scroll, container font-size) stay on
+   the individual classes; element styling lives here so the three surfaces
+   cannot drift apart (they used to be three separate copies). */
+.journal-editor__preview h1, .je-peek-body h1, .markdown-preview h1 { font-size: var(--fs-20); margin: 12px 0 8px; }
+.journal-editor__preview h2, .je-peek-body h2, .markdown-preview h2 { font-size: var(--fs-17); margin: 12px 0 6px; }
+.journal-editor__preview h3, .je-peek-body h3, .markdown-preview h3 { font-size: var(--fs-14); margin: 10px 0 4px; }
+.journal-editor__preview h1:first-child, .je-peek-body h1:first-child, .markdown-preview h1:first-child,
+.journal-editor__preview h2:first-child, .je-peek-body h2:first-child, .markdown-preview h2:first-child,
+.journal-editor__preview h3:first-child, .je-peek-body h3:first-child, .markdown-preview h3:first-child { margin-top: 0; }
+.journal-editor__preview p, .je-peek-body p, .markdown-preview p { margin: 0 0 10px; }
+.journal-editor__preview pre, .je-peek-body pre, .markdown-preview pre {
+  background: var(--bg-sunken);
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  overflow-x: auto;
+  font-size: var(--fs-12);
+}
+.journal-editor__preview code, .je-peek-body code, .markdown-preview code {
+  background: var(--bg-sunken);
+  padding: 1px 5px;
+  border-radius: var(--r-sm);
+  font-size: var(--fs-12);
+}
+.journal-editor__preview blockquote, .je-peek-body blockquote, .markdown-preview blockquote {
+  border-left: 3px solid var(--border-strong);
+  padding-left: 12px;
+  color: var(--fg-muted);
+  margin: 8px 0;
+}
+.journal-editor__preview img, .je-peek-body img, .markdown-preview img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border);
+  margin: 8px 0;
+  display: block;
+}
+.journal-editor__preview ul, .je-peek-body ul, .markdown-preview ul,
+.journal-editor__preview ol, .je-peek-body ol, .markdown-preview ol { padding-left: 24px; margin: 4px 0 10px; }
+.journal-editor__preview hr, .je-peek-body hr, .markdown-preview hr { margin: 14px 0; }
 
 /* Journal entry view<->edit toggle (mirrors the Library row): a saved entry
    renders as read-only markdown with an Edit button; the form is revealed by
@@ -1764,7 +1787,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 
 /* id-ref: a compact, click-to-copy chip surfacing a trade/journal entry ID
    (handy for referencing it to the AI). Copy handler + toast in id_copy.js. */
-.id-ref { font-family: var(--font-mono); font-size: 11px; color: var(--fg-muted);
+.id-ref { font-family: var(--font-mono); font-size: var(--fs-11); color: var(--fg-muted);
           background: var(--bg-sunken); border: 1px solid var(--border);
           border-radius: var(--r-pill); padding: 2px 8px; line-height: 1.4;
           cursor: pointer; white-space: nowrap;
@@ -1783,12 +1806,8 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
    and the spinner (shared by the running fragment + the htmx button indicators). */
 .ai-panel { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;
             padding: 10px 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); }
-.ai-status { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--fg-muted); }
+.ai-status { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--fg-muted); }
 .ai-status__err { color: var(--neg); }
-.ai-spinner { width: 14px; height: 14px; border: 2px solid var(--border-strong); border-top-color: var(--accent);
-              border-radius: 50%; display: inline-block; animation: ai-spin 0.7s linear infinite; flex-shrink: 0; }
-@keyframes ai-spin { to { transform: rotate(360deg); } }
-
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */
 .lib-item--archived { opacity: 0.6; }
@@ -1801,25 +1820,25 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .lib-item-actions .lib-item-delete { position: static; top: auto; right: auto; }
 .lib-item--strat .lib-row > summary { padding-right: 170px; }
 .pill--retired { background: var(--bg-elev); color: var(--fg-muted); border: 1px solid var(--border);
-                 text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; }
+                 text-transform: uppercase; font-size: var(--fs-10); letter-spacing: 0.04em; }
 
 /* Sidebar open-position badge: a small count pill on the Reconcile link, always visible. */
 .nav-badge { margin-left: auto; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
-             background: var(--neg); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px;
+             background: var(--neg); color: #fff; font-size: var(--fs-11); font-weight: var(--fw-bold); line-height: 18px;
              text-align: center; display: inline-block; }
 
 /* Open-positions panel (dashboard + reconcile header) + shared list rows. */
 .open-pos { margin: 12px 0 16px; padding: 12px 14px; }
 .open-pos--flat { border-color: var(--pos); }
-.open-pos__flat { color: var(--pos); font-weight: 600; font-size: 13px; }
-.open-pos__tick { font-weight: 800; margin-right: 4px; }
+.open-pos__flat { color: var(--pos); font-weight: var(--fw-semibold); font-size: var(--fs-13); }
+.open-pos__tick { font-weight: var(--fw-heavy); margin-right: 4px; }
 .open-pos__list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .open-pos__list a { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 6px 8px;
                     border: 1px solid var(--border); border-radius: var(--r-md); color: var(--fg);
                     text-decoration: none; transition: border-color var(--t-fast); }
 .open-pos__list a:hover { border-color: var(--border-strong); }
 .open-pos__acct { min-width: 160px; }
-.open-pos__sym { font-weight: 600; }
+.open-pos__sym { font-weight: var(--fw-semibold); }
 
 /* Reconcile editor: filter bar, create/edit form grid, transaction rows. */
 .txn-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
@@ -1830,11 +1849,11 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 /* Reconcile table: read-only by default; the Edit button adds #recon.editing, which hides
    the .tv view spans and reveals the .te inputs/checkboxes (one Save posts the whole form). */
 table.reconcile { width: 100%; border-collapse: collapse; }
-table.reconcile th, table.reconcile td { padding: 6px 8px; font-size: 13px; vertical-align: middle;
+table.reconcile th, table.reconcile td { padding: 6px 8px; font-size: var(--fs-13); vertical-align: middle;
                                           border-bottom: 1px solid var(--border); text-align: left; }
-table.reconcile th { font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+table.reconcile th { font-size: var(--fs-11); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
 table.reconcile .te { display: none; }
-table.reconcile input, table.reconcile select { height: 28px; padding: 4px 6px; font-size: 12px;
+table.reconcile input, table.reconcile select { height: 28px; padding: 4px 6px; font-size: var(--fs-12);
                                                  width: 100%; box-sizing: border-box; }
 /* The Side <select> needs room for "sell" plus the native dropdown arrow, else the text
    clips to "se"/"bu" in the narrow column. min-width also widens the column in edit mode. */
@@ -1848,7 +1867,7 @@ tr.txn-item--deleted { opacity: 0.55; }
 
 /* Trade horizon pill (derived from holding time): Scalp / Intraday / Swing / Long-term.
    Tinted so each reads at a glance next to the long/short direction pill. */
-.pill-horizon { text-transform: uppercase; font-size: 10px; letter-spacing: 0.04em; font-weight: 600; border: 1px solid transparent; }
+.pill-horizon { text-transform: uppercase; font-size: var(--fs-10); letter-spacing: 0.04em; font-weight: var(--fw-semibold); border: 1px solid transparent; }
 .horizon-scalp     { background: rgba(245, 158, 11, 0.16); color: #b45309; }   /* amber - fast */
 .horizon-intraday  { background: rgba(59, 130, 246, 0.16); color: #1d4ed8; }   /* blue - one day */
 .horizon-swing     { background: rgba(139, 92, 246, 0.16); color: #6d28d9; }   /* violet - days */
@@ -1863,9 +1882,17 @@ tr.txn-item--deleted { opacity: 0.55; }
 /* Restore-draft bar the journal editor injects above its textarea when a
    newer local draft exists (journal_editor.js offerDraftRestore). */
 .je-draftbar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin-bottom: 6px;
-  font-size: 12px; color: var(--warn); background: var(--warn-soft);
+  font-size: var(--fs-12); color: var(--warn); background: var(--warn-soft);
   border: 1px solid var(--warn-border); border-radius: var(--r-md); }
 .je-draftbar span { flex: 1; }
+
+/* Per-type account equity summary (dashboard hero + analytics). */
+table.equity-breakdown { width: 100%; max-width: 560px; border-collapse: collapse; margin-top: 4px; }
+table.equity-breakdown td { padding: 4px 0; border: 0; font-size: var(--fs-13); vertical-align: baseline; }
+table.equity-breakdown td.lbl { color: var(--fg-muted); }
+table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
+table.equity-breakdown td.count { font-size: var(--fs-11); white-space: nowrap; }
+table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
 
 /* ---- Bulk-edit dirty tracker (dirty_table.js) ------------------------------
    Shared by /accounts, /commissions, and /admin/transactions. */
@@ -1894,13 +1921,13 @@ details.disclose > summary::-webkit-details-marker { display: none; }
 .pill.retired-pill {
   background: var(--retired-soft);
   color: var(--retired);
-  font-size: 10px;
+  font-size: var(--fs-10);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   margin-left: 6px;
 }
 
 /* Build version in the sidebar footer, under the Theme toggle. Small, muted, unobtrusive. */
-.sidebar-version { padding: 6px 12px 2px; font-size: 10px; color: var(--fg-subtle);
+.sidebar-version { padding: 6px 12px 2px; font-size: var(--fs-10); color: var(--fg-subtle);
                    text-align: center; letter-spacing: 0.02em; user-select: text;
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
