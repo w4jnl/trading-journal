@@ -11,7 +11,7 @@
 (function () {
   "use strict";
 
-  var LWC_SRC = "https://unpkg.com/lightweight-charts@5/dist/lightweight-charts.standalone.production.js";
+  var LWC_SRC = "/static/vendor/lightweight-charts-5.2.0.standalone.production.min.js";
   var libPromise = null;
 
   function ensureLib() {
