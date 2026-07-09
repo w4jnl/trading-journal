@@ -91,15 +91,45 @@
 
   // ---------- Input change tracking ----------
 
+  // Registry of editors with unsaved text. Powers the beforeunload guard and
+  // window.journalEditorDirty() (checked by the back-button Esc handler so a
+  // stray Esc cannot navigate away over unsaved work). Editors removed from
+  // the DOM by an HTMX swap (e.g. closing the trade sheet) are pruned on read
+  // so a stale entry cannot block navigation forever.
+  var dirtyEditors = new Set();
+
+  function markDirty(ctx, dirty) {
+    if (dirty) dirtyEditors.add(ctx);
+    else dirtyEditors.delete(ctx);
+  }
+
+  window.journalEditorDirty = function () {
+    dirtyEditors.forEach(function (ctx) {
+      if (!document.contains(ctx.ta)) dirtyEditors.delete(ctx);
+    });
+    return dirtyEditors.size > 0;
+  };
+
+  window.addEventListener("beforeunload", function (e) {
+    if (window.journalEditorDirty()) {
+      e.preventDefault();
+      e.returnValue = ""; // required by Chrome to show the prompt
+    }
+  });
+
   function bindInput(ctx) {
     ctx.ta.addEventListener("input", function () {
       schedulePreview(ctx, 250);
-      setStatus(ctx, ctx.ta.value === ctx.saved ? "" : "Unsaved");
+      var dirty = ctx.ta.value !== ctx.saved;
+      setStatus(ctx, dirty ? "Unsaved" : "");
+      markDirty(ctx, dirty);
     });
-    // Suppress browser-native form-reset re-render bug.
+    // Suppress browser-native form-reset re-render bug. Clearing the dirty
+    // flag here (before navigation) also keeps beforeunload quiet on save.
     ctx.ta.form && ctx.ta.form.addEventListener("submit", function () {
       ctx.saved = ctx.ta.value;
       setStatus(ctx, "");
+      markDirty(ctx, false);
     });
   }
 

@@ -371,16 +371,5 @@
 
     });
   })();
-
-  /* HTMX -> toast bridge. Server responses set
-       HX-Trigger: {"toast": {"message": "...", "kind": "success"}}
-     and htmx fires a `toast` CustomEvent on document.body with detail =
-     the JSON value. Forward to the global window.toast helper. */
-  (function () {
-    document.body.addEventListener('toast', (e) => {
-      if (!e.detail || !e.detail.message || typeof window.toast !== 'function') return;
-      window.toast(e.detail.message, { kind: e.detail.kind || 'info' });
-    });
-  })();
 </script>
 {{end}}
