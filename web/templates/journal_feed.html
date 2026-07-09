@@ -6,7 +6,7 @@
 <h1>Journal</h1>
 
 <!-- ADD-NEW panel: starts a new entry; does NOT filter the feed. -->
-<div class="card card--accent" style="margin-bottom: 16px;">
+<div class="card card--accent mb-16">
   <div class="row">
     <a class="btn btn--primary" href="/journal/{{.Today}}?back=/journal">+ Today</a>
     <a class="btn btn--secondary" href="/journal/week/{{.ThisWeek}}?back=/journal">This week</a>
@@ -54,7 +54,7 @@
         <input type="date" name="to" value="{{.FilterTo}}">
       </label>
     </div>
-    <div class="row" style="margin-top: 12px;">
+    <div class="row mt-12">
       <div>
         <div class="field-label" style="margin-bottom: 6px;">Type</div>
         <div class="chip-row">
@@ -75,7 +75,7 @@
       </div>
     </div>
     {{if or .StrategyOptions .StrategyNoneChecked}}
-    <div class="row" style="margin-top: 12px;">
+    <div class="row mt-12">
       <div>
         <div class="field-label" style="margin-bottom: 6px;">Strategy</div>
         <div class="chip-row">
@@ -87,7 +87,7 @@
       </div>
     </div>
     {{end}}
-    <div class="row" style="margin-top: 16px;">
+    <div class="row mt-16">
       <button type="submit" class="btn btn--primary">Apply</button>
       {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear all</a>{{end}}
     </div>

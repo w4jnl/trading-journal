@@ -52,13 +52,13 @@
     "MinHeight"   "360px"
   )}}
 
-  <div class="row" style="margin-top: 12px;">
+  <div class="row mt-12">
     <button type="submit" class="btn btn--primary">Save</button>
     {{if .JournalBody}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
     {{if .HasJournal}}
       <button type="submit" name="_action" value="delete" formnovalidate
               onclick="return confirm('Delete this trade journal entry?');"
-              class="btn btn--danger btn--sm" style="margin-left: auto;">
+              class="btn btn--danger btn--sm ml-auto">
         Delete entry
       </button>
     {{end}}

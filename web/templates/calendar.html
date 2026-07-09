@@ -3,7 +3,7 @@
 {{define "content"}}
 {{template "back_button" .}}
 
-<div class="row-between" style="margin-bottom: 16px;">
+<div class="row-between mb-16">
   <h1 style="margin: 0;">{{.MonthLabel}}</h1>
   <div class="row-sm">
     <a class="btn btn--secondary btn--sm" href="/calendar?month={{.PrevMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">‹ Prev</a>
@@ -42,6 +42,7 @@
   </div>
 </div>
 
+<div class="table-scroll">
 <table class="calendar">
   <thead>
     <tr>
@@ -105,6 +106,7 @@
     {{end}}
   </tbody>
 </table>
+</div>
 
 <style>
   .calendar { width: 100%; border-collapse: separate; border-spacing: 6px; border: 0; background: transparent; box-shadow: none; }

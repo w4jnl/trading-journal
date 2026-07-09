@@ -9,12 +9,12 @@
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 {{if not .CanEdit}}
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <span class="muted">Read-only view. Commission rates and instrument setup can only be changed by an admin.</span>
 </div>
 {{end}}
 
-<div class="card card--warn" style="margin-bottom: 16px;">
+<div class="card card--warn mb-16">
   Commission rates are <strong>per side, per contract</strong>, keyed by
   <strong>asset class × firm × size</strong>. Set each contract's asset
   class and size in the lower table — the system then looks up
@@ -25,7 +25,7 @@
 </div>
 
 {{if .Orphans}}
-<div class="card card--neg" style="margin-bottom: 16px;">
+<div class="card card--neg mb-16">
   <strong>{{len .Orphans}} fixable problem(s) detected</strong> — trades with no commission applied:
   <ul style="margin: 8px 0 0 0; padding-left: 18px;">
     {{range .Orphans}}
@@ -53,14 +53,14 @@
 <form id="commissions-form" method="post" action="/commissions/save" data-dirty-form></form>
 
 <h2 style="margin-top: 24px;">Commission rates</h2>
-<div class="table-scroll" style="margin-top: 8px;">
+<div class="table-scroll mt-8">
   <table class="rates">
     <thead>
       <tr>
         <th>Asset class</th>
         <th>Firm</th>
         <th>Size</th>
-        <th style="text-align: right;">Per-contract per side (USD)</th>
+        <th class="tar">Per-contract per side (USD)</th>
         <th></th>
       </tr>
     </thead>
@@ -75,12 +75,12 @@
 </div>
 
 {{if .CanEdit}}
-<details class="disclose" style="margin-top: 12px;">
+<details class="disclose mt-12">
   <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add rate</summary>
   <form hx-post="/commissions/rates/new"
         hx-target="#rates-tbody"
         hx-swap="beforeend"
-        class="card" style="margin-top: 8px;">
+        class="card mt-8">
     <div class="row">
       <label class="field"><span class="field-label">Asset class</span>
         <select name="asset_class" required>
@@ -113,15 +113,15 @@
 {{end}}
 
 <h2 style="margin-top: 32px;">Instrument categorization</h2>
-<div class="table-scroll" style="margin-top: 8px;">
+<div class="table-scroll mt-8">
   <table class="instruments">
     <thead>
       <tr>
         <th>Symbol</th>
         <th>Exchange</th>
-        <th style="text-align: right;">Tick</th>
-        <th style="text-align: right;">Tick value</th>
-        <th style="text-align: right;">Multiplier</th>
+        <th class="tar">Tick</th>
+        <th class="tar">Tick value</th>
+        <th class="tar">Multiplier</th>
         <th>Asset class</th>
         <th>Size</th>
         <th>Status</th>
@@ -183,7 +183,7 @@
         {{end}}
       </ul>
       {{if $.CanEdit}}
-      <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
+      <form method="post" action="/commissions/classes/new" class="row mt-12">
         <input type="hidden" name="kind" value="asset">
         <label class="field"><span class="field-label">Code</span>
           <input type="text" name="code" required placeholder="e.g. ag_futures" style="width: 140px;"></label>
@@ -203,7 +203,7 @@
         {{end}}
       </ul>
       {{if $.CanEdit}}
-      <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
+      <form method="post" action="/commissions/classes/new" class="row mt-12">
         <input type="hidden" name="kind" value="size">
         <label class="field"><span class="field-label">Code</span>
           <input type="text" name="code" required placeholder="e.g. nano" style="width: 140px;"></label>
@@ -221,7 +221,7 @@
 {{if .CanEdit}}
 <div class="save-bar" data-dirty-savebar="commissions-form">
   <span class="muted"><strong data-dirty-count class="num">0</strong> row(s) changed.</span>
-  <div class="row-sm" style="margin-left: auto;">
+  <div class="row-sm ml-auto">
     <button type="button" data-dirty-reset class="btn btn--ghost btn--sm">Discard</button>
     <button form="commissions-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
   </div>

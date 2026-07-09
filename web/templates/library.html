@@ -4,10 +4,10 @@
 {{template "back_button" .}}
 
 <h1>Library</h1>
-<p class="muted" style="margin-bottom: 16px;">Manage your journal templates and trading strategies. Templates pre-fill the editor; strategies are named playbooks you can attach to any journal entry.</p>
+<p class="muted mb-16">Manage your journal templates and trading strategies. Templates pre-fill the editor; strategies are named playbooks you can attach to any journal entry.</p>
 
 {{if .Flash}}
-<div class="flash saved" style="margin-bottom: 16px;">
+<div class="flash saved mb-16">
   {{if eq .Flash "saved"}}Saved.
   {{else if eq .Flash "cloned"}}Template cloned — edit your copy below.
   {{else if eq .Flash "deleted"}}Deleted.
@@ -16,7 +16,7 @@
   {{else}}{{.Flash}}{{end}}
 </div>
 {{end}}
-{{if .FlashErr}}<div class="flash error" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>{{end}}
+{{if .FlashErr}}<div class="flash error mb-16" role="alert">{{.FlashErr}}</div>{{end}}
 
 <div class="tabs" style="margin-bottom: 20px;">
   <a href="/library?tab=templates" class="tab {{if eq .Tab "templates"}}tab-on{{end}}">Templates</a>

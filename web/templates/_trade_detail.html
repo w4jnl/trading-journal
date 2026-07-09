@@ -5,7 +5,7 @@
   <span class="muted">({{.SymbolRoot}})</span>
   {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
   {{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Holding time: {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}
-  <span style="margin-left: auto;">{{template "id_ref" (dict "Label" "Trade" "ID" $.TradeID)}}</span>
+  <span class="ml-auto">{{template "id_ref" (dict "Label" "Trade" "ID" $.TradeID)}}</span>
 </div>
 <div class="muted" style="margin-bottom: 12px; font-size: 12px;">
   {{.AccountName}}{{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
@@ -89,7 +89,7 @@
       "Mode"        "single"
       "MinHeight"   "160px"
     )}}
-    <div class="row" style="margin-top: 8px;">
+    <div class="row mt-8">
       <button type="submit" class="btn btn--primary">Save</button>
       {{if $.JournalBody}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
       <span class="muted" style="font-size: 11px;">⌘S to save</span>

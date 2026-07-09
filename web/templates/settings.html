@@ -11,13 +11,13 @@
 </div>
 {{end}}
 
-{{if eq .Flash "revoked"}}<div class="flash saved" style="margin-bottom: 16px;">Key revoked.</div>{{end}}
-{{if eq .Flash "deleted"}}<div class="flash saved" style="margin-bottom: 16px;">Key deleted.</div>{{end}}
-{{if eq .Flash "language"}}<div class="flash saved" style="margin-bottom: 16px;">Language saved.</div>{{end}}
-{{if .Err}}<div class="flash error" role="alert" style="margin-bottom: 16px;">{{.Err}}</div>{{end}}
+{{if eq .Flash "revoked"}}<div class="flash saved mb-16">Key revoked.</div>{{end}}
+{{if eq .Flash "deleted"}}<div class="flash saved mb-16">Key deleted.</div>{{end}}
+{{if eq .Flash "language"}}<div class="flash saved mb-16">Language saved.</div>{{end}}
+{{if .Err}}<div class="flash error mb-16" role="alert">{{.Err}}</div>{{end}}
 
 {{if .AIEnabled}}
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <div class="card-title">AI analysis language</div>
   <p class="muted" style="font-size: 12px;">
     The in-app AI writes journal reviews in this language. This does not change the app
@@ -50,7 +50,7 @@
   </form>
 
   {{if .Keys}}
-  <div class="table-scroll" style="margin-top: 8px;">
+  <div class="table-scroll mt-8">
     <table>
       <thead>
         <tr><th>Name</th><th>Prefix</th><th>Created</th><th>Last used</th><th>Status</th><th></th></tr>
@@ -63,7 +63,7 @@
           <td class="num muted">{{ltime .CreatedAt "datetime"}}</td>
           <td class="num muted">{{if .LastUsedAt}}{{ltimep .LastUsedAt "datetime"}}{{else}}never{{end}}</td>
           <td>{{if .RevokedAt}}<span class="pill">revoked</span>{{else}}<span class="pill dir-long">active</span>{{end}}</td>
-          <td style="text-align: right;">
+          <td class="tar">
             {{if .RevokedAt}}
             <form method="post" action="/settings/api-keys/{{.ID}}/delete" style="display: inline;"
                   onsubmit="return confirm('Delete this revoked key row?');">

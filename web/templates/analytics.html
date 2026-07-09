@@ -18,7 +18,7 @@
     <button type="button" class="btn btn--secondary btn--sm" data-preset="month">Last month</button>
   </div>
   <a href="/analytics" class="btn btn--ghost btn--sm">Clear</a>
-  <span class="muted" style="margin-left: auto;"><span class="num">{{.TradeCount}}</span> closed trades</span>
+  <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades</span>
 </form>
 
 {{with .Headline}}
@@ -76,7 +76,7 @@
 </div>
 
 <!-- Account equity breakdown (per-type, end-of-range) -->
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· at end of filter range</span></div>
   {{if gt $.EquityIncluded 0}}
     <table class="equity-breakdown">
@@ -101,7 +101,7 @@
 </div>
 
 <!-- Daily account balance -->
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <div class="card-title">Daily Account Balance</div>
   <div id="chart-balance" class="chart-host" style="height: 240px;"></div>
   {{if and (gt $.EquityIncluded 0) (gt $.EquityExcluded 0)}}
