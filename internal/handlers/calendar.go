@@ -26,6 +26,9 @@ type dayCell struct {
 	Commission float64
 	HasJournal bool   // day-level journal entry exists
 	JournalTag string // good|bad|neutral|""
+	// SpillPnl is true for an out-of-month day whose week IS part of the month
+	// view - the template renders its P&L muted so the week total is explained.
+	SpillPnl bool
 }
 
 // weekTotal aggregates a single row of the calendar grid. Counts every day in
@@ -42,6 +45,9 @@ type weekTotal struct {
 	HasJournal bool   // a week-level journal entry exists for this ISO week
 	JournalTag string // good|bad|neutral|""
 	InFuture   bool   // Monday is after today — no journal/link affordance
+	// InMonth is true when at least one of the week's days falls in the viewed
+	// month. A trailing all-spillover week (InMonth=false) shows no summary.
+	InMonth bool
 }
 
 // CalendarPage renders /calendar — a monthly grid colored by net P&L.
@@ -221,7 +227,8 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	var monthNet, monthGross, monthComm float64
 	var monthTrades, winDays, lossDays int64
 	weeklyTotals := make([]weekTotal, len(weeks))
-	for wi, week := range weeks {
+	for wi := range weeks {
+		week := weeks[wi]
 		// ISO week is anchored to Monday — week[1] is Monday of this row, the
 		// stable representative for the ISO week regardless of which Sunday
 		// or Saturday the grid happens to start on.
@@ -234,16 +241,33 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 			SundayStr: monday.AddDate(0, 0, 6).Format("2006-01-02"),
 			InFuture:  monday.After(today),
 		}
+		// A week is part of THIS month's view iff at least one of its days is
+		// in-month. The trailing all-spillover row (a fixed 6-week grid always
+		// renders 6 rows) has none - it shows no summary.
+		for _, c := range week {
+			if c.InMonth {
+				wt.InMonth = true
+				break
+			}
+		}
 		if tag, ok := weekJournalsByMonday[monday.Format("2006-01-02")]; ok {
 			wt.HasJournal = true
 			wt.JournalTag = tag
 		}
-		for _, c := range week {
+		for di := range week {
+			c := &weeks[wi][di]
 			// Week aggregates: every day in the row, including spillover.
 			if c.HasData {
 				wt.HasData = true
 				wt.Trades += c.Trades
 				wt.NetPnl += c.NetPnl
+			}
+			// A spillover day that belongs to an in-month week (e.g. Jul 1-3 in
+			// the week that also holds Jun 28-30) shows its P&L muted, so the
+			// user can see what feeds the week total. Spillover days of an
+			// all-spillover week stay blank.
+			if !c.InMonth && wt.InMonth && c.HasData {
+				c.SpillPnl = true
 			}
 			// Month aggregates: only in-month days.
 			if !c.InMonth || !c.HasData {

@@ -64,7 +64,7 @@
             </a>
           {{end}}
           {{if eq $di 6}}
-            {{if not $wt.InFuture}}
+            {{if and $wt.InMonth (not $wt.InFuture)}}
               {{/* Week-level journal affordance — same shape as day cells but linked to /journal/week/<weekID>. */}}
               <a class="j-cell-icon"
                  href="/journal/week/{{$wt.WeekID}}?back={{$.CalendarBack}}"
@@ -96,6 +96,14 @@
               <div class="day-num in-month">{{$day.Date.Day}}</div>
               <div class="day-pnl num {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $day.NetPnl}}</div>
               <div class="day-meta"><span class="num">{{$day.Trades}}</span> trades · <span class="num">{{$day.Wins}}W/{{$day.Losses}}L</span></div>
+            </a>
+          {{else if $day.SpillPnl}}
+            {{/* Out-of-month day that still feeds an in-month week total: show its
+                 P&L muted (it's context for the week sum, not a day of this month). */}}
+            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
+              <div class="day-num">{{$day.Date.Day}}</div>
+              <div class="day-pnl day-pnl--spill num">{{printf "%.2f" $day.NetPnl}}</div>
+              <div class="day-meta day-meta--spill"><span class="num">{{$day.Trades}}</span> trades</div>
             </a>
           {{else}}
             <div class="day-num {{if $day.InMonth}}in-month{{end}}">{{$day.Date.Day}}</div>
@@ -151,6 +159,10 @@
   .calendar td.has-pnl-neg        .day-pnl.neg { color: var(--cal-text-neg); }
   .calendar td.has-pnl-neg-strong .day-pnl.neg { color: var(--cal-text-neg-strong); }
   .day-meta { font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+  /* Spillover day feeding an in-month week total: rendered smaller + muted so
+     it reads as context, not a day of this month. */
+  .day-pnl.day-pnl--spill { color: var(--fg-muted); font-weight: 500; font-size: 13px; }
+  .day-meta.day-meta--spill { color: var(--fg-subtle); }
   .calendar td.has-pnl-pos        .day-meta,
   .calendar td.has-pnl-pos-strong .day-meta,
   .calendar td.has-pnl-neg        .day-meta,
