@@ -57,6 +57,18 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 	monthEnd := monthStart.AddDate(0, 1, 0)
 
+	// The grid is a Sunday-start 6-week block that always covers the month plus
+	// spillover days from the neighbouring months. Daily stats are fetched for
+	// the WHOLE grid (not just the month) so a week-summary total includes the
+	// spillover days that share its ISO week with in-month days (e.g. Jun 29-30
+	// count toward the week that also holds Jul 1-3). The spillover day CELLS
+	// stay greyed - only the week totals use their data.
+	gridStart := monthStart
+	for gridStart.Weekday() != time.Sunday {
+		gridStart = gridStart.AddDate(0, 0, -1)
+	}
+	gridEnd := gridStart.AddDate(0, 0, 42) // 6 weeks, exclusive upper bound
+
 	// Bridge legacy ?account_id=N → ?filter=acc:N so older calendar bookmarks
 	// keep working through the multi-select transition.
 	if legacy := strings.TrimSpace(r.URL.Query().Get("account_id")); legacy != "" {
@@ -83,8 +95,8 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
-		StatDate:   monthStart,
-		StatDate_2: monthEnd,
+		StatDate:   gridStart,
+		StatDate_2: gridEnd,
 	})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list daily_stats: %w", err))
@@ -162,11 +174,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		c.Commission += row.Commission
 	}
 
-	// Sunday-start grid covering 6 weeks (always covers any month).
-	gridStart := monthStart
-	for gridStart.Weekday() != time.Sunday {
-		gridStart = gridStart.AddDate(0, 0, -1)
-	}
+	// gridStart / gridEnd were computed above (they also bound the stats fetch).
 	now := time.Now().In(tz)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
 	weeks := make([][]dayCell, 6)
