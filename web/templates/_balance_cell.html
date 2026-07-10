@@ -27,7 +27,7 @@
     <form hx-post="/accounts/{{$a.ID}}/balances"
           hx-target="#balance-cell-{{$a.ID}}"
           hx-swap="outerHTML"
-          class="balance-form" style="margin-top: 8px;">
+          class="balance-form mt-8">
       <div class="row" style="align-items: flex-end;">
         <label class="field"><span class="field-label">Date</span>
           <input type="date" name="anchor_date" value="{{.Today}}" required></label>
@@ -43,7 +43,7 @@
         <thead>
           <tr>
             <th style="text-align: left;">Date</th>
-            <th style="text-align: right;">Balance</th>
+            <th class="tar">Balance</th>
             <th style="text-align: left;">Note</th>
             <th></th>
           </tr>
@@ -52,9 +52,9 @@
           {{range $bal.Anchors}}
             <tr>
               <td class="num">{{localtime .AnchorDate "2006-01-02"}}</td>
-              <td class="num" style="text-align: right;">{{printf "%.2f" .Balance}}</td>
+              <td class="num tar">{{printf "%.2f" .Balance}}</td>
               <td class="muted">{{.Note}}</td>
-              <td style="text-align: right;">
+              <td class="tar">
                 <button type="button" class="btn btn--ghost btn--sm"
                         hx-post="/balances/{{.ID}}/delete"
                         hx-target="#balance-cell-{{$a.ID}}"

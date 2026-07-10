@@ -1,6 +1,7 @@
 {{define "title"}}Market data — Trading Journal{{end}}
 
 {{define "content"}}
+{{template "back_button" .}}
 <h1>Market data</h1>
 <p class="muted" style="margin-bottom: 16px; font-size: 13px;">
   Chart bar-cache coverage for the last {{.WindowDays}} days (Yahoo's intraday
@@ -15,7 +16,7 @@
 {{if eq .Flash "backfill"}}<div class="flash saved" style="margin-bottom:16px;">Backfill queued — missing days are fetching in the background. Reload in a moment to watch coverage climb.</div>{{end}}
 {{if eq .Flash "disabled"}}<div class="flash empty" style="margin-bottom:16px;">Prefetch is disabled (<code>market_data.prefetch = false</code>); cannot backfill.</div>{{end}}
 
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <div class="row-sm" style="gap: 28px;">
     <div><div class="label">Days needed</div><div class="num" style="font-size:18px;">{{.TotalNeeded}}</div></div>
     <div><div class="label">Cached</div><div class="num" style="font-size:18px;">{{.TotalCached}}</div></div>

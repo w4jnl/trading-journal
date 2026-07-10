@@ -6,7 +6,7 @@
 <h1>Import CSV</h1>
 
 <div class="card" style="margin-bottom: 24px;">
-  <p class="muted" style="margin-bottom: 16px;">Drop one or more MotiveWave or TopstepX CSVs here, or copy them to <code>imports/inbox/</code> for auto-import. Format is detected from the header row. Import order doesn't matter — trades are rebuilt from all fills chronologically.</p>
+  <p class="muted mb-16">Drop one or more MotiveWave or TopstepX CSVs here, or copy them to <code>imports/inbox/</code> for auto-import. Format is detected from the header row. Import order doesn't matter — trades are rebuilt from all fills chronologically.</p>
   <form id="import-form" hx-post="/import/upload" hx-encoding="multipart/form-data" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy">
     <div id="drop-zone" class="drop-zone">
       <svg width="56" height="56" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="color: var(--fg-subtle); margin-bottom: 14px;">
@@ -77,6 +77,14 @@
       out.innerHTML = '<div class="card"><span class="spinner"></span> importing ' + files.length + ' file' + (files.length === 1 ? '' : 's') + '…</div>';
       try {
         const resp = await fetch('/import/upload', { method: 'POST', body: fd });
+        if (!resp.ok) {
+          // Non-2xx bodies are plain-text errors (or a full error page) - never
+          // inject them raw. Show a styled card with the status + a trimmed excerpt.
+          const text = (await resp.text()).slice(0, 300);
+          out.innerHTML = '<div class="card card--neg"><strong>Upload failed</strong> (HTTP ' + resp.status + '): ' +
+            text.replace(/[&<>]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;'}[c])) + '</div>';
+          return;
+        }
         out.innerHTML = await resp.text();
         // Wire up hx-post on the freshly-injected picker forms — raw fetch
         // bypasses HTMX's normal swap pipeline, so the new DOM is invisible

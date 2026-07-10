@@ -18,7 +18,7 @@ completes the ingest.
   {{if .TopstepAccounts}}
   <details open style="margin-bottom: 12px;">
     <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">Assign to existing account</summary>
-    <form hx-post="/import/assign" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy-assign" class="row" style="margin-top: 8px;">
+    <form hx-post="/import/assign" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy-assign" class="row mt-8">
       <input type="hidden" name="staged_path" value="{{.StagedPath}}">
       <label class="field">
         <span class="field-label">Account</span>
@@ -37,7 +37,7 @@ completes the ingest.
 
   <details {{if not .TopstepAccounts}}open{{end}}>
     <summary style="cursor: pointer; font-weight: 600; padding: 6px 0;">{{if .TopstepAccounts}}Or create a new account and import{{else}}Create a new TopStep account and import{{end}}</summary>
-    <form hx-post="/import/assign" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy-create" class="row" style="margin-top: 8px;">
+    <form hx-post="/import/assign" hx-target="#outcome" hx-swap="innerHTML" hx-indicator="#busy-create" class="row mt-8">
       <input type="hidden" name="staged_path" value="{{.StagedPath}}">
       <label class="field"><span class="field-label">Name</span>
         <input type="text" name="new_name" required placeholder="e.g. TopStep Eval 5"></label>

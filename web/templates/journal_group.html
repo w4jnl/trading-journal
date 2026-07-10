@@ -8,7 +8,7 @@
   {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
 </div>
 
-<div class="row-sm" style="margin-bottom: 16px;">
+<div class="row-sm mb-16">
   <a href="/journal" class="btn btn--secondary btn--sm">‹ Back to feed</a>
 </div>
 
@@ -47,12 +47,12 @@
     "MinHeight"   "360px"
   )}}
 
-  <div class="row" style="margin-top: 12px;">
+  <div class="row mt-12">
     <button type="submit" class="btn btn--primary">Save</button>
     {{if .Entry.Body}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
     <button type="submit" formaction="/journal/group/{{.EntryID}}/delete" formnovalidate
             onclick="return confirm('Delete this group note? Linked trades stay; only the note and its links are removed.');"
-            class="btn btn--danger btn--sm" style="margin-left: auto;">
+            class="btn btn--danger btn--sm ml-auto">
       Delete entry
     </button>
   </div>
@@ -76,7 +76,7 @@
 <details class="disclose trade-picker" style="margin-top: 16px; margin-bottom: 16px;">
   <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add trades</summary>
   {{if .CandidateTrades}}
-  <form method="post" action="/journal/group/{{.EntryID}}/link" class="card" id="tp-form" style="margin-top: 8px;">
+  <form method="post" action="/journal/group/{{.EntryID}}/link" class="card mt-8" id="tp-form">
     <input type="search" class="tp-search" placeholder="Filter by symbol, date, account…" autocomplete="off" aria-label="Filter trades">
     <div class="tp-list table-scroll">
       <table class="tp-table">
@@ -113,7 +113,7 @@
     </div>
   </form>
   {{else}}
-  <p class="muted" style="margin-top: 8px;">All your closed trades are already in this group (or you have none yet).</p>
+  <p class="muted mt-8">All your closed trades are already in this group (or you have none yet).</p>
   {{end}}
 </details>
 

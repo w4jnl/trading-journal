@@ -1,10 +1,11 @@
 {{define "title"}}Users — Trading Journal{{end}}
 
 {{define "content"}}
+{{template "back_button" .}}
 <h1>Users</h1>
 
 {{if .Flash}}
-<div class="flash saved" style="margin-bottom: 16px;">
+<div class="flash saved mb-16">
   {{if eq .Flash "reset"}}Password reset; the user's existing sessions were destroyed.
   {{else if eq .Flash "toggled"}}Updated.
   {{else if hasPrefix .Flash "created="}}Created user <code>{{trimPrefix .Flash "created="}}</code>.
@@ -13,7 +14,7 @@
 </div>
 {{end}}
 {{if .FlashErr}}
-<div class="flash empty" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>
+<div class="flash error mb-16" role="alert">{{.FlashErr}}</div>
 {{end}}
 
 <div class="table-scroll" style="margin-bottom: 24px;">
@@ -27,7 +28,7 @@
         <th>Role</th>
         <th>Status</th>
         <th>Last login</th>
-        <th style="text-align: right;">Actions</th>
+        <th class="tar">Actions</th>
       </tr>
     </thead>
     <tbody>
@@ -45,7 +46,7 @@
           {{if .IsActive}}<span class="pill pill-active">active</span>{{else}}<span class="muted">disabled</span>{{end}}
         </td>
         <td class="muted">{{if .LastLoginAt}}{{ltimep .LastLoginAt "datetime"}}{{else}}—{{end}}</td>
-        <td class="row-actions" style="text-align: right;">
+        <td class="row-actions tar">
           <details class="disclose">
             <summary class="btn btn--secondary btn--sm">Actions</summary>
             <div class="row-actions-menu">
@@ -87,8 +88,8 @@
 </div>
 
 <details class="disclose card" style="padding: 16px;">
-  <summary class="btn btn--primary" style="display: inline-flex;">+ Add user</summary>
-  <form method="post" action="/admin/users" class="form-grid" style="margin-top: 12px;">
+  <summary class="btn btn--primary btn--sm" style="display: inline-flex;">+ Add user</summary>
+  <form method="post" action="/admin/users" class="form-grid mt-12">
     <label class="field">
       <span class="field-label">Username</span>
       <input name="username" required pattern="[A-Za-z0-9_.-]+" title="Letters, digits, _ - . only">
@@ -114,7 +115,7 @@
   .users-table tr.row-dim { opacity: 0.55; }
   .users-table .row-actions-menu {
     display: flex; flex-direction: column; gap: 6px;
-    background: var(--bg-elevated); border: 1px solid var(--border);
+    background: var(--bg-elev); border: 1px solid var(--border);
     border-radius: var(--r-md); padding: 8px;
     margin-top: 6px; min-width: 240px;
   }
@@ -122,7 +123,7 @@
   .users-table .row-actions-menu .row-actions-form input[type="password"] {
     padding: 4px 6px; font-size: 12px;
   }
-  .pill { padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+  .pill { text-transform: uppercase; letter-spacing: 0.04em; } /* base chrome from app.css */
   .pill-admin  { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 22%, transparent); color: var(--brand-teal, var(--accent)); }
   .pill-active { background: color-mix(in srgb, var(--pos) 18%, transparent); color: var(--pos); }
   .form-grid { display: flex; flex-wrap: wrap; gap: 14px; align-items: end; }

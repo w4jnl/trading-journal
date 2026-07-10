@@ -16,7 +16,7 @@
   single trade, use the /trades page.
 */}}
 {{define "journal_summary"}}
-<div class="card" style="margin-top: 16px;">
+<div class="card mt-16">
   <div class="card-title">Trades · <span class="num">{{.Summary.N}}</span></div>
   {{if gt .Summary.N 0}}
   <div class="grid-auto" style="--min: 130px;">
@@ -44,7 +44,7 @@
 
 {{if .Trades}}
 {{$entryID := .EntryID}}{{$allowUnlink := .AllowUnlink}}
-<div class="table-scroll" style="margin-top: 12px;">
+<div class="table-scroll mt-12">
   <table>
     <thead>
       <tr>
@@ -69,7 +69,7 @@
         <td class="tabular num">{{.Qty}}</td>
         <td class="tabular num">{{pnlChip .NetPnl}}</td>
         {{if $allowUnlink}}
-        <td style="text-align: right;" onclick="event.stopPropagation();">
+        <td class="tar" onclick="event.stopPropagation();">
           <form method="post" action="/journal/group/{{$entryID}}/unlink"
                 onsubmit="return confirm('Remove trade {{.ID}} from this group note?');"
                 style="display: inline;">

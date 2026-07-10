@@ -8,7 +8,7 @@
   {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
 </div>
 
-<div class="row-sm" style="margin-bottom: 16px;">
+<div class="row-sm mb-16">
   <a href="/journal/{{.PrevDay}}" class="btn btn--secondary btn--sm">‹ Prev</a>
   <a href="/journal/{{.Today}}" class="btn btn--secondary btn--sm">Today</a>
   <a href="/journal/{{.NextDay}}" class="btn btn--secondary btn--sm">Next ›</a>
@@ -59,7 +59,7 @@
       "MinHeight"   "360px"
     )}}
 
-    <div class="row" style="margin-top: 12px;">
+    <div class="row mt-12">
       <button type="submit" class="btn btn--primary">Save</button>
       {{if .Entry.Body}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
       {{if .HasEntry}}
@@ -69,7 +69,7 @@
              Go 1.22 ServeMux ambiguity resolution. */}}
         <button type="submit" name="_action" value="delete" formnovalidate
                 onclick="return confirm('Delete this journal entry for {{.DateNice}}?');"
-                class="btn btn--danger btn--sm" style="margin-left: auto;">
+                class="btn btn--danger btn--sm ml-auto">
           Delete entry
         </button>
       {{end}}

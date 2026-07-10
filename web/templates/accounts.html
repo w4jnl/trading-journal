@@ -16,7 +16,7 @@
 {{if eq .Flash "cloned"}}<div class="flash created">Account cloned.</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
-<div class="card card--warn" style="margin-bottom: 16px;">
+<div class="card card--warn mb-16">
   Accounts are auto-created from CSV imports and start as <strong>Prop · Eval</strong>. Set <strong>firm</strong> (drives commission lookup) and adjust <strong>type</strong> as accounts get funded or moved live. Changing the firm refreshes commissions on existing trades. Uncheck <strong>Active</strong> to retire an account — its trades stay in the database but are hidden from the dashboard, calendar, and analytics. They can still be revealed on the <a href="/trades">trades</a> page behind a toggle.
 </div>
 
@@ -29,8 +29,8 @@
 </div>
 
 <details class="disclose">
-  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ New account</summary>
-  <form method="post" action="/accounts/new" class="card" style="margin-top: 8px;">
+  <summary class="btn btn--primary btn--sm" style="display: inline-flex;">+ New account</summary>
+  <form method="post" action="/accounts/new" class="card mt-8">
     <div class="row">
       <label class="field"><span class="field-label">Name</span><input type="text" name="name" required placeholder="e.g. Apex Eval 28"></label>
       <label class="field"><span class="field-label">Account ref</span><input type="text" name="account_ref" placeholder="defaults to name"></label>
@@ -61,9 +61,9 @@
   tiny JS helper (postAccountAction below) instead of HTML form-association
   so they're not subject to any browser/parser quirks around forms in tables.
 -->
-<form id="accounts-form" method="post" action="/accounts/save"></form>
+<form id="accounts-form" method="post" action="/accounts/save" data-dirty-form></form>
 
-<div class="table-scroll" style="margin-top: 16px;">
+<div class="table-scroll mt-16">
   <table class="accounts">
     <thead>
       <tr>
@@ -99,7 +99,7 @@
             <span class="subtle">{{$a.ImportSource}}</span>
             <details class="reassign">
               <summary>Move trades…</summary>
-              <div class="row" style="margin-top: 8px;">
+              <div class="row mt-8">
                 <label class="field">
                   <span class="field-label">To account</span>
                   <select id="move-target-{{$a.ID}}" required>
@@ -121,7 +121,7 @@
             </details>
             <details class="reassign">
               <summary>Delete account…</summary>
-              <div style="margin-top: 8px;">
+              <div class="mt-8">
                 <p class="muted" style="font-size: 11px; margin: 4px 0 6px 0;">
                   Permanently removes <strong>{{$a.Name}}</strong> and every trade,
                   execution, and journal entry attached to it. Sync-log history is kept.
@@ -184,10 +184,10 @@
   </table>
 </div>
 
-<div id="save-bar" class="save-bar">
-  <span class="muted"><strong id="dirty-count" class="num">0</strong> row(s) changed.</span>
-  <div class="row-sm" style="margin-left: auto;">
-    <button type="button" id="reset-btn" class="btn btn--ghost btn--sm">Discard</button>
+<div class="save-bar" data-dirty-savebar="accounts-form">
+  <span class="muted"><strong data-dirty-count class="num">0</strong> row(s) changed.</span>
+  <div class="row-sm ml-auto">
+    <button type="button" data-dirty-reset class="btn btn--ghost btn--sm">Discard</button>
     <button form="accounts-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
   </div>
 </div>
@@ -199,24 +199,6 @@
   table.accounts td { vertical-align: middle; font-size: 13px; }
 
   /* Sticky bottom save bar, only visible when dirty. */
-  .save-bar {
-    position: sticky;
-    bottom: 0;
-    background: var(--bg-elev);
-    padding: 12px 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    box-shadow: var(--shadow-2);
-    display: none;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-  }
-  .save-bar.dirty { display: flex; }
-
-  /* Dirty row marker — soft amber left edge instead of orange input borders. */
-  tr.row-dirty td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
-
   /* Reassign disclosure inside cell */
   details.reassign { margin-top: 6px; }
   details.reassign > summary { cursor: pointer; user-select: none; font-size: 11px; color: var(--accent); list-style: none; }
@@ -233,19 +215,9 @@
   details.reassign.needs-anchor > summary:hover { text-decoration: underline; }
 
   /* "+ New account" disclosure */
-  details.disclose > summary { list-style: none; }
-  details.disclose > summary::-webkit-details-marker { display: none; }
 
-  /* Retired marker — pill in the source/ref cell + slightly dimmed row so a
-     retired account is visually distinct without disappearing from the list. */
-  .pill.retired-pill {
-    background: rgba(245, 158, 11, 0.18);
-    color: #b45309;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    margin-left: 6px;
-  }
+  /* Retired rows are slightly dimmed so a retired account is visually
+     distinct without disappearing (.pill.retired-pill itself lives in app.css). */
   tr.account-row--retired td { opacity: 0.72; }
   tr.account-row--retired td:first-child { opacity: 1; } /* keep "retired" pill at full strength */
 
@@ -270,63 +242,8 @@
 </style>
 
 <script>
-  (function () {
-    const form = document.getElementById('accounts-form');
-    if (!form) return;
-    const inputs = Array.from(form.elements).filter(
-      (el) => el.tagName === 'INPUT' || el.tagName === 'SELECT'
-    );
-    const snapshot = new Map();
-    const getVal = (el) => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
-    const setVal = (el, v) => {
-      if (el.type === 'checkbox') el.checked = (v === '1');
-      else el.value = v;
-    };
-    inputs.forEach((el) => snapshot.set(el, getVal(el)));
-
-    const saveBar = document.getElementById('save-bar');
-    const dirtyCount = document.getElementById('dirty-count');
-
-    const refresh = () => {
-      const dirtyRows = new Set();
-      let anyDirty = false;
-      inputs.forEach((el) => {
-        if (getVal(el) !== snapshot.get(el)) {
-          anyDirty = true;
-          const tr = el.closest('tr');
-          if (tr) dirtyRows.add(tr);
-        }
-      });
-      document.querySelectorAll('table.accounts tr.row-dirty').forEach((tr) => {
-        if (!dirtyRows.has(tr)) tr.classList.remove('row-dirty');
-      });
-      dirtyRows.forEach((tr) => tr.classList.add('row-dirty'));
-      saveBar.classList.toggle('dirty', anyDirty);
-      dirtyCount.textContent = dirtyRows.size;
-    };
-
-    inputs.forEach((el) => {
-      el.addEventListener('input', refresh);
-      el.addEventListener('change', refresh);
-    });
-    document.getElementById('reset-btn').addEventListener('click', () => {
-      inputs.forEach((el) => setVal(el, snapshot.get(el)));
-      refresh();
-    });
-
-    // ⌘S / Ctrl-S submits the bulk save form when the dirty bar is visible.
-    // Suppressed if focus is in a multi-line context (no <textarea> here today,
-    // but defensive against future template changes).
-    document.addEventListener('keydown', (e) => {
-      const meta = e.metaKey || e.ctrlKey;
-      if (!meta || (e.key !== 's' && e.key !== 'S')) return;
-      if (!saveBar.classList.contains('dirty')) return;
-      const t = e.target;
-      if (t && t.tagName === 'TEXTAREA') return;
-      e.preventDefault();
-      form.requestSubmit ? form.requestSubmit() : form.submit();
-    });
-  })();
+  /* Dirty tracking now comes from the shared /static/js/dirty_table.js
+     (data-dirty-form / data-dirty-savebar attributes above). */
 
   /* Per-row Move / Delete buttons. Build a one-shot form in JS and submit
      it — avoids ALL the failure modes of HTML form-association inside a
@@ -377,17 +294,6 @@
         return;
       }
 
-    });
-  })();
-
-  /* HTMX -> toast bridge. Server responses set
-       HX-Trigger: {"toast": {"message": "...", "kind": "success"}}
-     and htmx fires a `toast` CustomEvent on document.body with detail =
-     the JSON value. Forward to the global window.toast helper. */
-  (function () {
-    document.body.addEventListener('toast', (e) => {
-      if (!e.detail || !e.detail.message || typeof window.toast !== 'function') return;
-      window.toast(e.detail.message, { kind: e.detail.kind || 'info' });
     });
   })();
 </script>

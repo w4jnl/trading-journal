@@ -1,7 +1,6 @@
 {{define "title"}}Analytics — Trading Journal{{end}}
 
 {{define "content"}}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
 
 {{template "back_button" .}}
 
@@ -12,14 +11,9 @@
   <label>From <input id="from-input" type="date" name="from" value="{{.From}}"></label>
   <label>To <input id="to-input" type="date" name="to" value="{{.To}}"></label>
   <button type="submit" class="btn btn--primary">Apply</button>
-  <div class="row-sm">
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="today">Today</button>
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="thisweek">This week</button>
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="week">Last week</button>
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="month">Last month</button>
-  </div>
+  {{template "date_presets" .}}
   <a href="/analytics" class="btn btn--ghost btn--sm">Clear</a>
-  <span class="muted" style="margin-left: auto;"><span class="num">{{.TradeCount}}</span> closed trades</span>
+  <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades</span>
 </form>
 
 {{with .Headline}}
@@ -77,7 +71,7 @@
 </div>
 
 <!-- Account equity breakdown (per-type, end-of-range) -->
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· at end of filter range</span></div>
   {{if gt $.EquityIncluded 0}}
     <table class="equity-breakdown">
@@ -102,7 +96,7 @@
 </div>
 
 <!-- Daily account balance -->
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <div class="card-title">Daily Account Balance</div>
   <div id="chart-balance" class="chart-host" style="height: 240px;"></div>
   {{if and (gt $.EquityIncluded 0) (gt $.EquityExcluded 0)}}
@@ -112,14 +106,7 @@
     </div>
   {{end}}
 </div>
-<style>
-  table.equity-breakdown { width: 100%; max-width: 480px; border-collapse: collapse; margin-top: 4px; }
-  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
-  table.equity-breakdown td.lbl { color: var(--fg-muted); }
-  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
-  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
-  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
-</style>
+{{/* table.equity-breakdown lives in app.css (shared with dashboard). */}}
 
 <!-- Day-of-week stats -->
 <div class="row-3">
@@ -330,7 +317,6 @@
   }
 
   /* Legacy classes — keep so the page still renders cleanly. */
-  .kpi-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
   .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
   @media (max-width: 800px) {
@@ -366,100 +352,26 @@
   [data-theme="dark"] .u-axis { color: var(--fg-muted); }
 </style>
 
-<script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+{{template "uplot_assets" .}}
 <script>
-  // Date-range preset buttons
-  (function () {
-    const form = document.getElementById('analytics-filter');
-    if (!form) return;
-    const fromInput = document.getElementById('from-input');
-    const toInput = document.getElementById('to-input');
-    const fmt = (d) => d.toISOString().slice(0, 10);
-    document.querySelectorAll('[data-preset]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const today = new Date();
-        let from = new Date(today);
-        if (btn.dataset.preset === 'thisweek') {
-          // Monday of the current ISO-style week. JS getDay(): 0=Sun..6=Sat.
-          const daysSinceMon = (today.getDay() + 6) % 7;
-          from.setDate(today.getDate() - daysSinceMon);
-        }
-        if (btn.dataset.preset === 'week') from.setDate(today.getDate() - 7);
-        if (btn.dataset.preset === 'month') from.setDate(today.getDate() - 30);
-        fromInput.value = fmt(from);
-        toInput.value = fmt(today);
-        form.submit();
-      });
-    });
-  })();
+  /* Date-range preset behavior comes from the shared "date_presets" partial. */
 
   // Chart data is rendered into the page as inline JSON by the handler.
   const chartData = {{.ChartJSON}};
-
-  // Read theme-aware colors from CSS vars so charts adapt to dark/light.
-  function readThemeColors() {
-    const cs = getComputedStyle(document.documentElement);
-    return {
-      accent: cs.getPropertyValue('--accent').trim() || '#4f46e5',
-      pos:    cs.getPropertyValue('--pos').trim()    || '#16a34a',
-      neg:    cs.getPropertyValue('--neg').trim()    || '#dc2626',
-      grid:   cs.getPropertyValue('--border').trim() || '#e4e4e7',
-      label:  cs.getPropertyValue('--fg-muted').trim() || '#71717a',
-    };
-  }
 
   const charts = {};
 
   function buildCharts() {
     Object.values(charts).forEach((u) => { if (u) u.destroy(); });
-    const c = readThemeColors();
+    const c = uplotHelpers.colors();
     const noData = '<div class="muted" style="padding:24px; text-align:center;">No data in selection.</div>';
 
-    function commonAxes() {
-      return [
-        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-      ];
-    }
-
-    // Compact axis values for currency: "52,000" stays "52,000", "152,000"
-    // becomes "152K", "1,250,000" becomes "1.25M". Used by the balance chart
-    // so 6-7 digit equity numbers fit in a reasonable axis gutter.
-    function fmtMoneyShort(v) {
-      if (v == null || Number.isNaN(v)) return '';
-      const abs = Math.abs(v);
-      if (abs >= 1e6) return (v / 1e6).toFixed(2).replace(/\.0+$/, '') + 'M';
-      if (abs >= 1e5) return Math.round(v / 1e3) + 'K';
-      return v.toLocaleString(undefined, { maximumFractionDigits: 0 });
-    }
-    function fmtMoneyFull(v) {
-      if (v == null || Number.isNaN(v)) return '—';
-      return v.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-
-    function hexToRgba(hex, a) {
-      // tolerate rgba() input untouched
-      if (hex.startsWith('rgb')) return hex;
-      const h = hex.replace('#', '');
-      const bigint = parseInt(h.length === 3 ? h.split('').map(x => x+x).join('') : h, 16);
-      const r = (bigint >> 16) & 255, g = (bigint >> 8) & 255, b = bigint & 255;
-      return `rgba(${r}, ${g}, ${b}, ${a})`;
-    }
-
-    // Money-axis variant: keep the standard X axis but widen the Y gutter and
-    // format ticks compactly. Balance numbers can run into 6-7 digits, which
-    // crops under the default uPlot axis size of 50.
-    function moneyAxes() {
-      return [
-        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-        {
-          stroke: c.label,
-          grid: { stroke: c.grid, width: 1 },
-          size: 70,
-          values: (u, splits) => splits.map(fmtMoneyShort),
-        },
-      ];
-    }
+    /* Colors, axes, and money formatting come from uplotHelpers
+       (web/static/js/uplot-helpers.js) - shared with dashboard + trades. */
+    const fmtMoneyFull = uplotHelpers.fmtMoneyFull;
+    const hexToRgba = uplotHelpers.rgba;
+    const commonAxes = () => uplotHelpers.axes(c);
+    const moneyAxes = () => uplotHelpers.moneyAxes(c);
 
     // Daily Account Balance — actual running equity, anchored per-account.
     // Falls back to the empty-state message when no selected account has a
@@ -518,10 +430,9 @@
   }
 
   buildCharts();
-  /* Re-init on theme change so colors match. */
-  window.addEventListener('themechange', () => {
-    setTimeout(buildCharts, 50);
-  });
+  /* Rebuild on theme change (new token colors) and resize (uPlot sizes are
+     fixed at construction) - shared hook from uplot-helpers.js. */
+  uplotHelpers.onRebuild(buildCharts);
 </script>
 {{end}}
 

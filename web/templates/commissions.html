@@ -9,12 +9,12 @@
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 {{if not .CanEdit}}
-<div class="card" style="margin-bottom: 16px;">
+<div class="card mb-16">
   <span class="muted">Read-only view. Commission rates and instrument setup can only be changed by an admin.</span>
 </div>
 {{end}}
 
-<div class="card card--warn" style="margin-bottom: 16px;">
+<div class="card card--warn mb-16">
   Commission rates are <strong>per side, per contract</strong>, keyed by
   <strong>asset class × firm × size</strong>. Set each contract's asset
   class and size in the lower table — the system then looks up
@@ -25,7 +25,7 @@
 </div>
 
 {{if .Orphans}}
-<div class="card card--neg" style="margin-bottom: 16px;">
+<div class="card card--neg mb-16">
   <strong>{{len .Orphans}} fixable problem(s) detected</strong> — trades with no commission applied:
   <ul style="margin: 8px 0 0 0; padding-left: 18px;">
     {{range .Orphans}}
@@ -50,17 +50,17 @@
 {{end}}
 
 {{/* Bulk-save form lives outside the tables; inputs reference it via form="commissions-form". */}}
-<form id="commissions-form" method="post" action="/commissions/save"></form>
+<form id="commissions-form" method="post" action="/commissions/save" data-dirty-form></form>
 
 <h2 style="margin-top: 24px;">Commission rates</h2>
-<div class="table-scroll" style="margin-top: 8px;">
+<div class="table-scroll mt-8">
   <table class="rates">
     <thead>
       <tr>
         <th>Asset class</th>
         <th>Firm</th>
         <th>Size</th>
-        <th style="text-align: right;">Per-contract per side (USD)</th>
+        <th class="tar">Per-contract per side (USD)</th>
         <th></th>
       </tr>
     </thead>
@@ -75,12 +75,12 @@
 </div>
 
 {{if .CanEdit}}
-<details class="disclose" style="margin-top: 12px;">
-  <summary class="btn btn--secondary btn--sm" style="display: inline-flex;">+ Add rate</summary>
+<details class="disclose mt-12">
+  <summary class="btn btn--primary btn--sm" style="display: inline-flex;">+ Add rate</summary>
   <form hx-post="/commissions/rates/new"
         hx-target="#rates-tbody"
         hx-swap="beforeend"
-        class="card" style="margin-top: 8px;">
+        class="card mt-8">
     <div class="row">
       <label class="field"><span class="field-label">Asset class</span>
         <select name="asset_class" required>
@@ -113,15 +113,15 @@
 {{end}}
 
 <h2 style="margin-top: 32px;">Instrument categorization</h2>
-<div class="table-scroll" style="margin-top: 8px;">
+<div class="table-scroll mt-8">
   <table class="instruments">
     <thead>
       <tr>
         <th>Symbol</th>
         <th>Exchange</th>
-        <th style="text-align: right;">Tick</th>
-        <th style="text-align: right;">Tick value</th>
-        <th style="text-align: right;">Multiplier</th>
+        <th class="tar">Tick</th>
+        <th class="tar">Tick value</th>
+        <th class="tar">Multiplier</th>
         <th>Asset class</th>
         <th>Size</th>
         <th>Status</th>
@@ -183,7 +183,7 @@
         {{end}}
       </ul>
       {{if $.CanEdit}}
-      <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
+      <form method="post" action="/commissions/classes/new" class="row mt-12">
         <input type="hidden" name="kind" value="asset">
         <label class="field"><span class="field-label">Code</span>
           <input type="text" name="code" required placeholder="e.g. ag_futures" style="width: 140px;"></label>
@@ -203,7 +203,7 @@
         {{end}}
       </ul>
       {{if $.CanEdit}}
-      <form method="post" action="/commissions/classes/new" class="row" style="margin-top: 12px;">
+      <form method="post" action="/commissions/classes/new" class="row mt-12">
         <input type="hidden" name="kind" value="size">
         <label class="field"><span class="field-label">Code</span>
           <input type="text" name="code" required placeholder="e.g. nano" style="width: 140px;"></label>
@@ -219,10 +219,10 @@
 </details>
 
 {{if .CanEdit}}
-<div id="save-bar" class="save-bar">
-  <span class="muted"><strong id="dirty-count" class="num">0</strong> row(s) changed.</span>
-  <div class="row-sm" style="margin-left: auto;">
-    <button type="button" id="reset-btn" class="btn btn--ghost btn--sm">Discard</button>
+<div class="save-bar" data-dirty-savebar="commissions-form">
+  <span class="muted"><strong data-dirty-count class="num">0</strong> row(s) changed.</span>
+  <div class="row-sm ml-auto">
+    <button type="button" data-dirty-reset class="btn btn--ghost btn--sm">Discard</button>
     <button form="commissions-form" type="submit" class="btn btn--primary btn--sm">Save changes</button>
   </div>
 </div>
@@ -233,97 +233,9 @@
   table.instruments input, table.instruments select { height: 28px; padding: 4px 8px; font-size: 12px; }
   table.rates td, table.instruments td { vertical-align: middle; font-size: 13px; }
 
-  .save-bar {
-    position: sticky;
-    bottom: 0;
-    background: var(--bg-elev);
-    padding: 12px 16px;
-    border: 1px solid var(--border);
-    border-radius: var(--r-md);
-    box-shadow: var(--shadow-2);
-    display: none;
-    align-items: center;
-    gap: 12px;
-    margin-top: 16px;
-  }
-  .save-bar.dirty { display: flex; }
-
-  tr.row-dirty td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
-
-  details.disclose > summary { list-style: none; }
-  details.disclose > summary::-webkit-details-marker { display: none; }
+  {{/* .save-bar / tr.row-dirty / details.disclose live in app.css (shared
+       with /accounts and /admin/transactions via dirty_table.js). */}}
 </style>
 
-{{if .CanEdit}}
-<script>
-  /* Dirty-tracking JS shared in shape with /accounts: snapshot initial values,
-     mark dirty rows, show sticky save-bar, support discard. */
-  (function () {
-    const form = document.getElementById('commissions-form');
-    if (!form) return;
-    /* The form itself is empty (used only as an "anchor"); collect everything
-       with form="commissions-form" attribute via querySelectorAll. */
-    const refreshInputs = () => Array.from(document.querySelectorAll('[form="commissions-form"]'))
-      .filter((el) => el.tagName === 'INPUT' || el.tagName === 'SELECT');
-    let inputs = refreshInputs();
-    const snapshot = new Map();
-    const getVal = (el) => el.type === 'checkbox' ? (el.checked ? '1' : '0') : el.value;
-    const setVal = (el, v) => {
-      if (el.type === 'checkbox') el.checked = (v === '1');
-      else el.value = v;
-    };
-    inputs.forEach((el) => snapshot.set(el, getVal(el)));
-
-    const saveBar = document.getElementById('save-bar');
-    const dirtyCount = document.getElementById('dirty-count');
-
-    const refresh = () => {
-      inputs = refreshInputs();
-      /* Snapshot any inputs that appeared after the initial paint
-         (HTMX-inserted rate rows). */
-      inputs.forEach((el) => { if (!snapshot.has(el)) snapshot.set(el, getVal(el)); });
-      const dirtyRows = new Set();
-      let anyDirty = false;
-      inputs.forEach((el) => {
-        if (getVal(el) !== snapshot.get(el)) {
-          anyDirty = true;
-          const tr = el.closest('tr');
-          if (tr) dirtyRows.add(tr);
-        }
-      });
-      document.querySelectorAll('tr.row-dirty').forEach((tr) => {
-        if (!dirtyRows.has(tr)) tr.classList.remove('row-dirty');
-      });
-      dirtyRows.forEach((tr) => tr.classList.add('row-dirty'));
-      saveBar.classList.toggle('dirty', anyDirty);
-      dirtyCount.textContent = dirtyRows.size;
-    };
-
-    document.addEventListener('input', (e) => {
-      if (e.target.matches('[form="commissions-form"]')) refresh();
-    });
-    document.addEventListener('change', (e) => {
-      if (e.target.matches('[form="commissions-form"]')) refresh();
-    });
-    document.body.addEventListener('htmx:afterSwap', refresh);
-
-    document.getElementById('reset-btn').addEventListener('click', () => {
-      inputs = refreshInputs();
-      inputs.forEach((el) => setVal(el, snapshot.get(el)));
-      refresh();
-    });
-
-    // ⌘S / Ctrl-S submits the bulk save form when the dirty bar is visible.
-    document.addEventListener('keydown', (e) => {
-      const meta = e.metaKey || e.ctrlKey;
-      if (!meta || (e.key !== 's' && e.key !== 'S')) return;
-      if (!saveBar.classList.contains('dirty')) return;
-      const t = e.target;
-      if (t && t.tagName === 'TEXTAREA') return;
-      e.preventDefault();
-      form.requestSubmit ? form.requestSubmit() : form.submit();
-    });
-  })();
-</script>
-{{end}}
+{{/* Dirty tracking comes from the shared /static/js/dirty_table.js. */}}
 {{end}}

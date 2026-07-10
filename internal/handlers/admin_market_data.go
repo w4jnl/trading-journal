@@ -34,6 +34,7 @@ func (h *Handlers) AdminMarketDataPage(w http.ResponseWriter, r *http.Request) {
 	if h.MarketData == nil {
 		h.renderPage(w, r, "admin_market_data.html", map[string]any{
 			"NavActive": "admin_market_data",
+			"BackHref":  validBackHref(r),
 			"Disabled":  true,
 		})
 		return
@@ -132,6 +133,7 @@ func (h *Handlers) AdminMarketDataPage(w http.ResponseWriter, r *http.Request) {
 
 	h.renderPage(w, r, "admin_market_data.html", map[string]any{
 		"NavActive":    "admin_market_data",
+		"BackHref":     validBackHref(r),
 		"WindowDays":   mdWindowDays,
 		"Rows":         list,
 		"TotalNeeded":  totNeeded,

@@ -8,7 +8,7 @@
   {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
 </div>
 
-<div class="row-sm" style="margin-bottom: 16px;">
+<div class="row-sm mb-16">
   <a href="/journal/week/{{.PrevWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">‹ Prev week</a>
   <a href="/journal/week/{{.NextWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">Next week ›</a>
   <input type="week" value="{{.WeekID}}"
@@ -48,13 +48,13 @@
     "MinHeight"   "360px"
   )}}
 
-  <div class="row" style="margin-top: 12px;">
+  <div class="row mt-12">
     <button type="submit" class="btn btn--primary">Save</button>
     {{if .Entry.Body}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
     {{if .HasEntry}}
       <button type="submit" formaction="/journal/week/{{.WeekID}}/delete" formnovalidate
               onclick="return confirm('Delete this week note for {{.WeekLabel}}?');"
-              class="btn btn--danger btn--sm" style="margin-left: auto;">
+              class="btn btn--danger btn--sm ml-auto">
         Delete entry
       </button>
     {{end}}

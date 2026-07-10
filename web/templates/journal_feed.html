@@ -6,7 +6,7 @@
 <h1>Journal</h1>
 
 <!-- ADD-NEW panel: starts a new entry; does NOT filter the feed. -->
-<div class="card card--accent" style="margin-bottom: 16px;">
+<div class="card card--accent mb-16">
   <div class="row">
     <a class="btn btn--primary" href="/journal/{{.Today}}?back=/journal">+ Today</a>
     <a class="btn btn--secondary" href="/journal/week/{{.ThisWeek}}?back=/journal">This week</a>
@@ -30,9 +30,9 @@
 <!-- FILTER panel: collapsed by default, auto-open when a filter is active.
      The summary row is always visible (toggle + active chips + count +
      downloads); the form expands below only when engaged. -->
-<details class="filter-panel" {{if .FilterActive}}open{{end}}>
+<details class="jf-filter-panel" {{if .FilterActive}}open{{end}}>
   <summary class="filter-bar">
-    <span class="filter-toggle">Filters{{if .FilterActive}} · {{.FilterCount}}{{end}} <span class="filter-caret">▾</span></span>
+    <span class="filter-toggle">Filters{{if .FilterActive}} · {{.FilterCount}}{{end}} <span class="jf-filter-caret">▾</span></span>
     <span class="filter-active-chips">
       {{range .ActiveFilters}}<a class="fchip" href="{{.RemoveURL}}" title="Remove filter">{{.Label}} <span class="fchip-x">✕</span></a>{{end}}
     </span>
@@ -54,7 +54,7 @@
         <input type="date" name="to" value="{{.FilterTo}}">
       </label>
     </div>
-    <div class="row" style="margin-top: 12px;">
+    <div class="row mt-12">
       <div>
         <div class="field-label" style="margin-bottom: 6px;">Type</div>
         <div class="chip-row">
@@ -75,7 +75,7 @@
       </div>
     </div>
     {{if or .StrategyOptions .StrategyNoneChecked}}
-    <div class="row" style="margin-top: 12px;">
+    <div class="row mt-12">
       <div>
         <div class="field-label" style="margin-bottom: 6px;">Strategy</div>
         <div class="chip-row">
@@ -87,7 +87,7 @@
       </div>
     </div>
     {{end}}
-    <div class="row" style="margin-top: 16px;">
+    <div class="row mt-16">
       <button type="submit" class="btn btn--primary">Apply</button>
       {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear all</a>{{end}}
     </div>
@@ -145,16 +145,16 @@
 <style>
   /* Collapsible filter panel. The summary is the always-visible compact bar;
      the form below shows only when the <details> is open. */
-  .filter-panel { border: 1px solid var(--border); border-radius: var(--r-md);
+  .jf-filter-panel { border: 1px solid var(--border); border-radius: var(--r-md);
                   background: var(--bg-elev); margin-bottom: 16px; }
   .filter-bar { list-style: none; cursor: pointer; display: flex; align-items: center;
                 gap: 12px; flex-wrap: wrap; padding: 10px 14px; }
   .filter-bar::-webkit-details-marker { display: none; }
-  .filter-panel[open] > .filter-bar { border-bottom: 1px solid var(--border); }
+  .jf-filter-panel[open] > .filter-bar { border-bottom: 1px solid var(--border); }
   .filter-toggle { font-weight: 600; font-size: 13px; color: var(--fg);
                    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .filter-caret { color: var(--fg-muted); transition: transform var(--t-fast); display: inline-block; }
-  .filter-panel[open] .filter-caret { transform: rotate(180deg); }
+  .jf-filter-caret { color: var(--fg-muted); transition: transform var(--t-fast); display: inline-block; }
+  .jf-filter-panel[open] .jf-filter-caret { transform: rotate(180deg); }
   .filter-active-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
   .fchip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
            border-radius: var(--r-pill); font-size: 12px; font-weight: 500;
@@ -177,7 +177,7 @@
   .chip:has(:checked).scope-day   { background: var(--info-soft);   border-color: var(--info);   color: var(--info); }
   .chip:has(:checked).scope-trade { background: var(--warn-soft);   border-color: var(--warn);   color: var(--warn); }
   .chip:has(:checked).scope-week  { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-  .chip:has(:checked).scope-group { background: rgba(168, 85, 247, 0.12); border-color: #a855f7; color: #a855f7; }
+  .chip:has(:checked).scope-group { background: var(--group-soft); border-color: var(--group); color: var(--group); }
   .chip:has(:checked).tag-good    { background: var(--pos-soft);    border-color: var(--pos);    color: var(--pos); }
   .chip:has(:checked).tag-neutral { background: var(--bg-sunken);   border-color: var(--fg-muted); color: var(--fg); }
   .chip:has(:checked).tag-bad     { background: var(--neg-soft);    border-color: var(--neg);    color: var(--neg); }
@@ -212,7 +212,7 @@
   .scope-badge.scope-day   { background: var(--info-soft);   color: var(--info); }
   .scope-badge.scope-trade { background: var(--warn-soft);   color: var(--warn); }
   .scope-badge.scope-week  { background: var(--accent-soft); color: var(--accent); }
-  .scope-badge.scope-group { background: rgba(168, 85, 247, 0.12); color: #a855f7; }
+  .scope-badge.scope-group { background: var(--group-soft); color: var(--group); }
   .entry-main .date { font-weight: 600; color: var(--fg); }
   .entry-main .meta { color: var(--fg-muted); font-size: 13px; margin-left: 6px; }
   .entry-preview { color: var(--fg-muted); font-size: 13px; margin-top: 4px;

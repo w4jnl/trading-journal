@@ -41,7 +41,13 @@ entry today". No server-side search.
       { kind: 'Go to', label: 'Import',     href: '/import'     },
       { kind: 'Go to', label: 'Accounts',   href: '/accounts'   },
       { kind: 'Go to', label: 'Commissions', href: '/commissions' },
-      { kind: 'Action', label: 'New journal entry for today', action: function () { window.location.href = '/journal/' + today(); } },
+      { kind: 'Go to', label: 'Library',    href: '/library'    },
+      { kind: 'Go to', label: 'OI Dashboard', href: '/oi'       },
+      { kind: 'Go to', label: 'Settings',   href: '/settings'   },
+{{if and .CurrentUser .CurrentUser.IsAdmin}}      { kind: 'Admin', label: 'Reconcile transactions', href: '/admin/transactions' },
+      { kind: 'Admin', label: 'Users',      href: '/admin/users' },
+      { kind: 'Admin', label: 'Market data', href: '/admin/market-data' },
+{{end}}      { kind: 'Action', label: 'New journal entry for today', action: function () { window.location.href = '/journal/' + today(); } },
       { kind: 'Action', label: 'Apply daily review template', action: function () { window.location.href = '/journal/' + today() + '?template=daily'; } },
       { kind: 'Action', label: 'Trades this week', action: function () {
           var m = startOfWeek(new Date());
@@ -114,9 +120,10 @@ entry today". No server-side search.
       var out = [];
       var t = q.trim();
       if (!t) return out;
-      /* Symbol root: 2–5 alphanumeric upper-only. Cheap signal. */
-      if (/^[A-Z][A-Z0-9]{1,4}$/.test(t)) {
-        out.push({ kind: 'Trades', label: 'Trades · symbol = ' + t, href: '/trades?symbol_root=' + encodeURIComponent(t) });
+      /* Symbol root: 2–5 alphanumeric, case-insensitive ("mnq" → MNQ). */
+      var sym = t.toUpperCase();
+      if (/^[A-Z][A-Z0-9]{1,4}$/.test(sym)) {
+        out.push({ kind: 'Trades', label: 'Trades · symbol = ' + sym, href: '/trades?symbol_root=' + encodeURIComponent(sym) });
       }
       /* Date jump */
       if (/^\d{4}-\d{2}-\d{2}$/.test(t)) {
@@ -211,6 +218,14 @@ entry today". No server-side search.
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         backdrop.classList.contains('show') ? close() : open();
+        return;
+      }
+      // '/' opens the palette unless the user is already typing in a field.
+      if (e.key === '/' && !backdrop.classList.contains('show')) {
+        var a = document.activeElement;
+        if (a && (a.matches('input, textarea, select') || a.isContentEditable)) return;
+        e.preventDefault();
+        open();
         return;
       }
       if (!backdrop.classList.contains('show')) return;

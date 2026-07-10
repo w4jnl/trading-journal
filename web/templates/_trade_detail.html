@@ -1,11 +1,18 @@
 {{define "trade_detail"}}
+{{/* After a journal save/delete inside the sheet, update just this trade's
+     row journal-icon in the /trades table via an out-of-band swap - no
+     full-page reload. Ignored (no matching id) on the standalone journal page
+     or when the trade isn't on the current /trades view. */}}
+{{if or (eq .Flash "saved") (eq .Flash "deleted") (eq .Flash "analyzed")}}
+<span id="trow-jicon-{{.TradeID}}" hx-swap-oob="true">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>
+{{end}}
 {{with .Trade}}
 <div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
   <span class="num" style="font-size: 18px; font-weight: 600;">{{.Symbol}}</span>
   <span class="muted">({{.SymbolRoot}})</span>
   {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
   {{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Holding time: {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}
-  <span style="margin-left: auto;">{{template "id_ref" (dict "Label" "Trade" "ID" $.TradeID)}}</span>
+  <span class="ml-auto">{{template "id_ref" (dict "Label" "Trade" "ID" $.TradeID)}}</span>
 </div>
 <div class="muted" style="margin-bottom: 12px; font-size: 12px;">
   {{.AccountName}}{{if .AccountFirm}} · <code>{{derefStr .AccountFirm}}</code>{{end}}
@@ -89,16 +96,12 @@
       "Mode"        "single"
       "MinHeight"   "160px"
     )}}
-    <div class="row" style="margin-top: 8px;">
+    <div class="row mt-8">
       <button type="submit" class="btn btn--primary">Save</button>
       {{if $.JournalBody}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
       <span class="muted" style="font-size: 11px;">⌘S to save</span>
     </div>
   </form>
-
-  {{if or (eq $.Flash "saved") (eq $.Flash "deleted") (eq $.Flash "analyzed")}}
-  <script>window.__journalChanged = true;</script>
-  {{end}}
 
   {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 </section>

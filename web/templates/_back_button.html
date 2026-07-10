@@ -20,9 +20,17 @@ collide on a shared `back` variable.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       // Don't hijack Esc while the trade sheet is open — the sheet owns its
-      // own close path and reads __journalChanged before reloading.
+      // own close path (see trade_sheet.js).
       const sheet = document.getElementById('trade-sheet-backdrop');
       if (sheet && sheet.classList.contains('show')) return;
+      // The command palette also owns its Esc; listener order isn't guaranteed.
+      const cmdk = document.getElementById('cmdk-backdrop');
+      if (cmdk && cmdk.classList.contains('show')) return;
+      // Never navigate over unsaved journal text, and never steal Esc from a
+      // form field (its own Esc semantics: close pickers, cancel edits).
+      if (window.journalEditorDirty && window.journalEditorDirty()) return;
+      const a = document.activeElement;
+      if (a && (a.matches('input, textarea, select') || a.isContentEditable)) return;
       e.preventDefault();
       window.location.href = back;
     });

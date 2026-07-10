@@ -20,62 +20,14 @@
     </div>
     {{if .CurveHasData}}
       <div id="dash-curve" data-total="{{.CurveTotal}}" style="height: 220px; width: 100%;"></div>
-      <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.min.css">
-      <script src="https://cdn.jsdelivr.net/npm/uplot@1.6.32/dist/uPlot.iife.min.js"></script>
+      {{template "uplot_assets" .}}
       <script>
         window.__dashCurve = {
           xs: [{{range $i, $v := .CurveXs}}{{if $i}},{{end}}{{$v}}{{end}}],
           ys: [{{range $i, $v := .CurveYs}}{{if $i}},{{end}}{{$v}}{{end}}],
           total: {{.CurveTotal}},
         };
-        (function () {
-          var inst = null;
-          function colors() {
-            var cs = getComputedStyle(document.documentElement);
-            return {
-              pos:   cs.getPropertyValue('--pos').trim()       || '#16a34a',
-              neg:   cs.getPropertyValue('--neg').trim()       || '#dc2626',
-              grid:  cs.getPropertyValue('--border').trim()    || '#e4e4e7',
-              label: cs.getPropertyValue('--fg-muted').trim()  || '#71717a',
-            };
-          }
-          function rgba(hex, a) {
-            if (hex.startsWith('rgb')) return hex;
-            var h = hex.replace('#', '');
-            if (h.length === 3) h = h.split('').map(function (x) { return x + x; }).join('');
-            var n = parseInt(h, 16);
-            return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
-          }
-          function build() {
-            if (inst) { inst.destroy(); inst = null; }
-            var el = document.getElementById('dash-curve');
-            if (!el || !window.__dashCurve.xs.length) return;
-            var c = colors();
-            var stroke = window.__dashCurve.total >= 0 ? c.pos : c.neg;
-            inst = new uPlot({
-              width: el.clientWidth,
-              height: el.clientHeight,
-              scales: { x: { time: true } },
-              series: [
-                {},
-                {
-                  label: 'Cumulative P&L',
-                  stroke: stroke,
-                  fill:   rgba(stroke, 0.16),
-                  width:  1.8,
-                  value:  function (u, v) { return v == null ? '' : v.toFixed(2); },
-                },
-              ],
-              axes: [
-                { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-                { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
-              ],
-            }, [window.__dashCurve.xs, window.__dashCurve.ys], el);
-          }
-          build();
-          window.addEventListener('themechange', function () { setTimeout(build, 50); });
-          window.addEventListener('resize',      function () { setTimeout(build, 50); });
-        })();
+        uplotHelpers.curve('dash-curve', window.__dashCurve);
       </script>
     {{else}}
       <div class="empty-state" style="border: 0; padding: 60px 0;">
@@ -312,12 +264,7 @@
   .stat-tile .spark--accent { color: var(--accent); }
 
   /* Equity breakdown — same look as before, slightly polished. */
-  table.equity-breakdown { width: 100%; max-width: 560px; border-collapse: collapse; margin-top: 4px; }
-  table.equity-breakdown td { padding: 4px 0; border: 0; font-size: 13px; vertical-align: baseline; }
-  table.equity-breakdown td.lbl { color: var(--fg-muted); }
-  table.equity-breakdown td.val { text-align: right; font-variant-numeric: tabular-nums; padding: 4px 16px 4px 24px; min-width: 110px; }
-  table.equity-breakdown td.count { font-size: 11px; white-space: nowrap; }
-  table.equity-breakdown tr.total-row td { padding-top: 8px; border-top: 1px solid var(--border); color: var(--fg); }
+  {{/* table.equity-breakdown lives in app.css (shared with analytics). */}}
 
   /* Recent + imports section spacing */
   .grid-12 + .grid-12 { margin-top: 24px; }

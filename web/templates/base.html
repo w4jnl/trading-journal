@@ -44,7 +44,7 @@
   <meta property="og:image"       content="/static/img/brand/og-image.svg">
   <meta name="twitter:card"       content="summary_large_image">
 
-  <script src="https://unpkg.com/htmx.org@2.0.3"></script>
+  <script src="/static/vendor/htmx-2.0.3.min.js"></script>
   <script>
     // Inject the CSRF token into every same-origin POST/DELETE/PUT/PATCH:
     //   - <form method=post> gets a hidden input named csrf_token added on submit
@@ -319,6 +319,8 @@
     })();
   </script>
   <script src="/static/js/toast.js" defer></script>
+  <script src="/static/js/app_feedback.js" defer></script>
+  <script src="/static/js/dirty_table.js" defer></script>
   <script src="/static/js/journal_editor.js" defer></script>
   <script src="/static/js/journal_view.js" defer></script>
   <script src="/static/js/id_copy.js" defer></script>

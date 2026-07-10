@@ -15,6 +15,9 @@
   <span class="num">{{.InstrumentsStubbed}}</span> new instrument stubs,
   <span class="num">{{.TradesCreated}}</span> trades materialized.
   <div class="muted" style="margin-top:6px;">moved to <code>{{.DestinationPath}}</code></div>
+  {{if gt .TradesCreated 0}}
+  <div style="margin-top:8px;"><a href="/trades" class="btn btn--secondary btn--sm">View trades →</a></div>
+  {{end}}
 </div>
 {{end}}
 {{end}}

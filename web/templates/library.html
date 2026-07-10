@@ -4,10 +4,10 @@
 {{template "back_button" .}}
 
 <h1>Library</h1>
-<p class="muted" style="margin-bottom: 16px;">Manage your journal templates and trading strategies. Templates pre-fill the editor; strategies are named playbooks you can attach to any journal entry.</p>
+<p class="muted mb-16">Manage your journal templates and trading strategies. Templates pre-fill the editor; strategies are named playbooks you can attach to any journal entry.</p>
 
 {{if .Flash}}
-<div class="flash saved" style="margin-bottom: 16px;">
+<div class="flash saved mb-16">
   {{if eq .Flash "saved"}}Saved.
   {{else if eq .Flash "cloned"}}Template cloned — edit your copy below.
   {{else if eq .Flash "deleted"}}Deleted.
@@ -16,7 +16,7 @@
   {{else}}{{.Flash}}{{end}}
 </div>
 {{end}}
-{{if .FlashErr}}<div class="flash empty" role="alert" style="margin-bottom: 16px;">{{.FlashErr}}</div>{{end}}
+{{if .FlashErr}}<div class="flash error mb-16" role="alert">{{.FlashErr}}</div>{{end}}
 
 <div class="tabs" style="margin-bottom: 20px;">
   <a href="/library?tab=templates" class="tab {{if eq .Tab "templates"}}tab-on{{end}}">Templates</a>
@@ -234,7 +234,7 @@
   .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); }
   .tab { padding:8px 16px; border-radius: var(--r-md) var(--r-md) 0 0; color: var(--fg-muted); font-weight:500; font-size:13px; border:1px solid transparent; border-bottom:0; margin-bottom:-1px; }
   .tab:hover { color: var(--fg); }
-  .tab-on { color: var(--fg); background: var(--bg-elevated); border-color: var(--border); }
+  .tab-on { color: var(--fg); background: var(--bg-elev); border-color: var(--border); }
 
   .lib-section { margin-bottom: 32px; }
   .lib-section-head { display:flex; justify-content:space-between; align-items:flex-start; gap:16px; margin-bottom:12px; }
@@ -242,7 +242,7 @@
 
   /* Each item is a full-width card. The edit form expands inside it at full
      width instead of being trapped in a narrow table cell. */
-  .lib-item { position:relative; border:1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elevated); margin-bottom:8px; }
+  .lib-item { position:relative; border:1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elev); margin-bottom:8px; }
   .lib-item--static { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; }
   .lib-row { width:100%; }
   .lib-row > summary { list-style:none; cursor:pointer; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 14px; padding-right:96px; }
@@ -275,9 +275,9 @@
   .lib-new { display:block; margin-bottom:12px; }
   .lib-new > summary { list-style:none; cursor:pointer; display:inline-block; }
   .lib-new > summary::-webkit-details-marker { display:none; }
-  .lib-new[open] > .lib-form { margin-top:10px; border:1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elevated); }
+  .lib-new[open] > .lib-form { margin-top:10px; border:1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elev); }
 
-  .pill { padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600; background: var(--bg-sunken); color: var(--fg-muted); }
+  .pill { background: var(--bg-sunken); color: var(--fg-muted); } /* base chrome from app.css */
   .pill-system { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
   .lib-empty { padding:16px; text-align:center; border:1px dashed var(--border); border-radius: var(--r-md); }
 
@@ -287,12 +287,7 @@
   .playbook-edit > summary { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:12px; }
   .playbook-edit > summary::-webkit-details-marker { display:none; }
   .playbook-card { padding: 16px 18px; }
-  .markdown-preview h1, .markdown-preview h2, .markdown-preview h3 { margin-top: 12px; }
-  .markdown-preview h1:first-child, .markdown-preview h2:first-child, .markdown-preview h3:first-child { margin-top: 0; }
-  .markdown-preview ul, .markdown-preview ol { padding-left: 20px; }
-  .markdown-preview pre { background: var(--bg-sunken); padding: 10px; border-radius: var(--r-md); overflow-x: auto; }
-  .markdown-preview code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); }
-  .markdown-preview blockquote { border-left: 3px solid var(--border-strong); padding-left: 12px; color: var(--fg-muted); margin-left: 0; }
+  {{/* .markdown-preview element styles live in app.css (shared ruleset). */}}
 </style>
 
 <script>

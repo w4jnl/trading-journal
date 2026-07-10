@@ -106,18 +106,18 @@ func (s *statusRecorder) Flush() {
 // contentSecurityPolicy is deliberately permissive on inline script/style
 // ('unsafe-inline') because base.html carries several inline <script>/<style>
 // blocks and an inline chart-data blob; the primary XSS control is server-side
-// sanitization of rendered markdown (see handlers.renderMarkdown). script-src
-// still restricts *sources* to self plus the two chart/htmx CDNs the templates
-// actually use (unpkg: htmx + lightweight-charts; jsdelivr: uPlot JS+CSS on
-// the dashboard/analytics/trades pages). img-src allows https: because journal
-// markdown may embed external images and the sanitizer deliberately preserves
-// http(s) <img> tags - the two layers must agree. frame-ancestors/base-uri/
-// object-src/form-action add clickjacking and injection protections
-// independent of inline handling. Follow-up to tighten: self-host the CDN
-// libraries and nonce the inline scripts, then drop 'unsafe-inline'.
+// sanitization of rendered markdown (see handlers.renderMarkdown). Scripts and
+// styles load from 'self' only - htmx, uPlot, and lightweight-charts are
+// vendored under web/static/vendor/ (embedded in the binary), so no CDN hosts
+// are needed and a CDN outage can't take the app down. img-src allows https:
+// because journal markdown may embed external images and the sanitizer
+// deliberately preserves http(s) <img> tags - the two layers must agree.
+// frame-ancestors/base-uri/object-src/form-action add clickjacking and
+// injection protections independent of inline handling. Follow-up to tighten:
+// nonce the inline scripts, then drop 'unsafe-inline'.
 const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline' https://unpkg.com https://cdn.jsdelivr.net; " +
-	"style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; " +
+	"script-src 'self' 'unsafe-inline'; " +
+	"style-src 'self' 'unsafe-inline'; " +
 	"img-src 'self' data: https:; " +
 	"font-src 'self'; " +
 	"connect-src 'self'; " +

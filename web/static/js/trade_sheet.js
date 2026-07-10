@@ -161,7 +161,13 @@
         var focusables = state.sheet.querySelectorAll(
           'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
         );
-        if (focusables.length === 0) return;
+        if (focusables.length === 0) {
+          // Content still loading ("loading…" has no focusables): keep the
+          // trap engaged instead of letting Tab escape behind the modal.
+          e.preventDefault();
+          state.sheet.focus();
+          return;
+        }
         var first = focusables[0];
         var last = focusables[focusables.length - 1];
         var active = document.activeElement;
