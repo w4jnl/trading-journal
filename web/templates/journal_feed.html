@@ -30,9 +30,9 @@
 <!-- FILTER panel: collapsed by default, auto-open when a filter is active.
      The summary row is always visible (toggle + active chips + count +
      downloads); the form expands below only when engaged. -->
-<details class="filter-panel" {{if .FilterActive}}open{{end}}>
+<details class="jf-filter-panel" {{if .FilterActive}}open{{end}}>
   <summary class="filter-bar">
-    <span class="filter-toggle">Filters{{if .FilterActive}} · {{.FilterCount}}{{end}} <span class="filter-caret">▾</span></span>
+    <span class="filter-toggle">Filters{{if .FilterActive}} · {{.FilterCount}}{{end}} <span class="jf-filter-caret">▾</span></span>
     <span class="filter-active-chips">
       {{range .ActiveFilters}}<a class="fchip" href="{{.RemoveURL}}" title="Remove filter">{{.Label}} <span class="fchip-x">✕</span></a>{{end}}
     </span>
@@ -145,16 +145,16 @@
 <style>
   /* Collapsible filter panel. The summary is the always-visible compact bar;
      the form below shows only when the <details> is open. */
-  .filter-panel { border: 1px solid var(--border); border-radius: var(--r-md);
+  .jf-filter-panel { border: 1px solid var(--border); border-radius: var(--r-md);
                   background: var(--bg-elev); margin-bottom: 16px; }
   .filter-bar { list-style: none; cursor: pointer; display: flex; align-items: center;
                 gap: 12px; flex-wrap: wrap; padding: 10px 14px; }
   .filter-bar::-webkit-details-marker { display: none; }
-  .filter-panel[open] > .filter-bar { border-bottom: 1px solid var(--border); }
+  .jf-filter-panel[open] > .filter-bar { border-bottom: 1px solid var(--border); }
   .filter-toggle { font-weight: 600; font-size: 13px; color: var(--fg);
                    display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-  .filter-caret { color: var(--fg-muted); transition: transform var(--t-fast); display: inline-block; }
-  .filter-panel[open] .filter-caret { transform: rotate(180deg); }
+  .jf-filter-caret { color: var(--fg-muted); transition: transform var(--t-fast); display: inline-block; }
+  .jf-filter-panel[open] .jf-filter-caret { transform: rotate(180deg); }
   .filter-active-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; min-width: 0; }
   .fchip { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px;
            border-radius: var(--r-pill); font-size: 12px; font-weight: 500;

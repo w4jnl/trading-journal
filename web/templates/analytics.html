@@ -11,12 +11,7 @@
   <label>From <input id="from-input" type="date" name="from" value="{{.From}}"></label>
   <label>To <input id="to-input" type="date" name="to" value="{{.To}}"></label>
   <button type="submit" class="btn btn--primary">Apply</button>
-  <div class="row-sm">
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="today">Today</button>
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="thisweek">This week</button>
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="week">Last week</button>
-    <button type="button" class="btn btn--secondary btn--sm" data-preset="month">Last month</button>
-  </div>
+  {{template "date_presets" .}}
   <a href="/analytics" class="btn btn--ghost btn--sm">Clear</a>
   <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades</span>
 </form>
@@ -359,30 +354,7 @@
 
 {{template "uplot_assets" .}}
 <script>
-  // Date-range preset buttons
-  (function () {
-    const form = document.getElementById('analytics-filter');
-    if (!form) return;
-    const fromInput = document.getElementById('from-input');
-    const toInput = document.getElementById('to-input');
-    const fmt = (d) => d.toISOString().slice(0, 10);
-    document.querySelectorAll('[data-preset]').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        const today = new Date();
-        let from = new Date(today);
-        if (btn.dataset.preset === 'thisweek') {
-          // Monday of the current ISO-style week. JS getDay(): 0=Sun..6=Sat.
-          const daysSinceMon = (today.getDay() + 6) % 7;
-          from.setDate(today.getDate() - daysSinceMon);
-        }
-        if (btn.dataset.preset === 'week') from.setDate(today.getDate() - 7);
-        if (btn.dataset.preset === 'month') from.setDate(today.getDate() - 30);
-        fromInput.value = fmt(from);
-        toInput.value = fmt(today);
-        form.submit();
-      });
-    });
-  })();
+  /* Date-range preset behavior comes from the shared "date_presets" partial. */
 
   // Chart data is rendered into the page as inline JSON by the handler.
   const chartData = {{.ChartJSON}};

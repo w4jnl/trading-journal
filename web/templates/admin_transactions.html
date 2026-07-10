@@ -1,8 +1,8 @@
-{{define "title"}}Transactions — Trading Journal{{end}}
+{{define "title"}}Reconcile — Trading Journal{{end}}
 
 {{define "content"}}
 {{template "back_button" .}}
-<h1>Transactions <span class="muted" style="font-weight:400;">· reconcile</span></h1>
+<h1>Reconcile <span class="muted" style="font-weight:400;">· transactions</span></h1>
 <p class="muted" style="font-size:12px; max-width:70ch;">
   Executions are the source of truth; trades rebuild automatically after every change.
   Deletes are soft (kept as a tombstone so a re-import can't resurrect them). Use this to fix

@@ -68,6 +68,7 @@
     <input type="date" name="to" value="{{index .Filters "To"}}">
   </label>
   <button type="submit" class="btn btn--primary">Apply</button>
+  {{template "date_presets" .}}
   <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 
@@ -108,7 +109,8 @@
           data-trade-id="{{.ID}}"
           hx-get="/trades/{{.ID}}"
           hx-target="#trade-sheet-content"
-          hx-swap="innerHTML">
+          hx-swap="innerHTML"
+          hx-indicator="closest tr">
         <td class="col-sel" onclick="event.stopPropagation();">
           <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
         </td>

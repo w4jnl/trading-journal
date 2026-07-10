@@ -57,6 +57,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 	}
 	h.renderPage(w, r, "settings.html", map[string]any{
 		"NavActive":   "settings",
+		"BackHref":    validBackHref(r),
 		"Keys":        keys,
 		"NewKey":      newKey,
 		"AILanguage":  h.userAILanguage(ctx),

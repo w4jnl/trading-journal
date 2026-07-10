@@ -1,6 +1,7 @@
 {{define "title"}}Users — Trading Journal{{end}}
 
 {{define "content"}}
+{{template "back_button" .}}
 <h1>Users</h1>
 
 {{if .Flash}}
@@ -87,7 +88,7 @@
 </div>
 
 <details class="disclose card" style="padding: 16px;">
-  <summary class="btn btn--primary" style="display: inline-flex;">+ Add user</summary>
+  <summary class="btn btn--primary btn--sm" style="display: inline-flex;">+ Add user</summary>
   <form method="post" action="/admin/users" class="form-grid mt-12">
     <label class="field">
       <span class="field-label">Username</span>

@@ -1883,6 +1883,10 @@ table.reconcile .recon-del input[type=checkbox] { width: auto; height: auto; }
 .recon-del-col { width: 84px; }
 tr.txn-item--deleted { opacity: 0.55; }
 
+/* Trade-row fetch in flight (hx-indicator="closest tr" on /trades rows):
+   dim the row + progress cursor so the click visibly did something. */
+tr.trade-row.htmx-request { opacity: 0.55; cursor: progress; }
+
 /* Trade horizon pill (derived from holding time): Scalp / Intraday / Swing / Long-term.
    Tinted so each reads at a glance next to the long/short direction pill. */
 .pill-horizon { text-transform: uppercase; font-size: var(--fs-10); letter-spacing: 0.04em; font-weight: var(--fw-semibold); border: 1px solid transparent; }

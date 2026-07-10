@@ -1,6 +1,7 @@
 {{define "title"}}Market data — Trading Journal{{end}}
 
 {{define "content"}}
+{{template "back_button" .}}
 <h1>Market data</h1>
 <p class="muted" style="margin-bottom: 16px; font-size: 13px;">
   Chart bar-cache coverage for the last {{.WindowDays}} days (Yahoo's intraday

@@ -1,0 +1,45 @@
+{{/*
+Date-range preset buttons for filter forms (Today / This week / Last week /
+Last month). Include INSIDE a <form> that has input[name=from] and
+input[name=to]; a click fills both and submits that form. The click handler is
+delegated + bound once globally, so multiple includes are safe.
+
+Extracted from analytics.html so /trades and /analytics share one
+implementation.
+*/}}
+{{define "date_presets"}}
+<div class="row-sm" data-date-presets>
+  <button type="button" class="btn btn--secondary btn--sm" data-preset="today">Today</button>
+  <button type="button" class="btn btn--secondary btn--sm" data-preset="thisweek">This week</button>
+  <button type="button" class="btn btn--secondary btn--sm" data-preset="week">Last week</button>
+  <button type="button" class="btn btn--secondary btn--sm" data-preset="month">Last month</button>
+</div>
+<script>
+  (function () {
+    if (window.__datePresetsBound) return;
+    window.__datePresetsBound = true;
+    var fmt = function (d) { return d.toISOString().slice(0, 10); };
+    document.addEventListener('click', function (e) {
+      var btn = e.target.closest('[data-preset]');
+      if (!btn) return;
+      var form = btn.closest('form');
+      if (!form) return;
+      var fromInput = form.querySelector('input[name="from"]');
+      var toInput = form.querySelector('input[name="to"]');
+      if (!fromInput || !toInput) return;
+      var today = new Date();
+      var from = new Date(today);
+      if (btn.dataset.preset === 'thisweek') {
+        // Monday of the current ISO-style week. JS getDay(): 0=Sun..6=Sat.
+        var daysSinceMon = (today.getDay() + 6) % 7;
+        from.setDate(today.getDate() - daysSinceMon);
+      }
+      if (btn.dataset.preset === 'week') from.setDate(today.getDate() - 7);
+      if (btn.dataset.preset === 'month') from.setDate(today.getDate() - 30);
+      fromInput.value = fmt(from);
+      toInput.value = fmt(today);
+      form.submit();
+    });
+  })();
+</script>
+{{end}}
