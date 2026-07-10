@@ -20,40 +20,136 @@
 
 <div class="card mb-16">
   <div class="card-title">Account visibility in reports</div>
-  <p class="muted" style="font-size: 12px;">
-    Unchecked accounts are left out of the <strong>Dashboard</strong>,
+  <p class="muted" style="font-size: 12px; max-width: 78ch;">
+    Turn an account off to leave it out of the <strong>Dashboard</strong>,
     <strong>Calendar</strong>, and <strong>Analytics</strong> totals - handy for hiding
-    prop-firm Eval accounts whose paper P&amp;L would distort the real picture. They stay
-    fully visible in Accounts, still import normally, and still appear on Trades; picking
-    them explicitly in a Calendar/Analytics account filter also overrides this.
+    prop-firm Eval accounts whose paper P&amp;L would distort the real picture. Hidden
+    accounts stay fully visible in Accounts, still import, and still show on Trades;
+    picking one explicitly in a Calendar/Analytics account filter also overrides this.
   </p>
-  {{if .VisAccounts}}
-  <form method="post" action="/settings/account-visibility" style="margin-top: 10px;">
+  {{if .VisGroups}}
+  <form method="post" action="/settings/account-visibility" id="vis-form" data-vis-total="{{.VisTotal}}">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
-    <div class="vis-accounts">
-      {{range .VisAccounts}}
-      <label class="vis-account">
-        <input type="checkbox" name="include" value="{{.ID}}" {{if eq .ExcludedFromStats 0}}checked{{end}}>
-        <span class="vis-account-name">{{.Name}}</span>
-        {{if .Firm}}<code class="vis-account-firm">{{derefStr .Firm}}</code>{{end}}
-        {{if .Type}}<span class="muted" style="font-size: 11px;">{{derefStr .Type}}</span>{{end}}
-      </label>
-      {{end}}
+
+    <div class="vis-toolbar">
+      <span class="vis-summary"><strong id="vis-count">0</strong> of {{.VisTotal}} counted in reports</span>
+      <span class="row-sm" style="gap: 6px;">
+        <button type="button" class="btn btn--ghost btn--sm" data-vis-all>Select all</button>
+        <button type="button" class="btn btn--ghost btn--sm" data-vis-none>Hide all</button>
+      </span>
     </div>
-    <div class="row-sm mt-12">
+
+    {{range .VisGroups}}
+    <div class="vis-group">
+      <div class="vis-group-head">
+        <label class="vis-group-toggle">
+          <input type="checkbox" class="vis-group-check">
+          <span class="vis-group-label">{{.Label}}</span>
+        </label>
+        <span class="muted vis-group-count" aria-hidden="true"></span>
+      </div>
+      <div class="vis-group-rows">
+        {{range .Accounts}}
+        <label class="vis-row">
+          <input type="checkbox" name="include" value="{{.ID}}" class="vis-check" {{if eq .ExcludedFromStats 0}}checked{{end}}>
+          <span class="vis-row-name" title="{{.Name}}">{{.Name}}</span>
+          {{if .Firm}}<code class="vis-row-firm">{{derefStr .Firm}}</code>{{end}}
+        </label>
+        {{end}}
+      </div>
+    </div>
+    {{end}}
+
+    <div class="vis-actions">
       <button type="submit" class="btn btn--primary btn--sm">Save visibility</button>
-      <span class="muted" style="font-size: 11px;">Checked = counted in reports.</span>
     </div>
   </form>
   {{else}}
   <p class="muted" style="font-size: 12px; margin-top: 8px;">No active accounts yet - <a href="/import">import a CSV</a> first.</p>
   {{end}}
 </div>
+
 <style>
-  .vis-accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 6px; }
-  .vis-account { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; cursor: pointer; }
-  .vis-account-firm { font-size: 11px; }
+  .vis-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px;
+                 flex-wrap: wrap; margin: 8px 0 6px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  .vis-summary { font-size: 13px; color: var(--fg-muted); }
+  .vis-summary strong { color: var(--fg); font-variant-numeric: tabular-nums; }
+
+  .vis-group { margin-top: 14px; }
+  .vis-group-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .vis-group-toggle { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+  .vis-group-label { font-size: 11px; font-weight: var(--fw-semibold); text-transform: uppercase;
+                     letter-spacing: 0.05em; color: var(--fg-muted); }
+  .vis-group-count { font-size: 11px; font-variant-numeric: tabular-nums; }
+
+  .vis-group-rows { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 2px 10px; }
+  .vis-row { display: flex; align-items: center; gap: 8px; min-width: 0;
+             padding: 5px 8px; border-radius: var(--r-sm); cursor: pointer;
+             transition: background var(--t-fast), opacity var(--t-fast); }
+  .vis-row:hover { background: var(--bg-hover); }
+  .vis-row-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+                  white-space: nowrap; font-size: 13px; }
+  .vis-row-firm { flex: none; font-size: 10px; }
+  /* Hidden (unchecked) accounts read as de-emphasized. */
+  .vis-row.is-hidden { opacity: 0.45; }
+  .vis-row.is-hidden .vis-row-name { text-decoration: line-through; }
+
+  .vis-actions { margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border); }
 </style>
+
+<script>
+  (function () {
+    var form = document.getElementById('vis-form');
+    if (!form) return;
+    var total = parseInt(form.getAttribute('data-vis-total'), 10) || 0;
+    var countEl = document.getElementById('vis-count');
+    var checks = function () { return Array.prototype.slice.call(form.querySelectorAll('.vis-check')); };
+
+    // Reflect a row's checked state on its label (dim + strike when hidden).
+    function paintRow(cb) {
+      var row = cb.closest('.vis-row');
+      if (row) row.classList.toggle('is-hidden', !cb.checked);
+    }
+    // Group header checkbox: checked when all in group on, indeterminate when
+    // some, plus a "3/5" count next to the label.
+    function paintGroup(group) {
+      var boxes = Array.prototype.slice.call(group.querySelectorAll('.vis-check'));
+      var on = boxes.filter(function (b) { return b.checked; }).length;
+      var head = group.querySelector('.vis-group-check');
+      if (head) {
+        head.checked = on === boxes.length;
+        head.indeterminate = on > 0 && on < boxes.length;
+      }
+      var cnt = group.querySelector('.vis-group-count');
+      if (cnt) cnt.textContent = on + '/' + boxes.length;
+    }
+    function refresh() {
+      var on = checks().filter(function (b) { return b.checked; }).length;
+      if (countEl) countEl.textContent = on;
+      Array.prototype.forEach.call(form.querySelectorAll('.vis-group'), paintGroup);
+    }
+
+    checks().forEach(function (cb) {
+      paintRow(cb);
+      cb.addEventListener('change', function () { paintRow(cb); refresh(); });
+    });
+    // Group toggle flips every box in its group.
+    Array.prototype.forEach.call(form.querySelectorAll('.vis-group-check'), function (head) {
+      head.addEventListener('change', function () {
+        var group = head.closest('.vis-group');
+        group.querySelectorAll('.vis-check').forEach(function (cb) { cb.checked = head.checked; paintRow(cb); });
+        refresh();
+      });
+    });
+    var setAll = function (val) { checks().forEach(function (cb) { cb.checked = val; paintRow(cb); }); refresh(); };
+    var allBtn = form.querySelector('[data-vis-all]');
+    var noneBtn = form.querySelector('[data-vis-none]');
+    if (allBtn) allBtn.addEventListener('click', function () { setAll(true); });
+    if (noneBtn) noneBtn.addEventListener('click', function () { setAll(false); });
+    void total; // reserved (server-rendered total already shown)
+    refresh();
+  })();
+</script>
 
 {{if .AIEnabled}}
 <div class="card mb-16">

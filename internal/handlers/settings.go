@@ -68,6 +68,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 			visAccounts = append(visAccounts, a)
 		}
 	}
+	visGroups := groupAccountsForVisibility(visAccounts)
 	h.renderPage(w, r, "settings.html", map[string]any{
 		"NavActive":   "settings",
 		"BackHref":    validBackHref(r),
@@ -76,10 +77,58 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"AILanguage":  h.userAILanguage(ctx),
 		"AILanguages": aiLanguageOptions,
 		"AIEnabled":   h.AIJobs != nil,
-		"VisAccounts": visAccounts,
+		"VisGroups":   visGroups,
+		"VisTotal":    len(visAccounts),
 		"Flash":       r.URL.Query().Get("flash"),
 		"Err":         r.URL.Query().Get("err"),
 	})
+}
+
+// accountVisGroup is one account-type section of the Settings visibility
+// selector (e.g. "Prop · Eval"), holding the accounts of that type.
+type accountVisGroup struct {
+	Label    string
+	Accounts []models.Account
+}
+
+// groupAccountsForVisibility buckets accounts by type in equityTypeOrder (real
+// capital first, Eval last - the same hierarchy the equity breakdown uses), so
+// the visibility selector reads top-to-bottom "keep, keep, ... maybe hide the
+// Eval money". Unknown/blank types fall into a trailing "Other" group. Input is
+// assumed name-sorted (ListAccounts orders by name), so groups stay sorted too.
+func groupAccountsForVisibility(accounts []models.Account) []accountVisGroup {
+	known := map[string]bool{}
+	byType := map[string][]models.Account{}
+	for _, o := range equityTypeOrder {
+		known[o.Type] = true
+	}
+	for _, a := range accounts {
+		slug := ""
+		if a.Type != nil {
+			slug = *a.Type
+		}
+		byType[slug] = append(byType[slug], a)
+	}
+	var groups []accountVisGroup
+	for _, o := range equityTypeOrder {
+		if accts := byType[o.Type]; len(accts) > 0 {
+			groups = append(groups, accountVisGroup{Label: o.Label, Accounts: accts})
+		}
+	}
+	var other []models.Account
+	for _, a := range accounts { // preserve name order for the catch-all
+		slug := ""
+		if a.Type != nil {
+			slug = *a.Type
+		}
+		if !known[slug] {
+			other = append(other, a)
+		}
+	}
+	if len(other) > 0 {
+		groups = append(groups, accountVisGroup{Label: "Other", Accounts: other})
+	}
+	return groups
 }
 
 // SettingsLanguageSave: POST /settings/language - set the language the in-app AI analyzer
