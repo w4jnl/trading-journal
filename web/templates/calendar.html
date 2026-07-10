@@ -54,6 +54,9 @@
     {{$wt := index $.WeeklyTotals $wi}}
     <tr>
       {{range $di, $day := $week}}
+        {{/* Friday's cell absorbs the folded Saturday (see calendar.go), so its
+             /trades link spans Fri..Sat; every other day links to itself. */}}
+        {{$dayTo := $day.Date}}{{if eq $di 5}}{{$dayTo = $day.Date.AddDate 0 0 1}}{{end}}
         <td class="{{if not $day.InMonth}}out-of-month{{else if eq $di 6}}sat-cell {{weekCellClass $wt.NetPnl $wt.HasData}}{{else}}{{cellClass $day.NetPnl $day.HasData}}{{end}}"
             {{if $day.InMonth}}data-date="{{$day.Date.Format "2006-01-02"}}"{{end}}>
           {{if and $day.InMonth (ne $di 6) (not $day.InFuture)}}
@@ -92,7 +95,7 @@
               </div>
             {{end}}
           {{else if and $day.InMonth $day.HasData}}
-            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
+            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$dayTo.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num in-month">{{$day.Date.Day}}</div>
               <div class="day-pnl num {{if gt $day.NetPnl 0.0}}pos{{else if lt $day.NetPnl 0.0}}neg{{end}}">{{printf "%.2f" $day.NetPnl}}</div>
               <div class="day-meta"><span class="num">{{$day.Trades}}</span> trades · <span class="num">{{$day.Wins}}W/{{$day.Losses}}L</span></div>
@@ -100,7 +103,7 @@
           {{else if $day.SpillPnl}}
             {{/* Out-of-month day that still feeds an in-month week total: show its
                  P&L muted (it's context for the week sum, not a day of this month). */}}
-            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$day.Date.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
+            <a class="day-link" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$dayTo.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
               <div class="day-num">{{$day.Date.Day}}</div>
               <div class="day-pnl day-pnl--spill num">{{printf "%.2f" $day.NetPnl}}</div>
               <div class="day-meta day-meta--spill"><span class="num">{{$day.Trades}}</span> trades</div>

@@ -220,6 +220,27 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 			}
 			row[d] = cell
 		}
+
+		// The 7th column (index 6, Saturday) is repurposed as the week-summary
+		// slot, so a Saturday's own P&L would be hidden yet still counted in the
+		// week total - making the total not add up to the visible Sun-Fri cells.
+		// The market is closed Saturday; a Saturday-dated trade is a Friday
+		// US-session trade whose exit crossed local midnight (common in +UTC
+		// zones like Europe/Amsterdam). Fold it into Friday so it's shown and
+		// the week total reconciles. Journal flags stay on Saturday's own date.
+		if sat := &row[6]; sat.HasData {
+			fri := &row[5]
+			fri.HasData = true
+			fri.Trades += sat.Trades
+			fri.Wins += sat.Wins
+			fri.Losses += sat.Losses
+			fri.NetPnl += sat.NetPnl
+			fri.GrossPnl += sat.GrossPnl
+			fri.Commission += sat.Commission
+			sat.HasData = false
+			sat.Trades, sat.Wins, sat.Losses = 0, 0, 0
+			sat.NetPnl, sat.GrossPnl, sat.Commission = 0, 0, 0
+		}
 		weeks[wk] = row
 	}
 
