@@ -242,11 +242,11 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 			afSet[id] = true
 		}
 	} else {
-		// Implicit "all accounts" means all non-retired accounts. Retired
-		// accounts are excluded from the analytics equity curve so the chart
-		// reflects only capital actually being traded.
+		// Implicit "all accounts" means all non-retired, non-stats-excluded
+		// accounts, so the equity curve reflects only capital the user wants
+		// counted (Eval accounts flagged out don't distort it).
 		for _, a := range accounts {
-			if a.Active != 1 {
+			if a.Active != 1 || a.ExcludedFromStats != 0 {
 				continue
 			}
 			afSet[a.ID] = true
@@ -367,6 +367,8 @@ func (h *Handlers) earliestExitForFilter(ctx context.Context, af accountFilter) 
 		for _, id := range af.AccountIDs {
 			args = append(args, id)
 		}
+	} else {
+		where += " AND account_id IN (SELECT id FROM accounts WHERE excluded_from_stats = 0)"
 	}
 	var earliest time.Time
 	row := h.DB.QueryRowContext(ctx, "SELECT exit_time FROM trades WHERE "+where+" ORDER BY exit_time ASC LIMIT 1", args...)
@@ -406,6 +408,10 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 	if err != nil {
 		return nil
 	}
+	excluded, err := h.statsExcludedAccountSet(ctx)
+	if err != nil {
+		return nil
+	}
 	allowed := map[int64]bool{}
 	for _, id := range af.AccountIDs {
 		allowed[id] = true
@@ -417,7 +423,11 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 		if retired[r.AccountID] {
 			continue
 		}
-		if af.Active && !allowed[r.AccountID] {
+		if af.Active {
+			if !allowed[r.AccountID] {
+				continue
+			}
+		} else if excluded[r.AccountID] {
 			continue
 		}
 		ld := r.StatDate.In(tz)
@@ -468,6 +478,9 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 				args = append(args, id)
 			}
 		}
+	} else {
+		// No explicit selection: drop stats-excluded accounts from the default.
+		clauses = append(clauses, "a.excluded_from_stats = 0")
 	}
 	if from != nil {
 		clauses = append(clauses, "exit_time >= ?")

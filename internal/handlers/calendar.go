@@ -26,6 +26,9 @@ type dayCell struct {
 	Commission float64
 	HasJournal bool   // day-level journal entry exists
 	JournalTag string // good|bad|neutral|""
+	// SpillPnl is true for an out-of-month day whose week IS part of the month
+	// view - the template renders its P&L muted so the week total is explained.
+	SpillPnl bool
 }
 
 // weekTotal aggregates a single row of the calendar grid. Counts every day in
@@ -42,6 +45,9 @@ type weekTotal struct {
 	HasJournal bool   // a week-level journal entry exists for this ISO week
 	JournalTag string // good|bad|neutral|""
 	InFuture   bool   // Monday is after today — no journal/link affordance
+	// InMonth is true when at least one of the week's days falls in the viewed
+	// month. A trailing all-spillover week (InMonth=false) shows no summary.
+	InMonth bool
 }
 
 // CalendarPage renders /calendar — a monthly grid colored by net P&L.
@@ -56,6 +62,18 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	monthEnd := monthStart.AddDate(0, 1, 0)
+
+	// The grid is a Sunday-start 6-week block that always covers the month plus
+	// spillover days from the neighbouring months. Daily stats are fetched for
+	// the WHOLE grid (not just the month) so a week-summary total includes the
+	// spillover days that share its ISO week with in-month days (e.g. Jun 29-30
+	// count toward the week that also holds Jul 1-3). The spillover day CELLS
+	// stay greyed - only the week totals use their data.
+	gridStart := monthStart
+	for gridStart.Weekday() != time.Sunday {
+		gridStart = gridStart.AddDate(0, 0, -1)
+	}
+	gridEnd := gridStart.AddDate(0, 0, 42) // 6 weeks, exclusive upper bound
 
 	// Bridge legacy ?account_id=N → ?filter=acc:N so older calendar bookmarks
 	// keep working through the multi-select transition.
@@ -80,11 +98,18 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("retired set: %w", err))
 		return
 	}
+	// Stats-excluded accounts drop out of the DEFAULT view; an explicit account
+	// filter overrides (the user asked for those specific accounts).
+	excluded, err := h.statsExcludedAccountSet(ctx)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("excluded set: %w", err))
+		return
+	}
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
-		StatDate:   monthStart,
-		StatDate_2: monthEnd,
+		StatDate:   gridStart,
+		StatDate_2: gridEnd,
 	})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list daily_stats: %w", err))
@@ -143,7 +168,11 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		if retired[row.AccountID] {
 			continue
 		}
-		if accountFilt.Active && !accountIDSet[row.AccountID] {
+		if accountFilt.Active {
+			if !accountIDSet[row.AccountID] {
+				continue
+			}
+		} else if excluded[row.AccountID] {
 			continue
 		}
 		y, m, d := row.StatDate.In(tz).Date()
@@ -162,11 +191,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		c.Commission += row.Commission
 	}
 
-	// Sunday-start grid covering 6 weeks (always covers any month).
-	gridStart := monthStart
-	for gridStart.Weekday() != time.Sunday {
-		gridStart = gridStart.AddDate(0, 0, -1)
-	}
+	// gridStart / gridEnd were computed above (they also bound the stats fetch).
 	now := time.Now().In(tz)
 	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, tz)
 	weeks := make([][]dayCell, 6)
@@ -195,6 +220,27 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 			}
 			row[d] = cell
 		}
+
+		// The 7th column (index 6, Saturday) is repurposed as the week-summary
+		// slot, so a Saturday's own P&L would be hidden yet still counted in the
+		// week total - making the total not add up to the visible Sun-Fri cells.
+		// The market is closed Saturday; a Saturday-dated trade is a Friday
+		// US-session trade whose exit crossed local midnight (common in +UTC
+		// zones like Europe/Amsterdam). Fold it into Friday so it's shown and
+		// the week total reconciles. Journal flags stay on Saturday's own date.
+		if sat := &row[6]; sat.HasData {
+			fri := &row[5]
+			fri.HasData = true
+			fri.Trades += sat.Trades
+			fri.Wins += sat.Wins
+			fri.Losses += sat.Losses
+			fri.NetPnl += sat.NetPnl
+			fri.GrossPnl += sat.GrossPnl
+			fri.Commission += sat.Commission
+			sat.HasData = false
+			sat.Trades, sat.Wins, sat.Losses = 0, 0, 0
+			sat.NetPnl, sat.GrossPnl, sat.Commission = 0, 0, 0
+		}
 		weeks[wk] = row
 	}
 
@@ -202,7 +248,8 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	var monthNet, monthGross, monthComm float64
 	var monthTrades, winDays, lossDays int64
 	weeklyTotals := make([]weekTotal, len(weeks))
-	for wi, week := range weeks {
+	for wi := range weeks {
+		week := weeks[wi]
 		// ISO week is anchored to Monday — week[1] is Monday of this row, the
 		// stable representative for the ISO week regardless of which Sunday
 		// or Saturday the grid happens to start on.
@@ -215,16 +262,33 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 			SundayStr: monday.AddDate(0, 0, 6).Format("2006-01-02"),
 			InFuture:  monday.After(today),
 		}
+		// A week is part of THIS month's view iff at least one of its days is
+		// in-month. The trailing all-spillover row (a fixed 6-week grid always
+		// renders 6 rows) has none - it shows no summary.
+		for _, c := range week {
+			if c.InMonth {
+				wt.InMonth = true
+				break
+			}
+		}
 		if tag, ok := weekJournalsByMonday[monday.Format("2006-01-02")]; ok {
 			wt.HasJournal = true
 			wt.JournalTag = tag
 		}
-		for _, c := range week {
+		for di := range week {
+			c := &weeks[wi][di]
 			// Week aggregates: every day in the row, including spillover.
 			if c.HasData {
 				wt.HasData = true
 				wt.Trades += c.Trades
 				wt.NetPnl += c.NetPnl
+			}
+			// A spillover day that belongs to an in-month week (e.g. Jul 1-3 in
+			// the week that also holds Jun 28-30) shows its P&L muted, so the
+			// user can see what feeds the week total. Spillover days of an
+			// all-spillover week stay blank.
+			if !c.InMonth && wt.InMonth && c.HasData {
+				c.SpillPnl = true
 			}
 			// Month aggregates: only in-month days.
 			if !c.InMonth || !c.HasData {

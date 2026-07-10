@@ -443,7 +443,7 @@ func (h *Handlers) dashboardEquityNow(ctx context.Context, tz *time.Location) (d
 	eq.AsOf = todayLocal(tz).Format("2006-01-02")
 	byType := map[string]*equityByType{}
 	for _, a := range accounts {
-		if a.Active != 1 {
+		if a.Active != 1 || a.ExcludedFromStats != 0 {
 			continue
 		}
 		eq.AccountsTotal++

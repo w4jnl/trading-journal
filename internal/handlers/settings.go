@@ -55,6 +55,20 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		h.serverError(w, fmt.Errorf("list api keys: %w", err))
 		return
 	}
+	// Account-visibility selector: active accounts only (retired accounts are
+	// already hidden from stats, so listing them here would be misleading).
+	accounts, err := h.Queries.ListAccounts(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+	visAccounts := make([]models.Account, 0, len(accounts))
+	for _, a := range accounts {
+		if a.Active == 1 {
+			visAccounts = append(visAccounts, a)
+		}
+	}
+	visGroups := groupAccountsForVisibility(visAccounts)
 	h.renderPage(w, r, "settings.html", map[string]any{
 		"NavActive":   "settings",
 		"BackHref":    validBackHref(r),
@@ -63,9 +77,58 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"AILanguage":  h.userAILanguage(ctx),
 		"AILanguages": aiLanguageOptions,
 		"AIEnabled":   h.AIJobs != nil,
+		"VisGroups":   visGroups,
+		"VisTotal":    len(visAccounts),
 		"Flash":       r.URL.Query().Get("flash"),
 		"Err":         r.URL.Query().Get("err"),
 	})
+}
+
+// accountVisGroup is one account-type section of the Settings visibility
+// selector (e.g. "Prop · Eval"), holding the accounts of that type.
+type accountVisGroup struct {
+	Label    string
+	Accounts []models.Account
+}
+
+// groupAccountsForVisibility buckets accounts by type in equityTypeOrder (real
+// capital first, Eval last - the same hierarchy the equity breakdown uses), so
+// the visibility selector reads top-to-bottom "keep, keep, ... maybe hide the
+// Eval money". Unknown/blank types fall into a trailing "Other" group. Input is
+// assumed name-sorted (ListAccounts orders by name), so groups stay sorted too.
+func groupAccountsForVisibility(accounts []models.Account) []accountVisGroup {
+	known := map[string]bool{}
+	byType := map[string][]models.Account{}
+	for _, o := range equityTypeOrder {
+		known[o.Type] = true
+	}
+	for _, a := range accounts {
+		slug := ""
+		if a.Type != nil {
+			slug = *a.Type
+		}
+		byType[slug] = append(byType[slug], a)
+	}
+	var groups []accountVisGroup
+	for _, o := range equityTypeOrder {
+		if accts := byType[o.Type]; len(accts) > 0 {
+			groups = append(groups, accountVisGroup{Label: o.Label, Accounts: accts})
+		}
+	}
+	var other []models.Account
+	for _, a := range accounts { // preserve name order for the catch-all
+		slug := ""
+		if a.Type != nil {
+			slug = *a.Type
+		}
+		if !known[slug] {
+			other = append(other, a)
+		}
+	}
+	if len(other) > 0 {
+		groups = append(groups, accountVisGroup{Label: "Other", Accounts: other})
+	}
+	return groups
 }
 
 // SettingsLanguageSave: POST /settings/language - set the language the in-app AI analyzer
@@ -86,6 +149,50 @@ func (h *Handlers) SettingsLanguageSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.Redirect(w, r, "/settings?flash=language", http.StatusSeeOther)
+}
+
+// SettingsAccountVisibilitySave: POST /settings/account-visibility - choose
+// which accounts are counted in the Dashboard/Calendar/Analytics default
+// aggregates. The form submits one include=<id> per checked (visible) account;
+// any active account NOT in that set is flagged excluded_from_stats. Scoped to
+// the user via SetAccountExcluded's WHERE user_id = ?.
+func (h *Handlers) SettingsAccountVisibilitySave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	included := map[int64]bool{}
+	for _, v := range r.PostForm["include"] {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			included[id] = true
+		}
+	}
+	accounts, err := h.Queries.ListAccounts(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+	uid := userID(ctx)
+	for _, a := range accounts {
+		if a.Active != 1 {
+			continue // retired accounts aren't in the selector; leave their flag alone
+		}
+		want := int64(1) // excluded
+		if included[a.ID] {
+			want = 0
+		}
+		if a.ExcludedFromStats == want {
+			continue // unchanged; skip the write
+		}
+		if err := h.Queries.SetAccountExcluded(ctx, models.SetAccountExcludedParams{
+			ExcludedFromStats: want, ID: a.ID, UserID: uid,
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("set account excluded: %w", err))
+			return
+		}
+	}
+	http.Redirect(w, r, "/settings?flash=visibility", http.StatusSeeOther)
 }
 
 // APIKeyCreate: POST /settings/api-keys - generate a key and show it once.
