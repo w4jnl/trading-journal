@@ -564,6 +564,23 @@ func (h *Handlers) retiredAccountSet(ctx context.Context) (map[int64]bool, error
 	return out, nil
 }
 
+// statsExcludedAccountSet returns the IDs of accounts the user flagged
+// excluded_from_stats, as a set. Applied (only when no explicit account filter
+// is active) by the Dashboard/Calendar/Analytics aggregators to keep flagged
+// accounts - typically prop Eval accounts - out of the default numbers. An
+// explicit account-filter selection overrides it. Mirrors retiredAccountSet.
+func (h *Handlers) statsExcludedAccountSet(ctx context.Context) (map[int64]bool, error) {
+	ids, err := h.Queries.ListStatsExcludedAccountIDs(ctx, auth.MustUser(ctx).ID)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]bool, len(ids))
+	for _, id := range ids {
+		out[id] = true
+	}
+	return out, nil
+}
+
 // accountFilter holds the parsed multi-select filter shared by /trades,
 // /calendar, and /analytics. The `filter` query param accepts multiple values:
 //

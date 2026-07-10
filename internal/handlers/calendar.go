@@ -92,6 +92,13 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("retired set: %w", err))
 		return
 	}
+	// Stats-excluded accounts drop out of the DEFAULT view; an explicit account
+	// filter overrides (the user asked for those specific accounts).
+	excluded, err := h.statsExcludedAccountSet(ctx)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("excluded set: %w", err))
+		return
+	}
 
 	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
@@ -155,7 +162,11 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		if retired[row.AccountID] {
 			continue
 		}
-		if accountFilt.Active && !accountIDSet[row.AccountID] {
+		if accountFilt.Active {
+			if !accountIDSet[row.AccountID] {
+				continue
+			}
+		} else if excluded[row.AccountID] {
 			continue
 		}
 		y, m, d := row.StatDate.In(tz).Date()

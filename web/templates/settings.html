@@ -15,7 +15,45 @@
 {{if eq .Flash "revoked"}}<div class="flash saved mb-16">Key revoked.</div>{{end}}
 {{if eq .Flash "deleted"}}<div class="flash saved mb-16">Key deleted.</div>{{end}}
 {{if eq .Flash "language"}}<div class="flash saved mb-16">Language saved.</div>{{end}}
+{{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if .Err}}<div class="flash error mb-16" role="alert">{{.Err}}</div>{{end}}
+
+<div class="card mb-16">
+  <div class="card-title">Account visibility in reports</div>
+  <p class="muted" style="font-size: 12px;">
+    Unchecked accounts are left out of the <strong>Dashboard</strong>,
+    <strong>Calendar</strong>, and <strong>Analytics</strong> totals - handy for hiding
+    prop-firm Eval accounts whose paper P&amp;L would distort the real picture. They stay
+    fully visible in Accounts, still import normally, and still appear on Trades; picking
+    them explicitly in a Calendar/Analytics account filter also overrides this.
+  </p>
+  {{if .VisAccounts}}
+  <form method="post" action="/settings/account-visibility" style="margin-top: 10px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <div class="vis-accounts">
+      {{range .VisAccounts}}
+      <label class="vis-account">
+        <input type="checkbox" name="include" value="{{.ID}}" {{if eq .ExcludedFromStats 0}}checked{{end}}>
+        <span class="vis-account-name">{{.Name}}</span>
+        {{if .Firm}}<code class="vis-account-firm">{{derefStr .Firm}}</code>{{end}}
+        {{if .Type}}<span class="muted" style="font-size: 11px;">{{derefStr .Type}}</span>{{end}}
+      </label>
+      {{end}}
+    </div>
+    <div class="row-sm mt-12">
+      <button type="submit" class="btn btn--primary btn--sm">Save visibility</button>
+      <span class="muted" style="font-size: 11px;">Checked = counted in reports.</span>
+    </div>
+  </form>
+  {{else}}
+  <p class="muted" style="font-size: 12px; margin-top: 8px;">No active accounts yet - <a href="/import">import a CSV</a> first.</p>
+  {{end}}
+</div>
+<style>
+  .vis-accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 6px 16px; margin-top: 6px; }
+  .vis-account { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 4px 0; cursor: pointer; }
+  .vis-account-firm { font-size: 11px; }
+</style>
 
 {{if .AIEnabled}}
 <div class="card mb-16">

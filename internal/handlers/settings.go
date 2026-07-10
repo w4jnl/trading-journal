@@ -55,6 +55,19 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		h.serverError(w, fmt.Errorf("list api keys: %w", err))
 		return
 	}
+	// Account-visibility selector: active accounts only (retired accounts are
+	// already hidden from stats, so listing them here would be misleading).
+	accounts, err := h.Queries.ListAccounts(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+	visAccounts := make([]models.Account, 0, len(accounts))
+	for _, a := range accounts {
+		if a.Active == 1 {
+			visAccounts = append(visAccounts, a)
+		}
+	}
 	h.renderPage(w, r, "settings.html", map[string]any{
 		"NavActive":   "settings",
 		"BackHref":    validBackHref(r),
@@ -63,6 +76,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"AILanguage":  h.userAILanguage(ctx),
 		"AILanguages": aiLanguageOptions,
 		"AIEnabled":   h.AIJobs != nil,
+		"VisAccounts": visAccounts,
 		"Flash":       r.URL.Query().Get("flash"),
 		"Err":         r.URL.Query().Get("err"),
 	})
@@ -86,6 +100,50 @@ func (h *Handlers) SettingsLanguageSave(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.Redirect(w, r, "/settings?flash=language", http.StatusSeeOther)
+}
+
+// SettingsAccountVisibilitySave: POST /settings/account-visibility - choose
+// which accounts are counted in the Dashboard/Calendar/Analytics default
+// aggregates. The form submits one include=<id> per checked (visible) account;
+// any active account NOT in that set is flagged excluded_from_stats. Scoped to
+// the user via SetAccountExcluded's WHERE user_id = ?.
+func (h *Handlers) SettingsAccountVisibilitySave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	included := map[int64]bool{}
+	for _, v := range r.PostForm["include"] {
+		if id, err := strconv.ParseInt(v, 10, 64); err == nil {
+			included[id] = true
+		}
+	}
+	accounts, err := h.Queries.ListAccounts(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list accounts: %w", err))
+		return
+	}
+	uid := userID(ctx)
+	for _, a := range accounts {
+		if a.Active != 1 {
+			continue // retired accounts aren't in the selector; leave their flag alone
+		}
+		want := int64(1) // excluded
+		if included[a.ID] {
+			want = 0
+		}
+		if a.ExcludedFromStats == want {
+			continue // unchanged; skip the write
+		}
+		if err := h.Queries.SetAccountExcluded(ctx, models.SetAccountExcludedParams{
+			ExcludedFromStats: want, ID: a.ID, UserID: uid,
+		}); err != nil {
+			h.serverError(w, fmt.Errorf("set account excluded: %w", err))
+			return
+		}
+	}
+	http.Redirect(w, r, "/settings?flash=visibility", http.StatusSeeOther)
 }
 
 // APIKeyCreate: POST /settings/api-keys - generate a key and show it once.

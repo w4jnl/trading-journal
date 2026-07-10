@@ -39,6 +39,16 @@ RETURNING *;
 -- already-fetched daily_stats or accounts lists.
 SELECT id FROM accounts WHERE user_id = ? AND active = 0;
 
+-- name: ListStatsExcludedAccountIDs :many
+-- IDs of the user's accounts flagged excluded_from_stats. Handlers use the set
+-- to drop those accounts from Dashboard/Calendar/Analytics default aggregates.
+SELECT id FROM accounts WHERE user_id = ? AND excluded_from_stats = 1;
+
+-- name: SetAccountExcluded :exec
+-- Toggle an account's excluded_from_stats flag (Settings account-visibility
+-- selector). Scoped by user so a guessed id can't flip another user's account.
+UPDATE accounts SET excluded_from_stats = ? WHERE id = ? AND user_id = ?;
+
 -- name: GetAccountImportClaim :one
 -- Returns the import format that has "claimed" the account:
 --   'trades' - trades-CSV has run (commission_source flipped to 'inline')
