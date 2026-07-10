@@ -1,4 +1,11 @@
 {{define "trade_detail"}}
+{{/* After a journal save/delete inside the sheet, update just this trade's
+     row journal-icon in the /trades table via an out-of-band swap - no
+     full-page reload. Ignored (no matching id) on the standalone journal page
+     or when the trade isn't on the current /trades view. */}}
+{{if or (eq .Flash "saved") (eq .Flash "deleted") (eq .Flash "analyzed")}}
+<span id="trow-jicon-{{.TradeID}}" hx-swap-oob="true">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>
+{{end}}
 {{with .Trade}}
 <div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
   <span class="num" style="font-size: 18px; font-weight: 600;">{{.Symbol}}</span>
@@ -95,10 +102,6 @@
       <span class="muted" style="font-size: 11px;">⌘S to save</span>
     </div>
   </form>
-
-  {{if or (eq $.Flash "saved") (eq $.Flash "deleted") (eq $.Flash "analyzed")}}
-  <script>window.__journalChanged = true;</script>
-  {{end}}
 
   {{if .AssignedStrategy}}{{template "strategy_card" .AssignedStrategy}}{{end}}
 </section>

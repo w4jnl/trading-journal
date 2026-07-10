@@ -20,7 +20,7 @@ collide on a shared `back` variable.
     document.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape') return;
       // Don't hijack Esc while the trade sheet is open — the sheet owns its
-      // own close path and reads __journalChanged before reloading.
+      // own close path (see trade_sheet.js).
       const sheet = document.getElementById('trade-sheet-backdrop');
       if (sheet && sheet.classList.contains('show')) return;
       // The command palette also owns its Esc; listener order isn't guaranteed.

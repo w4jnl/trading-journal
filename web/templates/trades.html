@@ -115,7 +115,7 @@
           <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
         </td>
         <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
-          {{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
+          <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
         <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
         <td>{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
@@ -184,22 +184,17 @@
 <script>
   // Trade-sheet integration for /trades — most of the behavior lives in
   // trade_sheet.js. This hook decides what to do on close:
-  //   - If the journal was saved/deleted inside the sheet, reload the page
-  //     so the row's journal icon reflects the change.
   //   - If we got here via /trades?sheet=N&back=URL (or legacy ?modal=N)
   //     from a different page just to show one trade, fall back to that URL.
   //   - Otherwise let trade_sheet.js perform a plain hide (return undefined).
+  // Journal saves inside the sheet update the row's icon live via an
+  // hx-swap-oob span (see _trade_detail.html), so no reload is needed.
   window.tradeSheetOnClose = function () {
     const params = new URLSearchParams(location.search);
     const back = params.get('back');
     const deepLinked = params.get('sheet') || params.get('modal');
-    if (deepLinked && back && !window.__journalChanged) {
+    if (deepLinked && back) {
       setTimeout(() => { location.href = back; }, 30);
-      return; // let the sheet hide; navigation will replace the page anyway
-    }
-    if (window.__journalChanged) {
-      window.__journalChanged = false;
-      setTimeout(() => location.reload(), 30);
     }
   };
 
