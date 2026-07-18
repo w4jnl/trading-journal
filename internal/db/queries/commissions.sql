@@ -31,16 +31,21 @@ SELECT * FROM asset_classes ORDER BY sort_order, code;
 SELECT * FROM size_classes ORDER BY sort_order, code;
 
 -- name: ListCommissionRates :many
-SELECT * FROM commission_rates ORDER BY asset_class, firm, size_class;
+-- All rate versions, grouped-by-cell order (the handler splits into cells and
+-- picks each cell's current + history). effective_from ASC within a cell.
+SELECT * FROM commission_rates ORDER BY asset_class, firm, size_class, effective_from;
 
 -- name: UpsertCommissionRate :exec
-INSERT INTO commission_rates (asset_class, firm, size_class, per_contract_per_side)
-VALUES (?, ?, ?, ?)
-ON CONFLICT(asset_class, firm, size_class) DO UPDATE SET per_contract_per_side = excluded.per_contract_per_side;
+-- Upsert one effective-dated version. Re-saving the same (cell, effective_from)
+-- overwrites its rate; a new effective_from inserts a new version.
+INSERT INTO commission_rates (asset_class, firm, size_class, effective_from, per_contract_per_side)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(asset_class, firm, size_class, effective_from) DO UPDATE SET per_contract_per_side = excluded.per_contract_per_side;
 
 -- name: DeleteCommissionRate :exec
-DELETE FROM commission_rates
-WHERE asset_class = ? AND firm = ? AND size_class = ?;
+-- Delete one version by its stable id (a DATETIME text-equality match on the
+-- 1970 migration literal is fragile, so we never delete by effective_from).
+DELETE FROM commission_rates WHERE id = ?;
 
 -- name: InsertAssetClass :exec
 INSERT INTO asset_classes (code, label, sort_order) VALUES (?, ?, ?);
@@ -62,16 +67,17 @@ SELECT
 FROM trades t
 JOIN accounts a    ON t.account_id = a.id
 JOIN instruments i ON t.symbol_root = i.symbol_root
-LEFT JOIN commission_rates cr
-    ON cr.firm        = a.firm
-   AND cr.asset_class = i.asset_class
-   AND cr.size_class  = i.size_class
 WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
   AND a.commission_source = 'rate'
   AND a.user_id     = ?
-  AND cr.per_contract_per_side IS NULL
+  -- "cell not configured" = zero rate versions for it (NOT EXISTS avoids the
+  -- row fan-out a LEFT JOIN would produce now that a cell has many versions).
+  AND NOT EXISTS (
+      SELECT 1 FROM commission_rates cr
+      WHERE cr.firm = a.firm AND cr.asset_class = i.asset_class AND cr.size_class = i.size_class
+  )
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root;
 

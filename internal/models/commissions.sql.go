@@ -7,21 +7,17 @@ package models
 
 import (
 	"context"
+	"time"
 )
 
 const deleteCommissionRate = `-- name: DeleteCommissionRate :exec
-DELETE FROM commission_rates
-WHERE asset_class = ? AND firm = ? AND size_class = ?
+DELETE FROM commission_rates WHERE id = ?
 `
 
-type DeleteCommissionRateParams struct {
-	AssetClass string `json:"asset_class"`
-	Firm       string `json:"firm"`
-	SizeClass  string `json:"size_class"`
-}
-
-func (q *Queries) DeleteCommissionRate(ctx context.Context, arg DeleteCommissionRateParams) error {
-	_, err := q.db.ExecContext(ctx, deleteCommissionRate, arg.AssetClass, arg.Firm, arg.SizeClass)
+// Delete one version by its stable id (a DATETIME text-equality match on the
+// 1970 migration literal is fragile, so we never delete by effective_from).
+func (q *Queries) DeleteCommissionRate(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, deleteCommissionRate, id)
 	return err
 }
 
@@ -184,9 +180,11 @@ func (q *Queries) ListAssetClasses(ctx context.Context) ([]AssetClass, error) {
 }
 
 const listCommissionRates = `-- name: ListCommissionRates :many
-SELECT asset_class, firm, size_class, per_contract_per_side FROM commission_rates ORDER BY asset_class, firm, size_class
+SELECT id, asset_class, firm, size_class, effective_from, per_contract_per_side FROM commission_rates ORDER BY asset_class, firm, size_class, effective_from
 `
 
+// All rate versions, grouped-by-cell order (the handler splits into cells and
+// picks each cell's current + history). effective_from ASC within a cell.
 func (q *Queries) ListCommissionRates(ctx context.Context) ([]CommissionRate, error) {
 	rows, err := q.db.QueryContext(ctx, listCommissionRates)
 	if err != nil {
@@ -197,9 +195,11 @@ func (q *Queries) ListCommissionRates(ctx context.Context) ([]CommissionRate, er
 	for rows.Next() {
 		var i CommissionRate
 		if err := rows.Scan(
+			&i.ID,
 			&i.AssetClass,
 			&i.Firm,
 			&i.SizeClass,
+			&i.EffectiveFrom,
 			&i.PerContractPerSide,
 		); err != nil {
 			return nil, err
@@ -227,16 +227,17 @@ SELECT
 FROM trades t
 JOIN accounts a    ON t.account_id = a.id
 JOIN instruments i ON t.symbol_root = i.symbol_root
-LEFT JOIN commission_rates cr
-    ON cr.firm        = a.firm
-   AND cr.asset_class = i.asset_class
-   AND cr.size_class  = i.size_class
 WHERE t.commission IS NULL
   AND t.status      = 'closed'
   AND t.gross_pnl  IS NOT NULL
   AND a.commission_source = 'rate'
   AND a.user_id     = ?
-  AND cr.per_contract_per_side IS NULL
+  -- "cell not configured" = zero rate versions for it (NOT EXISTS avoids the
+  -- row fan-out a LEFT JOIN would produce now that a cell has many versions).
+  AND NOT EXISTS (
+      SELECT 1 FROM commission_rates cr
+      WHERE cr.firm = a.firm AND cr.asset_class = i.asset_class AND cr.size_class = i.size_class
+  )
 GROUP BY a.id, i.symbol_root
 ORDER BY trade_count DESC, a.name, i.symbol_root
 `
@@ -346,23 +347,27 @@ func (q *Queries) UpdateInstrumentSetup(ctx context.Context, arg UpdateInstrumen
 }
 
 const upsertCommissionRate = `-- name: UpsertCommissionRate :exec
-INSERT INTO commission_rates (asset_class, firm, size_class, per_contract_per_side)
-VALUES (?, ?, ?, ?)
-ON CONFLICT(asset_class, firm, size_class) DO UPDATE SET per_contract_per_side = excluded.per_contract_per_side
+INSERT INTO commission_rates (asset_class, firm, size_class, effective_from, per_contract_per_side)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(asset_class, firm, size_class, effective_from) DO UPDATE SET per_contract_per_side = excluded.per_contract_per_side
 `
 
 type UpsertCommissionRateParams struct {
-	AssetClass         string  `json:"asset_class"`
-	Firm               string  `json:"firm"`
-	SizeClass          string  `json:"size_class"`
-	PerContractPerSide float64 `json:"per_contract_per_side"`
+	AssetClass         string    `json:"asset_class"`
+	Firm               string    `json:"firm"`
+	SizeClass          string    `json:"size_class"`
+	EffectiveFrom      time.Time `json:"effective_from"`
+	PerContractPerSide float64   `json:"per_contract_per_side"`
 }
 
+// Upsert one effective-dated version. Re-saving the same (cell, effective_from)
+// overwrites its rate; a new effective_from inserts a new version.
 func (q *Queries) UpsertCommissionRate(ctx context.Context, arg UpsertCommissionRateParams) error {
 	_, err := q.db.ExecContext(ctx, upsertCommissionRate,
 		arg.AssetClass,
 		arg.Firm,
 		arg.SizeClass,
+		arg.EffectiveFrom,
 		arg.PerContractPerSide,
 	)
 	return err

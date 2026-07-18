@@ -11,11 +11,14 @@
 //     (stub instrument awaiting setup), gross_pnl stays NULL — we never silently
 //     substitute a price-difference shortcut.
 //   - Commission lookups go (instrument.asset_class, account.firm, instrument.size_class)
-//     -> commission_rates.per_contract_per_side. The stored value is the broker's
-//     per-side rate, so the builder charges both legs of the round-turn:
-//     commission = perSideRate * qty * 2. Missing firm, uncategorized
-//     instrument, or no matching rate row -> commission NULL.
-//     net_pnl = gross_pnl minus commission-or-zero, but stays NULL if gross_pnl is NULL.
+//     -> commission_rates, which is effective-dated: a cell can hold several
+//     per-side rate versions, each with an effective_from datetime. Every fill
+//     (both entry and exit legs) is charged the per-side rate in effect at its
+//     own exec_time, so commission = sum over all legs of rateAt(fill) * fill.qty.
+//     With a single constant rate this is rate * qty * 2 (both legs of the
+//     round-turn). Missing firm, uncategorized instrument, or no rate versions
+//     for the cell -> commission NULL. net_pnl = gross_pnl minus
+//     commission-or-zero, but stays NULL if gross_pnl is NULL.
 //   - daily_stats is keyed on the trade exit date in the configured trading
 //     timezone, not UTC, so a US trader's session doesn't get split at UTC midnight.
 package positions
@@ -245,11 +248,11 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	// same-side fills).
 	var openQty float64
 
-	// Resolve the commission rate once for this (account, symbol) replay. The
-	// inputs (asset_class, firm, size_class) are constant across every trade
-	// we'll emit, so looking them up per-trade in computePnl was a wasted
-	// round-trip per closed trade.
-	perSideRate, rateOK, err := b.resolveRate(ctx, account, inst)
+	// Load the commission-rate versions once for this (account, symbol) replay.
+	// The cell (asset_class, firm, size_class) is constant across every trade we
+	// emit; each trade then picks, per fill, the version in effect at that fill's
+	// exec_time (rateAt) in memory - one DB round-trip regardless of trade count.
+	versions, err := b.loadRateVersions(ctx, account, inst)
 	if err != nil {
 		return 0, err
 	}
@@ -315,7 +318,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 		}
 
 		if len(openLots) == 0 {
-			if err := b.emitTrade(ctx, k, trade, inst, perSideRate, rateOK); err != nil {
+			if err := b.emitTrade(ctx, k, trade, inst, versions); err != nil {
 				return closed, err
 			}
 			closed++
@@ -334,30 +337,86 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	return closed, nil
 }
 
-// resolveRate looks up the per-side commission rate that applies to this
-// (account, instrument) pair. rateOK=false means "no rate row matched" -
-// net_pnl will fall back to gross_pnl. err is non-nil only for unexpected
-// DB failures.
-func (b *Builder) resolveRate(ctx context.Context, account models.Account, inst models.Instrument) (float64, bool, error) {
+// rateVersion is one effective-dated per-side commission rate for a cell.
+// loadRateVersions returns them sorted by EffectiveFrom ASC.
+type rateVersion struct {
+	EffectiveFrom time.Time
+	PerSide       float64
+}
+
+// loadRateVersions returns every effective-dated per-side rate for this
+// (account, instrument) commission cell, oldest first. nil when firm/asset/size
+// is missing or no rows exist -> commission stays NULL. Loaded ONCE per replay;
+// the per-fill pick is done in Go (rateAt), so a many-trade replay still does
+// exactly one DB round-trip - mirroring the balance-anchor as-of pattern.
+func (b *Builder) loadRateVersions(ctx context.Context, account models.Account, inst models.Instrument) ([]rateVersion, error) {
 	if account.Firm == nil || inst.AssetClass == nil || inst.SizeClass == nil {
-		return 0, false, nil
+		return nil, nil
 	}
-	r, err := b.Queries.GetCommissionRate(ctx, models.GetCommissionRateParams{
+	rows, err := b.Queries.ListCommissionRateVersionsForCell(ctx, models.ListCommissionRateVersionsForCellParams{
 		AssetClass: *inst.AssetClass,
 		Firm:       *account.Firm,
 		SizeClass:  *inst.SizeClass,
 	})
-	switch {
-	case err == nil:
-		return r.PerContractPerSide, true, nil
-	case errors.Is(err, sql.ErrNoRows):
-		return 0, false, nil
-	default:
-		return 0, false, fmt.Errorf("commission lookup: %w", err)
+	if err != nil {
+		return nil, fmt.Errorf("commission rate versions: %w", err)
 	}
+	if len(rows) == 0 {
+		return nil, nil
+	}
+	versions := make([]rateVersion, len(rows))
+	for i, r := range rows {
+		versions[i] = rateVersion{EffectiveFrom: r.EffectiveFrom, PerSide: r.PerContractPerSide}
+	}
+	// Sort in Go so rateAt's "ASC" assumption holds authoritatively, independent
+	// of how the sqlite driver text-orders DATETIME values written in different
+	// formats (migration string literal vs driver-written time.Time).
+	sort.Slice(versions, func(i, j int) bool {
+		return versions[i].EffectiveFrom.Before(versions[j].EffectiveFrom)
+	})
+	return versions, nil
 }
 
-func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst models.Instrument, perSideRate float64, rateOK bool) error {
+// rateAt returns the per-side rate in effect at time t: the version with the
+// greatest EffectiveFrom <= t. A fill before the earliest version clamps to the
+// earliest (matches loadBalances' "all future -> earliest" back-fill). ok is
+// false only when there are no versions. versions must be sorted ASC.
+func rateAt(versions []rateVersion, t time.Time) (float64, bool) {
+	if len(versions) == 0 {
+		return 0, false
+	}
+	rate := versions[0].PerSide // clamp: a fill before the first version uses it
+	for _, v := range versions {
+		if v.EffectiveFrom.After(t) {
+			break // sorted ASC: nothing later can apply either
+		}
+		rate = v.PerSide
+	}
+	return rate, true
+}
+
+// commissionForLegs sums the per-side commission across every entry and exit
+// fill, each charged at the rate in effect at that fill's exec_time. nil
+// (commission NULL) when the cell has no rate versions. With a single constant
+// rate this equals rate * (entryQty + exitQty) = rate * cycleQty * 2 - i.e. the
+// old "both legs of the round-turn" result, so nothing regresses.
+func commissionForLegs(entries, exits []fillUse, versions []rateVersion) *float64 {
+	if len(versions) == 0 {
+		return nil
+	}
+	total := 0.0
+	for _, u := range entries {
+		r, _ := rateAt(versions, u.time)
+		total += r * u.qty
+	}
+	for _, u := range exits {
+		r, _ := rateAt(versions, u.time)
+		total += r * u.qty
+	}
+	return &total
+}
+
+func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst models.Instrument, versions []rateVersion) error {
 	entryAgg := aggregateByExec(ta.entries)
 	exitAgg := aggregateByExec(ta.exits)
 
@@ -366,7 +425,11 @@ func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst mod
 	avgEntry := entryWeighted / entryTotal
 	avgExit := exitWeighted / exitTotal
 
-	grossPnl, commission, netPnl := computePnl(ta.direction, avgEntry, avgExit, exitTotal, inst, perSideRate, rateOK)
+	// Per-side commission, each leg charged at the rate in effect at its own
+	// exec_time (so a trade straddling a rate change pays old rate on entry,
+	// new rate on exit).
+	legCommission := commissionForLegs(ta.entries, ta.exits, versions)
+	grossPnl, commission, netPnl := computePnl(ta.direction, avgEntry, avgExit, exitTotal, inst, legCommission)
 
 	exitTimePtr := exitLast
 	exitPricePtr := avgExit
@@ -440,12 +503,12 @@ func summarize(uses []fillUse, wantFirst bool) (totalQty, weighted float64, t ti
 	return
 }
 
-// computePnl applies the pre-resolved per-side commission rate to a closed
-// trade. The rate lookup is hoisted out of the per-trade path so a replay
-// over many closed trades does at most one GetCommissionRate round-trip
-// instead of one per trade. perSideRate is what the broker charges per
-// contract per leg, so the round-turn cost is rate * qty * 2.
-func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.Instrument, perSideRate float64, rateOK bool) (gross, comm, net *float64) {
+// computePnl computes a closed trade's gross and net given a pre-computed
+// commission (from commissionForLegs). gross is NULL when the instrument has no
+// multiplier (tick spec not set up yet) - and then commission/net are NULL too,
+// pending the user configuring the symbol. A nil commission (no rate configured)
+// leaves net = gross. User fixes missing rates via /commissions.
+func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.Instrument, commission *float64) (gross, comm, net *float64) {
 	if inst.Multiplier == nil {
 		return nil, nil, nil
 	}
@@ -457,17 +520,12 @@ func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.In
 		g = (avgEntry - avgExit) * mult * qty
 	}
 	gross = &g
-	if rateOK {
-		c := perSideRate * qty * 2 // both legs of the round-turn
-		comm = &c
-		n := g - c
-		net = &n
-	} else {
-		// No rate row, firm unknown, or instrument uncategorized: leave commission
-		// NULL, net_pnl = gross_pnl. User fixes via /commissions.
-		n := g
-		net = &n
+	comm = commission
+	n := g
+	if commission != nil {
+		n = g - *commission
 	}
+	net = &n
 	return gross, comm, net
 }
 

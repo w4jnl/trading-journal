@@ -7,29 +7,50 @@ package models
 
 import (
 	"context"
+	"time"
 )
 
-const getCommissionRate = `-- name: GetCommissionRate :one
-SELECT asset_class, firm, size_class, per_contract_per_side FROM commission_rates
+const listCommissionRateVersionsForCell = `-- name: ListCommissionRateVersionsForCell :many
+SELECT effective_from, per_contract_per_side FROM commission_rates
 WHERE asset_class = ? AND firm = ? AND size_class = ?
+ORDER BY effective_from ASC
 `
 
-type GetCommissionRateParams struct {
+type ListCommissionRateVersionsForCellParams struct {
 	AssetClass string `json:"asset_class"`
 	Firm       string `json:"firm"`
 	SizeClass  string `json:"size_class"`
 }
 
-func (q *Queries) GetCommissionRate(ctx context.Context, arg GetCommissionRateParams) (CommissionRate, error) {
-	row := q.db.QueryRowContext(ctx, getCommissionRate, arg.AssetClass, arg.Firm, arg.SizeClass)
-	var i CommissionRate
-	err := row.Scan(
-		&i.AssetClass,
-		&i.Firm,
-		&i.SizeClass,
-		&i.PerContractPerSide,
-	)
-	return i, err
+type ListCommissionRateVersionsForCellRow struct {
+	EffectiveFrom      time.Time `json:"effective_from"`
+	PerContractPerSide float64   `json:"per_contract_per_side"`
+}
+
+// All effective-dated rate versions for one commission cell, oldest first. The
+// builder loads these once per (account, symbol) replay and picks, per fill, the
+// version whose effective_from is the greatest <= that fill's exec_time.
+func (q *Queries) ListCommissionRateVersionsForCell(ctx context.Context, arg ListCommissionRateVersionsForCellParams) ([]ListCommissionRateVersionsForCellRow, error) {
+	rows, err := q.db.QueryContext(ctx, listCommissionRateVersionsForCell, arg.AssetClass, arg.Firm, arg.SizeClass)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListCommissionRateVersionsForCellRow
+	for rows.Next() {
+		var i ListCommissionRateVersionsForCellRow
+		if err := rows.Scan(&i.EffectiveFrom, &i.PerContractPerSide); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listDistinctSymbolsForAccount = `-- name: ListDistinctSymbolsForAccount :many

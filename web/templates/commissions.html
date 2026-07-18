@@ -16,12 +16,15 @@
 
 <div class="card card--warn mb-16">
   Commission rates are <strong>per side, per contract</strong>, keyed by
-  <strong>asset class × firm × size</strong>. Set each contract's asset
-  class and size in the lower table — the system then looks up
-  <em>(equity_futures, apex, mini)</em> and charges that rate twice per
-  closed trade (once per leg of the round-turn). TopstepX accounts imported
-  from the trades CSV use the per-trade Fees+Commissions in the file and
-  skip this lookup; accounts imported from the orders CSV use the rates below.
+  <strong>asset class × firm × size</strong>, and <strong>versioned over
+  time</strong>. Set each contract's asset class and size in the lower table —
+  the system then looks up <em>(equity_futures, apex, mini)</em> and charges the
+  version <strong>in effect at each fill's time</strong>, once per leg. A trade
+  whose entry precedes a rate change and whose exit follows it pays the old rate
+  on entry and the new rate on exit. Expand a cell's history to add a change.
+  TopstepX accounts imported from the trades CSV use the per-trade
+  Fees+Commissions in the file and skip this lookup; accounts imported from the
+  orders CSV use the rates below.
 </div>
 
 {{if .Orphans}}
@@ -60,13 +63,67 @@
         <th>Asset class</th>
         <th>Firm</th>
         <th>Size</th>
-        <th class="tar">Per-contract per side (USD)</th>
-        <th></th>
+        <th class="tar">Current per side (USD)</th>
+        <th class="tar">History</th>
       </tr>
     </thead>
-    <tbody id="rates-tbody">
-      {{range .Rates}}
-        {{template "commission_rate_row" (dict "Rate" . "Firms" $.Firms "CanEdit" $.CanEdit)}}
+    <tbody>
+      {{range .Cells}}
+      {{$cell := .}}
+      <tr id="rate-{{.Key}}" data-cell="{{.Key}}" class="rate-cell-row">
+        <td>{{.AssetClass}}</td>
+        <td>{{.Firm}}</td>
+        <td>{{.SizeClass}}</td>
+        <td class="tar num">{{if .HasCurrent}}{{printf "%.4f" .Current}}{{else}}<span class="muted">— future-dated</span>{{end}}</td>
+        <td class="tar">
+          <button type="button" class="btn btn--ghost btn--sm" data-hist-toggle aria-expanded="false">
+            <span class="caret">▸</span> {{len .Versions}} version{{if ne (len .Versions) 1}}s{{end}}
+          </button>
+        </td>
+      </tr>
+      <tr class="rate-hist-row" hidden>
+        <td colspan="5">
+          <div class="rate-hist">
+            <table class="rate-versions">
+              <tbody>
+                {{range .Versions}}
+                <tr>
+                  <td class="rate-ver-when">
+                    {{if .IsBaseline}}<span class="pill">initial</span> <span class="muted">covers all history</span>
+                    {{else}}effective {{ltime .EffectiveFrom "datetime"}}{{end}}
+                  </td>
+                  <td class="tar num">{{printf "%.4f" .PerSide}} <span class="muted">/ side</span></td>
+                  <td class="tar">
+                    {{if $.CanEdit}}
+                    <form method="post" action="/commissions/rates/delete" style="display:inline"
+                          onsubmit="return confirm('Delete this rate version? Trades in its window will recompute.');">
+                      <input type="hidden" name="id" value="{{.ID}}">
+                      <input type="hidden" name="asset_class" value="{{$cell.AssetClass}}">
+                      <input type="hidden" name="firm" value="{{$cell.Firm}}">
+                      <input type="hidden" name="size_class" value="{{$cell.SizeClass}}">
+                      <button type="submit" class="btn btn--ghost btn--sm">Delete</button>
+                    </form>
+                    {{end}}
+                  </td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+            {{if $.CanEdit}}
+            <form method="post" action="/commissions/rates/new" class="row-sm rate-add-change">
+              <input type="hidden" name="asset_class" value="{{.AssetClass}}">
+              <input type="hidden" name="firm" value="{{.Firm}}">
+              <input type="hidden" name="size_class" value="{{.SizeClass}}">
+              <label class="field"><span class="field-label">Effective from (trading tz)</span>
+                <input type="datetime-local" name="effective_from" step="1" value="{{$.NowLocal}}"></label>
+              <label class="field"><span class="field-label">New rate (USD / side)</span>
+                <input type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;"></label>
+              <button type="submit" class="btn btn--secondary btn--sm">+ Add change</button>
+            </form>
+            {{end}}
+          </div>
+        </td>
+      </tr>
       {{else}}
         <tr><td colspan="5" class="muted" style="text-align:center; padding: 16px;">No commission rates configured yet. Use the form below to add the first.</td></tr>
       {{end}}
@@ -76,11 +133,8 @@
 
 {{if .CanEdit}}
 <details class="disclose mt-12">
-  <summary class="btn btn--primary btn--sm" style="display: inline-flex;">+ Add rate</summary>
-  <form hx-post="/commissions/rates/new"
-        hx-target="#rates-tbody"
-        hx-swap="beforeend"
-        class="card mt-8">
+  <summary class="btn btn--primary btn--sm" style="display: inline-flex;">+ Add rate for a new cell</summary>
+  <form method="post" action="/commissions/rates/new" class="card mt-8">
     <div class="row">
       <label class="field"><span class="field-label">Asset class</span>
         <select name="asset_class" required>
@@ -100,13 +154,18 @@
           {{range .SizeClasses}}<option value="{{.Code}}">{{.Label}}</option>{{end}}
         </select>
       </label>
+      <label class="field"><span class="field-label">Effective from (optional)</span>
+        <input type="datetime-local" name="effective_from" step="1">
+      </label>
       <label class="field"><span class="field-label">Rate (USD per side)</span>
         <input type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;">
       </label>
       <button type="submit" class="btn btn--primary">Add</button>
     </div>
     <p class="muted" style="margin-top: 8px; font-size: 12px;">
-      If a rate already exists for that (asset class, firm, size), it's updated.
+      Leave <em>Effective from</em> blank to cover all history. A rate for an
+      existing cell is better added via that cell's <strong>history</strong>
+      panel above; re-posting the same (cell, effective from) updates its rate.
     </p>
   </form>
 </details>
@@ -232,10 +291,45 @@
   table.rates input, table.rates select,
   table.instruments input, table.instruments select { height: 28px; padding: 4px 8px; font-size: 12px; }
   table.rates td, table.instruments td { vertical-align: middle; font-size: 13px; }
+  table.rates tr.rate-cell-row td { border-bottom: none; }
+
+  .rate-hist-row > td { padding: 0 12px 12px 12px; background: var(--bg-subtle, rgba(127,127,127,.06)); }
+  .rate-hist { padding: 8px 0; }
+  table.rate-versions { width: auto; min-width: 380px; border-collapse: collapse; margin-bottom: 8px; }
+  table.rate-versions td { padding: 4px 12px 4px 0; font-size: 12px; border-bottom: 1px dashed var(--border, rgba(127,127,127,.25)); }
+  table.rate-versions tr:last-child td { border-bottom: none; }
+  .rate-add-change { align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+  button[data-hist-toggle] .caret { display: inline-block; width: 10px; }
 
   {{/* .save-bar / tr.row-dirty / details.disclose live in app.css (shared
        with /accounts and /admin/transactions via dirty_table.js). */}}
 </style>
+
+<script>
+  // Expand/collapse a cell's rate-version history (the row after the cell row).
+  document.querySelectorAll('button[data-hist-toggle]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      var hist = btn.closest('tr').nextElementSibling;
+      if (!hist) return;
+      var open = hist.hasAttribute('hidden');
+      if (open) { hist.removeAttribute('hidden'); } else { hist.setAttribute('hidden', ''); }
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var caret = btn.querySelector('.caret');
+      if (caret) caret.textContent = open ? '▾' : '▸';
+    });
+  });
+  // After a version add/delete the server redirects to #rate-<key>; open that
+  // cell's history and scroll it into view so editing feels continuous.
+  (function () {
+    var hash = window.location.hash;
+    if (hash.indexOf('#rate-') !== 0) return;
+    var row = document.getElementById(hash.slice(1));
+    if (!row) return;
+    var toggle = row.querySelector('button[data-hist-toggle]');
+    if (toggle) toggle.click();
+    row.scrollIntoView({ block: 'center' });
+  })();
+</script>
 
 {{/* Dirty tracking comes from the shared /static/js/dirty_table.js. */}}
 {{end}}
