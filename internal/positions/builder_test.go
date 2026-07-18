@@ -3,6 +3,7 @@ package positions
 import (
 	"context"
 	"database/sql"
+	"sort"
 	"testing"
 	"time"
 
@@ -162,6 +163,58 @@ func TestRebuild_PerSideCommissionScalesWithQty(t *testing.T) {
 	want := apexESPerSide * 3 * 2 // 3 contracts × per-side × 2 legs
 	if trades[0].Commission == nil || *trades[0].Commission != want {
 		t.Errorf("commission = %v, want %v (per-side × qty × 2)", trades[0].Commission, want)
+	}
+}
+
+// TestRebuild_TimeVersionedCommission proves each fill is charged the per-side
+// rate in effect at its own exec_time. A rate change at 14:03 (1.99 -> 3.00)
+// splits three trades: one wholly before (both legs old), one wholly after
+// (both legs new), and one straddling the cutover (old entry leg, new exit leg).
+func TestRebuild_TimeVersionedCommission(t *testing.T) {
+	b, q, _, accID := setupBuilder(t)
+	ctx := context.Background()
+
+	// New version for the ES cell (equity_futures/apex/mini) effective 14:03.
+	const newRate = 3.00
+	if err := q.UpsertCommissionRate(ctx, models.UpsertCommissionRateParams{
+		AssetClass: "equity_futures", Firm: "apex", SizeClass: "mini",
+		EffectiveFrom: at(3), PerContractPerSide: newRate,
+	}); err != nil {
+		t.Fatalf("UpsertCommissionRate: %v", err)
+	}
+
+	// Disjoint cycles so each opens and fully closes before the next:
+	//   before:   buy 14:00, sell 14:01
+	//   straddle: buy 14:02, sell 14:04
+	//   after:    buy 14:05, sell 14:06
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0)}, {"sell", 1, 7252, at(1)},
+		{"buy", 1, 7250, at(2)}, {"sell", 1, 7252, at(4)},
+		{"buy", 1, 7250, at(5)}, {"sell", 1, 7252, at(6)},
+	})
+	if _, err := b.Rebuild(ctx, []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+
+	trades, _ := q.ListTradesForAccount(ctx, accID)
+	if len(trades) != 3 {
+		t.Fatalf("len(trades) = %d, want 3", len(trades))
+	}
+	sort.Slice(trades, func(i, j int) bool { return trades[i].EntryTime.Before(trades[j].EntryTime) })
+
+	want := []float64{
+		apexESPerSide + apexESPerSide, // before: old both legs = 3.98
+		apexESPerSide + newRate,       // straddle: old entry + new exit = 4.99
+		newRate + newRate,             // after: new both legs = 6.00
+	}
+	for i, tr := range trades {
+		if tr.Commission == nil {
+			t.Fatalf("trade %d commission is nil", i)
+		}
+		if *tr.Commission != want[i] {
+			t.Errorf("trade %d (entry %s) commission = %.2f, want %.2f",
+				i, tr.EntryTime.Format("15:04"), *tr.Commission, want[i])
+		}
 	}
 }
 

@@ -7,10 +7,16 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
+
+// commissionBaseline is the sentinel effective_from the migration backfills onto
+// pre-existing rates (and the create handler uses when the user leaves the
+// "effective from" field blank). A version at this instant covers all history.
+var commissionBaseline = time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
 
 func errToQuery(err error) string {
 	return url.QueryEscape(err.Error())
@@ -33,6 +39,61 @@ type orphanReason struct {
 	AssetClass  string // populated for rate_missing
 	SizeClass   string // populated for rate_missing
 	TradeCount  int64
+}
+
+// commissionVersion is one effective-dated rate row, prepared for the template.
+type commissionVersion struct {
+	ID            int64
+	EffectiveFrom time.Time
+	PerSide       float64
+	IsBaseline    bool // effective_from is the 1970 sentinel: label it "initial"
+}
+
+// commissionCell is one (asset_class, firm, size_class) commission cell with its
+// current rate (the version in effect now) and full version history.
+type commissionCell struct {
+	Key        string // "asset|firm|size", used for row ids and anchors
+	AssetClass string
+	Firm       string
+	SizeClass  string
+	Current    float64
+	HasCurrent bool // false only if every version is future-dated
+	Versions   []commissionVersion
+}
+
+// buildCommissionCells groups the flat, cell-then-effective_from-ordered rate
+// list into one cell per (asset, firm, size). "Current" is the version with the
+// greatest effective_from <= now (matches the builder's rateAt as-of pick).
+func buildCommissionCells(rates []models.CommissionRate, now time.Time) []commissionCell {
+	byKey := map[string]*commissionCell{}
+	var order []string
+	for _, rt := range rates {
+		key := rateKey(rt.AssetClass, rt.Firm, rt.SizeClass)
+		cell, ok := byKey[key]
+		if !ok {
+			cell = &commissionCell{
+				Key: key, AssetClass: rt.AssetClass, Firm: rt.Firm, SizeClass: rt.SizeClass,
+			}
+			byKey[key] = cell
+			order = append(order, key)
+		}
+		cell.Versions = append(cell.Versions, commissionVersion{
+			ID:            rt.ID,
+			EffectiveFrom: rt.EffectiveFrom,
+			PerSide:       rt.PerContractPerSide,
+			IsBaseline:    !rt.EffectiveFrom.After(commissionBaseline),
+		})
+		// rates arrive effective_from ASC, so the last version <= now is current.
+		if !rt.EffectiveFrom.After(now) {
+			cell.Current = rt.PerContractPerSide
+			cell.HasCurrent = true
+		}
+	}
+	cells := make([]commissionCell, 0, len(order))
+	for _, key := range order {
+		cells = append(cells, *byKey[key])
+	}
+	return cells
 }
 
 // CommissionsPage renders the /commissions admin page: diagnostics banner at
@@ -111,12 +172,14 @@ func (h *Handlers) CommissionsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	sortOrphansByCount(reasons)
 
+	tz := h.localTZ()
 	h.renderPage(w, r, "commissions.html", map[string]any{
 		"NavActive":    "commissions",
 		"BackHref":     validBackHref(r),
 		"AssetClasses": assetClasses,
 		"SizeClasses":  sizeClasses,
-		"Rates":        rates,
+		"Cells":        buildCommissionCells(rates, time.Now()),
+		"NowLocal":     time.Now().In(tz).Format("2006-01-02T15:04:05"),
 		"Instruments":  instruments,
 		"Firms":        firmsForCommissions,
 		"Orphans":      reasons,
@@ -171,17 +234,13 @@ func (h *Handlers) CommissionsClassCreate(w http.ResponseWriter, r *http.Request
 	http.Redirect(w, r, "/commissions?flash=saved#classes", http.StatusSeeOther)
 }
 
-// CommissionsBulkSave handles POST /commissions/save. One submission carries
-// edits to both rates and instrument categorization. The handler:
-//  1. Parses form fields keyed "rate.<asset_class>|<firm>|<size_class>.per_contract_per_side"
-//     (legacy "per_contract_rt" still accepted for in-flight tabs) and
-//     "instrument.<symbol_root>.<field>".
+// CommissionsBulkSave handles POST /commissions/save. It owns only the
+// instrument categorization table (commission rates are edited through each
+// cell's version UI - see CommissionsRateCreate/Delete). The handler:
+//  1. Parses form fields keyed "instrument.<symbol_root>.<field>".
 //  2. Diffs each against the current DB value.
-//  3. For changed rates, upserts and queues a per-cell rebuild.
-//  4. For changed instrument categorizations, upserts and queues a per-symbol
-//     rebuild.
-//  5. Dedups rebuild work (a single (account_id, symbol) may be hit by both
-//     types of change).
+//  3. For changed instrument categorizations, upserts and queues a per-symbol
+//     rebuild (deduped: a symbol edited twice rebuilds once).
 func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := r.ParseForm(); err != nil {
@@ -189,16 +248,8 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	currentRates, err := h.Queries.ListCommissionRates(ctx)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("list rates: %w", err))
-		return
-	}
-	rateBefore := make(map[string]float64, len(currentRates))
-	for _, rt := range currentRates {
-		rateBefore[rateKey(rt.AssetClass, rt.Firm, rt.SizeClass)] = rt.PerContractPerSide
-	}
-
+	// Rates are edited through the per-cell version UI (add/delete a version),
+	// not this bulk save - it owns only the instrument categorization table.
 	currentInstruments, err := h.Queries.ListInstruments(ctx)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list instruments: %w", err))
@@ -218,7 +269,6 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 		Multiplier string
 		seen       map[string]bool
 	}
-	rateInputs := map[string]string{}     // key -> rate string
 	instInputs := map[string]*instInput{} // symbol_root -> fields
 	getInst := func(sym string) *instInput {
 		if v, ok := instInputs[sym]; ok {
@@ -234,19 +284,6 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		switch {
-		case strings.HasPrefix(key, "rate."):
-			rest := strings.TrimPrefix(key, "rate.")
-			dot := strings.LastIndexByte(rest, '.')
-			if dot < 0 {
-				continue
-			}
-			cell, field := rest[:dot], rest[dot+1:]
-			// Accept the legacy "per_contract_rt" name too so a tab opened
-			// before the rename still saves cleanly.
-			if field != "per_contract_per_side" && field != "per_contract_rt" {
-				continue
-			}
-			rateInputs[cell] = strings.TrimSpace(values[0])
 		case strings.HasPrefix(key, "instrument."):
 			rest := strings.TrimPrefix(key, "instrument.")
 			dot := strings.IndexByte(rest, '.')
@@ -270,35 +307,6 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 				ii.Multiplier = v
 			}
 		}
-	}
-
-	// Apply rate edits. Skip rows whose value is unchanged or unparseable.
-	type cellKey struct{ AssetClass, Firm, SizeClass string }
-	rebuildCells := map[cellKey]bool{}
-	for cell, raw := range rateInputs {
-		ac, firm, sc, ok := parseRateKey(cell)
-		if !ok {
-			continue
-		}
-		newVal, err := strconv.ParseFloat(raw, 64)
-		if err != nil {
-			// blank rate row: leave as-is (don't insert 0.00 by accident)
-			continue
-		}
-		prev, existed := rateBefore[cell]
-		if existed && prev == newVal {
-			continue
-		}
-		if err := h.Queries.UpsertCommissionRate(ctx, models.UpsertCommissionRateParams{
-			AssetClass:         ac,
-			Firm:               firm,
-			SizeClass:          sc,
-			PerContractPerSide: newVal,
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("upsert rate %s: %w", cell, err))
-			return
-		}
-		rebuildCells[cellKey{ac, firm, sc}] = true
 	}
 
 	// Apply instrument edits. Each instrument's needs_setup is recomputed from
@@ -348,12 +356,6 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 
 	// Run rebuilds. Errors here are logged but don't fail the save — the data
 	// is correct, just the cached trades may need a manual rebuild.
-	for cell := range rebuildCells {
-		if err := h.ImportSvc.RebuildTradesForCommissionCell(ctx, cell.Firm, cell.AssetClass, cell.SizeClass); err != nil {
-			h.logger().Warn("rebuild after rate change",
-				"cell", fmt.Sprintf("%s|%s|%s", cell.AssetClass, cell.Firm, cell.SizeClass), "err", err)
-		}
-	}
 	for sym := range rebuildSymbols {
 		if err := h.ImportSvc.RebuildTradesForSymbol(ctx, sym); err != nil {
 			h.logger().Warn("rebuild after instrument change", "symbol", sym, "err", err)
@@ -363,10 +365,13 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/commissions?flash=saved", http.StatusSeeOther)
 }
 
-// CommissionsRateCreate handles POST /commissions/rates/new — insert a new
-// (asset_class, firm, size_class) rate row and HTMX-swap the rendered row
-// into the rates table. Upsert semantics: if the user picks a cell that
-// already has a rate, the existing rate is updated.
+// CommissionsRateCreate handles POST /commissions/rates/new — add (or overwrite)
+// one effective-dated rate version for a cell. The `effective_from` field is a
+// datetime-local in the trading tz; blank means "baseline" (covers all history,
+// the same 1970 sentinel the migration backfills). Re-posting an existing
+// (cell, effective_from) updates that version's rate. Redirects back to the page
+// so the regrouped, re-sorted history renders; the #rate-<key> anchor re-opens
+// the affected cell.
 func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := r.ParseForm(); err != nil {
@@ -376,22 +381,26 @@ func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request)
 	ac := strings.TrimSpace(r.FormValue("asset_class"))
 	firm := strings.TrimSpace(r.FormValue("firm"))
 	sc := strings.TrimSpace(r.FormValue("size_class"))
-	// Accept both names so a tab opened before the rename still posts cleanly.
 	rateStr := strings.TrimSpace(r.FormValue("per_contract_per_side"))
-	if rateStr == "" {
-		rateStr = strings.TrimSpace(r.FormValue("per_contract_rt"))
-	}
 	if ac == "" || firm == "" || sc == "" || rateStr == "" {
-		http.Error(w, "asset_class, firm, size_class, per_contract_per_side are required", http.StatusBadRequest)
+		h.redirectCommissions(w, r, "", fmt.Errorf("asset class, firm, size and rate are required"))
 		return
 	}
 	rate, err := strconv.ParseFloat(rateStr, 64)
-	if err != nil {
-		http.Error(w, "per_contract_per_side must be a number", http.StatusBadRequest)
+	if err != nil || rate < 0 {
+		h.redirectCommissions(w, r, "", fmt.Errorf("rate must be a non-negative number"))
 		return
 	}
+	effective := commissionBaseline
+	if raw := strings.TrimSpace(r.FormValue("effective_from")); raw != "" {
+		effective, err = parseExecTime(raw, h.localTZ())
+		if err != nil {
+			h.redirectCommissions(w, r, "", fmt.Errorf("effective from: %w", err))
+			return
+		}
+	}
 	if err := h.Queries.UpsertCommissionRate(ctx, models.UpsertCommissionRateParams{
-		AssetClass: ac, Firm: firm, SizeClass: sc, PerContractPerSide: rate,
+		AssetClass: ac, Firm: firm, SizeClass: sc, EffectiveFrom: effective, PerContractPerSide: rate,
 	}); err != nil {
 		h.serverError(w, fmt.Errorf("upsert rate: %w", err))
 		return
@@ -399,52 +408,58 @@ func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request)
 	if err := h.ImportSvc.RebuildTradesForCommissionCell(ctx, firm, ac, sc); err != nil {
 		h.logger().Warn("rebuild after rate create", "err", err)
 	}
-	h.renderPartial(w, "_commission_rate_row.html", "commission_rate_row", map[string]any{
-		"Rate":    models.CommissionRate{AssetClass: ac, Firm: firm, SizeClass: sc, PerContractPerSide: rate},
-		"Firms":   firmsForCommissions,
-		"CanEdit": true, // route is admin-gated
-	})
+	h.redirectCommissions(w, r, rateKey(ac, firm, sc), nil)
 }
 
-// CommissionsRateDelete handles POST /commissions/rates/delete with composite
-// key in form fields. Returns 200 with empty body so an HTMX hx-swap="delete"
-// removes the row from the table.
+// CommissionsRateDelete handles POST /commissions/rates/delete. It deletes one
+// version by its stable id (a DATETIME text match on the 1970 baseline is
+// fragile), then recomputes the affected cell's trades. firm/asset/size come
+// along only to target that recompute.
 func (h *Handlers) CommissionsRateDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.FormValue("id")), 10, 64)
+	if err != nil {
+		h.redirectCommissions(w, r, "", fmt.Errorf("bad version id"))
+		return
+	}
 	ac := strings.TrimSpace(r.FormValue("asset_class"))
 	firm := strings.TrimSpace(r.FormValue("firm"))
 	sc := strings.TrimSpace(r.FormValue("size_class"))
-	if ac == "" || firm == "" || sc == "" {
-		http.Error(w, "asset_class, firm, size_class are required", http.StatusBadRequest)
-		return
-	}
-	if err := h.Queries.DeleteCommissionRate(ctx, models.DeleteCommissionRateParams{
-		AssetClass: ac, Firm: firm, SizeClass: sc,
-	}); err != nil {
+	if err := h.Queries.DeleteCommissionRate(ctx, id); err != nil {
 		h.serverError(w, fmt.Errorf("delete rate: %w", err))
 		return
 	}
-	if err := h.ImportSvc.RebuildTradesForCommissionCell(ctx, firm, ac, sc); err != nil {
-		h.logger().Warn("rebuild after rate delete", "err", err)
+	if ac != "" && firm != "" && sc != "" {
+		if err := h.ImportSvc.RebuildTradesForCommissionCell(ctx, firm, ac, sc); err != nil {
+			h.logger().Warn("rebuild after rate delete", "err", err)
+		}
 	}
-	w.WriteHeader(http.StatusOK)
+	h.redirectCommissions(w, r, rateKey(ac, firm, sc), nil)
+}
+
+// redirectCommissions sends the user back to /commissions after a version CRUD.
+// A non-empty cellKey adds a #rate-<key> anchor so the browser scrolls to (and
+// a small script re-opens) the cell that was just edited.
+func (h *Handlers) redirectCommissions(w http.ResponseWriter, r *http.Request, cellKey string, e error) {
+	dest := "/commissions"
+	if e != nil {
+		dest += "?err=" + errToQuery(e)
+	} else {
+		dest += "?flash=saved"
+	}
+	if cellKey != "" {
+		dest += "#rate-" + cellKey
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // rateKey joins (asset_class, firm, size_class) with '|' for use as a map
 // key. The pipe is a safe separator because none of the codes contain it.
 func rateKey(ac, firm, sc string) string { return ac + "|" + firm + "|" + sc }
-
-func parseRateKey(s string) (ac, firm, sc string, ok bool) {
-	parts := strings.Split(s, "|")
-	if len(parts) != 3 {
-		return "", "", "", false
-	}
-	return parts[0], parts[1], parts[2], true
-}
 
 // parseFloatPtr parses a form-text value into *float64. If the field wasn't
 // submitted, it returns the existing value. Empty string parses to nil.
