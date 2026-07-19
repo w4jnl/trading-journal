@@ -5,9 +5,10 @@ import (
 	"time"
 )
 
-// Schedule runs an hourly sync fan-out at five past each hour, but only while
-// CME Globex is trading (see InGlobexHours) — outside those hours nothing
-// trades, so nothing new can appear. Each eligible user goes through
+// Schedule runs an hourly sync fan-out at five past each hour, but only
+// inside the sync window (see InSyncWindow): the CME Globex session plus a
+// 2-hour margin on each side, so late-settling fills after the close and
+// pre-open activity are captured too. Each eligible user goes through
 // MaybeEnqueueUser, so the page-visit throttle still dedups against a sync a
 // user just triggered by browsing. Mirrors the backup.Schedule timer pattern.
 func (s *SyncService) Schedule(ctx context.Context) {
@@ -23,8 +24,8 @@ func (s *SyncService) Schedule(ctx context.Context) {
 			return
 		case <-t.C:
 		}
-		if !InGlobexHours(time.Now(), s.chicago) {
-			s.Logger.Debug("topstepx: scheduler tick outside CME hours, skipped")
+		if !InSyncWindow(time.Now(), s.chicago) {
+			s.Logger.Debug("topstepx: scheduler tick outside the CME sync window, skipped")
 			continue
 		}
 		users, err := s.Queries.ListTopstepxSyncUsers(ctx)
