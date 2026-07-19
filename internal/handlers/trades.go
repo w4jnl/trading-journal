@@ -73,6 +73,7 @@ type tradeRow struct {
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
 func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	filters, err := h.parseTradeFilters(r)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("parse filters: %w", err))

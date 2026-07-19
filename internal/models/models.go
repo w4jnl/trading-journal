@@ -22,6 +22,7 @@ type Account struct {
 	CommissionSource  string    `json:"commission_source"`
 	CreatedAt         time.Time `json:"created_at"`
 	ExcludedFromStats int64     `json:"excluded_from_stats"`
+	ApiBackfillDone   int64     `json:"api_backfill_done"`
 }
 
 type ApiKey struct {
@@ -210,6 +211,16 @@ type SyncLog struct {
 	Message     *string   `json:"message"`
 	SyncedAt    time.Time `json:"synced_at"`
 	UserID      *int64    `json:"user_id"`
+}
+
+type TopstepxCredential struct {
+	UserID         int64      `json:"user_id"`
+	Username       string     `json:"username"`
+	ApiKeyEnc      []byte     `json:"api_key_enc"`
+	ApiKeyNonce    []byte     `json:"api_key_nonce"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	LastVerifiedAt *time.Time `json:"last_verified_at"`
 }
 
 type Trade struct {

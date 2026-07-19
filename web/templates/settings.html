@@ -16,6 +16,9 @@
 {{if eq .Flash "deleted"}}<div class="flash saved mb-16">Key deleted.</div>{{end}}
 {{if eq .Flash "language"}}<div class="flash saved mb-16">Language saved.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
+{{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
+{{if eq .Flash "topstepx-test-ok"}}<div class="flash saved mb-16">TopstepX connection OK.</div>{{end}}
+{{if eq .Flash "topstepx-removed"}}<div class="flash saved mb-16">TopstepX credentials removed; automatic sync stopped.</div>{{end}}
 {{if .Err}}<div class="flash error mb-16" role="alert">{{.Err}}</div>{{end}}
 
 <div class="card mb-16">
@@ -167,6 +170,66 @@
     </select>
     <button type="submit" class="btn btn--primary btn--sm">Save</button>
   </form>
+</div>
+{{end}}
+
+{{if .TopstepxEnabled}}
+<div class="card mb-16">
+  <div class="card-title">TopstepX API sync</div>
+  {{if .TopstepxCreds}}
+  <p class="muted" style="font-size: 12px;">
+    Trades sync automatically: on page visits (throttled) and hourly during CME hours.
+    History previously imported via CSV keeps its rate-table commissions; API-synced fills
+    carry the broker's actual fees. Trades-CSV (inline) accounts are not API-synced.
+  </p>
+  <div class="row-sm" style="gap: 16px; flex-wrap: wrap; align-items: center; margin: 10px 0;">
+    <span>Username: <strong>{{.TopstepxCreds.Username}}</strong></span>
+    <span class="muted">API key: •••••••• (stored encrypted)</span>
+    {{if .TopstepxCreds.LastVerifiedAt}}<span class="muted" style="font-size: 12px;">verified {{ltimep .TopstepxCreds.LastVerifiedAt "datetime"}}</span>{{end}}
+  </div>
+  <div class="row-sm" style="gap: 8px;">
+    <form method="post" action="/settings/topstepx/test" style="display: inline;">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn--secondary btn--sm">Test connection</button>
+    </form>
+    <form method="post" action="/settings/topstepx/delete" style="display: inline;"
+          onsubmit="return confirm('Remove TopstepX credentials? Automatic sync stops; already-imported trades stay.');">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
+    </form>
+  </div>
+  {{if .TopstepxSyncs}}
+  <div style="margin-top: 12px;">
+    <div class="muted" style="font-size: 12px; margin-bottom: 4px;">Last sync per account</div>
+    <table style="font-size: 12px;">
+      <tbody>
+        {{range .TopstepxSyncs}}
+        <tr>
+          <td style="padding-right: 12px;"><strong>{{.AccountName}}</strong></td>
+          <td style="padding-right: 12px;">{{if eq .Status "success"}}<span class="pill success">ok</span>{{else if eq .Status "skipped"}}<span class="pill">skipped</span>{{else}}<span class="pill error">error</span>{{end}}</td>
+          <td style="padding-right: 12px;">{{ltime .SyncedAt "datetime"}}</td>
+          <td class="muted">{{.Message}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{end}}
+  {{else}}
+  <p class="muted" style="font-size: 12px;">
+    Connect your TopstepX account to sync trades automatically (page visits + hourly during
+    CME hours). Generate an API key in the TopstepX dashboard (Settings → API — requires the
+    API subscription). Credentials are verified before saving and the key is stored encrypted.
+  </p>
+  <form method="post" action="/settings/topstepx" class="row-sm" style="margin: 10px 0; gap: 8px; flex-wrap: wrap;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="field"><span class="field-label">TopstepX username</span>
+      <input type="text" name="topstepx_username" required autocomplete="off" style="width: 200px;"></label>
+    <label class="field"><span class="field-label">API key</span>
+      <input type="password" name="topstepx_api_key" required autocomplete="new-password" style="width: 280px;"></label>
+    <button type="submit" class="btn btn--primary btn--sm" style="align-self: flex-end;">Verify &amp; save</button>
+  </form>
+  {{end}}
 </div>
 {{end}}
 

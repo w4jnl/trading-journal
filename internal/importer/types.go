@@ -39,6 +39,7 @@ type Fill struct {
 	Side         string // "buy" or "sell"
 	Qty          float64
 	Price        float64
+	Commission   *float64  // broker-reported total for the fill (TopstepX API sync); nil for CSV sources
 	ExecTime     time.Time // UTC
 	RawData      string    // JSON-encoded original row, optional
 }

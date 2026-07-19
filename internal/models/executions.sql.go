@@ -119,11 +119,30 @@ func (q *Queries) GetExecutionForUser(ctx context.Context, arg GetExecutionForUs
 	return i, err
 }
 
+const getLastExecTimeForAccount = `-- name: GetLastExecTimeForAccount :one
+SELECT exec_time FROM executions
+WHERE account_id = ?
+ORDER BY exec_time DESC
+LIMIT 1
+`
+
+// Newest fill on the account, used as the incremental API-sync window start.
+// Soft-deleted fills are INCLUDED on purpose: a tombstoned fill was still
+// fetched once, so the window must not re-open behind it (re-insertion is
+// blocked by the retained row anyway). ErrNoRows means "no fills yet" and
+// routes the account to the full history walk-back.
+func (q *Queries) GetLastExecTimeForAccount(ctx context.Context, accountID int64) (time.Time, error) {
+	row := q.db.QueryRowContext(ctx, getLastExecTimeForAccount, accountID)
+	var exec_time time.Time
+	err := row.Scan(&exec_time)
+	return exec_time, err
+}
+
 const insertExecution = `-- name: InsertExecution :execrows
 INSERT INTO executions (
-    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, raw_data
+    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(account_id, broker_exec_id) DO NOTHING
 `
@@ -136,10 +155,15 @@ type InsertExecutionParams struct {
 	Side         string    `json:"side"`
 	Qty          float64   `json:"qty"`
 	Price        float64   `json:"price"`
+	Commission   *float64  `json:"commission"`
 	ExecTime     time.Time `json:"exec_time"`
 	RawData      *string   `json:"raw_data"`
 }
 
+// commission is the broker-reported total for the fill (TopstepX API sync);
+// NULL for CSV sources, whose trades fall back to the rate-table lookup.
+// DO NOTHING (not upsert) on purpose: execrows drives rebuild scheduling, and
+// an upsert would report rows on every sync and force constant rebuilds.
 func (q *Queries) InsertExecution(ctx context.Context, arg InsertExecutionParams) (int64, error) {
 	result, err := q.db.ExecContext(ctx, insertExecution,
 		arg.AccountID,
@@ -149,6 +173,7 @@ func (q *Queries) InsertExecution(ctx context.Context, arg InsertExecutionParams
 		arg.Side,
 		arg.Qty,
 		arg.Price,
+		arg.Commission,
 		arg.ExecTime,
 		arg.RawData,
 	)

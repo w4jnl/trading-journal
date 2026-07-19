@@ -63,3 +63,8 @@ SELECT
     END AS claim
 FROM accounts a
 WHERE a.id = ? AND a.user_id = ?;
+
+-- name: SetAccountAPIBackfillDone :exec
+-- Marks that the TopstepX API full-history walk-back completed for the
+-- account (0 to force a re-walk, used by the manual re-fetch button).
+UPDATE accounts SET api_backfill_done = ? WHERE id = ? AND user_id = ?;

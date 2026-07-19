@@ -1,13 +1,28 @@
 -- name: InsertExecution :execrows
+-- commission is the broker-reported total for the fill (TopstepX API sync);
+-- NULL for CSV sources, whose trades fall back to the rate-table lookup.
+-- DO NOTHING (not upsert) on purpose: execrows drives rebuild scheduling, and
+-- an upsert would report rows on every sync and force constant rebuilds.
 INSERT INTO executions (
-    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, raw_data
+    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(account_id, broker_exec_id) DO NOTHING;
 
 -- name: ListExecutionsByAccount :many
 SELECT * FROM executions WHERE account_id = ? ORDER BY exec_time, id;
+
+-- name: GetLastExecTimeForAccount :one
+-- Newest fill on the account, used as the incremental API-sync window start.
+-- Soft-deleted fills are INCLUDED on purpose: a tombstoned fill was still
+-- fetched once, so the window must not re-open behind it (re-insertion is
+-- blocked by the retained row anyway). ErrNoRows means "no fills yet" and
+-- routes the account to the full history walk-back.
+SELECT exec_time FROM executions
+WHERE account_id = ?
+ORDER BY exec_time DESC
+LIMIT 1;
 
 -- name: GetExecutionByBrokerID :one
 SELECT * FROM executions WHERE account_id = ? AND broker_exec_id = ?;

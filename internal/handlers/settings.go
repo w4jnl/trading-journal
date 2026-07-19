@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -69,19 +70,61 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		}
 	}
 	visGroups := groupAccountsForVisibility(visAccounts)
+
+	// TopstepX API sync card: stored credentials (username only - the key is
+	// never decrypted for display) + the latest sync result per account.
+	var tsxCreds *models.TopstepxCredential
+	var tsxSyncs []topstepxSyncRow
+	if h.TopstepxSync != nil {
+		if c, err := h.Queries.GetTopstepxCredentials(ctx, userID(ctx)); err == nil {
+			tsxCreds = &c
+			uid := userID(ctx)
+			if rows, err := h.Queries.ListLastAPISyncPerAccount(ctx, &uid); err == nil {
+				nameByID := map[int64]string{}
+				for _, a := range accounts {
+					nameByID[a.ID] = a.Name
+				}
+				for _, row := range rows {
+					name := "(user-level)"
+					if row.AccountID != nil {
+						name = nameByID[*row.AccountID]
+					}
+					msg := ""
+					if row.Message != nil {
+						msg = *row.Message
+					}
+					tsxSyncs = append(tsxSyncs, topstepxSyncRow{
+						AccountName: name, Status: row.Status, Message: msg, SyncedAt: row.SyncedAt,
+					})
+				}
+			}
+		}
+	}
+
 	h.renderPage(w, r, "settings.html", map[string]any{
-		"NavActive":   "settings",
-		"BackHref":    validBackHref(r),
-		"Keys":        keys,
-		"NewKey":      newKey,
-		"AILanguage":  h.userAILanguage(ctx),
-		"AILanguages": aiLanguageOptions,
-		"AIEnabled":   h.AIJobs != nil,
-		"VisGroups":   visGroups,
-		"VisTotal":    len(visAccounts),
-		"Flash":       r.URL.Query().Get("flash"),
-		"Err":         r.URL.Query().Get("err"),
+		"NavActive":       "settings",
+		"BackHref":        validBackHref(r),
+		"Keys":            keys,
+		"NewKey":          newKey,
+		"AILanguage":      h.userAILanguage(ctx),
+		"AILanguages":     aiLanguageOptions,
+		"AIEnabled":       h.AIJobs != nil,
+		"VisGroups":       visGroups,
+		"VisTotal":        len(visAccounts),
+		"TopstepxEnabled": h.TopstepxSync != nil,
+		"TopstepxCreds":   tsxCreds,
+		"TopstepxSyncs":   tsxSyncs,
+		"Flash":           r.URL.Query().Get("flash"),
+		"Err":             r.URL.Query().Get("err"),
 	})
+}
+
+// topstepxSyncRow is one per-account "last sync" line on the settings card.
+type topstepxSyncRow struct {
+	AccountName string
+	Status      string
+	Message     string
+	SyncedAt    time.Time
 }
 
 // accountVisGroup is one account-type section of the Settings visibility

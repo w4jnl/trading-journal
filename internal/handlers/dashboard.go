@@ -107,6 +107,7 @@ var equityTypeOrder = []struct {
 // last-sync panel and the 5 most recent trades.
 func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	tz := h.localTZ()
 
 	target, err := h.pickDashboardDate(ctx, tz)

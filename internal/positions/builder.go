@@ -10,14 +10,15 @@
 //   - P&L uses instruments.multiplier × price-diff × qty. If multiplier is NULL
 //     (stub instrument awaiting setup), gross_pnl stays NULL — we never silently
 //     substitute a price-difference shortcut.
-//   - Commission lookups go (instrument.asset_class, account.firm, instrument.size_class)
-//     -> commission_rates, which is effective-dated: a cell can hold several
-//     per-side rate versions, each with an effective_from datetime. Every fill
-//     (both entry and exit legs) is charged the per-side rate in effect at its
-//     own exec_time, so commission = sum over all legs of rateAt(fill) * fill.qty.
-//     With a single constant rate this is rate * qty * 2 (both legs of the
-//     round-turn). Missing firm, uncategorized instrument, or no rate versions
-//     for the cell -> commission NULL. net_pnl = gross_pnl minus
+//   - Commission per leg: a fill carrying a broker-reported commission
+//     (executions.commission, populated by the TopstepX API sync) is charged
+//     that actual amount, pro-rated by the quantity consumed in the trade.
+//     Fills without one (CSV / MotiveWave sources) fall back to the rate table:
+//     (instrument.asset_class, account.firm, instrument.size_class) ->
+//     commission_rates, effective-dated, picking the per-side version in effect
+//     at the fill's own exec_time. Mixed trades combine actual + rate per leg.
+//     A leg with neither (missing firm, uncategorized instrument, or no rate
+//     versions) -> commission NULL. net_pnl = gross_pnl minus
 //     commission-or-zero, but stays NULL if gross_pnl is NULL.
 //   - daily_stats is keyed on the trade exit date in the configured trading
 //     timezone, not UTC, so a US trader's session doesn't get split at UTC midnight.
@@ -228,6 +229,22 @@ type fillUse struct {
 	qty    float64
 	price  float64
 	time   time.Time
+	// commPerUnit is the execution's broker-reported commission divided by its
+	// full quantity (see commissionPerUnit). Non-nil means "actual commission
+	// known for this fill" and takes precedence over the rate-table lookup;
+	// partial consumption and flips pro-rate naturally as qty * commPerUnit.
+	commPerUnit *float64
+}
+
+// commissionPerUnit converts an execution's broker-reported total commission
+// into a per-contract figure. nil when the execution carries no commission
+// (CSV / MotiveWave sources) or has a non-positive quantity.
+func commissionPerUnit(fill models.Execution) *float64 {
+	if fill.Commission == nil || fill.Qty <= 0 {
+		return nil
+	}
+	v := *fill.Commission / fill.Qty
+	return &v
 }
 
 // tradeAccum accumulates state for one in-progress trade until it closes.
@@ -263,6 +280,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 		openQty = qty
 		trade.entries = append(trade.entries, fillUse{
 			execID: fill.ID, qty: qty, price: fill.Price, time: fill.ExecTime,
+			commPerUnit: commissionPerUnit(fill),
 		})
 	}
 
@@ -283,6 +301,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 			})
 			trade.entries = append(trade.entries, fillUse{
 				execID: fill.ID, qty: fill.Qty, price: fill.Price, time: fill.ExecTime,
+				commPerUnit: commissionPerUnit(fill),
 			})
 			openQty += fill.Qty
 			if openQty > trade.maxQty {
@@ -314,6 +333,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 		if consumedTotal > 0 {
 			trade.exits = append(trade.exits, fillUse{
 				execID: fill.ID, qty: consumedTotal, price: fill.Price, time: fill.ExecTime,
+				commPerUnit: commissionPerUnit(fill),
 			})
 		}
 
@@ -395,23 +415,38 @@ func rateAt(versions []rateVersion, t time.Time) (float64, bool) {
 	return rate, true
 }
 
-// commissionForLegs sums the per-side commission across every entry and exit
-// fill, each charged at the rate in effect at that fill's exec_time. nil
-// (commission NULL) when the cell has no rate versions. With a single constant
-// rate this equals rate * (entryQty + exitQty) = rate * cycleQty * 2 - i.e. the
-// old "both legs of the round-turn" result, so nothing regresses.
+// commissionForLegs sums the commission across every entry and exit fill.
+// Per leg, precedence is: the fill's actual broker-reported commission
+// (commPerUnit, pro-rated by consumed qty) when known, else the rate-table
+// rate in effect at that fill's exec_time. A leg with neither an actual
+// commission nor an applicable rate version makes the whole trade's
+// commission NULL - never a silent partial sum. All-actual trades therefore
+// work even on cells with zero configured rate versions; with a single
+// constant rate and no actuals this equals rate * cycleQty * 2 (both legs
+// of the round-turn), so CSV-only history is unchanged.
 func commissionForLegs(entries, exits []fillUse, versions []rateVersion) *float64 {
-	if len(versions) == 0 {
-		return nil
+	total, unknown := 0.0, false
+	add := func(u fillUse) {
+		switch {
+		case u.commPerUnit != nil:
+			total += u.qty * *u.commPerUnit // actual, pro-rated by consumed qty
+		default:
+			r, ok := rateAt(versions, u.time)
+			if !ok {
+				unknown = true
+				return
+			}
+			total += r * u.qty
+		}
 	}
-	total := 0.0
 	for _, u := range entries {
-		r, _ := rateAt(versions, u.time)
-		total += r * u.qty
+		add(u)
 	}
 	for _, u := range exits {
-		r, _ := rateAt(versions, u.time)
-		total += r * u.qty
+		add(u)
+	}
+	if unknown {
+		return nil
 	}
 	return &total
 }

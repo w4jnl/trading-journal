@@ -14,6 +14,7 @@
 {{if .RecomputedOK}}<div class="flash saved">Recomputed trades and daily stats for <span class="num">{{.RecomputedOK}}</span> account{{if ne .RecomputedOK 1}}s{{end}}{{if .RecomputedFail}} · <span class="num">{{.RecomputedFail}}</span> failed (see server log){{end}}.</div>{{end}}
 {{if eq .Flash "balanced"}}<div class="flash saved">Balance saved.</div>{{end}}
 {{if eq .Flash "cloned"}}<div class="flash created">Account cloned.</div>{{end}}
+{{if eq .Flash "refetch-queued"}}<div class="flash saved">Full history re-fetch queued — trades update in the background (existing fills are deduplicated).</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 <div class="card card--warn mb-16">
@@ -155,6 +156,21 @@
                 <button type="submit" class="btn btn--primary btn--sm">Clone</button>
               </form>
             </details>
+            {{if and $.TopstepxSync (eq $a.ImportSource "topstepx_csv")}}
+            <details class="reassign">
+              <summary>Re-fetch API history…</summary>
+              <div class="mt-8">
+                <p class="muted" style="font-size: 11px; margin: 4px 0 6px 0;">
+                  Pulls this account's full trade history from the TopstepX API again
+                  (up to 2 years). Existing fills are deduplicated — nothing is doubled.
+                </p>
+                <form method="post" action="/accounts/{{$a.ID}}/refetch" style="display: inline;">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit" class="btn btn--secondary btn--sm">Re-fetch full history</button>
+                </form>
+              </div>
+            </details>
+            {{end}}
           </td>
           <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
           <td>
