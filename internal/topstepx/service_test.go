@@ -215,54 +215,181 @@ func TestSyncUser_InactiveAccountSkipped(t *testing.T) {
 	}
 }
 
-// TestTokenLifecycle: validate-first refresh; loginKey only after validate
-// rejects; total failure aborts.
+// loadCreds re-reads the credentials row (the persisted token lives there).
+func loadCreds(t *testing.T, q *models.Queries, uid int64) models.TopstepxCredential {
+	t.Helper()
+	creds, err := q.GetTopstepxCredentials(context.Background(), uid)
+	if err != nil {
+		t.Fatalf("GetTopstepxCredentials: %v", err)
+	}
+	return creds
+}
+
+// seedToken stores an encrypted session token with a chosen expiry.
+func seedToken(t *testing.T, svc *SyncService, uid int64, token string, expiresIn time.Duration) {
+	t.Helper()
+	enc, nonce, err := svc.Box.Seal(token)
+	if err != nil {
+		t.Fatalf("Seal: %v", err)
+	}
+	exp := time.Now().UTC().Add(expiresIn)
+	if err := svc.Queries.SetTopstepxToken(context.Background(), models.SetTopstepxTokenParams{
+		TokenEnc: enc, TokenNonce: nonce, TokenExpiresAt: &exp, UserID: uid,
+	}); err != nil {
+		t.Fatalf("SetTopstepxToken: %v", err)
+	}
+}
+
+// TestTokenLifecycle: persisted token is used as-is while valid (zero
+// network); refresh is validate-first with loginKey as last resort; the
+// token survives a "restart" (new service instance over the same DB).
 func TestTokenLifecycle(t *testing.T) {
-	svc, api, _, uid := setupSync(t)
+	svc, api, q, uid := setupSync(t)
 	ctx := context.Background()
 
-	// No cached token: straight to loginKey.
-	tok, err := svc.token(ctx, uid, "trader", "api-key")
+	// No stored token: straight to loginKey, then persisted.
+	tok, err := svc.token(ctx, loadCreds(t, q, uid), "api-key")
 	if err != nil || tok != "tok-login" {
 		t.Fatalf("first token = (%q, %v)", tok, err)
 	}
 	if api.loginCalls != 1 || api.validateCalls != 0 {
 		t.Errorf("calls = login %d / validate %d, want 1/0", api.loginCalls, api.validateCalls)
 	}
+	creds := loadCreds(t, q, uid)
+	if len(creds.TokenEnc) == 0 || creds.TokenExpiresAt == nil {
+		t.Fatal("token not persisted")
+	}
+	// Fallback TTL applies (mock token is not a JWT): ~23h out.
+	if until := time.Until(*creds.TokenExpiresAt); until < 22*time.Hour || until > 24*time.Hour {
+		t.Errorf("persisted expiry %v from now, want ~23h", until)
+	}
 
-	// Cached token: validate rolls it, no re-login.
-	tok, err = svc.token(ctx, uid, "trader", "api-key")
-	if err != nil || tok != "tok-rolled" {
+	// Stored token still valid: NO network calls at all.
+	tok, err = svc.token(ctx, creds, "api-key")
+	if err != nil || tok != "tok-login" {
 		t.Fatalf("second token = (%q, %v)", tok, err)
 	}
+	if api.loginCalls != 1 || api.validateCalls != 0 {
+		t.Errorf("valid stored token must cost zero API calls, got login %d / validate %d",
+			api.loginCalls, api.validateCalls)
+	}
+
+	// "Restart": a brand-new service over the same DB still needs no auth.
+	svc2 := NewSyncService(svc.Queries, svc.Importer, api, svc.Box, 15*time.Minute, nil)
+	tok, err = svc2.token(ctx, loadCreds(t, q, uid), "api-key")
+	if err != nil || tok != "tok-login" {
+		t.Fatalf("post-restart token = (%q, %v)", tok, err)
+	}
+	if api.loginCalls != 1 || api.validateCalls != 0 {
+		t.Errorf("restart must reuse the persisted token, got login %d / validate %d",
+			api.loginCalls, api.validateCalls)
+	}
+
+	// Near expiry (< use margin): inline refresh validates first, no login.
+	seedToken(t, svc, uid, "tok-login", 2*time.Minute)
+	tok, err = svc.token(ctx, loadCreds(t, q, uid), "api-key")
+	if err != nil || tok != "tok-rolled" {
+		t.Fatalf("near-expiry token = (%q, %v)", tok, err)
+	}
 	if api.loginCalls != 1 || api.validateCalls != 1 {
-		t.Errorf("calls = login %d / validate %d, want 1/1 (re-auth is last resort)", api.loginCalls, api.validateCalls)
+		t.Errorf("near-expiry refresh = login %d / validate %d, want 1/1", api.loginCalls, api.validateCalls)
 	}
 
 	// Validate rejects the session: fall back to loginKey.
 	api.validateErr = ErrAuth
-	tok, err = svc.token(ctx, uid, "trader", "api-key")
+	seedToken(t, svc, uid, "tok-dead", time.Minute)
+	tok, err = svc.token(ctx, loadCreds(t, q, uid), "api-key")
 	if err != nil || tok != "tok-login" {
-		t.Fatalf("third token = (%q, %v)", tok, err)
+		t.Fatalf("rejected-session token = (%q, %v)", tok, err)
 	}
 	if api.loginCalls != 2 {
-		t.Errorf("loginCalls = %d, want 2", api.loginCalls)
+		t.Errorf("loginCalls = %d, want 2 (re-auth is last resort)", api.loginCalls)
 	}
 
 	// Both fail: abort with ErrAuth.
 	api.loginErr = ErrAuth
-	if _, err = svc.token(ctx, uid, "trader", "api-key"); !errors.Is(err, ErrAuth) {
+	seedToken(t, svc, uid, "tok-dead", time.Minute)
+	if _, err = svc.token(ctx, loadCreds(t, q, uid), "api-key"); !errors.Is(err, ErrAuth) {
 		t.Errorf("err = %v, want ErrAuth", err)
 	}
 
 	// Validate hits a network problem (not auth): do NOT burn a login.
 	api.validateErr = errors.New("connection refused")
 	logins := api.loginCalls
-	if _, err = svc.token(ctx, uid, "trader", "api-key"); err == nil {
+	seedToken(t, svc, uid, "tok-x", time.Minute)
+	if _, err = svc.token(ctx, loadCreds(t, q, uid), "api-key"); err == nil {
 		t.Error("network validate error should propagate")
 	}
 	if api.loginCalls != logins {
 		t.Error("network validate error must not trigger loginKey")
+	}
+}
+
+// TestSyncUsesStoredToken: a full syncUser pass with a warm token performs
+// ZERO auth calls - the exact complaint this change fixes.
+func TestSyncUsesStoredToken(t *testing.T) {
+	svc, api, _, uid := setupSync(t)
+	api.accounts = []Account{{ID: 42, Name: "NOHISTORY-1"}}
+	seedToken(t, svc, uid, "tok-warm", 10*time.Hour)
+
+	if err := svc.syncUser(context.Background(), syncJob{UserID: uid}); err != nil {
+		t.Fatalf("syncUser: %v", err)
+	}
+	if api.loginCalls != 0 || api.validateCalls != 0 {
+		t.Errorf("sync with warm token = login %d / validate %d, want 0/0",
+			api.loginCalls, api.validateCalls)
+	}
+}
+
+// TestMaintainTokensPass: the background maintainer renews near-expiry
+// tokens via validate, acquires missing ones via loginKey, and leaves warm
+// tokens alone.
+func TestMaintainTokensPass(t *testing.T) {
+	svc, api, q, uid := setupSync(t)
+	ctx := context.Background()
+
+	// No token stored yet: the pass acquires one (loginKey - nothing to validate).
+	svc.maintainTokensPass(ctx)
+	if api.loginCalls != 1 || api.validateCalls != 0 {
+		t.Fatalf("acquire pass = login %d / validate %d, want 1/0", api.loginCalls, api.validateCalls)
+	}
+
+	// Warm token (23h fallback): the next pass does nothing.
+	svc.maintainTokensPass(ctx)
+	if api.loginCalls != 1 || api.validateCalls != 0 {
+		t.Errorf("warm pass must be free, got login %d / validate %d", api.loginCalls, api.validateCalls)
+	}
+
+	// Under the refresh margin: renewed via validate, no login, expiry advanced.
+	seedToken(t, svc, uid, "tok-login", time.Hour)
+	svc.maintainTokensPass(ctx)
+	if api.loginCalls != 1 || api.validateCalls != 1 {
+		t.Errorf("renew pass = login %d / validate %d, want 1/1", api.loginCalls, api.validateCalls)
+	}
+	creds := loadCreds(t, q, uid)
+	if creds.TokenExpiresAt == nil || time.Until(*creds.TokenExpiresAt) < 20*time.Hour {
+		t.Errorf("expiry not advanced: %v", creds.TokenExpiresAt)
+	}
+	if tok, ok := svc.storedToken(creds); !ok || tok != "tok-rolled" {
+		t.Errorf("stored token = (%q, %v), want tok-rolled", tok, ok)
+	}
+}
+
+// TestUpsertCredentialsClearsToken: replacing credentials wipes the stored
+// session token so the new pair starts with a fresh login.
+func TestUpsertCredentialsClearsToken(t *testing.T) {
+	svc, _, q, uid := setupSync(t)
+	seedToken(t, svc, uid, "tok-old", 10*time.Hour)
+
+	ct, nonce, _ := svc.Box.Seal("new-api-key")
+	if err := q.UpsertTopstepxCredentials(context.Background(), models.UpsertTopstepxCredentialsParams{
+		UserID: uid, Username: "trader2", ApiKeyEnc: ct, ApiKeyNonce: nonce,
+	}); err != nil {
+		t.Fatalf("upsert: %v", err)
+	}
+	creds := loadCreds(t, q, uid)
+	if len(creds.TokenEnc) != 0 || creds.TokenExpiresAt != nil {
+		t.Errorf("token not cleared on credential replace: enc=%d exp=%v", len(creds.TokenEnc), creds.TokenExpiresAt)
 	}
 }
 

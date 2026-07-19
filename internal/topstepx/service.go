@@ -69,7 +69,6 @@ type SyncService struct {
 	mu      sync.Mutex
 	lastRun map[int64]time.Time
 	pending map[int64]bool
-	tokens  map[int64]string
 	jobs    chan syncJob
 }
 
@@ -97,7 +96,6 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, client apiCl
 		chicago:  chicago,
 		lastRun:  map[int64]time.Time{},
 		pending:  map[int64]bool{},
-		tokens:   map[int64]string{},
 		jobs:     make(chan syncJob, 64),
 	}
 }
@@ -157,48 +155,144 @@ func (s *SyncService) Run(ctx context.Context) {
 }
 
 // TestCredentials verifies a userName/apiKey pair with a bare loginKey round
-// trip. Used by the settings save/test actions.
-func (s *SyncService) TestCredentials(ctx context.Context, userName, apiKey string) error {
-	_, err := s.Client.LoginKey(ctx, userName, apiKey)
-	return err
+// trip and returns the session token it produced, so the settings handlers
+// can persist it (StoreToken) instead of throwing it away - the verification
+// login then doubles as the first sync's token.
+func (s *SyncService) TestCredentials(ctx context.Context, userName, apiKey string) (string, error) {
+	return s.Client.LoginKey(ctx, userName, apiKey)
 }
 
-// token returns a working session token for the user, preferring to refresh
-// the cached one via /api/Auth/validate; loginKey is the fallback, never the
-// first move. Callers must hold no lock.
-func (s *SyncService) token(ctx context.Context, userID int64, userName, apiKey string) (string, error) {
-	s.mu.Lock()
-	cached := s.tokens[userID]
-	s.mu.Unlock()
+// StoreToken persists a session token obtained outside the sync flow (the
+// settings verification login). Best-effort from the caller's perspective -
+// a failure just means the next sync logs in again.
+func (s *SyncService) StoreToken(ctx context.Context, userID int64, token string) error {
+	return s.persistToken(ctx, userID, token)
+}
 
-	if cached != "" {
-		if rolled, err := s.Client.Validate(ctx, cached); err == nil {
-			s.setToken(userID, rolled)
-			return rolled, nil
-		} else if !errors.Is(err, ErrAuth) {
-			// Network/API trouble - don't burn a login attempt on it.
+// token returns a working session token for the user. The happy path is
+// pure DB: the token persisted on the credentials row (already loaded by the
+// caller) is used as long as it stays comfortably clear of its JWT expiry -
+// NO validate, NO login. A refresh only happens here when the background
+// maintainer hasn't kept it warm (first sync ever, maintainer lagging, or an
+// undecryptable token after a key rotation).
+func (s *SyncService) token(ctx context.Context, creds models.TopstepxCredential, apiKey string) (string, error) {
+	if stored, ok := s.storedToken(creds); ok {
+		if time.Until(*creds.TokenExpiresAt) > tokenUseMargin {
+			return stored, nil
+		}
+		// Too close to expiry to trust for a whole sync: refresh inline,
+		// validating the still-live token first.
+		return s.refreshStoredToken(ctx, creds, apiKey, stored)
+	}
+	return s.refreshStoredToken(ctx, creds, apiKey, "")
+}
+
+// storedToken decrypts the persisted session token; ok=false when absent or
+// undecryptable (key rotation - treated as "no token", never fatal).
+func (s *SyncService) storedToken(creds models.TopstepxCredential) (string, bool) {
+	if len(creds.TokenEnc) == 0 || creds.TokenExpiresAt == nil {
+		return "", false
+	}
+	tok, err := s.Box.Open(creds.TokenEnc, creds.TokenNonce)
+	if err != nil {
+		s.Logger.Warn("topstepx: stored token undecryptable, will re-login", "user_id", creds.UserID, "err", err)
+		return "", false
+	}
+	return tok, true
+}
+
+// refreshStoredToken renews the user's session token and persists it:
+// validate the stale token first (rolls the ~24h window); loginKey only when
+// validate rejects it or there is nothing to validate - re-authentication is
+// the last resort. Non-auth validate errors (network) propagate without
+// burning a login attempt.
+func (s *SyncService) refreshStoredToken(ctx context.Context, creds models.TopstepxCredential, apiKey, staleToken string) (string, error) {
+	if staleToken != "" {
+		rolled, err := s.Client.Validate(ctx, staleToken)
+		switch {
+		case err == nil:
+			return rolled, s.persistToken(ctx, creds.UserID, rolled)
+		case !errors.Is(err, ErrAuth):
 			return "", err
 		}
-		// Validate rejected the session: fall through to a fresh login.
+		s.Logger.Debug("topstepx: validate rejected session, re-authenticating", "user_id", creds.UserID)
 	}
-	tok, err := s.Client.LoginKey(ctx, userName, apiKey)
+	tok, err := s.Client.LoginKey(ctx, creds.Username, apiKey)
 	if err != nil {
 		return "", err
 	}
-	s.setToken(userID, tok)
-	return tok, nil
+	return tok, s.persistToken(ctx, creds.UserID, tok)
 }
 
-func (s *SyncService) setToken(userID int64, tok string) {
-	s.mu.Lock()
-	s.tokens[userID] = tok
-	s.mu.Unlock()
+// persistToken stores the encrypted token + its JWT expiry on the
+// credentials row so restarts and the maintainer can reuse it.
+func (s *SyncService) persistToken(ctx context.Context, userID int64, token string) error {
+	enc, nonce, err := s.Box.Seal(token)
+	if err != nil {
+		return fmt.Errorf("encrypt token: %w", err)
+	}
+	exp := tokenExpiry(token)
+	if err := s.Queries.SetTopstepxToken(ctx, models.SetTopstepxTokenParams{
+		TokenEnc: enc, TokenNonce: nonce, TokenExpiresAt: &exp, UserID: userID,
+	}); err != nil {
+		return fmt.Errorf("persist token: %w", err)
+	}
+	s.Logger.Debug("topstepx: session token persisted", "user_id", userID, "expires_at", exp)
+	return nil
 }
 
-func (s *SyncService) dropToken(userID int64) {
-	s.mu.Lock()
-	delete(s.tokens, userID)
-	s.mu.Unlock()
+// MaintainTokens keeps every credentialed user's session token warm,
+// independent of sync and schedule triggers: every tokenMaintainInterval it
+// renews (validate-first) any token with less than tokenRefreshMargin of
+// validity left, and obtains one where none is stored. This is the only
+// place validate runs routinely - syncs just read the persisted token.
+// Runs one pass immediately so a boot right before expiry still renews.
+func (s *SyncService) MaintainTokens(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	ticker := time.NewTicker(tokenMaintainInterval)
+	defer ticker.Stop()
+	s.maintainTokensPass(ctx)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			s.maintainTokensPass(ctx)
+		}
+	}
+}
+
+// maintainTokensPass renews/acquires tokens for all users that need it.
+// Failures are slog-only (the pass reruns in 15 minutes; sync_log rows are
+// reserved for actual sync outcomes).
+func (s *SyncService) maintainTokensPass(ctx context.Context) {
+	users, err := s.Queries.ListTopstepxSyncUsers(ctx)
+	if err != nil {
+		s.Logger.Error("topstepx: token maintainer: list users", "err", err)
+		return
+	}
+	for _, uid := range users {
+		creds, err := s.Queries.GetTopstepxCredentials(ctx, uid)
+		if err != nil {
+			continue // row vanished between list and get
+		}
+		stale, hasToken := s.storedToken(creds)
+		if hasToken && time.Until(*creds.TokenExpiresAt) > tokenRefreshMargin {
+			continue // comfortably valid - nothing to do
+		}
+		apiKey, err := s.Box.Open(creds.ApiKeyEnc, creds.ApiKeyNonce)
+		if err != nil {
+			s.Logger.Warn("topstepx: token maintainer: credentials undecryptable", "user_id", uid, "err", err)
+			continue
+		}
+		if _, err := s.refreshStoredToken(ctx, creds, apiKey, stale); err != nil {
+			s.Logger.Warn("topstepx: token maintainer: refresh failed", "user_id", uid, "err", err)
+			continue
+		}
+		s.Logger.Debug("topstepx: token maintained", "user_id", uid, "had_token", hasToken)
+	}
 }
 
 // contractCache memoizes contractId -> (symbol, root) for one sync run.
@@ -246,13 +340,13 @@ func (s *SyncService) syncUser(ctx context.Context, job syncJob) error {
 		return fmt.Errorf("decrypt credentials: %w", err)
 	}
 
-	token, err := s.token(ctx, job.UserID, creds.Username, apiKey)
+	token, err := s.token(ctx, creds, apiKey)
 	if err != nil {
 		s.logAuthFailure(ctx, job.UserID, err)
 		return fmt.Errorf("authenticate: %w", err)
 	}
 
-	apiAccounts, err := s.searchAccountsRetry(ctx, job.UserID, creds.Username, apiKey, &token)
+	apiAccounts, err := s.searchAccountsRetry(ctx, creds, apiKey, &token)
 	if err != nil {
 		s.logAuthFailure(ctx, job.UserID, err)
 		return fmt.Errorf("search accounts: %w", err)
@@ -295,7 +389,7 @@ func (s *SyncService) syncUser(ctx context.Context, job syncJob) error {
 				continue
 			}
 		}
-		if err := s.syncAccount(ctx, job, apiAcct, local, known, cache, creds.Username, apiKey, &token, now); err != nil {
+		if err := s.syncAccount(ctx, job, apiAcct, local, known, cache, creds, apiKey, &token, now); err != nil {
 			if errors.Is(err, context.Canceled) {
 				return err
 			}
@@ -307,7 +401,7 @@ func (s *SyncService) syncUser(ctx context.Context, job syncJob) error {
 
 // syncAccount fetches, aggregates, and ingests one account's window(s), then
 // writes its sync_log row.
-func (s *SyncService) syncAccount(ctx context.Context, job syncJob, apiAcct Account, local models.Account, known bool, cache *contractCache, userName, apiKey string, token *string, now time.Time) error {
+func (s *SyncService) syncAccount(ctx context.Context, job syncJob, apiAcct Account, local models.Account, known bool, cache *contractCache, creds models.TopstepxCredential, apiKey string, token *string, now time.Time) error {
 	full := job.Full || !known || local.ApiBackfillDone == 0
 	var lastExec time.Time
 	if known && !job.Full {
@@ -330,7 +424,7 @@ func (s *SyncService) syncAccount(ctx context.Context, job syncJob, apiAcct Acco
 	var windowDesc string
 	if !full {
 		start := lastExec.Add(-incrementalOverlap)
-		got, err := s.searchTradesRetry(ctx, job.UserID, userName, apiKey, token, apiAcct.ID, start, now)
+		got, err := s.searchTradesRetry(ctx, creds, apiKey, token, apiAcct.ID, start, now)
 		if err != nil {
 			s.logAccountError(ctx, job.UserID, known, local.ID, "network: "+err.Error())
 			return err
@@ -345,7 +439,7 @@ func (s *SyncService) syncAccount(ctx context.Context, job syncJob, apiAcct Acco
 		for i := 0; i < walkBackMaxMonths; i++ {
 			end := now.AddDate(0, -i, 0)
 			start := now.AddDate(0, -(i + 1), 0).Add(-walkBackSeamOverlap)
-			got, err := s.searchTradesRetry(ctx, job.UserID, userName, apiKey, token, apiAcct.ID, start, end)
+			got, err := s.searchTradesRetry(ctx, creds, apiKey, token, apiAcct.ID, start, end)
 			if err != nil {
 				s.logAccountError(ctx, job.UserID, known, local.ID, "network: "+err.Error())
 				return err
@@ -442,10 +536,10 @@ func (s *SyncService) syncAccount(ctx context.Context, job syncJob, apiAcct Acco
 
 // searchAccountsRetry runs SearchAccounts with one validate-then-relogin
 // retry on ErrAuth (token can expire mid-lifecycle).
-func (s *SyncService) searchAccountsRetry(ctx context.Context, userID int64, userName, apiKey string, token *string) ([]Account, error) {
+func (s *SyncService) searchAccountsRetry(ctx context.Context, creds models.TopstepxCredential, apiKey string, token *string) ([]Account, error) {
 	accounts, err := s.Client.SearchAccounts(ctx, *token, true)
 	if errors.Is(err, ErrAuth) {
-		if err = s.refreshToken(ctx, userID, userName, apiKey, token); err != nil {
+		if err = s.recoverToken(ctx, creds, apiKey, token); err != nil {
 			return nil, err
 		}
 		accounts, err = s.Client.SearchAccounts(ctx, *token, true)
@@ -454,10 +548,10 @@ func (s *SyncService) searchAccountsRetry(ctx context.Context, userID int64, use
 }
 
 // searchTradesRetry is the same auth-retry wrapper for SearchTrades.
-func (s *SyncService) searchTradesRetry(ctx context.Context, userID int64, userName, apiKey string, token *string, accountID int32, start, end time.Time) ([]HalfTrade, error) {
+func (s *SyncService) searchTradesRetry(ctx context.Context, creds models.TopstepxCredential, apiKey string, token *string, accountID int32, start, end time.Time) ([]HalfTrade, error) {
 	trades, err := s.Client.SearchTrades(ctx, *token, accountID, start, end)
 	if errors.Is(err, ErrAuth) {
-		if err = s.refreshToken(ctx, userID, userName, apiKey, token); err != nil {
+		if err = s.recoverToken(ctx, creds, apiKey, token); err != nil {
 			return nil, err
 		}
 		trades, err = s.Client.SearchTrades(ctx, *token, accountID, start, end)
@@ -465,11 +559,14 @@ func (s *SyncService) searchTradesRetry(ctx context.Context, userID int64, userN
 	return trades, err
 }
 
-// refreshToken drops the cached token and reruns the validate-first
-// lifecycle (which now goes straight to loginKey).
-func (s *SyncService) refreshToken(ctx context.Context, userID int64, userName, apiKey string, token *string) error {
-	s.dropToken(userID)
-	fresh, err := s.token(ctx, userID, userName, apiKey)
+// recoverToken handles a mid-sync 401: the persisted token is cleared, then
+// the standard validate-first refresh runs with the rejected token as the
+// stale candidate (validate stays the first move; loginKey the fallback).
+func (s *SyncService) recoverToken(ctx context.Context, creds models.TopstepxCredential, apiKey string, token *string) error {
+	if err := s.Queries.ClearTopstepxToken(ctx, creds.UserID); err != nil {
+		s.Logger.Warn("topstepx: clear rejected token", "user_id", creds.UserID, "err", err)
+	}
+	fresh, err := s.refreshStoredToken(ctx, creds, apiKey, *token)
 	if err != nil {
 		return err
 	}

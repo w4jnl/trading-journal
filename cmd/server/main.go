@@ -609,11 +609,14 @@ func run() error {
 		}
 	}
 
-	// TopstepX API sync worker + hourly CME-hours scheduler. Page-visit hooks
-	// feed the same queue; all stop on ctx cancellation.
+	// TopstepX API sync worker + hourly CME-hours scheduler + session-token
+	// maintainer (renews tokens via validate before they expire, so syncs and
+	// restarts never need a fresh login). Page-visit hooks feed the same
+	// queue; all stop on ctx cancellation.
 	if topstepxSync != nil {
 		go topstepxSync.Run(ctx)
 		go topstepxSync.Schedule(ctx)
+		go topstepxSync.MaintainTokens(ctx)
 	}
 
 	// Start the inbox watcher. Errors during individual imports are logged

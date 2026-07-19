@@ -42,7 +42,8 @@ func (h *Handlers) SettingsTopstepxSave(w http.ResponseWriter, r *http.Request) 
 		http.Redirect(w, r, "/settings?err=username+and+API+key+are+required", http.StatusSeeOther)
 		return
 	}
-	if err := h.TopstepxSync.TestCredentials(ctx, username, apiKey); err != nil {
+	token, err := h.TopstepxSync.TestCredentials(ctx, username, apiKey)
+	if err != nil {
 		http.Redirect(w, r, "/settings?err="+errToQuery(topstepxUserError(err)), http.StatusSeeOther)
 		return
 	}
@@ -56,6 +57,11 @@ func (h *Handlers) SettingsTopstepxSave(w http.ResponseWriter, r *http.Request) 
 	}); err != nil {
 		h.serverError(w, fmt.Errorf("store topstepx credentials: %w", err))
 		return
+	}
+	// Keep the verification login's token (the upsert cleared any old one) so
+	// the first sync doesn't need a second loginKey.
+	if err := h.TopstepxSync.StoreToken(ctx, userID(ctx), token); err != nil {
+		h.logger().Warn("store topstepx token", "err", err)
 	}
 	// Kick off the first sync right away - the user just wired it up and
 	// expects trades to appear.
@@ -82,9 +88,14 @@ func (h *Handlers) SettingsTopstepxTest(w http.ResponseWriter, r *http.Request) 
 			http.StatusSeeOther)
 		return
 	}
-	if err := h.TopstepxSync.TestCredentials(ctx, creds.Username, apiKey); err != nil {
+	token, err := h.TopstepxSync.TestCredentials(ctx, creds.Username, apiKey)
+	if err != nil {
 		http.Redirect(w, r, "/settings?err="+errToQuery(topstepxUserError(err)), http.StatusSeeOther)
 		return
+	}
+	// The test login minted a fresh ~24h token; keep it.
+	if err := h.TopstepxSync.StoreToken(ctx, userID(ctx), token); err != nil {
+		h.logger().Warn("store topstepx token", "err", err)
 	}
 	if err := h.Queries.TouchTopstepxVerified(ctx, userID(ctx)); err != nil {
 		h.logger().Warn("touch topstepx verified", "err", err)

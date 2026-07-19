@@ -221,6 +221,9 @@ type TopstepxCredential struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	LastVerifiedAt *time.Time `json:"last_verified_at"`
+	TokenEnc       []byte     `json:"token_enc"`
+	TokenNonce     []byte     `json:"token_nonce"`
+	TokenExpiresAt *time.Time `json:"token_expires_at"`
 }
 
 type Trade struct {

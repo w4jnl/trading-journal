@@ -7,7 +7,20 @@ package models
 
 import (
 	"context"
+	"time"
 )
+
+const clearTopstepxToken = `-- name: ClearTopstepxToken :exec
+UPDATE topstepx_credentials
+SET token_enc = NULL, token_nonce = NULL, token_expires_at = NULL
+WHERE user_id = ?
+`
+
+// Drop a rejected/stale token; the next refresh starts from loginKey.
+func (q *Queries) ClearTopstepxToken(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, clearTopstepxToken, userID)
+	return err
+}
 
 const deleteTopstepxCredentials = `-- name: DeleteTopstepxCredentials :exec
 DELETE FROM topstepx_credentials WHERE user_id = ?
@@ -19,7 +32,7 @@ func (q *Queries) DeleteTopstepxCredentials(ctx context.Context, userID int64) e
 }
 
 const getTopstepxCredentials = `-- name: GetTopstepxCredentials :one
-SELECT user_id, username, api_key_enc, api_key_nonce, created_at, updated_at, last_verified_at FROM topstepx_credentials WHERE user_id = ?
+SELECT user_id, username, api_key_enc, api_key_nonce, created_at, updated_at, last_verified_at, token_enc, token_nonce, token_expires_at FROM topstepx_credentials WHERE user_id = ?
 `
 
 func (q *Queries) GetTopstepxCredentials(ctx context.Context, userID int64) (TopstepxCredential, error) {
@@ -33,6 +46,9 @@ func (q *Queries) GetTopstepxCredentials(ctx context.Context, userID int64) (Top
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastVerifiedAt,
+		&i.TokenEnc,
+		&i.TokenNonce,
+		&i.TokenExpiresAt,
 	)
 	return i, err
 }
@@ -67,6 +83,31 @@ func (q *Queries) ListTopstepxSyncUsers(ctx context.Context) ([]int64, error) {
 	return items, nil
 }
 
+const setTopstepxToken = `-- name: SetTopstepxToken :exec
+UPDATE topstepx_credentials
+SET token_enc = ?, token_nonce = ?, token_expires_at = ?
+WHERE user_id = ?
+`
+
+type SetTopstepxTokenParams struct {
+	TokenEnc       []byte     `json:"token_enc"`
+	TokenNonce     []byte     `json:"token_nonce"`
+	TokenExpiresAt *time.Time `json:"token_expires_at"`
+	UserID         int64      `json:"user_id"`
+}
+
+// Persist the (encrypted) session token + its JWT expiry so restarts reuse
+// it and the background maintainer can renew it before it lapses.
+func (q *Queries) SetTopstepxToken(ctx context.Context, arg SetTopstepxTokenParams) error {
+	_, err := q.db.ExecContext(ctx, setTopstepxToken,
+		arg.TokenEnc,
+		arg.TokenNonce,
+		arg.TokenExpiresAt,
+		arg.UserID,
+	)
+	return err
+}
+
 const touchTopstepxVerified = `-- name: TouchTopstepxVerified :exec
 UPDATE topstepx_credentials SET last_verified_at = CURRENT_TIMESTAMP WHERE user_id = ?
 `
@@ -84,7 +125,10 @@ ON CONFLICT(user_id) DO UPDATE SET
     api_key_enc = excluded.api_key_enc,
     api_key_nonce = excluded.api_key_nonce,
     updated_at = CURRENT_TIMESTAMP,
-    last_verified_at = CURRENT_TIMESTAMP
+    last_verified_at = CURRENT_TIMESTAMP,
+    token_enc = NULL,
+    token_nonce = NULL,
+    token_expires_at = NULL
 `
 
 type UpsertTopstepxCredentialsParams struct {
@@ -98,6 +142,8 @@ type UpsertTopstepxCredentialsParams struct {
 // the AES-256-GCM ciphertext + nonce produced by topstepx.SecretBox; the
 // plaintext key never touches the database. Saving implies the credentials
 // were just verified via loginKey, so last_verified_at is refreshed too.
+// Any stored session token is cleared so the new credentials start with a
+// fresh login.
 func (q *Queries) UpsertTopstepxCredentials(ctx context.Context, arg UpsertTopstepxCredentialsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertTopstepxCredentials,
 		arg.UserID,
