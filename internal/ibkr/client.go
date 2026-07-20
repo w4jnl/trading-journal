@@ -212,7 +212,8 @@ func (c *Client) Accounts(ctx context.Context) ([]GatewayAccount, error) {
 	for _, id := range out.Accounts {
 		accounts = append(accounts, GatewayAccount{ID: id})
 	}
-	c.logger().Debug("ibkr accounts", "url", c.BaseURL, "count", len(accounts))
+	c.logger().Debug("ibkr accounts", "url", c.BaseURL, "count", len(accounts),
+		"ids", strings.Join(out.Accounts, ","))
 	return accounts, nil
 }
 
@@ -228,7 +229,12 @@ func (c *Client) Trades(ctx context.Context, days int) ([]Trade, error) {
 		fmt.Sprintf("/v1/api/iserver/account/trades?days=%d", days), "", &trades); err != nil {
 		return nil, err
 	}
-	c.logger().Debug("ibkr trades", "url", c.BaseURL, "days", days, "count", len(trades))
+	perAccount := map[string]int{}
+	for _, t := range trades {
+		perAccount[t.Account]++
+	}
+	c.logger().Debug("ibkr trades", "url", c.BaseURL, "days", days, "count", len(trades),
+		"per_account", fmt.Sprint(perAccount))
 	return trades, nil
 }
 

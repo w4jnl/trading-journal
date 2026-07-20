@@ -477,6 +477,13 @@ func (s *SyncService) syncAccount(ctx context.Context, gw models.IbkrGateway, re
 		fills = append(fills, fill)
 	}
 
+	// One line per account per poll so the -d log shows exactly what each
+	// gateway account contributed and why (windowed executions vs fills that
+	// survived the cutover filter).
+	s.Logger.Debug("ibkr account window", "gateway", gw.Name, "ref", ref,
+		"known", known, "cutover", cutover.Format(time.RFC3339),
+		"trades_in_window", len(trades), "fills_after_cutover", len(fills), "unmappable", mapErrs)
+
 	if len(fills) == 0 && !known {
 		// Fresh account with nothing visible: create no rows yet.
 		return nil
