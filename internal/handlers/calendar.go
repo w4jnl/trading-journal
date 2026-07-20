@@ -54,6 +54,7 @@ type weekTotal struct {
 // Query params: month=YYYY-MM (default current), account_id (default all).
 func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	tz := h.localTZ()
 
 	monthStart, err := parseMonth(r.URL.Query().Get("month"), tz)

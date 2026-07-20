@@ -29,6 +29,7 @@ import (
 // page for day/week scopes).
 func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	tz := h.localTZ()
 
 	filters := parseJournalFilters(r, tz)

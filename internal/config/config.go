@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -22,7 +23,71 @@ type Config struct {
 	MarketData   MarketData   `yaml:"market_data"`
 	MCP          MCP          `yaml:"mcp"`
 	AI           AI           `yaml:"ai"`
+	TopstepX     TopstepX     `yaml:"topstepx"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// TopstepX configures the TopstepX (ProjectX Gateway) API sync. The feature
+// activates only when EncryptionKey is set: per-user API credentials are
+// stored AES-256-GCM encrypted under it, so it is deliberately NOT
+// auto-generated - losing it bricks every stored credential, so it must live
+// in the user's backed-up config.yaml (or the TJ_TOPSTEPX_ENC_KEY env var).
+// Generate one with: openssl rand -hex 32
+type TopstepX struct {
+	Enabled         *bool  `yaml:"enabled"`           // nil = true; feature still gated on EncryptionKey
+	BaseURL         string `yaml:"base_url"`          // default https://api.topstepx.com
+	EncryptionKey   string `yaml:"encryption_key"`    // 64 hex chars (32 bytes); env TJ_TOPSTEPX_ENC_KEY
+	HTTPTimeoutSec  int    `yaml:"http_timeout_sec"`  // default 15
+	SyncThrottleMin int    `yaml:"sync_throttle_min"` // min minutes between page-visit syncs per user; default 15
+
+	// Scheduled-sync cadences. The scheduler runs at SessionSyncMin
+	// throughout the CME Globex session (plus a 2h margin each side) and
+	// speeds up to RTHSyncMin inside RTHWindow. 0 disables that tier.
+	SessionSyncMin int `yaml:"session_sync_min"` // default 60
+	RTHSyncMin     int `yaml:"rth_sync_min"`     // default 15
+	// RTHWindow is the fast-cadence window, "HH:MM-HH:MM" in Chicago time,
+	// Monday-Friday. Default "07:30-16:00" = equity-futures RTH
+	// (08:30-15:00 CT) plus one hour before and after.
+	RTHWindow string `yaml:"rth_window"`
+}
+
+// RTHWindowHM parses RTHWindow into start/end minutes-of-day (Chicago).
+// ok=false when the string is not "HH:MM-HH:MM" with start < end.
+func (t TopstepX) RTHWindowHM() (startMin, endMin int, ok bool) {
+	parts := strings.Split(t.RTHWindow, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	parse := func(s string) (int, bool) {
+		hm := strings.Split(strings.TrimSpace(s), ":")
+		if len(hm) != 2 {
+			return 0, false
+		}
+		h, err1 := strconv.Atoi(hm[0])
+		m, err2 := strconv.Atoi(hm[1])
+		if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+			return 0, false
+		}
+		return h*60 + m, true
+	}
+	start, ok1 := parse(parts[0])
+	end, ok2 := parse(parts[1])
+	if !ok1 || !ok2 || start >= end {
+		return 0, 0, false
+	}
+	return start, end, true
+}
+
+// EncryptionKeyBytes decodes the hex key; ok=false when unset or malformed.
+func (t TopstepX) EncryptionKeyBytes() ([]byte, bool) {
+	if t.EncryptionKey == "" {
+		return nil, false
+	}
+	b, err := hex.DecodeString(strings.TrimSpace(t.EncryptionKey))
+	if err != nil || len(b) != 32 {
+		return nil, false
+	}
+	return b, true
 }
 
 // MCP toggles the Model Context Protocol server at /mcp (for AI clients). It
@@ -166,7 +231,11 @@ func defaults() Config {
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
 		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30"},
 		AI:         AI{Provider: "openai", BaseURL: "http://0.0.0.0:8080/v1", TimeoutSec: 120, MaxTokens: 1024, Temperature: 0.4},
-		Timezone:   "America/Chicago",
+		TopstepX: TopstepX{
+			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15,
+			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
+		},
+		Timezone: "America/Chicago",
 	}
 }
 
@@ -225,6 +294,28 @@ func (c Config) Validate() error {
 			return fmt.Errorf("ai.timeout_sec must be >= 0, got %d", c.AI.TimeoutSec)
 		}
 	}
+	if c.TopstepX.EncryptionKey != "" {
+		if _, ok := c.TopstepX.EncryptionKeyBytes(); !ok {
+			return fmt.Errorf("topstepx.encryption_key must be 64 hex characters (generate with: openssl rand -hex 32)")
+		}
+	}
+	if c.TopstepX.HTTPTimeoutSec < 0 {
+		return fmt.Errorf("topstepx.http_timeout_sec must be >= 0, got %d", c.TopstepX.HTTPTimeoutSec)
+	}
+	if c.TopstepX.SyncThrottleMin < 0 {
+		return fmt.Errorf("topstepx.sync_throttle_min must be >= 0, got %d", c.TopstepX.SyncThrottleMin)
+	}
+	if c.TopstepX.SessionSyncMin < 0 {
+		return fmt.Errorf("topstepx.session_sync_min must be >= 0 (0 disables), got %d", c.TopstepX.SessionSyncMin)
+	}
+	if c.TopstepX.RTHSyncMin < 0 {
+		return fmt.Errorf("topstepx.rth_sync_min must be >= 0 (0 disables), got %d", c.TopstepX.RTHSyncMin)
+	}
+	if c.TopstepX.RTHSyncMin > 0 {
+		if _, _, ok := c.TopstepX.RTHWindowHM(); !ok {
+			return fmt.Errorf("topstepx.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.TopstepX.RTHWindow)
+		}
+	}
 	return nil
 }
 
@@ -254,6 +345,9 @@ func Load(cfgPath string) (Config, error) {
 	}
 	if v := os.Getenv("TJ_AI_API_KEY"); v != "" {
 		cfg.AI.APIKey = v
+	}
+	if v := os.Getenv("TJ_TOPSTEPX_ENC_KEY"); v != "" {
+		cfg.TopstepX.EncryptionKey = v
 	}
 
 	return cfg, nil

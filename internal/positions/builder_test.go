@@ -20,7 +20,10 @@ type synthFill struct {
 	qty   float64
 	price float64
 	when  time.Time
+	comm  *float64 // broker-reported total commission for the fill (API sync); nil = rate lookup
 }
+
+func fptr(v float64) *float64 { return &v }
 
 func setupBuilder(t *testing.T) (*Builder, *models.Queries, *sql.DB, int64) {
 	t.Helper()
@@ -62,6 +65,7 @@ func insertSynthExecutions(t *testing.T, q *models.Queries, accountID int64, sym
 			Side:         f.side,
 			Qty:          f.qty,
 			Price:        f.price,
+			Commission:   f.comm,
 			ExecTime:     f.when,
 		}); err != nil {
 			t.Fatalf("insert synth %d: %v", i, err)
@@ -102,8 +106,8 @@ const apexESRoundTurn = apexESPerSide * 2
 func TestRebuild_SimpleLongClose(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"sell", 1, 7252, at(5)},
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
 	})
 
 	res, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}})
@@ -150,8 +154,8 @@ func TestRebuild_SimpleLongClose(t *testing.T) {
 func TestRebuild_PerSideCommissionScalesWithQty(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 3, 7250, at(0)},
-		{"sell", 3, 7252, at(5)},
+		{"buy", 3, 7250, at(0), nil},
+		{"sell", 3, 7252, at(5), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -188,9 +192,9 @@ func TestRebuild_TimeVersionedCommission(t *testing.T) {
 	//   straddle: buy 14:02, sell 14:04
 	//   after:    buy 14:05, sell 14:06
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)}, {"sell", 1, 7252, at(1)},
-		{"buy", 1, 7250, at(2)}, {"sell", 1, 7252, at(4)},
-		{"buy", 1, 7250, at(5)}, {"sell", 1, 7252, at(6)},
+		{"buy", 1, 7250, at(0), nil}, {"sell", 1, 7252, at(1), nil},
+		{"buy", 1, 7250, at(2), nil}, {"sell", 1, 7252, at(4), nil},
+		{"buy", 1, 7250, at(5), nil}, {"sell", 1, 7252, at(6), nil},
 	})
 	if _, err := b.Rebuild(ctx, []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -218,11 +222,173 @@ func TestRebuild_TimeVersionedCommission(t *testing.T) {
 	}
 }
 
+// Broker-reported (actual) commission on an execution takes precedence over
+// the rate table, per leg. Covers the TopstepX API sync path, which stores
+// fees+commissions on executions.commission.
+func TestRebuild_ActualCommission_AllLegs(t *testing.T) {
+	b, q, _, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0), fptr(3.10)},
+		{"sell", 1, 7252, at(5), fptr(3.30)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("len(trades) = %d, want 1", len(trades))
+	}
+	// 3.10 + 3.30, NOT the apex rate 1.99*2 = 3.98.
+	if trades[0].Commission == nil || *trades[0].Commission != 6.40 {
+		t.Errorf("commission = %v, want 6.40 (actual, not rate)", trades[0].Commission)
+	}
+}
+
+// A trade whose entry fill carries an actual commission but whose exit fill
+// does not combines actual (entry) + rate lookup (exit) per leg.
+func TestRebuild_ActualCommission_MixedLegs(t *testing.T) {
+	b, q, _, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0), fptr(3.10)},
+		{"sell", 1, 7252, at(5), nil},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("len(trades) = %d, want 1", len(trades))
+	}
+	want := 3.10 + apexESPerSide
+	if trades[0].Commission == nil || *trades[0].Commission != want {
+		t.Errorf("commission = %v, want %.2f (actual entry + rate exit)", trades[0].Commission, want)
+	}
+}
+
+// An entry fill consumed across two trades (partial closes) pro-rates its
+// actual commission by consumed quantity: qty 5 with commission 10.00 is
+// 2.00/contract, so a 2-lot close carries 4.00 of it and the 3-lot close 6.00.
+func TestRebuild_ActualCommission_ProRatedPartial(t *testing.T) {
+	b, q, _, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 5, 7250, at(0), fptr(10.00)},
+		{"sell", 2, 7252, at(5), nil},
+		{"sell", 3, 7254, at(10), nil},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("len(trades) = %d, want 1 (one FIFO cycle, two partial exits)", len(trades))
+	}
+	// One cycle: entry leg actual 10.00 + exit legs via rate (2+3 contracts).
+	want := 10.00 + apexESPerSide*5
+	if trades[0].Commission == nil || *trades[0].Commission != want {
+		t.Errorf("commission = %v, want %.2f", trades[0].Commission, want)
+	}
+}
+
+// A flip fill (sell 5 against long 2 -> short 3) splits its actual commission
+// across the closing trade's exit and the new trade's entry in 2:3 proportion.
+func TestRebuild_ActualCommission_FlipSplit(t *testing.T) {
+	b, q, _, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 2, 7250, at(0), fptr(4.00)},
+		{"sell", 5, 7252, at(5), fptr(10.00)}, // 2.00/contract
+		{"buy", 3, 7250, at(10), fptr(6.00)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 2 {
+		t.Fatalf("len(trades) = %d, want 2 (flip)", len(trades))
+	}
+	sort.Slice(trades, func(i, j int) bool { return trades[i].EntryTime.Before(trades[j].EntryTime) })
+	// Long 2: entry 4.00 + 2/5 of the flip fill's 10.00 = 8.00.
+	if trades[0].Commission == nil || *trades[0].Commission != 8.00 {
+		t.Errorf("long trade commission = %v, want 8.00", trades[0].Commission)
+	}
+	// Short 3: 3/5 of the flip fill's 10.00 + exit 6.00 = 12.00.
+	if trades[1].Commission == nil || *trades[1].Commission != 12.00 {
+		t.Errorf("short trade commission = %v, want 12.00", trades[1].Commission)
+	}
+}
+
+// noRateAccount creates a second account with no firm, so loadRateVersions
+// returns zero versions and only actual per-execution commissions can apply.
+func noRateAccount(t *testing.T, q *models.Queries, userID int64) int64 {
+	t.Helper()
+	acct, err := q.CreateAccount(context.Background(), models.CreateAccountParams{
+		UserID:           userID,
+		Name:             "no-rate",
+		Firm:             nil,
+		ImportSource:     "motivewave_csv",
+		AccountRef:       "NORATE",
+		Currency:         "USD",
+		NeedsSetup:       1,
+		CommissionSource: "rate",
+	})
+	if err != nil {
+		t.Fatalf("CreateAccount: %v", err)
+	}
+	return acct.ID
+}
+
+// All-actual trades must compute a commission even when the cell has ZERO rate
+// versions (regression: an earlier commissionForLegs returned nil whenever the
+// versions slice was empty, which would wrongly NULL API-synced trades on
+// accounts with no configured rates).
+func TestRebuild_ActualCommission_NoRateCell(t *testing.T) {
+	b, q, _, _ := setupBuilder(t)
+	accID := noRateAccount(t, q, b.UserID)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0), fptr(3.10)},
+		{"sell", 1, 7252, at(5), fptr(3.30)},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("len(trades) = %d, want 1", len(trades))
+	}
+	if trades[0].Commission == nil || *trades[0].Commission != 6.40 {
+		t.Errorf("commission = %v, want 6.40 despite no rate cell", trades[0].Commission)
+	}
+}
+
+// No actual commission and no rate cell -> commission NULL, net = gross
+// (the pre-existing "unconfigured -> NULL" honesty is preserved).
+func TestRebuild_NoActualNoRate_NullCommission(t *testing.T) {
+	b, q, _, _ := setupBuilder(t)
+	accID := noRateAccount(t, q, b.UserID)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("Rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("len(trades) = %d, want 1", len(trades))
+	}
+	tr := trades[0]
+	if tr.Commission != nil {
+		t.Errorf("commission = %v, want nil", *tr.Commission)
+	}
+	if tr.GrossPnl == nil || tr.NetPnl == nil || *tr.NetPnl != *tr.GrossPnl {
+		t.Errorf("net (%v) should equal gross (%v) when commission is NULL", tr.NetPnl, tr.GrossPnl)
+	}
+}
+
 func TestRebuild_SimpleShortClose(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"sell", 1, 7252, at(0)},
-		{"buy", 1, 7250, at(5)},
+		{"sell", 1, 7252, at(0), nil},
+		{"buy", 1, 7250, at(5), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -247,10 +413,10 @@ func TestRebuild_ScaleInScaleOut(t *testing.T) {
 	// Sell 1 @ 7256, sell 2 @ 7258 → avg exit = (7256 + 14516) / 3 = 7257.333...
 	// Gross = (7257.333 - 7251.333) * 50 * 3 = 6 * 50 * 3 = 900
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"buy", 2, 7252, at(1)},
-		{"sell", 1, 7256, at(2)},
-		{"sell", 2, 7258, at(3)},
+		{"buy", 1, 7250, at(0), nil},
+		{"buy", 2, 7252, at(1), nil},
+		{"sell", 1, 7256, at(2), nil},
+		{"sell", 2, 7258, at(3), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -279,9 +445,9 @@ func TestRebuild_PositionFlip(t *testing.T) {
 	// Long 2 @ 7250, sell 5 @ 7252 → close long 2 (gross +200), open short 3 @ 7252.
 	// Buy 3 @ 7251 → close short 3 (gross +50). Total: 2 trades.
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 2, 7250, at(0)},
-		{"sell", 5, 7252, at(5)},
-		{"buy", 3, 7251, at(10)},
+		{"buy", 2, 7250, at(0), nil},
+		{"sell", 5, 7252, at(5), nil},
+		{"buy", 3, 7251, at(10), nil},
 	})
 	res, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}})
 	if err != nil {
@@ -329,8 +495,8 @@ func TestRebuild_PositionFlip(t *testing.T) {
 func TestRebuild_OpenPositionDoesNotEmitTrade(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"buy", 1, 7251, at(5)},
+		{"buy", 1, 7250, at(0), nil},
+		{"buy", 1, 7251, at(5), nil},
 		// Position still open — never sold.
 	})
 	res, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}})
@@ -353,8 +519,8 @@ func TestRebuild_StubInstrumentLeavesPnLNull(t *testing.T) {
 		t.Fatalf("seed stub: %v", err)
 	}
 	insertSynthExecutions(t, q, accID, "XYZM6", "XYZ", []synthFill{
-		{"buy", 1, 100, at(0)},
-		{"sell", 1, 102, at(5)},
+		{"buy", 1, 100, at(0), nil},
+		{"sell", 1, 102, at(5), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "XYZM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -378,8 +544,8 @@ func TestRebuild_DailyStats(t *testing.T) {
 		return time.Date(2026, 5, 10, h, 0, 0, 0, time.UTC)
 	}
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, day(14)}, {"sell", 1, 7252, day(15)}, // gross 100, net ~96.02
-		{"buy", 1, 7253, day(16)}, {"sell", 1, 7251, day(17)}, // gross -100, net ~-103.98
+		{"buy", 1, 7250, day(14), nil}, {"sell", 1, 7252, day(15), nil}, // gross 100, net ~96.02
+		{"buy", 1, 7253, day(16), nil}, {"sell", 1, 7251, day(17), nil}, // gross -100, net ~-103.98
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("Rebuild: %v", err)
@@ -412,8 +578,8 @@ func TestRebuild_PreservesJournalLinkAcrossRebuild(t *testing.T) {
 	b, q, conn, accID := setupBuilder(t)
 	// First import: long 1 → out, produces one trade.
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"sell", 1, 7252, at(5)},
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("first rebuild: %v", err)
@@ -467,10 +633,10 @@ func TestRebuild_PreservesGroupJournalLinksAcrossRebuild(t *testing.T) {
 	// Two trades on the same account/symbol so we can verify multiple
 	// links survive (not just the first one).
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"sell", 1, 7252, at(5)},
-		{"sell", 1, 7260, at(20)},
-		{"buy", 1, 7258, at(25)},
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
+		{"sell", 1, 7260, at(20), nil},
+		{"buy", 1, 7258, at(25), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("first rebuild: %v", err)
@@ -550,8 +716,8 @@ func TestRebuild_PreservesGroupJournalLinksAcrossRebuild(t *testing.T) {
 func TestRebuild_GroupLinkDropsWhenSignalShifts(t *testing.T) {
 	b, q, conn, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"sell", 1, 7252, at(5)},
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("first rebuild: %v", err)
@@ -582,8 +748,8 @@ func TestRebuild_GroupLinkDropsWhenSignalShifts(t *testing.T) {
 		t.Fatalf("clear execs: %v", err)
 	}
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7300, at(120)}, // 2h later → different entry_time
-		{"sell", 1, 7302, at(125)},
+		{"buy", 1, 7300, at(120), nil}, // 2h later → different entry_time
+		{"sell", 1, 7302, at(125), nil},
 	})
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
 		t.Fatalf("rebuild after shift: %v", err)
@@ -603,8 +769,8 @@ func TestRebuild_GroupLinkDropsWhenSignalShifts(t *testing.T) {
 func TestRebuild_IdempotentReplay(t *testing.T) {
 	b, q, _, accID := setupBuilder(t)
 	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
-		{"buy", 1, 7250, at(0)},
-		{"sell", 1, 7252, at(5)},
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
 	})
 	for i := 0; i < 3; i++ {
 		if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {

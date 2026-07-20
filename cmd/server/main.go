@@ -27,6 +27,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/topstepx"
 	"github.com/w4jnl/trading-journal/web"
 )
 
@@ -385,6 +386,35 @@ func run() error {
 		importSvc.Prefetch = prefetcher
 	}
 
+	// TopstepX API sync: active only when an encryption key is configured
+	// (per-user credentials are stored AES-GCM encrypted under it) and the
+	// section isn't explicitly disabled. Nil = feature off; the settings card
+	// then shows setup instructions.
+	var topstepxSync *topstepx.SyncService
+	if keyBytes, ok := cfg.TopstepX.EncryptionKeyBytes(); ok &&
+		(cfg.TopstepX.Enabled == nil || *cfg.TopstepX.Enabled) {
+		box, err := topstepx.NewSecretBox(keyBytes)
+		if err != nil {
+			return fmt.Errorf("topstepx secret box: %w", err) // key length pre-validated; unexpected
+		}
+		client := &topstepx.Client{
+			BaseURL: cfg.TopstepX.BaseURL,
+			HTTP:    &http.Client{Timeout: time.Duration(cfg.TopstepX.HTTPTimeoutSec) * time.Second},
+		}
+		rthStart, rthEnd, _ := cfg.TopstepX.RTHWindowHM() // validated when rth_sync_min > 0
+		topstepxSync = topstepx.NewSyncService(queries, importSvc, client, box, topstepx.SyncOptions{
+			Throttle:     time.Duration(cfg.TopstepX.SyncThrottleMin) * time.Minute,
+			SessionEvery: time.Duration(cfg.TopstepX.SessionSyncMin) * time.Minute,
+			RTHEvery:     time.Duration(cfg.TopstepX.RTHSyncMin) * time.Minute,
+			RTHStartMin:  rthStart,
+			RTHEndMin:    rthEnd,
+		}, slog.Default())
+		slog.Info("topstepx api sync enabled",
+			"base_url", cfg.TopstepX.BaseURL, "throttle_min", cfg.TopstepX.SyncThrottleMin,
+			"session_sync_min", cfg.TopstepX.SessionSyncMin, "rth_sync_min", cfg.TopstepX.RTHSyncMin,
+			"rth_window", cfg.TopstepX.RTHWindow)
+	}
+
 	h := &handlers.Handlers{
 		Templates:        web.TemplatesFS,
 		DB:               conn,
@@ -402,6 +432,7 @@ func run() error {
 		MCPInstanceLabel: cfg.MCP.InstanceLabel,
 		AI:               aiClient,
 		AIJobs:           aiJobs,
+		TopstepxSync:     topstepxSync,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -437,6 +468,7 @@ func run() error {
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)
 	mux.HandleFunc("POST /accounts/{id}/balances", h.AccountsAddBalance)
 	mux.HandleFunc("POST /accounts/{id}/clone", h.AccountsClone)
+	mux.HandleFunc("POST /accounts/{id}/refetch", h.AccountsRefetch)
 	mux.HandleFunc("POST /balances/{anchor_id}/delete", h.BalanceDelete)
 	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)
 	// Commissions + instruments: everyone can view, only admins can modify.
@@ -464,6 +496,9 @@ func run() error {
 	mux.HandleFunc("POST /settings/api-keys/{id}/delete", h.APIKeyDelete)
 	mux.HandleFunc("POST /settings/language", h.SettingsLanguageSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
+	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
+	mux.HandleFunc("POST /settings/topstepx/test", h.SettingsTopstepxTest)
+	mux.HandleFunc("POST /settings/topstepx/delete", h.SettingsTopstepxDelete)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)
@@ -580,6 +615,16 @@ func run() error {
 			go prefetcher.ScheduleNightly(ctx, h, m)
 			slog.Info("market-data nightly refresh scheduled", "at", cfg.MarketData.NightlyRefresh)
 		}
+	}
+
+	// TopstepX API sync worker + hourly CME-hours scheduler + session-token
+	// maintainer (renews tokens via validate before they expire, so syncs and
+	// restarts never need a fresh login). Page-visit hooks feed the same
+	// queue; all stop on ctx cancellation.
+	if topstepxSync != nil {
+		go topstepxSync.Run(ctx)
+		go topstepxSync.Schedule(ctx)
+		go topstepxSync.MaintainTokens(ctx)
 	}
 
 	// Start the inbox watcher. Errors during individual imports are logged

@@ -24,6 +24,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/topstepx"
 )
 
 // Handlers groups every HTTP handler with its shared deps. main.go injects
@@ -67,6 +68,11 @@ type Handlers struct {
 	// from cfg.AI when ai.enabled.
 	AI     ai.Client
 	AIJobs *ai.JobManager
+
+	// TopstepxSync pulls trade history from the TopstepX API. Nil disables the
+	// feature (no topstepx.encryption_key configured); the enqueue hooks are
+	// nil-receiver-safe so page handlers call them unconditionally.
+	TopstepxSync *topstepx.SyncService
 
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys

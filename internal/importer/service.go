@@ -149,6 +149,24 @@ func (s *ImportService) ImportFileToAccountForUser(ctx context.Context, path str
 	return s.importFile(withUserScope(ctx, userID, username), path, accountID)
 }
 
+// ImportAPIFills ingests fills fetched from the TopstepX API for one user.
+// It reuses the entire CSV ingest pipeline (same tx, account auto-creation,
+// claim guard, instrument stubbing, FIFO rebuild, prefetch warm-up) under
+// FormatTopstepX, so API-sourced executions converge on the same
+// (user_id, 'topstepx_csv', account_ref) account rows and the same
+// (account_id, broker_exec_id) dedup space as the orders-CSV path. Unlike
+// the file entry points it writes no sync_log row and moves no files - the
+// caller (topstepx.SyncService) owns per-account logging.
+func (s *ImportService) ImportAPIFills(ctx context.Context, userID int64, username string, fills []Fill) (Outcome, error) {
+	ctx = withUserScope(ctx, userID, username)
+	out := Outcome{Format: FormatTopstepX, FillsParsed: len(fills)}
+	if err := s.ingest(ctx, fills, FormatTopstepX, &out); err != nil {
+		out.ErrorMessage = err.Error()
+		return out, err
+	}
+	return out, nil
+}
+
 // importFile is the shared body. forceAccountID=0 means "use the filename-
 // based resolver"; >0 means "ingest into this exact account".
 func (s *ImportService) importFile(ctx context.Context, path string, forceAccountID int64) (Outcome, error) {
@@ -338,6 +356,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			Side:         f.Side,
 			Qty:          f.Qty,
 			Price:        f.Price,
+			Commission:   f.Commission,
 			ExecTime:     f.ExecTime,
 			RawData:      raw,
 		})

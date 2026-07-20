@@ -7,6 +7,7 @@ package models
 
 import (
 	"context"
+	"time"
 )
 
 const createSyncLog = `-- name: CreateSyncLog :one
@@ -54,6 +55,54 @@ func (q *Queries) CreateSyncLog(ctx context.Context, arg CreateSyncLogParams) (S
 		&i.UserID,
 	)
 	return i, err
+}
+
+const listLastAPISyncPerAccount = `-- name: ListLastAPISyncPerAccount :many
+SELECT s1.account_id, s1.synced_at, s1.status, s1.message, s1.execs_added
+FROM sync_log s1
+WHERE s1.user_id = ? AND s1.sync_type = 'topstepx_api' AND s1.account_id IS NOT NULL
+  AND s1.id = (SELECT MAX(s2.id) FROM sync_log s2
+               WHERE s2.user_id = s1.user_id AND s2.sync_type = 'topstepx_api'
+                 AND s2.account_id = s1.account_id)
+ORDER BY s1.synced_at DESC
+`
+
+type ListLastAPISyncPerAccountRow struct {
+	AccountID  *int64    `json:"account_id"`
+	SyncedAt   time.Time `json:"synced_at"`
+	Status     string    `json:"status"`
+	Message    *string   `json:"message"`
+	ExecsAdded int64     `json:"execs_added"`
+}
+
+// Latest TopstepX API sync row per account, for settings/accounts display.
+func (q *Queries) ListLastAPISyncPerAccount(ctx context.Context, userID *int64) ([]ListLastAPISyncPerAccountRow, error) {
+	rows, err := q.db.QueryContext(ctx, listLastAPISyncPerAccount, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListLastAPISyncPerAccountRow
+	for rows.Next() {
+		var i ListLastAPISyncPerAccountRow
+		if err := rows.Scan(
+			&i.AccountID,
+			&i.SyncedAt,
+			&i.Status,
+			&i.Message,
+			&i.ExecsAdded,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listLastSyncByType = `-- name: ListLastSyncByType :many

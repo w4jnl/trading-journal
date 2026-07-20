@@ -120,6 +120,7 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"NavActive":      "accounts",
 		"BackHref":       validBackHref(r),
 		"Accounts":       accounts,
+		"TopstepxSync":   h.TopstepxSync != nil,
 		"FirmOptions":    []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
 		"TypeOptions":    accountTypeOptions(),
 		"Flash":          flash,
@@ -702,4 +703,43 @@ func boolToInt(b bool) int64 {
 		return 1
 	}
 	return 0
+}
+
+// AccountsRefetch: POST /accounts/{id}/refetch - queue a full TopstepX API
+// history re-fetch for one account (ignores the incremental window and the
+// api_backfill_done flag; dedup makes re-pulling safe). Only meaningful for
+// TopstepX fill-based accounts; inline (trades-CSV) accounts are refused, the
+// same rule the sync service applies.
+func (h *Handlers) AccountsRefetch(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if h.TopstepxSync == nil {
+		http.Redirect(w, r, "/accounts?err="+errToQuery(fmt.Errorf("TopstepX sync is not configured on this server")), http.StatusSeeOther)
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	uid := auth.MustUser(ctx).ID
+	acct, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: id, UserID: uid})
+	if err != nil {
+		http.Error(w, "account not found", http.StatusNotFound)
+		return
+	}
+	if acct.ImportSource != string(importer.FormatTopstepX) {
+		http.Redirect(w, r, "/accounts?err=only+TopstepX+accounts+can+be+re-fetched", http.StatusSeeOther)
+		return
+	}
+	claim, err := h.Queries.GetAccountImportClaim(ctx, models.GetAccountImportClaimParams{ID: acct.ID, UserID: uid})
+	if err != nil {
+		h.serverError(w, fmt.Errorf("read import claim: %w", err))
+		return
+	}
+	if claim == "trades" {
+		http.Redirect(w, r, "/accounts?err=account+is+trades-CSV+(inline)+imported;+API+sync+is+disabled+for+it", http.StatusSeeOther)
+		return
+	}
+	h.TopstepxSync.EnqueueAccountRefetch(uid, acct.ID)
+	http.Redirect(w, r, "/accounts?flash=refetch-queued", http.StatusSeeOther)
 }
