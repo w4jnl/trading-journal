@@ -5,46 +5,65 @@ import (
 	"time"
 )
 
-// Schedule runs an hourly sync fan-out at five past each hour, but only
-// inside the sync window (see InSyncWindow): the CME Globex session plus a
-// 2-hour margin on each side, so late-settling fills after the close and
-// pre-open activity are captured too. Each eligible user goes through
-// MaybeEnqueueUser, so the page-visit throttle still dedups against a sync a
-// user just triggered by browsing. Mirrors the backup.Schedule timer pattern.
+// schedulerTick is the resolution of the scheduler loop. Each tick is a
+// couple of map lookups and wall-clock comparisons - firing (and the API
+// traffic it implies) is governed by scheduledInterval, not the tick rate.
+const schedulerTick = time.Minute
+
+// Schedule runs the two-tier scheduled sync until ctx is done:
+//
+//   - RTH tier: every Opts.RTHEvery inside the RTH window (Mon-Fri,
+//     Opts.RTHStartMin..RTHEndMin Chicago - default equity RTH plus 1h each
+//     side), catching intraday fills quickly while the user is trading.
+//   - Session tier: every Opts.SessionEvery through the rest of the CME
+//     Globex session plus a 2h margin (InSyncWindow), keeping overnight
+//     activity reasonably fresh.
+//   - Closed (Saturday, post-close Friday, pre-open Sunday): no syncs.
+//
+// Fan-out goes through enqueueWithGap with half the active cadence as the
+// minimum gap, so a sync the user just triggered by browsing suppresses the
+// scheduled one instead of doubling it. Cadence changes take effect at the
+// window edges automatically because the interval is re-evaluated per tick.
 func (s *SyncService) Schedule(ctx context.Context) {
 	if s == nil {
 		return
 	}
+	ticker := time.NewTicker(schedulerTick)
+	defer ticker.Stop()
+	var lastFire time.Time
 	for {
-		next := nextHourlyTick(time.Now())
-		t := time.NewTimer(time.Until(next))
 		select {
 		case <-ctx.Done():
-			t.Stop()
 			return
-		case <-t.C:
+		case <-ticker.C:
 		}
-		if !InSyncWindow(time.Now(), s.chicago) {
-			s.Logger.Debug("topstepx: scheduler tick outside the CME sync window, skipped")
+		now := time.Now()
+		interval := s.scheduledInterval(now)
+		if interval <= 0 || now.Sub(lastFire) < interval {
 			continue
 		}
+		lastFire = now
 		users, err := s.Queries.ListTopstepxSyncUsers(ctx)
 		if err != nil {
 			s.Logger.Error("topstepx: list sync users", "err", err)
 			continue
 		}
-		s.Logger.Debug("topstepx: hourly sync tick", "users", len(users))
+		s.Logger.Debug("topstepx: scheduled sync tick", "users", len(users), "cadence", interval.String())
 		for _, uid := range users {
-			s.MaybeEnqueueUser(uid)
+			s.enqueueWithGap(uid, interval/2)
 		}
 	}
 }
 
-// nextHourlyTick returns the next hh:05:00 after now.
-func nextHourlyTick(now time.Time) time.Time {
-	tick := time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 5, 0, 0, now.Location())
-	if !tick.After(now) {
-		tick = tick.Add(time.Hour)
+// scheduledInterval returns the sync cadence in effect at t: the RTH cadence
+// inside the RTH window, the session cadence inside the Globex sync window,
+// 0 when the market is closed (or that tier is disabled in config).
+func (s *SyncService) scheduledInterval(t time.Time) time.Duration {
+	if s.Opts.RTHEvery > 0 && InRTHWindow(t, s.chicago, s.Opts.RTHStartMin, s.Opts.RTHEndMin) {
+		return s.Opts.RTHEvery
 	}
-	return tick
+	if s.Opts.SessionEvery > 0 && InSyncWindow(t, s.chicago) {
+		return s.Opts.SessionEvery
+	}
+	return 0
 }

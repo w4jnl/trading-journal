@@ -103,6 +103,15 @@ topstepx:
   http_timeout_sec: 15
   # Minimum minutes between page-visit-triggered syncs per user.
   sync_throttle_min: 15
+  # Scheduled sync cadences (minutes; 0 disables a tier):
+  #  - session_sync_min runs through the whole CME Globex session +/- 2h
+  #    (Sun 15:00 - Fri 18:00 Chicago, Sat off).
+  #  - rth_sync_min speeds up inside rth_window (Mon-Fri, Chicago time);
+  #    the default window is equity-futures RTH 08:30-15:00 CT plus one
+  #    hour before and after.
+  session_sync_min: 60
+  rth_sync_min: 15
+  rth_window: "07:30-16:00"
 
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.

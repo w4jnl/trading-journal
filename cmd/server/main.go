@@ -401,10 +401,18 @@ func run() error {
 			BaseURL: cfg.TopstepX.BaseURL,
 			HTTP:    &http.Client{Timeout: time.Duration(cfg.TopstepX.HTTPTimeoutSec) * time.Second},
 		}
-		topstepxSync = topstepx.NewSyncService(queries, importSvc, client, box,
-			time.Duration(cfg.TopstepX.SyncThrottleMin)*time.Minute, slog.Default())
+		rthStart, rthEnd, _ := cfg.TopstepX.RTHWindowHM() // validated when rth_sync_min > 0
+		topstepxSync = topstepx.NewSyncService(queries, importSvc, client, box, topstepx.SyncOptions{
+			Throttle:     time.Duration(cfg.TopstepX.SyncThrottleMin) * time.Minute,
+			SessionEvery: time.Duration(cfg.TopstepX.SessionSyncMin) * time.Minute,
+			RTHEvery:     time.Duration(cfg.TopstepX.RTHSyncMin) * time.Minute,
+			RTHStartMin:  rthStart,
+			RTHEndMin:    rthEnd,
+		}, slog.Default())
 		slog.Info("topstepx api sync enabled",
-			"base_url", cfg.TopstepX.BaseURL, "throttle_min", cfg.TopstepX.SyncThrottleMin)
+			"base_url", cfg.TopstepX.BaseURL, "throttle_min", cfg.TopstepX.SyncThrottleMin,
+			"session_sync_min", cfg.TopstepX.SessionSyncMin, "rth_sync_min", cfg.TopstepX.RTHSyncMin,
+			"rth_window", cfg.TopstepX.RTHWindow)
 	}
 
 	h := &handlers.Handlers{

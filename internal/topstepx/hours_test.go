@@ -43,6 +43,38 @@ func TestInGlobexHours(t *testing.T) {
 	}
 }
 
+// InRTHWindow: Mon-Fri within the configured minutes-of-day, Chicago.
+// Bounds here are the default 07:30-16:00 (RTH 08:30-15:00 +/- 1h).
+func TestInRTHWindow(t *testing.T) {
+	chi, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Fatalf("load tz: %v", err)
+	}
+	const start, end = 7*60 + 30, 16 * 60
+	ct := func(d, hh, mm int) time.Time {
+		return time.Date(2026, 7, d, hh, mm, 0, 0, chi) // 2026-07-13 = Monday
+	}
+	cases := []struct {
+		name string
+		t    time.Time
+		want bool
+	}{
+		{"monday before window", ct(13, 7, 29), false},
+		{"monday window opens", ct(13, 7, 30), true},
+		{"monday mid RTH", ct(13, 12, 0), true},
+		{"monday last minute", ct(13, 15, 59), true},
+		{"monday window closes", ct(13, 16, 0), false},
+		{"friday mid RTH", ct(17, 10, 0), true},
+		{"saturday off", ct(18, 10, 0), false},
+		{"sunday off", ct(19, 10, 0), false},
+	}
+	for _, c := range cases {
+		if got := InRTHWindow(c.t, chi, start, end); got != c.want {
+			t.Errorf("%s: InRTHWindow(%v) = %v, want %v", c.name, c.t, got, c.want)
+		}
+	}
+}
+
 // InSyncWindow = Globex session +/- 2h: effectively Sunday 15:00 through
 // Friday 18:00 Chicago, Saturday off, with the daily maintenance break
 // swallowed by the margin.

@@ -68,7 +68,13 @@ func setupSync(t *testing.T) (*SyncService, *fakeAPI, *models.Queries, int64) {
 	imp := &importer.ImportService{DB: conn, Queries: q, Timezone: loc, UserID: uid}
 	api := &fakeAPI{}
 	box, _ := NewSecretBox(bytes.Repeat([]byte{7}, 32))
-	svc := NewSyncService(q, imp, api, box, 15*time.Minute, nil)
+	svc := NewSyncService(q, imp, api, box, SyncOptions{
+		Throttle:     15 * time.Minute,
+		SessionEvery: time.Hour,
+		RTHEvery:     15 * time.Minute,
+		RTHStartMin:  7*60 + 30, // 07:30 Chicago
+		RTHEndMin:    16 * 60,   // 16:00 Chicago
+	}, nil)
 
 	// Store working credentials for the bootstrap user.
 	ct, nonce, _ := box.Seal("api-key")
@@ -275,7 +281,7 @@ func TestTokenLifecycle(t *testing.T) {
 	}
 
 	// "Restart": a brand-new service over the same DB still needs no auth.
-	svc2 := NewSyncService(svc.Queries, svc.Importer, api, svc.Box, 15*time.Minute, nil)
+	svc2 := NewSyncService(svc.Queries, svc.Importer, api, svc.Box, SyncOptions{Throttle: 15 * time.Minute}, nil)
 	tok, err = svc2.token(ctx, loadCreds(t, q, uid), "api-key")
 	if err != nil || tok != "tok-login" {
 		t.Fatalf("post-restart token = (%q, %v)", tok, err)

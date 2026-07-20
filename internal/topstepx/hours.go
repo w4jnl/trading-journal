@@ -41,3 +41,17 @@ func InSyncWindow(t time.Time, chicago *time.Location) bool {
 		InGlobexHours(t.Add(-syncWindowMargin), chicago) ||
 		InGlobexHours(t.Add(syncWindowMargin), chicago)
 }
+
+// InRTHWindow reports whether t falls in the fast-sync window: Monday-Friday
+// between startMin and endMin (minutes-of-day, Chicago wall clock, end
+// exclusive). The configured default covers equity-futures RTH 08:30-15:00
+// CT plus one hour before and after (07:30-16:00).
+func InRTHWindow(t time.Time, chicago *time.Location, startMin, endMin int) bool {
+	lt := t.In(chicago)
+	switch lt.Weekday() {
+	case time.Saturday, time.Sunday:
+		return false
+	}
+	mins := lt.Hour()*60 + lt.Minute()
+	return mins >= startMin && mins < endMin
+}

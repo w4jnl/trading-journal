@@ -39,6 +39,43 @@ type TopstepX struct {
 	EncryptionKey   string `yaml:"encryption_key"`    // 64 hex chars (32 bytes); env TJ_TOPSTEPX_ENC_KEY
 	HTTPTimeoutSec  int    `yaml:"http_timeout_sec"`  // default 15
 	SyncThrottleMin int    `yaml:"sync_throttle_min"` // min minutes between page-visit syncs per user; default 15
+
+	// Scheduled-sync cadences. The scheduler runs at SessionSyncMin
+	// throughout the CME Globex session (plus a 2h margin each side) and
+	// speeds up to RTHSyncMin inside RTHWindow. 0 disables that tier.
+	SessionSyncMin int `yaml:"session_sync_min"` // default 60
+	RTHSyncMin     int `yaml:"rth_sync_min"`     // default 15
+	// RTHWindow is the fast-cadence window, "HH:MM-HH:MM" in Chicago time,
+	// Monday-Friday. Default "07:30-16:00" = equity-futures RTH
+	// (08:30-15:00 CT) plus one hour before and after.
+	RTHWindow string `yaml:"rth_window"`
+}
+
+// RTHWindowHM parses RTHWindow into start/end minutes-of-day (Chicago).
+// ok=false when the string is not "HH:MM-HH:MM" with start < end.
+func (t TopstepX) RTHWindowHM() (startMin, endMin int, ok bool) {
+	parts := strings.Split(t.RTHWindow, "-")
+	if len(parts) != 2 {
+		return 0, 0, false
+	}
+	parse := func(s string) (int, bool) {
+		hm := strings.Split(strings.TrimSpace(s), ":")
+		if len(hm) != 2 {
+			return 0, false
+		}
+		h, err1 := strconv.Atoi(hm[0])
+		m, err2 := strconv.Atoi(hm[1])
+		if err1 != nil || err2 != nil || h < 0 || h > 23 || m < 0 || m > 59 {
+			return 0, false
+		}
+		return h*60 + m, true
+	}
+	start, ok1 := parse(parts[0])
+	end, ok2 := parse(parts[1])
+	if !ok1 || !ok2 || start >= end {
+		return 0, 0, false
+	}
+	return start, end, true
 }
 
 // EncryptionKeyBytes decodes the hex key; ok=false when unset or malformed.
@@ -194,8 +231,11 @@ func defaults() Config {
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
 		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30"},
 		AI:         AI{Provider: "openai", BaseURL: "http://0.0.0.0:8080/v1", TimeoutSec: 120, MaxTokens: 1024, Temperature: 0.4},
-		TopstepX:   TopstepX{BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15},
-		Timezone:   "America/Chicago",
+		TopstepX: TopstepX{
+			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15,
+			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
+		},
+		Timezone: "America/Chicago",
 	}
 }
 
@@ -264,6 +304,17 @@ func (c Config) Validate() error {
 	}
 	if c.TopstepX.SyncThrottleMin < 0 {
 		return fmt.Errorf("topstepx.sync_throttle_min must be >= 0, got %d", c.TopstepX.SyncThrottleMin)
+	}
+	if c.TopstepX.SessionSyncMin < 0 {
+		return fmt.Errorf("topstepx.session_sync_min must be >= 0 (0 disables), got %d", c.TopstepX.SessionSyncMin)
+	}
+	if c.TopstepX.RTHSyncMin < 0 {
+		return fmt.Errorf("topstepx.rth_sync_min must be >= 0 (0 disables), got %d", c.TopstepX.RTHSyncMin)
+	}
+	if c.TopstepX.RTHSyncMin > 0 {
+		if _, _, ok := c.TopstepX.RTHWindowHM(); !ok {
+			return fmt.Errorf("topstepx.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.TopstepX.RTHWindow)
+		}
 	}
 	return nil
 }

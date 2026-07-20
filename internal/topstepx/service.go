@@ -56,13 +56,22 @@ type syncJob struct {
 //
 // A nil *SyncService is a valid no-op receiver on the enqueue methods, so
 // handlers can call them unconditionally (mirrors marketdata.Prefetcher).
+// SyncOptions bundles the cadence/throttle knobs from config.
+type SyncOptions struct {
+	Throttle     time.Duration // min gap between page-visit syncs per user; <=0 -> 15m
+	SessionEvery time.Duration // scheduled cadence in the Globex window; 0 disables
+	RTHEvery     time.Duration // faster cadence inside the RTH window; 0 disables
+	RTHStartMin  int           // RTH window bounds, minutes-of-day Chicago
+	RTHEndMin    int
+}
+
 type SyncService struct {
 	Queries  *models.Queries
 	Importer *importer.ImportService
 	Client   apiClient
 	Box      *SecretBox
 	Logger   *slog.Logger
-	Throttle time.Duration // min gap between page-visit-triggered syncs per user
+	Opts     SyncOptions
 
 	chicago *time.Location // CME session clock for Schedule
 
@@ -72,11 +81,10 @@ type SyncService struct {
 	jobs    chan syncJob
 }
 
-// NewSyncService wires a ready-to-Run service. throttle <= 0 falls back to
-// 15 minutes.
-func NewSyncService(q *models.Queries, imp *importer.ImportService, client apiClient, box *SecretBox, throttle time.Duration, logger *slog.Logger) *SyncService {
-	if throttle <= 0 {
-		throttle = 15 * time.Minute
+// NewSyncService wires a ready-to-Run service.
+func NewSyncService(q *models.Queries, imp *importer.ImportService, client apiClient, box *SecretBox, opts SyncOptions, logger *slog.Logger) *SyncService {
+	if opts.Throttle <= 0 {
+		opts.Throttle = 15 * time.Minute
 	}
 	if logger == nil {
 		logger = slog.Default()
@@ -92,7 +100,7 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, client apiCl
 		Client:   client,
 		Box:      box,
 		Logger:   logger,
-		Throttle: throttle,
+		Opts:     opts,
 		chicago:  chicago,
 		lastRun:  map[int64]time.Time{},
 		pending:  map[int64]bool{},
@@ -104,12 +112,23 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, client apiCl
 // already pending or ran within the throttle window. Never blocks; safe on a
 // nil receiver (feature disabled).
 func (s *SyncService) MaybeEnqueueUser(userID int64) {
-	if s == nil || userID == 0 {
+	if s == nil {
+		return
+	}
+	s.enqueueWithGap(userID, s.Opts.Throttle)
+}
+
+// enqueueWithGap enqueues a whole-user sync unless one is pending or the
+// last one finished less than minGap ago. The page-visit hook uses the
+// configured throttle; the scheduler passes half its cadence so a sync a
+// user just triggered by browsing isn't pointlessly repeated seconds later.
+func (s *SyncService) enqueueWithGap(userID int64, minGap time.Duration) {
+	if userID == 0 {
 		return
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.pending[userID] || time.Since(s.lastRun[userID]) < s.Throttle {
+	if s.pending[userID] || time.Since(s.lastRun[userID]) < minGap {
 		return
 	}
 	select {
