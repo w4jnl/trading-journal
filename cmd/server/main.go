@@ -24,6 +24,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/config"
 	"github.com/w4jnl/trading-journal/internal/db"
 	"github.com/w4jnl/trading-journal/internal/handlers"
+	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -415,6 +416,19 @@ func run() error {
 			"rth_window", cfg.TopstepX.RTHWindow)
 	}
 
+	// IBKR live sync: gateways are per-user DB rows managed in settings; the
+	// config only gates the feature and sets cadences.
+	var ibkrSync *ibkr.SyncService
+	if cfg.IBKR.Enabled == nil || *cfg.IBKR.Enabled {
+		ibkrSync = ibkr.NewSyncService(queries, importSvc, ibkr.SyncOptions{
+			Throttle:    time.Duration(cfg.TopstepX.SyncThrottleMin) * time.Minute,
+			PollEvery:   time.Duration(cfg.IBKR.PollIntervalMin) * time.Minute,
+			TickleEvery: time.Duration(cfg.IBKR.TickleSec) * time.Second,
+		}, slog.Default())
+		slog.Info("ibkr live sync enabled",
+			"poll_interval_min", cfg.IBKR.PollIntervalMin, "tickle_sec", cfg.IBKR.TickleSec)
+	}
+
 	h := &handlers.Handlers{
 		Templates:        web.TemplatesFS,
 		DB:               conn,
@@ -433,6 +447,7 @@ func run() error {
 		AI:               aiClient,
 		AIJobs:           aiJobs,
 		TopstepxSync:     topstepxSync,
+		IbkrSync:         ibkrSync,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -469,6 +484,7 @@ func run() error {
 	mux.HandleFunc("POST /accounts/{id}/balances", h.AccountsAddBalance)
 	mux.HandleFunc("POST /accounts/{id}/clone", h.AccountsClone)
 	mux.HandleFunc("POST /accounts/{id}/refetch", h.AccountsRefetch)
+	mux.HandleFunc("POST /accounts/{id}/livesync-reset", h.AccountsLivesyncReset)
 	mux.HandleFunc("POST /balances/{anchor_id}/delete", h.BalanceDelete)
 	mux.HandleFunc("POST /accounts/{id}", h.AccountUpdate)
 	// Commissions + instruments: everyone can view, only admins can modify.
@@ -499,6 +515,10 @@ func run() error {
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
 	mux.HandleFunc("POST /settings/topstepx/test", h.SettingsTopstepxTest)
 	mux.HandleFunc("POST /settings/topstepx/delete", h.SettingsTopstepxDelete)
+	mux.HandleFunc("POST /settings/ibkr/gateways", h.SettingsIbkrGatewayCreate)
+	mux.HandleFunc("POST /settings/ibkr/gateways/{id}/test", h.SettingsIbkrGatewayTest)
+	mux.HandleFunc("POST /settings/ibkr/gateways/{id}/toggle", h.SettingsIbkrGatewayToggle)
+	mux.HandleFunc("POST /settings/ibkr/gateways/{id}/delete", h.SettingsIbkrGatewayDelete)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)
@@ -625,6 +645,14 @@ func run() error {
 		go topstepxSync.Run(ctx)
 		go topstepxSync.Schedule(ctx)
 		go topstepxSync.MaintainTokens(ctx)
+	}
+
+	// IBKR gateway polling: worker + flat-cadence scheduler + session
+	// keep-alive (tickle/reauthenticate).
+	if ibkrSync != nil {
+		go ibkrSync.Run(ctx)
+		go ibkrSync.Schedule(ctx)
+		go ibkrSync.KeepAlive(ctx)
 	}
 
 	// Start the inbox watcher. Errors during individual imports are logged

@@ -55,6 +55,7 @@ type weekTotal struct {
 func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
+	h.IbkrSync.MaybeEnqueueUser(userID(ctx))     // throttled IBKR gateway poll; nil-safe
 	tz := h.localTZ()
 
 	monthStart, err := parseMonth(r.URL.Query().Get("month"), tz)

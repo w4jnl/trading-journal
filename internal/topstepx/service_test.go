@@ -190,7 +190,7 @@ func TestSyncUser_InlineAccountSkipped(t *testing.T) {
 	if err := svc.syncUser(ctx, syncJob{UserID: uid}); err != nil {
 		t.Fatalf("syncUser: %v", err)
 	}
-	rows, _ := q.ListLastAPISyncPerAccount(ctx, &uid)
+	rows, _ := q.ListLastAPISyncPerAccount(ctx, models.ListLastAPISyncPerAccountParams{UserID: &uid, SyncType: "topstepx_api"})
 	if len(rows) != 1 || rows[0].Status != "skipped" || *rows[0].AccountID != acct.ID {
 		t.Fatalf("want one skipped row for the inline account, got %+v", rows)
 	}

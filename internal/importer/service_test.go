@@ -443,3 +443,80 @@ func assertSyncLogCount(t *testing.T, conn *sql.DB, want int, status string) {
 		t.Errorf("sync_log[status=%q] count = %d, want %d", status, got, want)
 	}
 }
+
+// TestImportFile_LiveSyncCutoverFilter proves the CSV/API time partition:
+// once accounts.live_sync_since is set, MotiveWave rows at/after it are
+// skipped on import (the live API owns that era), rows before it still
+// import, other accounts are untouched, and API-sourced ingests
+// (ImportAPIFills) are exempt from the filter.
+func TestImportFile_LiveSyncCutoverFilter(t *testing.T) {
+	svc, conn, tmp, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+
+	writeCSV := func(name, content string) string {
+		p := filepath.Join(tmp, name)
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	header := "Account,Ticket,Underlying,Symbol,Exchange,Time,Action,Quantity,Price,Source\n"
+
+	// First import creates the IBKR account (no cutover yet): both rows land.
+	out, err := svc.ImportFile(ctx, writeCSV("mw1.csv", header+
+		`U10000001,900001,ES,ESM6,CME,"05/04/2026 10:00:00.000+0000",BOT,1,7000,"Interactive Brokers"`+"\n"+
+		`U10000001,900002,ES,ESM6,CME,"05/04/2026 11:00:00.000+0000",SLD,1,7001,"Interactive Brokers"`+"\n"))
+	if err != nil || out.ExecsInserted != 2 || out.FillsFiltered != 0 {
+		t.Fatalf("baseline import = inserted %d filtered %d err %v", out.ExecsInserted, out.FillsFiltered, err)
+	}
+
+	acct, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
+		UserID: svc.UserID, ImportSource: "motivewave_csv", AccountRef: "U10000001",
+	})
+	if err != nil {
+		t.Fatalf("account: %v", err)
+	}
+	cutover := time.Date(2026, 5, 10, 0, 0, 0, 0, time.UTC)
+	if err := q.SetAccountLiveSyncSince(ctx, models.SetAccountLiveSyncSinceParams{
+		LiveSyncSince: &cutover, ID: acct.ID, UserID: svc.UserID,
+	}); err != nil {
+		t.Fatalf("set cutover: %v", err)
+	}
+
+	// Second file: one pre-cutover row (imports), one post-cutover row for
+	// the live-synced account (filtered), one post-cutover row for a
+	// DIFFERENT account (imports - filter is per account).
+	out, err = svc.ImportFile(ctx, writeCSV("mw2.csv", header+
+		`U10000001,900003,ES,ESM6,CME,"05/09/2026 10:00:00.000+0000",BOT,1,7002,"Interactive Brokers"`+"\n"+
+		`U10000001,900004,ES,ESM6,CME,"05/11/2026 10:00:00.000+0000",SLD,1,7003,"Interactive Brokers"`+"\n"+
+		`APEX-100001-28,900005,ES,ESM6,CME,"05/11/2026 10:00:00.000+0000",BOT,1,7004,"Rithmic"`+"\n"))
+	if err != nil {
+		t.Fatalf("filtered import: %v", err)
+	}
+	if out.ExecsInserted != 2 || out.FillsFiltered != 1 {
+		t.Errorf("filtered import = inserted %d filtered %d, want 2/1", out.ExecsInserted, out.FillsFiltered)
+	}
+	if _, err := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{
+		AccountID: acct.ID, BrokerExecID: "900004",
+	}); err == nil {
+		t.Error("post-cutover MW row was inserted despite live sync")
+	}
+
+	// API-sourced ingest is exempt: a post-cutover fill goes straight in.
+	comm := 2.22
+	apiOut, err := svc.ImportAPIFills(ctx, svc.UserID, "", []Fill{{
+		AccountRef: "U10000001", BrokerExecID: "0000aaaa.1111", Symbol: "ESM6", SymbolRoot: "ES",
+		Source: "Interactive Brokers", Side: "buy", Qty: 1, Price: 7005, Commission: &comm,
+		ExecTime: time.Date(2026, 5, 12, 10, 0, 0, 0, time.UTC),
+	}}, FormatMotiveWave)
+	if err != nil || apiOut.ExecsInserted != 1 || apiOut.FillsFiltered != 0 {
+		t.Fatalf("api ingest = inserted %d filtered %d err %v", apiOut.ExecsInserted, apiOut.FillsFiltered, err)
+	}
+	exec, err := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{
+		AccountID: acct.ID, BrokerExecID: "0000aaaa.1111",
+	})
+	if err != nil || exec.Commission == nil || *exec.Commission != 2.22 {
+		t.Errorf("api fill commission = %v err %v, want 2.22", exec.Commission, err)
+	}
+}

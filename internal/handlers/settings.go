@@ -79,7 +79,9 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		if c, err := h.Queries.GetTopstepxCredentials(ctx, userID(ctx)); err == nil {
 			tsxCreds = &c
 			uid := userID(ctx)
-			if rows, err := h.Queries.ListLastAPISyncPerAccount(ctx, &uid); err == nil {
+			if rows, err := h.Queries.ListLastAPISyncPerAccount(ctx, models.ListLastAPISyncPerAccountParams{
+				UserID: &uid, SyncType: "topstepx_api",
+			}); err == nil {
 				nameByID := map[int64]string{}
 				for _, a := range accounts {
 					nameByID[a.ID] = a.Name
@@ -101,6 +103,48 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		}
 	}
 
+	// IBKR live sync card: the user's gateways + runtime state + last syncs.
+	var ibkrGateways []ibkrGatewayRow
+	var ibkrSyncs []topstepxSyncRow // same row shape as the TopstepX table
+	if h.IbkrSync != nil {
+		gws, err := h.Queries.ListIbkrGatewaysForUser(ctx, userID(ctx))
+		if err == nil {
+			states := h.IbkrSync.GatewayStates(userID(ctx))
+			for _, gw := range gws {
+				row := ibkrGatewayRow{Gateway: gw, State: "unknown"}
+				if st, ok := states[gw.ID]; ok {
+					row.State, row.LastPoll, row.LastErr, row.Accounts = st.State, st.LastPoll, st.LastErr, st.Accounts
+				}
+				if gw.Enabled == 0 {
+					row.State = "disabled"
+				}
+				ibkrGateways = append(ibkrGateways, row)
+			}
+		}
+		uid := userID(ctx)
+		if rows, err := h.Queries.ListLastAPISyncPerAccount(ctx, models.ListLastAPISyncPerAccountParams{
+			UserID: &uid, SyncType: "ibkr_api",
+		}); err == nil {
+			nameByID := map[int64]string{}
+			for _, a := range accounts {
+				nameByID[a.ID] = a.Name
+			}
+			for _, row := range rows {
+				name := "(gateway)"
+				if row.AccountID != nil {
+					name = nameByID[*row.AccountID]
+				}
+				msg := ""
+				if row.Message != nil {
+					msg = *row.Message
+				}
+				ibkrSyncs = append(ibkrSyncs, topstepxSyncRow{
+					AccountName: name, Status: row.Status, Message: msg, SyncedAt: row.SyncedAt,
+				})
+			}
+		}
+	}
+
 	h.renderPage(w, r, "settings.html", map[string]any{
 		"NavActive":       "settings",
 		"BackHref":        validBackHref(r),
@@ -114,9 +158,21 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"TopstepxEnabled": h.TopstepxSync != nil,
 		"TopstepxCreds":   tsxCreds,
 		"TopstepxSyncs":   tsxSyncs,
+		"IbkrEnabled":     h.IbkrSync != nil,
+		"IbkrGateways":    ibkrGateways,
+		"IbkrSyncs":       ibkrSyncs,
 		"Flash":           r.URL.Query().Get("flash"),
 		"Err":             r.URL.Query().Get("err"),
 	})
+}
+
+// ibkrGatewayRow joins a stored gateway with its in-memory runtime state.
+type ibkrGatewayRow struct {
+	Gateway  models.IbkrGateway
+	State    string // connected | needs-login | unreachable | unknown | disabled
+	LastPoll time.Time
+	LastErr  string
+	Accounts []string
 }
 
 // topstepxSyncRow is one per-account "last sync" line on the settings card.

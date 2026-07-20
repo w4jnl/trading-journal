@@ -21,6 +21,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -73,6 +74,10 @@ type Handlers struct {
 	// feature (no topstepx.encryption_key configured); the enqueue hooks are
 	// nil-receiver-safe so page handlers call them unconditionally.
 	TopstepxSync *topstepx.SyncService
+
+	// IbkrSync polls the user-configured IBKR Client Portal Gateways. Nil
+	// disables the feature (ibkr.enabled=false); enqueue hooks nil-safe.
+	IbkrSync *ibkr.SyncService
 
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys

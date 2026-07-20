@@ -19,6 +19,10 @@
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
 {{if eq .Flash "topstepx-test-ok"}}<div class="flash saved mb-16">TopstepX connection OK.</div>{{end}}
 {{if eq .Flash "topstepx-removed"}}<div class="flash saved mb-16">TopstepX credentials removed; automatic sync stopped.</div>{{end}}
+{{if eq .Flash "ibkr-added"}}<div class="flash saved mb-16">Gateway added — first poll is running in the background.</div>{{end}}
+{{if eq .Flash "ibkr-test-ok"}}<div class="flash saved mb-16">Gateway reachable and authenticated.</div>{{end}}
+{{if eq .Flash "ibkr-updated"}}<div class="flash saved mb-16">Gateway updated.</div>{{end}}
+{{if eq .Flash "ibkr-removed"}}<div class="flash saved mb-16">Gateway removed; its synced trades stay.</div>{{end}}
 {{if .Err}}<div class="flash error mb-16" role="alert">{{.Err}}</div>{{end}}
 
 <div class="card mb-16">
@@ -229,6 +233,91 @@
       <input type="password" name="topstepx_api_key" required autocomplete="new-password" style="width: 280px;"></label>
     <button type="submit" class="btn btn--primary btn--sm" style="align-self: flex-end;">Verify &amp; save</button>
   </form>
+  {{end}}
+</div>
+{{end}}
+
+{{if .IbkrEnabled}}
+<div class="card mb-16">
+  <div class="card-title">IBKR live sync</div>
+  <p class="muted" style="font-size: 12px;">
+    Trades sync from your self-hosted Client Portal Gateway(s) — one per IB login.
+    The gateway must be logged in via its own browser page (2FA); the app keeps the
+    session alive and pulls the rolling 7-day trade window. History older than the
+    cutover stays with MotiveWave CSV imports; newer MotiveWave rows for live-synced
+    accounts are skipped automatically to prevent double-counting.
+  </p>
+  {{if .IbkrGateways}}
+  <table style="font-size: 12px; margin: 10px 0;">
+    <thead><tr>
+      <th style="text-align:left; padding-right:12px;">Gateway</th>
+      <th style="text-align:left; padding-right:12px;">URL</th>
+      <th style="text-align:left; padding-right:12px;">Status</th>
+      <th style="text-align:left; padding-right:12px;">Accounts</th>
+      <th style="text-align:left; padding-right:12px;">Last poll</th>
+      <th></th>
+    </tr></thead>
+    <tbody>
+      {{range .IbkrGateways}}
+      <tr>
+        <td style="padding-right:12px;"><strong>{{.Gateway.Name}}</strong></td>
+        <td style="padding-right:12px;"><code style="font-size:11px;">{{.Gateway.Url}}</code></td>
+        <td style="padding-right:12px;">
+          {{if eq .State "connected"}}<span class="pill success">connected</span>
+          {{else if eq .State "needs-login"}}<span class="pill error" title="Open the gateway URL in a browser and log in.">needs login</span>
+          {{else if eq .State "unreachable"}}<span class="pill error">unreachable</span>
+          {{else if eq .State "disabled"}}<span class="pill">disabled</span>
+          {{else}}<span class="pill">pending</span>{{end}}
+        </td>
+        <td style="padding-right:12px;" class="muted">{{range $i, $a := .Accounts}}{{if $i}}, {{end}}{{$a}}{{end}}</td>
+        <td style="padding-right:12px;" class="muted">{{if .LastPoll.IsZero}}—{{else}}{{ltime .LastPoll "datetime"}}{{end}}</td>
+        <td>
+          <form method="post" action="/settings/ibkr/gateways/{{.Gateway.ID}}/test" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn--secondary btn--sm">Test</button>
+          </form>
+          <form method="post" action="/settings/ibkr/gateways/{{.Gateway.ID}}/toggle" style="display:inline;">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn--ghost btn--sm">{{if eq .Gateway.Enabled 1}}Disable{{else}}Enable{{end}}</button>
+          </form>
+          <form method="post" action="/settings/ibkr/gateways/{{.Gateway.ID}}/delete" style="display:inline;"
+                onsubmit="return confirm('Remove gateway {{.Gateway.Name}}? Synced trades stay; polling stops.');">
+            <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+            <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  {{end}}
+  <form method="post" action="/settings/ibkr/gateways" class="row-sm" style="margin: 10px 0; gap: 8px; flex-wrap: wrap; align-items: flex-end;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label class="field"><span class="field-label">Name</span>
+      <input type="text" name="gateway_name" required placeholder="main" style="width: 120px;"></label>
+    <label class="field"><span class="field-label">Gateway URL</span>
+      <input type="text" name="gateway_url" required placeholder="https://ibgw.example.com:4005" style="width: 280px;"></label>
+    <label class="field" style="flex-direction: row; align-items: center; gap: 6px;">
+      <input type="checkbox" name="tls_insecure" checked>
+      <span class="field-label" style="margin: 0;">self-signed certificate</span></label>
+    <button type="submit" class="btn btn--primary btn--sm">+ Add gateway</button>
+  </form>
+  {{if .IbkrSyncs}}
+  <div style="margin-top: 12px;">
+    <div class="muted" style="font-size: 12px; margin-bottom: 4px;">Last sync per account</div>
+    <table style="font-size: 12px;">
+      <tbody>
+        {{range .IbkrSyncs}}
+        <tr>
+          <td style="padding-right: 12px;"><strong>{{.AccountName}}</strong></td>
+          <td style="padding-right: 12px;">{{if eq .Status "success"}}<span class="pill success">ok</span>{{else}}<span class="pill error">error</span>{{end}}</td>
+          <td style="padding-right: 12px;">{{ltime .SyncedAt "datetime"}}</td>
+          <td class="muted">{{.Message}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
   {{end}}
 </div>
 {{end}}
