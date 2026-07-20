@@ -521,7 +521,7 @@ func (s *SyncService) syncAccount(ctx context.Context, job syncJob, apiAcct Acco
 
 	var execsAdded, tradesAdded int64
 	if len(fills) > 0 {
-		out, err := s.Importer.ImportAPIFills(ctx, job.UserID, "", fills)
+		out, err := s.Importer.ImportAPIFills(ctx, job.UserID, "", fills, importer.FormatTopstepX)
 		if err != nil {
 			s.logAccountError(ctx, job.UserID, known, local.ID, "ingest: "+err.Error())
 			return err

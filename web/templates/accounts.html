@@ -15,6 +15,7 @@
 {{if eq .Flash "balanced"}}<div class="flash saved">Balance saved.</div>{{end}}
 {{if eq .Flash "cloned"}}<div class="flash created">Account cloned.</div>{{end}}
 {{if eq .Flash "refetch-queued"}}<div class="flash saved">Full history re-fetch queued — trades update in the background (existing fills are deduplicated).</div>{{end}}
+{{if eq .Flash "cutover-reset"}}<div class="flash saved">Live-sync cutover moved to now — import a fresh MotiveWave export to backfill the gap; rows after the new cutover stay API-owned.</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
 
 <div class="card card--warn mb-16">
@@ -156,6 +157,24 @@
                 <button type="submit" class="btn btn--primary btn--sm">Clone</button>
               </form>
             </details>
+            {{if $a.LiveSyncSince}}
+            <details class="reassign">
+              <summary>Live sync (IBKR)…</summary>
+              <div class="mt-8">
+                <p class="muted" style="font-size: 11px; margin: 4px 0 6px 0;">
+                  Live-synced since {{ltimep $a.LiveSyncSince "datetime"}}. MotiveWave rows
+                  at/after that instant are skipped on import (the gateway owns them).
+                  If the gateway was offline longer than the API's 7-day window, move the
+                  cutover to now and import one fresh MotiveWave export to fill the gap.
+                </p>
+                <form method="post" action="/accounts/{{$a.ID}}/livesync-reset" style="display: inline;"
+                      onsubmit="return confirm('Move the live-sync cutover to now? MotiveWave imports will again cover everything before this moment.');">
+                  <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+                  <button type="submit" class="btn btn--secondary btn--sm">Reset cutover to now</button>
+                </form>
+              </div>
+            </details>
+            {{end}}
             {{if and $.TopstepxSync (eq $a.ImportSource "topstepx_csv")}}
             <details class="reassign">
               <summary>Re-fetch API history…</summary>

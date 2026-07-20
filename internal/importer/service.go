@@ -78,6 +78,7 @@ type Outcome struct {
 	SourcePath         string // original path that was passed in (no longer exists after move)
 	Format             Format // detected format; FormatUnknown means dispatch failed
 	FillsParsed        int    // rows successfully parsed (for TopstepX, only Filled rows)
+	FillsFiltered      int    // CSV rows skipped because the account is live-synced (cutover filter)
 	ExecsInserted      int    // affected-row count from INSERT
 	AccountsCreated    int    // new accounts auto-created during this import
 	InstrumentsStubbed int    // unknown symbol roots auto-created with needs_setup=1
@@ -149,18 +150,21 @@ func (s *ImportService) ImportFileToAccountForUser(ctx context.Context, path str
 	return s.importFile(withUserScope(ctx, userID, username), path, accountID)
 }
 
-// ImportAPIFills ingests fills fetched from the TopstepX API for one user.
+// ImportAPIFills ingests fills fetched from a live broker API for one user.
 // It reuses the entire CSV ingest pipeline (same tx, account auto-creation,
 // claim guard, instrument stubbing, FIFO rebuild, prefetch warm-up) under
-// FormatTopstepX, so API-sourced executions converge on the same
-// (user_id, 'topstepx_csv', account_ref) account rows and the same
-// (account_id, broker_exec_id) dedup space as the orders-CSV path. Unlike
-// the file entry points it writes no sync_log row and moves no files - the
-// caller (topstepx.SyncService) owns per-account logging.
-func (s *ImportService) ImportAPIFills(ctx context.Context, userID int64, username string, fills []Fill) (Outcome, error) {
+// the given format, so API-sourced executions converge on the same
+// (user_id, import_source, account_ref) account rows and the same
+// (account_id, broker_exec_id) dedup space as that format's CSV path
+// (TopstepX sync passes FormatTopstepX; IBKR gateway sync passes
+// FormatMotiveWave, whose CSVs carry the IBKR accounts). Unlike the file
+// entry points it writes no sync_log row and moves no files - the calling
+// sync service owns per-account logging, and it is exempt from the
+// live-sync cutover filter (the caller pre-filters).
+func (s *ImportService) ImportAPIFills(ctx context.Context, userID int64, username string, fills []Fill, format Format) (Outcome, error) {
 	ctx = withUserScope(ctx, userID, username)
-	out := Outcome{Format: FormatTopstepX, FillsParsed: len(fills)}
-	if err := s.ingest(ctx, fills, FormatTopstepX, &out); err != nil {
+	out := Outcome{Format: format, FillsParsed: len(fills)}
+	if err := s.ingest(ctx, fills, format, &out, true); err != nil {
 		out.ErrorMessage = err.Error()
 		return out, err
 	}
@@ -193,7 +197,7 @@ func (s *ImportService) importFile(ctx context.Context, path string, forceAccoun
 			return s.finalizeFailure(ctx, path, out)
 		}
 		out.FillsParsed = len(fills)
-		if err := s.ingest(ctx, fills, out.Format, &out); err != nil {
+		if err := s.ingest(ctx, fills, out.Format, &out, false); err != nil {
 			out.ErrorMessage = fmt.Sprintf("ingest: %v", err)
 			return s.finalizeFailure(ctx, path, out)
 		}
@@ -292,7 +296,11 @@ func DetectFormat(content []byte) Format {
 // ingest runs all DB writes for one import inside a single transaction.
 // After inserting executions, it invokes the position builder to rebuild
 // trades and daily_stats for any (account, symbol) pair that got new fills.
-func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format, out *Outcome) error {
+// ingest writes fills into executions (one tx) and rebuilds affected FIFO
+// keys. apiSource distinguishes live-API ingests (which pre-filter against
+// the live-sync cutover themselves) from CSV files (which get the cutover
+// filter applied here).
+func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format, out *Outcome, apiSource bool) error {
 	tx, err := s.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin tx: %w", err)
@@ -302,6 +310,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 
 	accounts := map[string]int64{}
 	inlineAccounts := map[int64]bool{} // commission_source = 'inline' -> skip FIFO rebuild
+	cutovers := map[int64]*time.Time{} // accounts.live_sync_since -> CSV rows at/after it are API-owned
 	instruments := map[string]bool{}
 	rebuildKeys := map[positions.Key]bool{}
 
@@ -340,7 +349,20 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			if acct.CommissionSource == "inline" && acct.ImportSource == string(FormatTopstepX) {
 				inlineAccounts[acct.ID] = true
 			}
+			cutovers[acct.ID] = acct.LiveSyncSince
 			accountID = acct.ID
+		}
+
+		// Live-synced accounts (IBKR gateway polling): CSV rows at/after the
+		// cutover belong to the API's era and would double-count - the two
+		// exec-id namespaces cannot dedup each other. API-sourced ingests skip
+		// this check; the sync service applies the mirror filter (< cutover)
+		// before calling ImportAPIFills.
+		if !apiSource {
+			if cut := cutovers[accountID]; cut != nil && !f.ExecTime.Before(*cut) {
+				out.FillsFiltered++
+				continue
+			}
 		}
 
 		var raw *string
@@ -1238,6 +1260,10 @@ func (o Outcome) errorOrSummary() string {
 	if o.ErrorMessage != "" {
 		return o.ErrorMessage
 	}
-	return fmt.Sprintf("parsed=%d inserted=%d new_accounts=%d new_instruments=%d",
+	msg := fmt.Sprintf("parsed=%d inserted=%d new_accounts=%d new_instruments=%d",
 		o.FillsParsed, o.ExecsInserted, o.AccountsCreated, o.InstrumentsStubbed)
+	if o.FillsFiltered > 0 {
+		msg += fmt.Sprintf(" skipped_live_synced=%d", o.FillsFiltered)
+	}
+	return msg
 }

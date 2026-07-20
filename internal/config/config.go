@@ -24,7 +24,18 @@ type Config struct {
 	MCP          MCP          `yaml:"mcp"`
 	AI           AI           `yaml:"ai"`
 	TopstepX     TopstepX     `yaml:"topstepx"`
+	IBKR         IBKR         `yaml:"ibkr"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// IBKR configures live sync via Client Portal Gateway(s). Only global knobs
+// live here - the gateways themselves (URL, TLS mode) are per-user data
+// managed in the settings UI, since a gateway belongs to a journal user and
+// holds no secrets (its session is established by the user's browser login).
+type IBKR struct {
+	Enabled         *bool `yaml:"enabled"`           // nil = true
+	PollIntervalMin int   `yaml:"poll_interval_min"` // scheduled poll cadence; default 5; 0 disables
+	TickleSec       int   `yaml:"tickle_sec"`        // per-gateway keep-alive; default 60; 0 disables
 }
 
 // TopstepX configures the TopstepX (ProjectX Gateway) API sync. The feature
@@ -235,6 +246,7 @@ func defaults() Config {
 			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
+		IBKR:     IBKR{PollIntervalMin: 5, TickleSec: 60},
 		Timezone: "America/Chicago",
 	}
 }
@@ -315,6 +327,12 @@ func (c Config) Validate() error {
 		if _, _, ok := c.TopstepX.RTHWindowHM(); !ok {
 			return fmt.Errorf("topstepx.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.TopstepX.RTHWindow)
 		}
+	}
+	if c.IBKR.PollIntervalMin < 0 {
+		return fmt.Errorf("ibkr.poll_interval_min must be >= 0 (0 disables), got %d", c.IBKR.PollIntervalMin)
+	}
+	if c.IBKR.TickleSec < 0 {
+		return fmt.Errorf("ibkr.tickle_sec must be >= 0 (0 disables), got %d", c.IBKR.TickleSec)
 	}
 	return nil
 }

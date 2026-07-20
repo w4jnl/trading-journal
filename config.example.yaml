@@ -113,6 +113,20 @@ topstepx:
   rth_sync_min: 15
   rth_window: "07:30-16:00"
 
+# IBKR live sync via Client Portal Gateway(s). Gateways themselves (URL, TLS
+# mode) are per-user data added in Settings -- a gateway belongs to a journal
+# user, one per IB login, and holds no secrets: its session is established by
+# logging in on the gateway's own browser page (2FA). The app polls the
+# rolling 7-day trade window, keeps sessions alive (tickle), silently
+# reauthenticates dropped brokerage sessions, and shows "needs login" when
+# the SSO session expires. MotiveWave rows for live-synced accounts are
+# filtered from imports past the per-account cutover to prevent
+# double-counting (see the account's "Live sync" menu on /accounts).
+ibkr:
+  enabled: true
+  poll_interval_min: 5   # scheduled poll cadence; 0 disables
+  tickle_sec: 60         # per-gateway keep-alive; 0 disables
+
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

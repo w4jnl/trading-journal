@@ -15,7 +15,7 @@ INSERT INTO accounts (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since
 `
 
 type CreateAccountParams struct {
@@ -58,12 +58,13 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.CreatedAt,
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
+		&i.LiveSyncSince,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done FROM accounts WHERE id = ? AND user_id = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE id = ? AND user_id = ?
 `
 
 type GetAccountByIDParams struct {
@@ -92,12 +93,13 @@ func (q *Queries) GetAccountByID(ctx context.Context, arg GetAccountByIDParams) 
 		&i.CreatedAt,
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
+		&i.LiveSyncSince,
 	)
 	return i, err
 }
 
 const getAccountByRef = `-- name: GetAccountByRef :one
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?
 `
 
 type GetAccountByRefParams struct {
@@ -127,6 +129,7 @@ func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams
 		&i.CreatedAt,
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
+		&i.LiveSyncSince,
 	)
 	return i, err
 }
@@ -162,7 +165,7 @@ func (q *Queries) GetAccountImportClaim(ctx context.Context, arg GetAccountImpor
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done FROM accounts WHERE user_id = ? ORDER BY name
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE user_id = ? ORDER BY name
 `
 
 func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, error) {
@@ -189,6 +192,7 @@ func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, er
 			&i.CreatedAt,
 			&i.ExcludedFromStats,
 			&i.ApiBackfillDone,
+			&i.LiveSyncSince,
 		); err != nil {
 			return nil, err
 		}
@@ -318,7 +322,7 @@ const updateAccount = `-- name: UpdateAccount :one
 UPDATE accounts
 SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
 WHERE id = ? AND user_id = ?
-RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since
 `
 
 type UpdateAccountParams struct {
@@ -359,6 +363,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.CreatedAt,
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
+		&i.LiveSyncSince,
 	)
 	return i, err
 }
