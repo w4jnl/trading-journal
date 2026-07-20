@@ -132,14 +132,17 @@ func (n *jsonNum) UnmarshalJSON(b []byte) error {
 // do issues a request against the gateway and decodes JSON into out (nil to
 // discard). Debug-logs every call; never logs cookies or bodies.
 //
-// POSTs always carry an empty JSON object body: the gateway proxies most
-// endpoints upstream to IB's Akamai-fronted backend, which rejects
-// zero-length POSTs with an HTML "Bad Request" edge error (observed against
-// a real gateway; GETs and non-empty POSTs pass).
-func (c *Client) do(ctx context.Context, op, method, path string, out any) error {
+// POSTs always carry a JSON body (payload, or an empty object): the gateway
+// proxies most endpoints upstream to IB's Akamai-fronted backend, which
+// rejects zero-length POSTs with an HTML "Bad Request" edge error (observed
+// against a real gateway; GETs and non-empty POSTs pass).
+func (c *Client) do(ctx context.Context, op, method, path, payload string, out any) error {
 	var body io.Reader
 	if method == http.MethodPost {
-		body = strings.NewReader("{}")
+		if payload == "" {
+			payload = "{}"
+		}
+		body = strings.NewReader(payload)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
@@ -181,19 +184,19 @@ func (c *Client) do(ctx context.Context, op, method, path string, out any) error
 // Status checks the brokerage session (POST /iserver/auth/status).
 func (c *Client) Status(ctx context.Context) (AuthStatus, error) {
 	var st AuthStatus
-	err := c.do(ctx, "authStatus", http.MethodPost, "/v1/api/iserver/auth/status", &st)
+	err := c.do(ctx, "authStatus", http.MethodPost, "/v1/api/iserver/auth/status", "", &st)
 	return st, err
 }
 
 // Tickle keeps the session alive (POST /tickle); call ~every minute.
 func (c *Client) Tickle(ctx context.Context) error {
-	return c.do(ctx, "tickle", http.MethodPost, "/v1/api/tickle", nil)
+	return c.do(ctx, "tickle", http.MethodPost, "/v1/api/tickle", "", nil)
 }
 
 // Reauthenticate restores a dropped brokerage session while the SSO session
 // is still valid (POST /iserver/auth/reauthenticate).
 func (c *Client) Reauthenticate(ctx context.Context) error {
-	return c.do(ctx, "reauthenticate", http.MethodPost, "/v1/api/iserver/auth/reauthenticate", nil)
+	return c.do(ctx, "reauthenticate", http.MethodPost, "/v1/api/iserver/auth/reauthenticate", "", nil)
 }
 
 // Accounts lists the trading accounts of the gateway's login
@@ -202,7 +205,7 @@ func (c *Client) Accounts(ctx context.Context) ([]GatewayAccount, error) {
 	var out struct {
 		Accounts []string `json:"accounts"`
 	}
-	if err := c.do(ctx, "accounts", http.MethodGet, "/v1/api/iserver/accounts", &out); err != nil {
+	if err := c.do(ctx, "accounts", http.MethodGet, "/v1/api/iserver/accounts", "", &out); err != nil {
 		return nil, err
 	}
 	accounts := make([]GatewayAccount, 0, len(out.Accounts))
@@ -222,7 +225,7 @@ func (c *Client) Trades(ctx context.Context, days int) ([]Trade, error) {
 	}
 	var trades []Trade
 	if err := c.do(ctx, "trades", http.MethodGet,
-		fmt.Sprintf("/v1/api/iserver/account/trades?days=%d", days), &trades); err != nil {
+		fmt.Sprintf("/v1/api/iserver/account/trades?days=%d", days), "", &trades); err != nil {
 		return nil, err
 	}
 	c.logger().Debug("ibkr trades", "url", c.BaseURL, "days", days, "count", len(trades))
@@ -234,6 +237,25 @@ func (c *Client) Trades(ctx context.Context, days int) ([]Trade, error) {
 func (c *Client) ContractInfo(ctx context.Context, conid int64) (Contract, error) {
 	var ct Contract
 	err := c.do(ctx, "contractInfo", http.MethodGet,
-		fmt.Sprintf("/v1/api/iserver/contract/%d/info", conid), &ct)
+		fmt.Sprintf("/v1/api/iserver/contract/%d/info", conid), "", &ct)
 	return ct, err
+}
+
+// SsodhInitResult is the response of POST /iserver/auth/ssodh/init.
+type SsodhInitResult struct {
+	Passed        bool `json:"passed"`
+	Authenticated bool `json:"authenticated"`
+	Connected     bool `json:"connected"`
+}
+
+// SsodhInit (re)establishes the brokerage session on top of the gateway's
+// live SSO session (POST /iserver/auth/ssodh/init). On modern gateway
+// builds this - not reauthenticate - is what brings auth/status back to
+// authenticated:true for API consumers (verified against build 10.46).
+// compete=true takes the session over from a competing consumer.
+func (c *Client) SsodhInit(ctx context.Context) (SsodhInitResult, error) {
+	var res SsodhInitResult
+	err := c.do(ctx, "ssodhInit", http.MethodPost, "/v1/api/iserver/auth/ssodh/init",
+		`{"publish":true,"compete":true}`, &res)
+	return res, err
 }

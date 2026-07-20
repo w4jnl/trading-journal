@@ -23,6 +23,7 @@ const tradesWindowDays = 7
 type gatewayClient interface {
 	Status(ctx context.Context) (AuthStatus, error)
 	Tickle(ctx context.Context) error
+	SsodhInit(ctx context.Context) (SsodhInitResult, error)
 	Reauthenticate(ctx context.Context) error
 	Accounts(ctx context.Context) ([]GatewayAccount, error)
 	Trades(ctx context.Context, days int) ([]Trade, error)
@@ -286,9 +287,11 @@ func (s *SyncService) setGatewayState(ctx context.Context, gw models.IbkrGateway
 	}
 }
 
-// ensureAuthenticated verifies the brokerage session, attempting one silent
-// reauthenticate (valid while the SSO session lives). Returns false when the
-// gateway needs a manual browser login or is unreachable.
+// ensureAuthenticated verifies the brokerage session and silently restores
+// it while the gateway's SSO session lives: ssodh/init first (the effective
+// mechanism on modern gateway builds - verified against 10.46), plain
+// reauthenticate as the legacy fallback. Returns false when the gateway
+// needs a manual browser login or is unreachable.
 func (s *SyncService) ensureAuthenticated(ctx context.Context, gw models.IbkrGateway, client gatewayClient) bool {
 	st, err := client.Status(ctx)
 	if err == nil && st.Authenticated {
@@ -299,7 +302,12 @@ func (s *SyncService) ensureAuthenticated(ctx context.Context, gw models.IbkrGat
 		s.setGatewayState(ctx, gw, "unreachable", err.Error())
 		return false
 	}
-	// Brokerage session down: reauthenticate rides the SSO session.
+	// Brokerage session down: re-establish it on top of the SSO session.
+	if res, err := client.SsodhInit(ctx); err == nil && res.Authenticated {
+		s.Logger.Debug("ibkr gateway brokerage session re-established (ssodh/init)", "gateway", gw.Name)
+		s.touchGateway(gw.ID, "connected", "")
+		return true
+	}
 	if err := client.Reauthenticate(ctx); err == nil {
 		if st, err := client.Status(ctx); err == nil && st.Authenticated {
 			s.Logger.Debug("ibkr gateway reauthenticated", "gateway", gw.Name)

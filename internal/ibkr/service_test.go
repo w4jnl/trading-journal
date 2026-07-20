@@ -19,6 +19,7 @@ type fakeGateway struct {
 	accounts      []string
 	trades        []Trade
 	tickles       int
+	ssodhInits    int
 	reauths       int
 }
 
@@ -38,6 +39,18 @@ func (f *fakeGateway) Tickle(ctx context.Context) error {
 		return ErrNotAuthenticated
 	}
 	return nil
+}
+
+func (f *fakeGateway) SsodhInit(ctx context.Context) (SsodhInitResult, error) {
+	f.ssodhInits++
+	if f.unreachable {
+		return SsodhInitResult{}, ErrGatewayUnreachable
+	}
+	if f.ssoAlive {
+		f.authenticated = true
+		return SsodhInitResult{Passed: true, Authenticated: true, Connected: true}, nil
+	}
+	return SsodhInitResult{}, ErrNotAuthenticated
 }
 
 func (f *fakeGateway) Reauthenticate(ctx context.Context) error {
@@ -209,8 +222,11 @@ func TestSyncGateway_NeedsLogin(t *testing.T) {
 			t.Fatalf("syncUser %d: %v", i, err)
 		}
 	}
+	if fake.ssodhInits == 0 {
+		t.Error("ssodh/init never attempted")
+	}
 	if fake.reauths == 0 {
-		t.Error("reauthenticate never attempted")
+		t.Error("reauthenticate fallback never attempted")
 	}
 	states := svc.GatewayStates(uid)
 	if states[gw.ID].State != "needs-login" {
