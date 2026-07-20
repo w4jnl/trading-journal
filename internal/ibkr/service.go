@@ -399,6 +399,13 @@ func (s *SyncService) syncGateway(ctx context.Context, gw models.IbkrGateway) er
 
 	names := make([]string, 0, len(gwAccounts))
 	for _, ga := range gwAccounts {
+		// "All" is IBKR's aggregate pseudo-account shown to multi-account
+		// logins (the "combined view" entry of the account switcher). It is
+		// not a real account and trades always carry concrete account ids,
+		// so it is skipped rather than treated as an account ref.
+		if ga.ID == "All" {
+			continue
+		}
 		names = append(names, ga.ID)
 		if err := s.syncAccount(ctx, gw, ga.ID, byAccount[ga.ID], resolve); err != nil {
 			if errors.Is(err, context.Canceled) {
