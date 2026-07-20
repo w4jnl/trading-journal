@@ -252,10 +252,18 @@ type SsodhInitResult struct {
 // live SSO session (POST /iserver/auth/ssodh/init). On modern gateway
 // builds this - not reauthenticate - is what brings auth/status back to
 // authenticated:true for API consumers (verified against build 10.46).
-// compete=true takes the session over from a competing consumer.
+//
+// compete is deliberately FALSE: compete=true displaces whoever else holds
+// the brokerage session, and a session maintainer like IBeam reacts to
+// being displaced by logging the whole gateway out and re-running its
+// browser login - a tug-of-war this app must never start. Without compete
+// the init still succeeds whenever the session is merely dropped (the
+// common case); a genuinely competing consumer (e.g. a Client Portal web
+// login with the same username) leaves us unauthenticated, which surfaces
+// as needs-login rather than silently kicking the other party.
 func (c *Client) SsodhInit(ctx context.Context) (SsodhInitResult, error) {
 	var res SsodhInitResult
 	err := c.do(ctx, "ssodhInit", http.MethodPost, "/v1/api/iserver/auth/ssodh/init",
-		`{"publish":true,"compete":true}`, &res)
+		`{"publish":true,"compete":false}`, &res)
 	return res, err
 }
