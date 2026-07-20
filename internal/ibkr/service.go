@@ -232,9 +232,24 @@ func (s *SyncService) GatewayStates(userID int64) map[int64]GatewayState {
 	return out
 }
 
-// TestGateway does a live auth-status probe for the settings "Test" button.
+// TestGateway probes the gateway for the settings "Test" button, applying
+// the same silent session recovery the sync uses (ssodh/init, then legacy
+// reauthenticate) - a bare status check would report "not authenticated"
+// for a session the app is perfectly able to re-establish itself.
 func (s *SyncService) TestGateway(ctx context.Context, gw models.IbkrGateway) (AuthStatus, error) {
-	return s.clientFor(gw).Status(ctx)
+	client := s.clientFor(gw)
+	st, err := client.Status(ctx)
+	if err == nil && st.Authenticated {
+		s.touchGateway(gw.ID, "connected", "")
+		return st, nil
+	}
+	if err != nil && !errors.Is(err, ErrNotAuthenticated) {
+		return AuthStatus{}, err // genuinely unreachable
+	}
+	if s.ensureAuthenticated(ctx, gw, client) {
+		return client.Status(ctx)
+	}
+	return AuthStatus{}, nil // responds, but only a manual browser login can fix it
 }
 
 func (s *SyncService) clientFor(gw models.IbkrGateway) gatewayClient {
