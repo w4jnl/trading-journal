@@ -67,8 +67,19 @@ type SyncService struct {
 	lastRun map[int64]time.Time
 	pending map[int64]bool
 	states  map[int64]*GatewayState // by gateway id
-	clients map[int64]gatewayClient // by gateway id (client caches its transport)
+	clients map[int64]cachedClient  // by gateway id (client caches its transport)
 	jobs    chan syncJob
+}
+
+// cachedClient remembers the config a client was built from so the cache
+// invalidates when it changes. Guarding on the id alone is not enough:
+// SQLite reuses row ids, so delete-gateway + add-gateway can hand a NEW url
+// the OLD id - the cached client would silently keep calling the old
+// address while the UI shows the new one.
+type cachedClient struct {
+	url      string
+	insecure bool
+	client   gatewayClient
 }
 
 // NewSyncService wires a ready-to-Run service.
@@ -90,7 +101,7 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, opts SyncOpt
 		lastRun: map[int64]time.Time{},
 		pending: map[int64]bool{},
 		states:  map[int64]*GatewayState{},
-		clients: map[int64]gatewayClient{},
+		clients: map[int64]cachedClient{},
 		jobs:    make(chan syncJob, 64),
 	}
 }
@@ -228,11 +239,16 @@ func (s *SyncService) TestGateway(ctx context.Context, gw models.IbkrGateway) (A
 func (s *SyncService) clientFor(gw models.IbkrGateway) gatewayClient {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if c, ok := s.clients[gw.ID]; ok {
-		return c
+	insecure := gw.TlsInsecure == 1
+	if c, ok := s.clients[gw.ID]; ok && c.url == gw.Url && c.insecure == insecure {
+		return c.client
 	}
-	c := s.NewClient(gw.Url, gw.TlsInsecure == 1)
-	s.clients[gw.ID] = c
+	c := s.NewClient(gw.Url, insecure)
+	s.clients[gw.ID] = cachedClient{url: gw.Url, insecure: insecure, client: c}
+	// The runtime state belongs to the previous gateway that carried this id
+	// (or a previous URL) - reset it so a stale "unreachable" doesn't stick
+	// to the fresh config.
+	delete(s.states, gw.ID)
 	return c
 }
 

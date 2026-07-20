@@ -267,6 +267,42 @@ func TestSyncGateway_InactiveAccountSkipped(t *testing.T) {
 	}
 }
 
+// TestClientCacheInvalidatesOnURLChange: SQLite reuses row ids, so deleting
+// a gateway and adding a new one can give a NEW url the OLD id. The client
+// cache must key on the config, not just the id - regression for the bug
+// where a re-added gateway kept polling the deleted gateway's address.
+func TestClientCacheInvalidatesOnURLChange(t *testing.T) {
+	svc, _, _, uid, gw := setupIbkr(t)
+	var builtFor []string
+	svc.NewClient = func(url string, insecure bool) gatewayClient {
+		builtFor = append(builtFor, url)
+		return &fakeGateway{authenticated: true, ssoAlive: true}
+	}
+
+	_ = svc.clientFor(gw)
+	_ = svc.clientFor(gw) // same config -> cached, no rebuild
+	if len(builtFor) != 1 || builtFor[0] != gw.Url {
+		t.Fatalf("builtFor = %v, want exactly one build for %s", builtFor, gw.Url)
+	}
+
+	// Same id, new URL (delete + re-add reusing the rowid).
+	gw2 := gw
+	gw2.Url = "https://ibgw.test:5007"
+	_ = svc.clientFor(gw2)
+	if len(builtFor) != 2 || builtFor[1] != "https://ibgw.test:5007" {
+		t.Fatalf("builtFor = %v, want a rebuild for the new URL", builtFor)
+	}
+
+	// TLS-mode flip alone must also rebuild.
+	gw3 := gw2
+	gw3.TlsInsecure = 0
+	_ = svc.clientFor(gw3)
+	if len(builtFor) != 3 {
+		t.Fatalf("builtFor = %v, want a rebuild on tls flip", builtFor)
+	}
+	_ = uid
+}
+
 // TestThrottleAndNilReceiver mirrors the topstepx enqueue semantics.
 func TestThrottleAndNilReceiver(t *testing.T) {
 	svc, _, _, uid, _ := setupIbkr(t)
