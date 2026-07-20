@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -13,6 +14,15 @@ func TestClientStatusAndPaths(t *testing.T) {
 	var gotPaths []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotPaths = append(gotPaths, r.Method+" "+r.URL.Path)
+		// IB's Akamai edge rejects zero-length POSTs, so every POST must
+		// carry an empty JSON object + Content-Type (regression).
+		if r.Method == http.MethodPost {
+			b, _ := io.ReadAll(r.Body)
+			if string(b) != "{}" || r.Header.Get("Content-Type") != "application/json" {
+				t.Errorf("%s: POST body %q content-type %q, want {} / application/json",
+					r.URL.Path, b, r.Header.Get("Content-Type"))
+			}
+		}
 		switch r.URL.Path {
 		case "/v1/api/iserver/auth/status":
 			_ = json.NewEncoder(w).Encode(map[string]any{"authenticated": true, "connected": true})

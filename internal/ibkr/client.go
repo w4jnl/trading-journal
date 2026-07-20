@@ -20,6 +20,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -130,10 +131,22 @@ func (n *jsonNum) UnmarshalJSON(b []byte) error {
 
 // do issues a request against the gateway and decodes JSON into out (nil to
 // discard). Debug-logs every call; never logs cookies or bodies.
+//
+// POSTs always carry an empty JSON object body: the gateway proxies most
+// endpoints upstream to IB's Akamai-fronted backend, which rejects
+// zero-length POSTs with an HTML "Bad Request" edge error (observed against
+// a real gateway; GETs and non-empty POSTs pass).
 func (c *Client) do(ctx context.Context, op, method, path string, out any) error {
-	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, nil)
+	var body io.Reader
+	if method == http.MethodPost {
+		body = strings.NewReader("{}")
+	}
+	req, err := http.NewRequestWithContext(ctx, method, c.BaseURL+path, body)
 	if err != nil {
 		return fmt.Errorf("ibkr: %s: request: %w", op, err)
+	}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
 	}
 	req.Header.Set("Accept", "application/json")
 	// The gateway rejects requests without a User-Agent.
