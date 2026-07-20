@@ -31,9 +31,11 @@ func TestScheduledInterval(t *testing.T) {
 		{"monday 1h pre-RTH -> fast", ct(13, 7, 45), 15 * time.Minute},
 		{"monday overnight -> hourly", ct(13, 2, 0), time.Hour},
 		{"monday evening -> hourly", ct(13, 20, 0), time.Hour},
-		{"sunday pre-open margin -> hourly", ct(19, 15, 30), time.Hour},
+		{"monday maintenance break -> off", ct(13, 16, 30), 0},
+		{"sunday before open -> off", ct(19, 15, 30), 0},
+		{"sunday after open -> hourly", ct(19, 17, 30), time.Hour},
 		{"saturday -> off", ct(18, 12, 0), 0},
-		{"friday post-margin -> off", ct(17, 19, 0), 0},
+		{"friday after close -> off", ct(17, 17, 0), 0},
 	}
 	for _, c := range cases {
 		if got := svc.scheduledInterval(c.t); got != c.want {

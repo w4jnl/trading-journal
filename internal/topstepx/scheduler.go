@@ -16,9 +16,10 @@ const schedulerTick = time.Minute
 //     Opts.RTHStartMin..RTHEndMin Chicago - default equity RTH plus 1h each
 //     side), catching intraday fills quickly while the user is trading.
 //   - Session tier: every Opts.SessionEvery through the rest of the CME
-//     Globex session plus a 2h margin (InSyncWindow), keeping overnight
+//     Globex session (InGlobexHours, no extra margin), keeping overnight
 //     activity reasonably fresh.
-//   - Closed (Saturday, post-close Friday, pre-open Sunday): no syncs.
+//   - Closed (Saturday, post-close Friday, pre-open Sunday, and the daily
+//     16:00-17:00 CT maintenance break unless RTHWindow covers it): no syncs.
 //
 // Fan-out goes through enqueueWithGap with half the active cadence as the
 // minimum gap, so a sync the user just triggered by browsing suppresses the
@@ -56,13 +57,13 @@ func (s *SyncService) Schedule(ctx context.Context) {
 }
 
 // scheduledInterval returns the sync cadence in effect at t: the RTH cadence
-// inside the RTH window, the session cadence inside the Globex sync window,
+// inside the RTH window, the session cadence during Globex trading hours,
 // 0 when the market is closed (or that tier is disabled in config).
 func (s *SyncService) scheduledInterval(t time.Time) time.Duration {
 	if s.Opts.RTHEvery > 0 && InRTHWindow(t, s.chicago, s.Opts.RTHStartMin, s.Opts.RTHEndMin) {
 		return s.Opts.RTHEvery
 	}
-	if s.Opts.SessionEvery > 0 && InSyncWindow(t, s.chicago) {
+	if s.Opts.SessionEvery > 0 && InGlobexHours(t, s.chicago) {
 		return s.Opts.SessionEvery
 	}
 	return 0
