@@ -1,0 +1,105 @@
+{{define "title"}}Copy-trade check — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+
+<h1>Copy-trade reconciliation</h1>
+<p class="muted" style="max-width: 60ch;">
+  Compare a follower account against a multiple of a leader account. Any point
+  where the follower's net position drifts from <em>factor × leader</em> is
+  flagged - a missing, extra, or partial fill in the copied account.
+</p>
+
+{{if .Err}}<div class="flash error mb-16" role="alert">{{.Err}}</div>{{end}}
+
+<form method="get" action="/reconcile/copy" class="row-sm" style="gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 12px 0 20px;">
+  <label class="field"><span class="field-label">Leader (1×)</span>
+    <select name="leader" required>
+      <option value="">— pick —</option>
+      {{range .Accounts}}<option value="{{.ID}}" {{if eq .ID $.LeaderID}}selected{{end}}>{{.Name}} · {{.AccountRef}}</option>{{end}}
+    </select>
+  </label>
+  <label class="field"><span class="field-label">Follower</span>
+    <select name="follower" required>
+      <option value="">— pick —</option>
+      {{range .Accounts}}<option value="{{.ID}}" {{if eq .ID $.Follower}}selected{{end}}>{{.Name}} · {{.AccountRef}}</option>{{end}}
+    </select>
+  </label>
+  <label class="field"><span class="field-label">Factor</span>
+    <input type="number" name="factor" value="{{.Factor}}" step="0.5" min="0.5" style="width: 80px;">
+  </label>
+  <button type="submit" class="btn btn--primary btn--sm">Compare</button>
+</form>
+
+{{if .Compared}}
+{{if eq .DivergedCount 0}}
+<div class="flash saved mb-16">
+  {{.FollowerName}} mirrors {{.Factor}}× {{.LeaderName}} exactly — no divergence on any symbol.
+</div>
+{{else}}
+<div class="flash error mb-16">
+  {{.DivergedCount}} symbol(s) diverge from {{.Factor}}× {{.LeaderName}}.
+</div>
+{{end}}
+
+<div class="table-scroll">
+  <table class="reconcile">
+    <thead>
+      <tr>
+        <th>Symbol</th>
+        <th class="tar">Leader net</th>
+        <th class="tar">Expected ({{.Factor}}×)</th>
+        <th class="tar">Follower net</th>
+        <th class="tar">Drift</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{range .Symbols}}
+      <tr {{if .Diverged}}style="background: var(--bg-neg, rgba(220,80,80,.08));"{{end}}>
+        <td><strong>{{.Symbol}}</strong></td>
+        <td class="tar num">{{formatQty .LeaderNet}}</td>
+        <td class="tar num">{{formatQty .Expected}}</td>
+        <td class="tar num">{{formatQty .FollowerNet}}</td>
+        <td class="tar num">{{if .Diverged}}<span class="pill dir-short">{{formatQty .Drift}}</span>{{else}}0{{end}}</td>
+      </tr>
+      {{if .Diverged}}
+      <tr>
+        <td colspan="5" style="padding: 0 0 12px 0;">
+          <details>
+            <summary class="muted" style="cursor: pointer; padding: 6px 0;">
+              ▸ where {{.Symbol}} diverged (from the first mismatch)
+            </summary>
+            <table class="reconcile" style="font-size: 12px; margin-top: 6px;">
+              <thead>
+                <tr><th>Time</th><th>Who</th><th>Side</th><th class="tar">Qty</th><th class="tar">Price</th>
+                    <th class="tar">Leader net</th><th class="tar">Exp</th><th class="tar">Follower net</th><th class="tar">Drift</th><th>Ref</th></tr>
+              </thead>
+              <tbody>
+                {{range .Rows}}
+                <tr {{if ne .Drift 0.0}}style="background: var(--bg-neg, rgba(220,80,80,.08));"{{end}}>
+                  <td class="muted">{{.Time}}</td>
+                  <td>{{if eq .Who "leader"}}<span class="pill">leader</span>{{else}}<span class="pill pill--retired">follower</span>{{end}}</td>
+                  <td><span class="pill {{if eq .Side "buy"}}dir-long{{else}}dir-short{{end}}">{{.Side}}</span></td>
+                  <td class="tar num">{{formatQty .Qty}}</td>
+                  <td class="tar num">{{printf "%.2f" .Price}}</td>
+                  <td class="tar num">{{formatQty .LeaderNet}}</td>
+                  <td class="tar num">{{formatQty .Expected}}</td>
+                  <td class="tar num">{{formatQty .FollowerNet}}</td>
+                  <td class="tar num">{{if ne .Drift 0.0}}<strong>{{formatQty .Drift}}</strong>{{else}}0{{end}}</td>
+                  <td><code class="num muted" style="font-size: 11px;">{{.Ref}}</code></td>
+                </tr>
+                {{end}}
+              </tbody>
+            </table>
+          </details>
+        </td>
+      </tr>
+      {{end}}
+      {{else}}
+      <tr><td colspan="5" class="muted" style="text-align:center; padding:16px;">Neither account has any executions.</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+{{end}}
