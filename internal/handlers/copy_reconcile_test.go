@@ -9,10 +9,10 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
-// TestCompareCopyAccounts reproduces the copy-trade divergence hunt: a 2x
-// follower whose buy under-fills (leader bought 2 -> follower should hold 4
-// but only got 1) shows a -3 drift, flagged on the exact fill; a follower
-// that mirrors exactly shows none.
+// TestCompareCopyAccounts verifies the gross-volume comparison catches a copy
+// divergence even when both accounts end flat (net 0) - the case the old
+// net-position comparison was blind to - and does not false-flag an exact
+// mirror.
 func TestCompareCopyAccounts(t *testing.T) {
 	conn := dbtest.Open(t, "test")
 	q := models.New(conn)
@@ -43,50 +43,50 @@ func TestCompareCopyAccounts(t *testing.T) {
 			t.Fatalf("insert %s: %v", id, err)
 		}
 	}
-	// Leader: buy 2, later sell 2 (net 0).
+	// Leader trades a full round turn: buy 2, sell 2 (ends flat).
 	ins(leader, "L1", "buy", 2, 0)
 	ins(leader, "L2", "sell", 2, 30)
-	// Follower (2x): buy only 1 instead of 4 (under-fill), then sell 4.
+	// Follower (2x): buy only 1 instead of 4 (under-fill), but sells the full
+	// 4. Both accounts still end FLAT-ish on net, yet the gross buy volume is
+	// short: exactly the case net comparison missed.
 	ins(follower, "F1", "buy", 1, 0)
 	ins(follower, "F2", "sell", 4, 30)
 
-	syms, err := h.compareCopyAccounts(ctx, leader, follower, 2)
+	lines, err := h.compareCopyAccounts(ctx, leader, follower, 2, nil, nil)
 	if err != nil {
 		t.Fatalf("compareCopyAccounts: %v", err)
 	}
-	if len(syms) != 1 || syms[0].Symbol != "MESU6" {
-		t.Fatalf("symbols = %+v", syms)
+	byKey := map[string]copyLine{}
+	for _, l := range lines {
+		byKey[l.Symbol+"/"+l.Side] = l
 	}
-	s := syms[0]
-	if !s.Diverged || s.Drift != -3 {
-		t.Errorf("drift = %v diverged=%v, want -3 / true", s.Drift, s.Diverged)
+	buy := byKey["MESU6/buy"]
+	if !buy.Diverged || buy.Leader != 2 || buy.Expected != 4 || buy.Follower != 1 || buy.Drift != -3 {
+		t.Errorf("buy line = %+v, want leader 2 / expected 4 / follower 1 / drift -3 / diverged", buy)
 	}
-	if s.LeaderNet != 0 || s.FollowerNet != -3 || s.Expected != 0 {
-		t.Errorf("nets: leader=%v follower=%v expected=%v", s.LeaderNet, s.FollowerNet, s.Expected)
+	if len(buy.FollowerFills) != 1 || buy.FollowerFills[0].Ref != "F1" || buy.FollowerFills[0].Cum != 1 {
+		t.Errorf("buy follower fills = %+v, want the single F1 under-fill with cum 1", buy.FollowerFills)
 	}
-	// The timeline is trimmed to the divergence; the under-buy (F1) drives it.
-	var flagged bool
-	for _, r := range s.Rows {
-		if r.Ref == "F1" && r.Drift != 0 {
-			flagged = true
-		}
-	}
-	if !flagged {
-		t.Errorf("expected the under-filled follower buy F1 flagged with nonzero drift; rows=%+v", s.Rows)
+	sell := byKey["MESU6/sell"]
+	if sell.Diverged {
+		t.Errorf("sell line should match (leader 2 x2 = 4 = follower 4): %+v", sell)
 	}
 
-	// A follower that mirrors exactly diverges on nothing.
+	// Date filter excludes the fills -> nothing to compare.
+	nextDay := base.AddDate(0, 0, 1)
+	empty, _ := h.compareCopyAccounts(ctx, leader, follower, 2, &nextDay, nil)
+	if len(empty) != 0 {
+		t.Errorf("out-of-range comparison should be empty, got %+v", empty)
+	}
+
+	// Exact 2x mirror on both sides -> no divergence.
 	good := mk("GOOD")
 	ins(good, "G1", "buy", 4, 0)
 	ins(good, "G2", "sell", 4, 30)
-	syms2, err := h.compareCopyAccounts(ctx, leader, good, 2)
-	if err != nil {
-		t.Fatalf("compare good: %v", err)
-	}
-	if len(syms2) != 1 || syms2[0].Diverged {
-		t.Errorf("exact 2x follower should not diverge, got %+v", syms2)
-	}
-	if len(syms2[0].Rows) != 0 {
-		t.Errorf("aligned symbol should have no trimmed detail rows, got %d", len(syms2[0].Rows))
+	glines, _ := h.compareCopyAccounts(ctx, leader, good, 2, nil, nil)
+	for _, l := range glines {
+		if l.Diverged {
+			t.Errorf("exact 2x follower should not diverge: %+v", l)
+		}
 	}
 }
