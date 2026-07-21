@@ -314,11 +314,17 @@ func (h *Handlers) AdminTransactionsBulkSave(w http.ResponseWriter, r *http.Requ
 			err1 != nil || qty <= 0 || err2 != nil || price <= 0 || err3 != nil {
 			continue
 		}
-		// Only write when something actually changed - compare exec_time at the displayed
-		// second precision so a sub-second-only difference doesn't churn a needless rebuild.
+		// Only write when something actually changed. Compare the PARSED exec
+		// time at second precision, not the raw submitted string: a
+		// datetime-local input normalizes ":00" seconds away on submit (Safari
+		// does this even with step=1), so an untouched round-minute fill would
+		// otherwise arrive as "T15:04" != stored "T15:04:00" and churn a
+		// phantom edit (stamping edited_at + a needless rebuild). Truncating
+		// cur to seconds also absorbs sub-second import precision the UI can't
+		// show.
 		if ri.symbol == cur.Symbol && ri.root == cur.SymbolRoot && ri.side == cur.Side &&
 			qty == cur.Qty && price == cur.Price &&
-			ri.execTime == cur.ExecTime.In(tz).Format("2006-01-02T15:04:05") {
+			execTime.Equal(cur.ExecTime.Truncate(time.Second)) {
 			continue
 		}
 		if err := h.Queries.UpsertInstrumentStub(ctx, models.UpsertInstrumentStubParams{SymbolRoot: ri.root}); err != nil {
