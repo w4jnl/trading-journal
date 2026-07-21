@@ -124,8 +124,14 @@ topstepx:
 # double-counting (see the account's "Live sync" menu on /accounts).
 ibkr:
   enabled: true
-  poll_interval_min: 5   # scheduled poll cadence; 0 disables
   tickle_sec: 60         # per-gateway keep-alive; 0 disables
+  # Scheduling mirrors topstepx: a page-visit throttle plus a two-tier
+  # cadence gated to CME Globex hours (silent overnight/weekends). Minutes;
+  # 0 disables a tier.
+  sync_throttle_min: 15  # min minutes between page-visit-triggered syncs per user
+  session_sync_min: 60   # cadence during Globex hours (Sun 17:00 - Fri 16:00 CT, minus the daily break)
+  rth_sync_min: 15       # faster cadence inside rth_window
+  rth_window: "07:30-16:00"  # Chicago time, Mon-Fri (RTH 08:30-15:00 CT +/- 1h)
 
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.

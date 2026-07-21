@@ -420,13 +420,18 @@ func run() error {
 	// config only gates the feature and sets cadences.
 	var ibkrSync *ibkr.SyncService
 	if cfg.IBKR.Enabled == nil || *cfg.IBKR.Enabled {
+		ibkrRTHStart, ibkrRTHEnd, _ := cfg.IBKR.RTHWindowHM() // validated when rth_sync_min > 0
 		ibkrSync = ibkr.NewSyncService(queries, importSvc, ibkr.SyncOptions{
-			Throttle:    time.Duration(cfg.TopstepX.SyncThrottleMin) * time.Minute,
-			PollEvery:   time.Duration(cfg.IBKR.PollIntervalMin) * time.Minute,
-			TickleEvery: time.Duration(cfg.IBKR.TickleSec) * time.Second,
+			Throttle:     time.Duration(cfg.IBKR.SyncThrottleMin) * time.Minute,
+			SessionEvery: time.Duration(cfg.IBKR.SessionSyncMin) * time.Minute,
+			RTHEvery:     time.Duration(cfg.IBKR.RTHSyncMin) * time.Minute,
+			RTHStartMin:  ibkrRTHStart,
+			RTHEndMin:    ibkrRTHEnd,
+			TickleEvery:  time.Duration(cfg.IBKR.TickleSec) * time.Second,
 		}, slog.Default())
 		slog.Info("ibkr live sync enabled",
-			"poll_interval_min", cfg.IBKR.PollIntervalMin, "tickle_sec", cfg.IBKR.TickleSec)
+			"session_sync_min", cfg.IBKR.SessionSyncMin, "rth_sync_min", cfg.IBKR.RTHSyncMin,
+			"rth_window", cfg.IBKR.RTHWindow, "tickle_sec", cfg.IBKR.TickleSec)
 	}
 
 	h := &handlers.Handlers{
@@ -548,6 +553,7 @@ func run() error {
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)
+	mux.HandleFunc("GET /sync/banner", h.SyncBanner)
 	mux.HandleFunc("GET /oi", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/file/{name}", h.OIDashboardFile)

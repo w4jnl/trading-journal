@@ -31,11 +31,15 @@ type gatewayClient interface {
 }
 
 // SyncOptions bundles the global knobs from config (gateways themselves live
-// in the DB, managed per user via settings).
+// in the DB, managed per user via settings). Scheduling mirrors TopstepX: a
+// page-visit throttle plus a two-tier cadence gated to CME Globex hours.
 type SyncOptions struct {
-	Throttle    time.Duration // min gap between page-visit syncs per user; <=0 -> 15m
-	PollEvery   time.Duration // scheduled poll cadence; 0 disables scheduling
-	TickleEvery time.Duration // keep-alive cadence per gateway; 0 disables
+	Throttle     time.Duration // min gap between page-visit syncs per user; <=0 -> 15m
+	SessionEvery time.Duration // scheduled cadence during Globex hours; 0 disables
+	RTHEvery     time.Duration // faster cadence inside the RTH window; 0 disables
+	RTHStartMin  int           // RTH window bounds, minutes-of-day Chicago
+	RTHEndMin    int
+	TickleEvery  time.Duration // keep-alive cadence per gateway; 0 disables
 }
 
 // GatewayState is one gateway's runtime status for the settings card.
@@ -64,6 +68,8 @@ type SyncService struct {
 	// NewClient builds a client for one gateway; tests inject fakes.
 	NewClient func(url string, insecure bool) gatewayClient
 
+	chicago *time.Location // CME session clock for Schedule
+
 	mu      sync.Mutex
 	lastRun map[int64]time.Time
 	pending map[int64]bool
@@ -91,11 +97,17 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, opts SyncOpt
 	if logger == nil {
 		logger = slog.Default()
 	}
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		logger.Warn("ibkr: America/Chicago tz unavailable, scheduler uses UTC", "err", err)
+		chicago = time.UTC
+	}
 	return &SyncService{
 		Queries:  q,
 		Importer: imp,
 		Logger:   logger,
 		Opts:     opts,
+		chicago:  chicago,
 		NewClient: func(url string, insecure bool) gatewayClient {
 			return &Client{BaseURL: url, Insecure: insecure, Logger: logger}
 		},
@@ -152,34 +164,15 @@ func (s *SyncService) Run(ctx context.Context) {
 	}
 }
 
-// Schedule polls every enabled gateway's owner at the flat PollEvery cadence.
-// No market-hours gating: the endpoint returns the same rolling window
-// whenever called, and IB trades span many asset classes/sessions.
-func (s *SyncService) Schedule(ctx context.Context) {
-	if s == nil || s.Opts.PollEvery <= 0 {
-		return
+// PendingForUser reports whether a sync is currently queued or running for
+// the user (drives the "syncing..." view banner). Nil-safe.
+func (s *SyncService) PendingForUser(userID int64) bool {
+	if s == nil {
+		return false
 	}
-	ticker := time.NewTicker(s.Opts.PollEvery)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-ticker.C:
-		}
-		gws, err := s.Queries.ListEnabledIbkrGateways(ctx)
-		if err != nil {
-			s.Logger.Error("ibkr: list gateways", "err", err)
-			continue
-		}
-		seen := map[int64]bool{}
-		for _, gw := range gws {
-			if !seen[gw.UserID] {
-				seen[gw.UserID] = true
-				s.enqueueWithGap(gw.UserID, s.Opts.PollEvery/2)
-			}
-		}
-	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending[userID]
 }
 
 // KeepAlive tickles every enabled gateway so their sessions do not idle out
@@ -527,6 +520,15 @@ func (s *SyncService) syncAccount(ctx context.Context, gw models.IbkrGateway, re
 		s.Logger.Info("ibkr: live sync enabled for account", "ref", ref, "cutover", cutover)
 	}
 
+	// Only log a success row when the poll actually did something worth
+	// recording - new fills, the initial cutover, or a mapping problem.
+	// Otherwise a scheduled poll every session interval (or a page-visit
+	// sync) would append a "0 new fills" row each time and drown the sync
+	// log. The gateway's in-memory LastPoll (set by syncGateway) still
+	// reflects every poll for the settings-card freshness indicator.
+	if execsAdded == 0 && !newCutover && mapErrs == 0 {
+		return nil
+	}
 	msg := fmt.Sprintf("gateway %s, window %dd, %d executions, %d new fills", gw.Name, tradesWindowDays, len(trades), execsAdded)
 	if newCutover {
 		msg += fmt.Sprintf("; live-sync cutover set to %s", cutover.Format(time.RFC3339))
