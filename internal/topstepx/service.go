@@ -118,6 +118,17 @@ func (s *SyncService) MaybeEnqueueUser(userID int64) {
 	s.enqueueWithGap(userID, s.Opts.Throttle)
 }
 
+// PendingForUser reports whether a sync is currently queued or running for
+// the user (drives the "syncing..." view banner). Nil-safe.
+func (s *SyncService) PendingForUser(userID int64) bool {
+	if s == nil {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.pending[userID]
+}
+
 // enqueueWithGap enqueues a whole-user sync unless one is pending or the
 // last one finished less than minGap ago. The page-visit hook uses the
 // configured throttle; the scheduler passes half its cadence so a sync a

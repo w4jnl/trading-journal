@@ -194,3 +194,38 @@ func (q *Queries) ListSyncLogRecent(ctx context.Context, arg ListSyncLogRecentPa
 	}
 	return items, nil
 }
+
+const maxSyncLogIDForUser = `-- name: MaxSyncLogIDForUser :one
+SELECT CAST(COALESCE(MAX(id), 0) AS INTEGER) AS max_id
+FROM sync_log WHERE user_id = ?
+`
+
+// Baseline captured when a synced page loads: the newest sync_log id so far.
+// Comparing later rows by id sidesteps DATETIME text-format pitfalls.
+func (q *Queries) MaxSyncLogIDForUser(ctx context.Context, userID *int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, maxSyncLogIDForUser, userID)
+	var max_id int64
+	err := row.Scan(&max_id)
+	return max_id, err
+}
+
+const sumFillsSyncedSinceID = `-- name: SumFillsSyncedSinceID :one
+SELECT CAST(COALESCE(SUM(execs_added), 0) AS INTEGER) AS fills
+FROM sync_log
+WHERE user_id = ? AND id > ? AND status = 'success'
+  AND sync_type IN ('topstepx_api', 'ibkr_api')
+`
+
+type SumFillsSyncedSinceIDParams struct {
+	UserID *int64 `json:"user_id"`
+	ID     int64  `json:"id"`
+}
+
+// Total executions ingested by live API syncs for the user in rows newer than
+// the page-load baseline id (drives the "new trades synced" refresh banner).
+func (q *Queries) SumFillsSyncedSinceID(ctx context.Context, arg SumFillsSyncedSinceIDParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, sumFillsSyncedSinceID, arg.UserID, arg.ID)
+	var fills int64
+	err := row.Scan(&fills)
+	return fills, err
+}

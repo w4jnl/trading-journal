@@ -32,10 +32,20 @@ type Config struct {
 // live here - the gateways themselves (URL, TLS mode) are per-user data
 // managed in the settings UI, since a gateway belongs to a journal user and
 // holds no secrets (its session is established by the user's browser login).
+// Scheduling mirrors TopstepX: a page-visit throttle plus a two-tier
+// (RTH/session) scheduler gated to CME Globex hours.
 type IBKR struct {
-	Enabled         *bool `yaml:"enabled"`           // nil = true
-	PollIntervalMin int   `yaml:"poll_interval_min"` // scheduled poll cadence; default 5; 0 disables
-	TickleSec       int   `yaml:"tickle_sec"`        // per-gateway keep-alive; default 60; 0 disables
+	Enabled         *bool  `yaml:"enabled"`           // nil = true
+	TickleSec       int    `yaml:"tickle_sec"`        // per-gateway keep-alive; default 60; 0 disables
+	SyncThrottleMin int    `yaml:"sync_throttle_min"` // min minutes between page-visit syncs per user; default 15
+	SessionSyncMin  int    `yaml:"session_sync_min"`  // scheduled cadence during Globex hours; default 60; 0 disables
+	RTHSyncMin      int    `yaml:"rth_sync_min"`      // faster cadence inside rth_window; default 15; 0 disables
+	RTHWindow       string `yaml:"rth_window"`        // "HH:MM-HH:MM" Chicago, Mon-Fri; default "07:30-16:00"
+}
+
+// RTHWindowHM parses RTHWindow into start/end minutes-of-day (Chicago).
+func (i IBKR) RTHWindowHM() (startMin, endMin int, ok bool) {
+	return parseHMWindow(i.RTHWindow)
 }
 
 // TopstepX configures the TopstepX (ProjectX Gateway) API sync. The feature
@@ -65,7 +75,13 @@ type TopstepX struct {
 // RTHWindowHM parses RTHWindow into start/end minutes-of-day (Chicago).
 // ok=false when the string is not "HH:MM-HH:MM" with start < end.
 func (t TopstepX) RTHWindowHM() (startMin, endMin int, ok bool) {
-	parts := strings.Split(t.RTHWindow, "-")
+	return parseHMWindow(t.RTHWindow)
+}
+
+// parseHMWindow parses "HH:MM-HH:MM" into start/end minutes-of-day; ok=false
+// when malformed or start >= end. Shared by the TopstepX and IBKR RTH windows.
+func parseHMWindow(window string) (startMin, endMin int, ok bool) {
+	parts := strings.Split(window, "-")
 	if len(parts) != 2 {
 		return 0, 0, false
 	}
@@ -246,7 +262,10 @@ func defaults() Config {
 			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
-		IBKR:     IBKR{PollIntervalMin: 5, TickleSec: 60},
+		IBKR: IBKR{
+			TickleSec: 60, SyncThrottleMin: 15,
+			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
+		},
 		Timezone: "America/Chicago",
 	}
 }
@@ -328,11 +347,22 @@ func (c Config) Validate() error {
 			return fmt.Errorf("topstepx.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.TopstepX.RTHWindow)
 		}
 	}
-	if c.IBKR.PollIntervalMin < 0 {
-		return fmt.Errorf("ibkr.poll_interval_min must be >= 0 (0 disables), got %d", c.IBKR.PollIntervalMin)
-	}
 	if c.IBKR.TickleSec < 0 {
 		return fmt.Errorf("ibkr.tickle_sec must be >= 0 (0 disables), got %d", c.IBKR.TickleSec)
+	}
+	if c.IBKR.SyncThrottleMin < 0 {
+		return fmt.Errorf("ibkr.sync_throttle_min must be >= 0, got %d", c.IBKR.SyncThrottleMin)
+	}
+	if c.IBKR.SessionSyncMin < 0 {
+		return fmt.Errorf("ibkr.session_sync_min must be >= 0 (0 disables), got %d", c.IBKR.SessionSyncMin)
+	}
+	if c.IBKR.RTHSyncMin < 0 {
+		return fmt.Errorf("ibkr.rth_sync_min must be >= 0 (0 disables), got %d", c.IBKR.RTHSyncMin)
+	}
+	if c.IBKR.RTHSyncMin > 0 {
+		if _, _, ok := c.IBKR.RTHWindowHM(); !ok {
+			return fmt.Errorf("ibkr.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.IBKR.RTHWindow)
+		}
 	}
 	return nil
 }

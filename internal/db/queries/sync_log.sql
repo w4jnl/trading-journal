@@ -25,3 +25,17 @@ WHERE s1.user_id = ? AND s1.sync_type = ? AND s1.account_id IS NOT NULL
                WHERE s2.user_id = s1.user_id AND s2.sync_type = s1.sync_type
                  AND s2.account_id = s1.account_id)
 ORDER BY s1.synced_at DESC;
+
+-- name: MaxSyncLogIDForUser :one
+-- Baseline captured when a synced page loads: the newest sync_log id so far.
+-- Comparing later rows by id sidesteps DATETIME text-format pitfalls.
+SELECT CAST(COALESCE(MAX(id), 0) AS INTEGER) AS max_id
+FROM sync_log WHERE user_id = ?;
+
+-- name: SumFillsSyncedSinceID :one
+-- Total executions ingested by live API syncs for the user in rows newer than
+-- the page-load baseline id (drives the "new trades synced" refresh banner).
+SELECT CAST(COALESCE(SUM(execs_added), 0) AS INTEGER) AS fills
+FROM sync_log
+WHERE user_id = ? AND id > ? AND status = 'success'
+  AND sync_type IN ('topstepx_api', 'ibkr_api');

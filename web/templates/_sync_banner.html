@@ -1,0 +1,23 @@
+{{/*
+  Live-sync refresh banner. A tiny bootstrap div on each synced page loads
+  /sync/banner, which self-replaces (hx-swap=outerHTML) with one of three
+  states below - polling while a page-triggered sync runs, a visible "new
+  trades" prompt once fills land, or an inert div when nothing came in.
+  Mirrors the _ai_status.html poll idiom.
+*/}}
+{{define "sync_banner_bootstrap"}}
+<div id="sync-banner" hx-get="/sync/banner" hx-trigger="load" hx-swap="outerHTML"></div>
+{{end}}
+
+{{define "sync_banner"}}
+{{if eq .State "banner"}}
+<div id="sync-banner" class="flash saved mb-16" role="status" style="display:flex; align-items:center; gap:12px;">
+  <span>{{.Fills}} new fill{{if ne .Fills 1}}s{{end}} synced.</span>
+  <button type="button" class="btn btn--primary btn--sm" onclick="location.reload()">Refresh</button>
+</div>
+{{else if eq .State "poll"}}
+<div id="sync-banner" hx-get="/sync/banner?base={{.Base}}&n={{.N}}" hx-trigger="every 3s" hx-swap="outerHTML"></div>
+{{else}}
+<div id="sync-banner"></div>
+{{end}}
+{{end}}
