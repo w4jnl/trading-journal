@@ -4,6 +4,7 @@
 {{template "back_button" .}}
 
 <h1>Accounts</h1>
+<p><a href="/reconcile/copy" class="btn btn--secondary btn--sm">Copy-trade check →</a></p>
 
 {{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
 {{if eq .Flash "created"}}<div class="flash created">Account created.</div>{{end}}

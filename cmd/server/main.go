@@ -481,6 +481,7 @@ func run() error {
 	mux.HandleFunc("GET /charts/day/{date}", h.ChartDay)
 	mux.HandleFunc("GET /charts/week/{week}", h.ChartWeek)
 	mux.HandleFunc("GET /accounts", h.AccountsPage)
+	mux.HandleFunc("GET /reconcile/copy", h.CopyReconcilePage)
 	mux.HandleFunc("POST /accounts/save", h.AccountsBulkSave)
 	mux.HandleFunc("POST /accounts/new", h.AccountsCreate)
 	mux.HandleFunc("POST /accounts/recompute", h.AccountsRecomputeAll)
