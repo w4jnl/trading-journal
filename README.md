@@ -359,6 +359,46 @@ and use the flat `processed/` / `failed/` paths. The UI upload at
 `/import` always uses the request's logged-in user, regardless of
 where the staged file ends up.
 
+### MotiveWave email capture (experimental)
+
+MotiveWave can send an email on every order fill
+(**Preferences → Orders → Send Email On Filled Order**). The app can act
+as MW's SMTP server so those notifications land here instead of a real
+mail provider — near-real-time fill *capture* for the accounts that have
+no API connector (Rithmic props, AMP/CQG). This is a **capture layer
+only**: every message is archived verbatim as `.eml` under
+`mw_email.archive_dir` (default `data/mw-raw/`) and parsed advisorily
+for the logs; nothing is ingested into the journal from email. The
+authoritative record remains the MotiveWave CSV export import.
+
+Setup:
+
+1. Enable the `mw_email:` section in `config.yaml` (see
+   `config.example.yaml`) and restart the app. LAN/VPN only — never
+   expose the listener publicly.
+2. MW **Preferences → Email**: SMTP host = journal host's LAN IP; port
+   per your `tls_mode` (MW infers encryption from the port: 25 = plain,
+   465 = implicit TLS, 587 = STARTTLS; a nonstandard port like 2525 is
+   treated as plain); username/password = your configured AUTH creds;
+   any from/to addresses. **MW applies mail settings only after a full
+   restart** — Apply → OK → restart MW → Send Test Email.
+3. MW **Preferences → Orders**: enable *Send Email On Filled Order*.
+4. Capture checklist: a manual fill, a copier fill on *each* prop
+   account, an AMP/CQG fill. The captures must answer two open
+   questions: does MW email fills for orders it did not itself originate
+   (copier fan-out)? and does the body carry the account id? If either
+   fails, email capture only covers MW-originated orders.
+
+Inspect a captured message with the parser tuning tool:
+
+```
+./trading-journal mwmail parse data/mw-raw/<file>.eml
+```
+
+Duplicate deliveries (SMTP retries) are detected by content hash and
+dropped, surviving restarts; parse or storage problems are logged, never
+bounced back to MW.
+
 ## Backup
 
 Everything mutable lives in two places:
