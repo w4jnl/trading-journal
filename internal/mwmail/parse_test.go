@@ -76,6 +76,33 @@ func TestDeriveExecTime_YearBoundary(t *testing.T) {
 	}
 }
 
+// TestDeriveExecTime_24HourWithMarker: MW appends AM/PM to a 24-HOUR clock -
+// afternoon fills read "15:31:26 PM" (seen live) and used to fail the
+// 12-hour parse, making every after-noon fill not_ingestable.
+func TestDeriveExecTime_24HourWithMarker(t *testing.T) {
+	cases := []struct {
+		fill string
+		want time.Time
+	}{
+		// The live formats: 24-hour clock with a redundant marker.
+		{"Jul-27 15:31:26 PM", time.Date(2026, 7, 27, 13, 31, 26, 0, time.UTC)},
+		{"Jul-27 09:04:52 AM", time.Date(2026, 7, 27, 7, 4, 52, 0, time.UTC)},
+		// A true-12-hour variant must land on the same instant.
+		{"Jul-27 03:31:26 PM", time.Date(2026, 7, 27, 13, 31, 26, 0, time.UTC)},
+		// Midnight/noon edges under 12-hour convention.
+		{"Jul-27 12:00:01 AM", time.Date(2026, 7, 26, 22, 0, 1, 0, time.UTC)},
+		{"Jul-27 12:00:01 PM", time.Date(2026, 7, 27, 10, 0, 1, 0, time.UTC)},
+		// 24-hour without any marker still parses.
+		{"Jul-27 22:15:00", time.Date(2026, 7, 27, 20, 15, 0, 0, time.UTC)},
+	}
+	for _, c := range cases {
+		got := deriveExecTime(c.fill, "Mon, 27 Jul 2026 23:00:00 +0200")
+		if !got.Equal(c.want) {
+			t.Errorf("deriveExecTime(%q) = %v, want %v", c.fill, got, c.want)
+		}
+	}
+}
+
 func TestParseBasicFill(t *testing.T) {
 	res := Parse(readFixture(t, "fill_basic.eml"))
 	if !res.Parsed {

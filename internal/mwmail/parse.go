@@ -204,14 +204,23 @@ func parseLabels(body string, res *Result) {
 	}
 }
 
-// mwExecTimeLayout matches "Jul-27 09:04:52 AM" - no year, no zone.
-const mwExecTimeLayout = "Jan-2 3:04:05 PM"
+// mwExecTimeLayout matches the "Jul-27 15:31:26" core of MW's execution
+// time - no year, no zone, and the AM/PM marker handled separately (below).
+const mwExecTimeLayout = "Jan-2 15:04:05"
 
 // deriveExecTime resolves MW's year-less, zone-less execution time using the
 // message's Date header for both. The Date header is stamped at compose time,
 // seconds after the fill at most; if composing straddled New Year the naive
 // combination lands ~a year ahead, so anything more than a day past the
 // header date rolls back one year.
+//
+// The hour is a trap: MW appends an AM/PM marker to a 24-HOUR clock
+// ("Jul-27 15:31:26 PM" - seen live; morning fills read "09:04:52 AM" which
+// is indistinguishable from 12-hour). So the marker is stripped, the hour
+// parsed as 24-hour, and the marker applied only where it carries meaning:
+// PM with an hour below 12 shifts forward (covers a true-12-hour variant if
+// some MW version emits one), AM with hour 12 means midnight. Under the
+// observed 24-hour-with-marker format both adjustments are no-ops.
 func deriveExecTime(fillRaw, dateHeader string) time.Time {
 	if fillRaw == "" || dateHeader == "" {
 		return time.Time{}
@@ -220,11 +229,30 @@ func deriveExecTime(fillRaw, dateHeader string) time.Time {
 	if err != nil {
 		return time.Time{}
 	}
-	t, err := time.ParseInLocation(mwExecTimeLayout, fillRaw, d.Location())
+	raw := strings.TrimSpace(fillRaw)
+	marker := ""
+	switch upper := strings.ToUpper(raw); {
+	case strings.HasSuffix(upper, " AM"):
+		marker, raw = "AM", strings.TrimSpace(raw[:len(raw)-3])
+	case strings.HasSuffix(upper, " PM"):
+		marker, raw = "PM", strings.TrimSpace(raw[:len(raw)-3])
+	}
+	t, err := time.ParseInLocation(mwExecTimeLayout, raw, d.Location())
 	if err != nil {
 		return time.Time{}
 	}
-	exec := time.Date(d.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, d.Location())
+	hour := t.Hour()
+	switch marker {
+	case "PM":
+		if hour < 12 {
+			hour += 12
+		}
+	case "AM":
+		if hour == 12 {
+			hour = 0
+		}
+	}
+	exec := time.Date(d.Year(), t.Month(), t.Day(), hour, t.Minute(), t.Second(), 0, d.Location())
 	if exec.After(d.Add(24 * time.Hour)) {
 		exec = exec.AddDate(-1, 0, 0)
 	}
