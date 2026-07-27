@@ -28,12 +28,14 @@ import (
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/mwmail"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 	"github.com/w4jnl/trading-journal/web"
 )
 
 const topHelp = `Usage: trading-journal [flags]
        trading-journal users <subcommand> [args]
+       trading-journal mwmail parse <file.eml>
 
 Run the server (default):
   -config PATH   Path to config.yaml (default: ./config.yaml).
@@ -45,6 +47,11 @@ User management:
   trading-journal users -h
                  Print user-management subcommands (add, reset, delete,
                  list, activate, deactivate, promote, demote).
+
+MotiveWave email capture:
+  trading-journal mwmail parse <file.eml>
+                 Run the provisional fill parser on an archived message
+                 (from mw_email.archive_dir) and print the extraction.
 `
 
 func main() {
@@ -78,6 +85,14 @@ func main() {
 			}
 		}
 		if err := runUsersCommand(rest, cfgPath); err != nil {
+			fmt.Fprintln(os.Stderr, "error:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
+	if len(os.Args) >= 2 && os.Args[1] == "mwmail" {
+		if err := runMWMailCommand(os.Args[2:]); err != nil {
 			fmt.Fprintln(os.Stderr, "error:", err)
 			os.Exit(1)
 		}
@@ -660,6 +675,25 @@ func run() error {
 		go ibkrSync.Run(ctx)
 		go ibkrSync.Schedule(ctx)
 		go ibkrSync.KeepAlive(ctx)
+	}
+
+	// MotiveWave email capture: embedded SMTP listener archiving MW's
+	// "order filled" notifications and (unless mw_email.ingest is false)
+	// upserting them as provisional executions that the CSV import later
+	// supersedes. Fills attribute to whichever user owns the account ref;
+	// unknown refs stay archive-only until their first CSV import. Run logs
+	// its own "listening" line; a startup failure (bad TLS files, port in
+	// use) is fatal only to the module, not the app.
+	if cfg.MWEmail.Enabled {
+		mwSrv := &mwmail.Server{Cfg: cfg.MWEmail}
+		if cfg.MWEmail.IngestEnabled() {
+			mwSrv.Ingest = mwmail.ImporterIngest(importSvc)
+		}
+		go func() {
+			if err := mwSrv.Run(ctx); err != nil {
+				slog.Error("mw email capture failed", "err", err)
+			}
+		}()
 	}
 
 	// Start the inbox watcher. Errors during individual imports are logged

@@ -68,3 +68,11 @@ WHERE a.id = ? AND a.user_id = ?;
 -- Marks that the TopstepX API full-history walk-back completed for the
 -- account (0 to force a re-walk, used by the manual re-fetch button).
 UPDATE accounts SET api_backfill_done = ? WHERE id = ? AND user_id = ?;
+
+-- name: ListAccountsByRefAnyUser :many
+-- Cross-user resolution for the MW email ingest. A fill-notification email
+-- carries only the broker account ref - no user identity - so ownership is
+-- derived from which user already has the account. A real broker ref belongs
+-- to exactly one person; the caller treats 0 rows as "unknown account, do
+-- not ingest" and 2+ rows as ambiguous (skip and warn).
+SELECT * FROM accounts WHERE import_source = ? AND account_ref = ?;

@@ -102,7 +102,7 @@
     <thead>
       <tr>
         <th>Time</th><th>Contract</th><th>Root</th><th>Side</th>
-        <th class="tabular">Qty</th><th class="tabular">Price</th><th>Account</th><th>Broker ID</th><th class="recon-del-col"></th>
+        <th class="tabular">Qty</th><th class="tabular">Price</th><th>Account</th><th title="How this row was imported. 'MW email' rows are provisional near-real-time fills, replaced when the MotiveWave CSV export is imported.">Via</th><th>Broker ID</th><th class="recon-del-col"></th>
       </tr>
     </thead>
     <tbody>
@@ -134,12 +134,18 @@
         </td>
         <td class="muted" style="font-size:12px;">
           {{.AccountName}}
-          {{if .Manual}}<span class="pill pill--retired">manual</span>{{end}}
           {{if .Edited}}<span class="pill pill--retired">edited</span>{{end}}
           {{if .Deleted}}<span class="pill dir-short">deleted</span>{{end}}
           {{if .Inline}}<span class="pill" title="TopstepX trades-CSV account - synthetic executions, edit at source">read-only</span>{{end}}
         </td>
-        <td><code class="num muted" style="font-size:11px;" title="Broker fill id / ticket - the dedup key">{{.BrokerExecID}}</code></td>
+        <td style="font-size:12px; white-space:nowrap;">
+          {{if .Provisional}}
+          <span class="pill dir-long" title="Provisional: ingested live from a MotiveWave fill-notification email. Replaced automatically when the MotiveWave CSV export covering this order is imported.">email · provisional</span>
+          {{else}}
+          <span class="pill pill--retired" title="Authoritative import for this row">{{.MethodLabel}}</span>
+          {{end}}
+        </td>
+        <td><code class="num muted" style="font-size:11px;" title="Broker fill id / ticket - the dedup key{{if .OrderID}} | order id {{.OrderID}}{{end}}">{{.BrokerExecID}}</code>{{if .OrderID}}<br><code class="num muted" style="font-size:10px;" title="Broker order id - the email/CSV supersede key">ord {{.OrderID}}</code>{{end}}</td>
         <td class="recon-del-col">
           {{if not .Inline}}
             {{if .Deleted}}
@@ -151,7 +157,7 @@
         </td>
       </tr>
       {{else}}
-      <tr><td colspan="9" class="muted" style="text-align:center; padding:20px;">No transactions match the filter.</td></tr>
+      <tr><td colspan="10" class="muted" style="text-align:center; padding:20px;">No transactions match the filter.</td></tr>
       {{end}}
     </tbody>
   </table>

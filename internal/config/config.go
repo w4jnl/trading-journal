@@ -25,7 +25,36 @@ type Config struct {
 	AI           AI           `yaml:"ai"`
 	TopstepX     TopstepX     `yaml:"topstepx"`
 	IBKR         IBKR         `yaml:"ibkr"`
+	MWEmail      MWEmail      `yaml:"mw_email"`
 	Timezone     string       `yaml:"timezone"`
+}
+
+// MWEmail configures the embedded SMTP listener that captures MotiveWave
+// "Send Email On Filled Order" notifications - near-real-time fills for
+// accounts without an API connector (Rithmic props, AMP/CQG). Every message
+// is archived verbatim to ArchiveDir; complete fill notifications are also
+// ingested as PROVISIONAL executions (unless Ingest is disabled), which the
+// authoritative MotiveWave CSV import later supersedes via the shared
+// (account, order id) key. The listener must only ever bind a LAN/VPN
+// interface - it is not a mail server.
+//
+// MotiveWave infers encryption from the port number it is given: 25 = plain,
+// 465 = implicit TLS, 587 = STARTTLS. Match TLSMode to the port MW dials.
+type MWEmail struct {
+	Enabled    bool   `yaml:"enabled"`       // default false
+	ListenAddr string `yaml:"listen_addr"`   // default ":2525"
+	TLSMode    string `yaml:"tls_mode"`      // "off" (default) | "implicit" | "starttls"
+	TLSCert    string `yaml:"tls_cert"`      // PEM cert path; required unless tls_mode=off
+	TLSKey     string `yaml:"tls_key"`       // PEM key path; required unless tls_mode=off
+	Username   string `yaml:"smtp_username"` // both set => AUTH (PLAIN/LOGIN) required
+	Password   string `yaml:"smtp_password"`
+	ArchiveDir string `yaml:"archive_dir"` // default "data/mw-raw"; verbatim .eml audit trail
+	Ingest     *bool  `yaml:"ingest"`      // nil = true; false = capture/archive only, no DB writes
+}
+
+// IngestEnabled resolves the tri-state Ingest flag (nil defaults to on).
+func (m MWEmail) IngestEnabled() bool {
+	return m.Ingest == nil || *m.Ingest
 }
 
 // IBKR configures live sync via Client Portal Gateway(s). Only global knobs
@@ -266,6 +295,7 @@ func defaults() Config {
 			TickleSec: 60, SyncThrottleMin: 15,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
+		MWEmail:  MWEmail{ListenAddr: ":2525", TLSMode: "off", ArchiveDir: "data/mw-raw"},
 		Timezone: "America/Chicago",
 	}
 }
@@ -362,6 +392,31 @@ func (c Config) Validate() error {
 	if c.IBKR.RTHSyncMin > 0 {
 		if _, _, ok := c.IBKR.RTHWindowHM(); !ok {
 			return fmt.Errorf("ibkr.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.IBKR.RTHWindow)
+		}
+	}
+	if c.MWEmail.Enabled {
+		switch c.MWEmail.TLSMode {
+		case "", "off":
+		case "implicit", "starttls":
+			if c.MWEmail.TLSCert == "" || c.MWEmail.TLSKey == "" {
+				return fmt.Errorf("mw_email.tls_mode=%s requires mw_email.tls_cert and tls_key", c.MWEmail.TLSMode)
+			}
+			for _, p := range []string{c.MWEmail.TLSCert, c.MWEmail.TLSKey} {
+				if _, err := os.Stat(p); err != nil {
+					return fmt.Errorf("mw_email tls file %q: %w", p, err)
+				}
+			}
+		default:
+			return fmt.Errorf("mw_email.tls_mode must be \"off\", \"implicit\" or \"starttls\", got %q", c.MWEmail.TLSMode)
+		}
+		if (c.MWEmail.Username == "") != (c.MWEmail.Password == "") {
+			return fmt.Errorf("mw_email.smtp_username and smtp_password must be set together")
+		}
+		if c.MWEmail.ListenAddr == "" {
+			return fmt.Errorf("mw_email.listen_addr is required when mw_email is enabled")
+		}
+		if c.MWEmail.ArchiveDir == "" {
+			return fmt.Errorf("mw_email.archive_dir is required when mw_email is enabled")
 		}
 	}
 	return nil

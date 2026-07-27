@@ -29,8 +29,47 @@ func (q *Queries) CountOpenPositions(ctx context.Context, userID int64) (int64, 
 	return count, err
 }
 
+const deleteProvisionalByOrderID = `-- name: DeleteProvisionalByOrderID :many
+DELETE FROM executions
+WHERE account_id = ? AND order_id = ? AND import_method = 'mw_email' AND deleted_at IS NULL
+RETURNING symbol
+`
+
+type DeleteProvisionalByOrderIDParams struct {
+	AccountID int64   `json:"account_id"`
+	OrderID   *string `json:"order_id"`
+}
+
+// CSV supersede: the authoritative import for this (account, order) has
+// arrived, so the provisional email snapshot goes away. Tombstoned rows are
+// kept (user explicitly deleted them - the audit trail wins). Returns the
+// symbols so the caller can schedule FIFO rebuilds even when the replacing
+// CSV row itself dedups to a no-op.
+func (q *Queries) DeleteProvisionalByOrderID(ctx context.Context, arg DeleteProvisionalByOrderIDParams) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, deleteProvisionalByOrderID, arg.AccountID, arg.OrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []string
+	for rows.Next() {
+		var symbol string
+		if err := rows.Scan(&symbol); err != nil {
+			return nil, err
+		}
+		items = append(items, symbol)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getExecutionByBrokerID = `-- name: GetExecutionByBrokerID :one
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at FROM executions WHERE account_id = ? AND broker_exec_id = ?
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions WHERE account_id = ? AND broker_exec_id = ?
 `
 
 type GetExecutionByBrokerIDParams struct {
@@ -56,12 +95,54 @@ func (q *Queries) GetExecutionByBrokerID(ctx context.Context, arg GetExecutionBy
 		&i.DeletedAt,
 		&i.Manual,
 		&i.EditedAt,
+		&i.OrderID,
+		&i.ImportMethod,
+	)
+	return i, err
+}
+
+const getExecutionByOrderID = `-- name: GetExecutionByOrderID :one
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions
+WHERE account_id = ? AND order_id = ?
+ORDER BY CASE WHEN import_method = 'mw_email' THEN 1 ELSE 0 END, id
+LIMIT 1
+`
+
+type GetExecutionByOrderIDParams struct {
+	AccountID int64   `json:"account_id"`
+	OrderID   *string `json:"order_id"`
+}
+
+// Several rows can share (account, order id) when a broker reports multiple
+// fills for one order (seen on IBKR CSV rows). Authoritative rows sort before
+// provisional mw_email ones so the email ingest can tell "already covered by
+// a real import" (skip) from "update my provisional snapshot".
+func (q *Queries) GetExecutionByOrderID(ctx context.Context, arg GetExecutionByOrderIDParams) (Execution, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionByOrderID, arg.AccountID, arg.OrderID)
+	var i Execution
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.BrokerExecID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Side,
+		&i.Qty,
+		&i.Price,
+		&i.Commission,
+		&i.ExecTime,
+		&i.RawData,
+		&i.DeletedAt,
+		&i.Manual,
+		&i.EditedAt,
+		&i.OrderID,
+		&i.ImportMethod,
 	)
 	return i, err
 }
 
 const getExecutionForUser = `-- name: GetExecutionForUser :one
-SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, a.account_ref, a.commission_source, a.user_id AS owner_id
+SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, e.order_id, e.import_method, a.account_ref, a.commission_source, a.user_id AS owner_id
 FROM executions e
 JOIN accounts a ON a.id = e.account_id
 WHERE e.id = ? AND a.user_id = ?
@@ -87,6 +168,8 @@ type GetExecutionForUserRow struct {
 	DeletedAt        *time.Time `json:"deleted_at"`
 	Manual           int64      `json:"manual"`
 	EditedAt         *time.Time `json:"edited_at"`
+	OrderID          *string    `json:"order_id"`
+	ImportMethod     string     `json:"import_method"`
 	AccountRef       string     `json:"account_ref"`
 	CommissionSource string     `json:"commission_source"`
 	OwnerID          int64      `json:"owner_id"`
@@ -112,6 +195,8 @@ func (q *Queries) GetExecutionForUser(ctx context.Context, arg GetExecutionForUs
 		&i.DeletedAt,
 		&i.Manual,
 		&i.EditedAt,
+		&i.OrderID,
+		&i.ImportMethod,
 		&i.AccountRef,
 		&i.CommissionSource,
 		&i.OwnerID,
@@ -140,9 +225,9 @@ func (q *Queries) GetLastExecTimeForAccount(ctx context.Context, accountID int64
 
 const insertExecution = `-- name: InsertExecution :execrows
 INSERT INTO executions (
-    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data
+    account_id, broker_exec_id, order_id, import_method, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(account_id, broker_exec_id) DO NOTHING
 `
@@ -150,6 +235,8 @@ ON CONFLICT(account_id, broker_exec_id) DO NOTHING
 type InsertExecutionParams struct {
 	AccountID    int64     `json:"account_id"`
 	BrokerExecID string    `json:"broker_exec_id"`
+	OrderID      *string   `json:"order_id"`
+	ImportMethod string    `json:"import_method"`
 	Symbol       string    `json:"symbol"`
 	SymbolRoot   string    `json:"symbol_root"`
 	Side         string    `json:"side"`
@@ -168,6 +255,8 @@ func (q *Queries) InsertExecution(ctx context.Context, arg InsertExecutionParams
 	result, err := q.db.ExecContext(ctx, insertExecution,
 		arg.AccountID,
 		arg.BrokerExecID,
+		arg.OrderID,
+		arg.ImportMethod,
 		arg.Symbol,
 		arg.SymbolRoot,
 		arg.Side,
@@ -185,11 +274,11 @@ func (q *Queries) InsertExecution(ctx context.Context, arg InsertExecutionParams
 
 const insertManualExecution = `-- name: InsertManualExecution :one
 INSERT INTO executions (
-    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, manual
+    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, manual, import_method
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, 1
+    ?, ?, ?, ?, ?, ?, ?, ?, 1, 'manual'
 )
-RETURNING id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at
+RETURNING id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method
 `
 
 type InsertManualExecutionParams struct {
@@ -232,12 +321,14 @@ func (q *Queries) InsertManualExecution(ctx context.Context, arg InsertManualExe
 		&i.DeletedAt,
 		&i.Manual,
 		&i.EditedAt,
+		&i.OrderID,
+		&i.ImportMethod,
 	)
 	return i, err
 }
 
 const listExecutionsByAccount = `-- name: ListExecutionsByAccount :many
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at FROM executions WHERE account_id = ? ORDER BY exec_time, id
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions WHERE account_id = ? ORDER BY exec_time, id
 `
 
 func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) ([]Execution, error) {
@@ -264,6 +355,8 @@ func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) 
 			&i.DeletedAt,
 			&i.Manual,
 			&i.EditedAt,
+			&i.OrderID,
+			&i.ImportMethod,
 		); err != nil {
 			return nil, err
 		}
@@ -324,6 +417,60 @@ func (q *Queries) ListOpenPositions(ctx context.Context, userID int64) ([]ListOp
 			&i.SymbolRoot,
 			&i.NetQty,
 			&i.LastExecTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUnorderedExecsForAccountSymbol = `-- name: ListUnorderedExecsForAccountSymbol :many
+SELECT id, side, qty, price, exec_time FROM executions
+WHERE account_id = ? AND symbol = ? AND order_id IS NULL
+  AND import_method != 'mw_email' AND deleted_at IS NULL
+`
+
+type ListUnorderedExecsForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+type ListUnorderedExecsForAccountSymbolRow struct {
+	ID       int64     `json:"id"`
+	Side     string    `json:"side"`
+	Qty      float64   `json:"qty"`
+	Price    float64   `json:"price"`
+	ExecTime time.Time `json:"exec_time"`
+}
+
+// Non-email rows that carry NO broker order id: hand-entered fills and rows
+// from old-format CSV exports. The email ingest checks these before inserting
+// a provisional row - an order already recorded by such a "manual process"
+// must not be double-counted just because the order-id join cannot see it.
+// Rows WITH an order id are intentionally excluded: they dedup exactly, and
+// including them here could false-match a genuinely distinct same-second fill.
+func (q *Queries) ListUnorderedExecsForAccountSymbol(ctx context.Context, arg ListUnorderedExecsForAccountSymbolParams) ([]ListUnorderedExecsForAccountSymbolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUnorderedExecsForAccountSymbol, arg.AccountID, arg.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnorderedExecsForAccountSymbolRow
+	for rows.Next() {
+		var i ListUnorderedExecsForAccountSymbolRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Side,
+			&i.Qty,
+			&i.Price,
+			&i.ExecTime,
 		); err != nil {
 			return nil, err
 		}
@@ -401,6 +548,36 @@ func (q *Queries) UpdateExecution(ctx context.Context, arg UpdateExecutionParams
 		arg.ExecTime,
 		arg.ID,
 		arg.UserID,
+	)
+	return err
+}
+
+const updateProvisionalExecution = `-- name: UpdateProvisionalExecution :exec
+UPDATE executions
+SET side = ?, qty = ?, price = ?, exec_time = ?, raw_data = ?
+WHERE id = ? AND import_method = 'mw_email'
+`
+
+type UpdateProvisionalExecutionParams struct {
+	Side     string    `json:"side"`
+	Qty      float64   `json:"qty"`
+	Price    float64   `json:"price"`
+	ExecTime time.Time `json:"exec_time"`
+	RawData  *string   `json:"raw_data"`
+	ID       int64     `json:"id"`
+}
+
+// MW fill emails report the order's CUMULATIVE filled qty and running avg
+// price, so a later email for the same order replaces the earlier snapshot in
+// place. Guarded to provisional rows only - never touches imported data.
+func (q *Queries) UpdateProvisionalExecution(ctx context.Context, arg UpdateProvisionalExecutionParams) error {
+	_, err := q.db.ExecContext(ctx, updateProvisionalExecution,
+		arg.Side,
+		arg.Qty,
+		arg.Price,
+		arg.ExecTime,
+		arg.RawData,
+		arg.ID,
 	)
 	return err
 }

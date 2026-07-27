@@ -31,10 +31,37 @@ type txnRow struct {
 	Price        float64
 	ExecTime     time.Time
 	BrokerExecID string
+	OrderID      string // broker order number when the source carried one
+	Method       string // executions.import_method raw value
+	MethodLabel  string // short display form of Method
+	Provisional  bool   // import_method = mw_email: awaiting the authoritative CSV
 	Manual       bool
 	Deleted      bool
 	Edited       bool
 	Inline       bool // owning account is TopstepX trades-CSV (read-only here)
+}
+
+// methodLabel maps executions.import_method to the short badge shown in the
+// reconcile table. The mw_email case is handled separately (Provisional pill).
+func methodLabel(m string) string {
+	switch m {
+	case "motivewave_csv":
+		return "MW csv"
+	case "mw_email":
+		return "MW email"
+	case "topstepx_csv":
+		return "TSX csv"
+	case "topstepx_trades_csv":
+		return "TSX trades"
+	case "topstepx_api":
+		return "TSX api"
+	case "ibkr_api":
+		return "IBKR api"
+	case "manual":
+		return "manual"
+	default:
+		return m
+	}
 }
 
 // txnFilter is the current filter state (also round-tripped through redirects).
@@ -115,8 +142,8 @@ func (f txnFilter) query() url.Values {
 func (h *Handlers) listExecutionsFiltered(ctx context.Context, uid int64, f txnFilter) ([]txnRow, error) {
 	var b strings.Builder
 	b.WriteString(`SELECT e.id, e.account_id, a.account_ref, a.name, e.symbol, e.symbol_root,
-		e.side, e.qty, e.price, e.exec_time, e.broker_exec_id, e.manual,
-		e.deleted_at, e.edited_at, a.commission_source
+		e.side, e.qty, e.price, e.exec_time, e.broker_exec_id, e.order_id, e.import_method,
+		e.manual, e.deleted_at, e.edited_at, a.commission_source
 		FROM executions e JOIN accounts a ON a.id = e.account_id
 		WHERE a.user_id = ?`)
 	args := []any{uid}
@@ -155,13 +182,19 @@ func (h *Handlers) listExecutionsFiltered(ctx context.Context, uid int64, f txnF
 	for rows.Next() {
 		var t txnRow
 		var manual int64
+		var orderID *string
 		var deletedAt, editedAt *time.Time
 		var commissionSrc string
 		if err := rows.Scan(&t.ID, &t.AccountID, &t.AccountRef, &t.AccountName, &t.Symbol,
-			&t.SymbolRoot, &t.Side, &t.Qty, &t.Price, &t.ExecTime, &t.BrokerExecID, &manual,
-			&deletedAt, &editedAt, &commissionSrc); err != nil {
+			&t.SymbolRoot, &t.Side, &t.Qty, &t.Price, &t.ExecTime, &t.BrokerExecID, &orderID,
+			&t.Method, &manual, &deletedAt, &editedAt, &commissionSrc); err != nil {
 			return nil, err
 		}
+		if orderID != nil {
+			t.OrderID = *orderID
+		}
+		t.MethodLabel = methodLabel(t.Method)
+		t.Provisional = t.Method == "mw_email"
 		t.Manual = manual != 0
 		t.Deleted = deletedAt != nil
 		t.Edited = editedAt != nil

@@ -133,6 +133,34 @@ ibkr:
   rth_sync_min: 15       # faster cadence inside rth_window
   rth_window: "07:30-16:00"  # Chicago time, Mon-Fri (RTH 08:30-15:00 CT +/- 1h)
 
+# MotiveWave email capture + ingest: an embedded SMTP listener for MW's
+# "Send Email On Filled Order" notifications (Preferences -> Orders). Point
+# MW's mail settings at this host instead of a real mail provider. Every
+# message is archived verbatim to archive_dir; complete fill notifications
+# are additionally ingested as PROVISIONAL executions (shown as
+# "email - provisional" on /admin/transactions), giving near-real-time fills
+# for accounts without an API connector. The MotiveWave CSV export remains
+# authoritative: importing it replaces provisional rows exactly, matched on
+# (account, order id) -- so an end-of-day re-import never double-counts.
+# Accounts already live-synced via a broker API (IBKR) ignore their email
+# copies automatically. LAN/VPN only: never expose this listener publicly.
+#
+# MotiveWave infers encryption from the port it dials: 25 = plain,
+# 465 = implicit TLS, 587 = STARTTLS -- match tls_mode to the port you give
+# MW (a nonstandard port like 2525 is treated as plain). MW applies mail
+# settings only after a FULL restart (Apply -> OK -> restart -> Send Test
+# Email).
+mw_email:
+  enabled: false
+  listen_addr: ":2525"       # bind the LAN/Tailscale interface, never WAN
+  tls_mode: "off"            # off | implicit | starttls
+  # tls_cert: ""             # PEM paths; required unless tls_mode=off
+  # tls_key: ""
+  # smtp_username: ""        # both set => AUTH (PLAIN/LOGIN) required
+  # smtp_password: ""
+  archive_dir: "data/mw-raw" # verbatim .eml audit trail + parser corpus
+  # ingest: true             # false = capture/archive only, no DB writes
+
 # Trading timezone -- used for day boundaries on calendar/dashboard.
 # Storage is always UTC.
 timezone: "America/Chicago"

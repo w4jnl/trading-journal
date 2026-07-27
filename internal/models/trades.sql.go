@@ -414,7 +414,7 @@ func (q *Queries) ListDistinctSymbolRoots(ctx context.Context, userID int64) ([]
 }
 
 const listExecutionsForTrade = `-- name: ListExecutionsForTrade :many
-SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, te.role, te.qty_used
+SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, e.order_id, e.import_method, te.role, te.qty_used
 FROM executions e
 JOIN trade_executions te ON te.execution_id = e.id
 WHERE te.trade_id = ?
@@ -436,6 +436,8 @@ type ListExecutionsForTradeRow struct {
 	DeletedAt    *time.Time `json:"deleted_at"`
 	Manual       int64      `json:"manual"`
 	EditedAt     *time.Time `json:"edited_at"`
+	OrderID      *string    `json:"order_id"`
+	ImportMethod string     `json:"import_method"`
 	Role         string     `json:"role"`
 	QtyUsed      float64    `json:"qty_used"`
 }
@@ -464,6 +466,8 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 			&i.DeletedAt,
 			&i.Manual,
 			&i.EditedAt,
+			&i.OrderID,
+			&i.ImportMethod,
 			&i.Role,
 			&i.QtyUsed,
 		); err != nil {

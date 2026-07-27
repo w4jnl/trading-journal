@@ -3,6 +3,8 @@ module github.com/w4jnl/trading-journal
 go 1.26.2
 
 require (
+	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
+	github.com/emersion/go-smtp v0.24.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-pdf/fpdf v0.9.0
 	github.com/gomarkdown/markdown v0.0.0-20260417124207-7d523f7318df

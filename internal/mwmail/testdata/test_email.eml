@@ -1,0 +1,16 @@
+Date: Sat, 25 Jul 2026 23:00:45 +0200 (CEST)
+From: "mw@example.com" <mw@example.com>
+To: mw@example.com
+Subject: MotiveWave Test Email
+MIME-Version: 1.0
+Content-Type: multipart/mixed; 
+	boundary="----=_Part_0_1651541414.1785013245951"
+
+------=_Part_0_1651541414.1785013245951
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+This is a test email generated from the Email Settings panel.
+
+If you have received this message, your email settings are configured properly.
+------=_Part_0_1651541414.1785013245951--
