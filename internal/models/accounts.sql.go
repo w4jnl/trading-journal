@@ -207,6 +207,59 @@ func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, er
 	return items, nil
 }
 
+const listAccountsByRefAnyUser = `-- name: ListAccountsByRefAnyUser :many
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE import_source = ? AND account_ref = ?
+`
+
+type ListAccountsByRefAnyUserParams struct {
+	ImportSource string `json:"import_source"`
+	AccountRef   string `json:"account_ref"`
+}
+
+// Cross-user resolution for the MW email ingest. A fill-notification email
+// carries only the broker account ref - no user identity - so ownership is
+// derived from which user already has the account. A real broker ref belongs
+// to exactly one person; the caller treats 0 rows as "unknown account, do
+// not ingest" and 2+ rows as ambiguous (skip and warn).
+func (q *Queries) ListAccountsByRefAnyUser(ctx context.Context, arg ListAccountsByRefAnyUserParams) ([]Account, error) {
+	rows, err := q.db.QueryContext(ctx, listAccountsByRefAnyUser, arg.ImportSource, arg.AccountRef)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Account
+	for rows.Next() {
+		var i Account
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Name,
+			&i.Firm,
+			&i.ImportSource,
+			&i.AccountRef,
+			&i.Type,
+			&i.Currency,
+			&i.NeedsSetup,
+			&i.Active,
+			&i.CommissionSource,
+			&i.CreatedAt,
+			&i.ExcludedFromStats,
+			&i.ApiBackfillDone,
+			&i.LiveSyncSince,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRetiredAccountIDs = `-- name: ListRetiredAccountIDs :many
 SELECT id FROM accounts WHERE user_id = ? AND active = 0
 `

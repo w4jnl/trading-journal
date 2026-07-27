@@ -14,15 +14,17 @@ import (
 // Email ingest actions, reported back to the SMTP layer for logging. The SMTP
 // reply is 250 regardless - these only describe what happened to the data.
 const (
-	EmailInserted           = "inserted"              // new provisional execution created
-	EmailUpdated            = "updated"               // provisional snapshot replaced (cumulative partial-fill email)
-	EmailUnchanged          = "unchanged"             // duplicate content for an order we already hold
-	EmailSkippedAuthorative = "skipped_authoritative" // a CSV/API row already covers this order
-	EmailSkippedTombstoned  = "skipped_tombstoned"    // user deleted the provisional row; email must not resurrect it
-	EmailSkippedLiveSync    = "skipped_live_sync"     // account is API-synced (IBKR); email is capture-only for it
-	EmailSkippedInline      = "skipped_inline"        // trades-CSV account; executions are synthetic there
-	EmailSkippedMatched     = "skipped_matched"       // an order-id-less manual/old-CSV row already records this fill
-	EmailSkippedStale       = "skipped_stale"         // older cumulative snapshot than the row we hold (archive replay)
+	EmailInserted           = "inserted"                  // new provisional execution created
+	EmailUpdated            = "updated"                   // provisional snapshot replaced (cumulative partial-fill email)
+	EmailUnchanged          = "unchanged"                 // duplicate content for an order we already hold
+	EmailSkippedAuthorative = "skipped_authoritative"     // a CSV/API row already covers this order
+	EmailSkippedTombstoned  = "skipped_tombstoned"        // user deleted the provisional row; email must not resurrect it
+	EmailSkippedLiveSync    = "skipped_live_sync"         // account is API-synced (IBKR); email is capture-only for it
+	EmailSkippedInline      = "skipped_inline"            // trades-CSV account; executions are synthetic there
+	EmailSkippedMatched     = "skipped_matched"           // an order-id-less manual/old-CSV row already records this fill
+	EmailSkippedStale       = "skipped_stale"             // older cumulative snapshot than the row we hold (archive replay)
+	EmailSkippedUnknownAcct = "skipped_unknown_account"   // no user owns this account ref yet; first CSV import creates it
+	EmailSkippedAmbiguous   = "skipped_ambiguous_account" // more than one user owns the ref; cannot attribute
 )
 
 // IngestEmailFill upserts one PROVISIONAL execution from a MotiveWave
@@ -43,14 +45,21 @@ const (
 // namespace, and ingesting the email copy would double-count. The email is
 // still archived by the capture layer regardless.
 //
+// User attribution: an email carries no user identity, only the broker
+// account ref, so the fill is booked under whichever user ALREADY OWNS the
+// (motivewave_csv, ref) account - resolved across all users, since a real
+// broker ref belongs to exactly one person. Unknown refs are deliberately
+// NOT auto-created (unlike the CSV path, email has no owner signal): the
+// fill stays archive-only until the first authoritative CSV import creates
+// the account under the right user - and that CSV delivers these very fills
+// anyway, so nothing is lost. A ref owned by two users cannot be attributed
+// and is skipped with a warning.
+//
 // f.OrderID is required. f.BrokerExecID should be the synthetic
 // "MWEMAIL-<order id>" so it can never collide with a CSV ticket.
-func (s *ImportService) IngestEmailFill(ctx context.Context, userID int64, f Fill) (string, error) {
+func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, error) {
 	if f.OrderID == "" {
 		return "", errors.New("email fill has no order id")
-	}
-	if userID != 0 {
-		ctx = withUserScope(ctx, userID, "")
 	}
 
 	tx, err := s.DB.BeginTx(ctx, nil)
@@ -60,10 +69,24 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, userID int64, f Fil
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	acct, created, err := s.findOrCreateAccount(ctx, q, FormatMotiveWave, f.AccountRef, f.Source)
+	owners, err := q.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
+		ImportSource: string(FormatMotiveWave),
+		AccountRef:   f.AccountRef,
+	})
 	if err != nil {
-		return "", fmt.Errorf("account %s: %w", f.AccountRef, err)
+		return "", fmt.Errorf("resolve account %s: %w", f.AccountRef, err)
 	}
+	switch {
+	case len(owners) == 0:
+		s.logger().Warn("mw email ingest: unknown account ref, fill stays archive-only until its first CSV import",
+			"ref", f.AccountRef, "order_id", f.OrderID)
+		return EmailSkippedUnknownAcct, nil
+	case len(owners) > 1:
+		s.logger().Warn("mw email ingest: account ref owned by multiple users, cannot attribute",
+			"ref", f.AccountRef, "owners", len(owners))
+		return EmailSkippedAmbiguous, nil
+	}
+	acct := owners[0]
 	if acct.CommissionSource == "inline" {
 		return EmailSkippedInline, tx.Commit()
 	}
@@ -156,16 +179,16 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, userID int64, f Fil
 	if tz == nil {
 		tz = time.UTC
 	}
-	builder := &positions.Builder{Queries: q, Timezone: tz, UserID: s.effectiveUserID(ctx)}
+	// The builder is scoped to the resolved OWNER, not the bootstrap user -
+	// this is what books the trade under the right person in multi-user
+	// deployments.
+	builder := &positions.Builder{Queries: q, Timezone: tz, UserID: acct.UserID}
 	if _, err := builder.Rebuild(ctx, []positions.Key{{AccountID: acct.ID, Symbol: rebuildSymbol}}); err != nil {
 		return "", fmt.Errorf("rebuild %d/%s: %w", acct.ID, rebuildSymbol, err)
 	}
 
 	if err := tx.Commit(); err != nil {
 		return "", fmt.Errorf("commit: %w", err)
-	}
-	if created {
-		s.logger().Info("mw email ingest auto-created account", "ref", f.AccountRef)
 	}
 	s.enqueuePrefetch(ctx, acct.ID)
 	return action, nil

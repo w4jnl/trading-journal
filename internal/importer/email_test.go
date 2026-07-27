@@ -2,6 +2,7 @@ package importer
 
 import (
 	"context"
+	"database/sql"
 	"os"
 	"path/filepath"
 	"testing"
@@ -25,6 +26,33 @@ func emailFill(orderID string, qty, price float64, at time.Time) Fill {
 	}
 }
 
+// createMWAccount pre-creates the account an email fill will resolve to -
+// email ingest never auto-creates accounts (no owner signal in an email).
+func createMWAccount(t *testing.T, q *models.Queries, userID int64, ref string) models.Account {
+	t.Helper()
+	firm := "lucid"
+	typ := "prop_eval"
+	acct, err := q.CreateAccount(context.Background(), models.CreateAccountParams{
+		UserID: userID, Name: ref, Firm: &firm, ImportSource: "motivewave_csv",
+		AccountRef: ref, Type: &typ, Currency: "USD", NeedsSetup: 0, CommissionSource: "rate",
+	})
+	if err != nil {
+		t.Fatalf("create account %s: %v", ref, err)
+	}
+	return acct
+}
+
+// createUser inserts a second journal user (dbtest only bootstraps one).
+func createUser(t *testing.T, conn *sql.DB, username string) int64 {
+	t.Helper()
+	res, err := conn.Exec(`INSERT INTO users (username, is_active) VALUES (?, 1)`, username)
+	if err != nil {
+		t.Fatalf("create user %s: %v", username, err)
+	}
+	id, _ := res.LastInsertId()
+	return id
+}
+
 // TestIngestEmailFill_Lifecycle walks the full provisional flow against the
 // verified real-world semantics: MW emails CUMULATIVE order snapshots, the
 // CSV import supersedes them via (account, order id), and a re-import stays
@@ -35,26 +63,18 @@ func TestIngestEmailFill_Lifecycle(t *testing.T) {
 	q := models.New(conn)
 
 	t0 := time.Date(2026, 7, 27, 7, 19, 31, 0, time.UTC)
+	acct := createMWAccount(t, q, svc.UserID, "LFE050-EXAMPLE1-TEST018")
 
 	// 1. First email: partial fill snapshot (1 of an eventual 3).
-	action, err := svc.IngestEmailFill(ctx, svc.UserID, emailFill("172416726", 1, 7516.25, t0))
+	action, err := svc.IngestEmailFill(ctx, emailFill("172416726", 1, 7516.25, t0))
 	if err != nil || action != EmailInserted {
 		t.Fatalf("first email = %q err %v, want inserted", action, err)
-	}
-	acct, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
-		UserID: svc.UserID, ImportSource: "motivewave_csv", AccountRef: "LFE050-EXAMPLE1-TEST018",
-	})
-	if err != nil {
-		t.Fatalf("auto-created account: %v", err)
-	}
-	if acct.Firm == nil || *acct.Firm != "lucid" {
-		t.Errorf("firm guess = %v, want lucid", acct.Firm)
 	}
 
 	// 2. Second email, same order: cumulative snapshot (3 @ same price, later
 	// time) must REPLACE the row, not add a second one.
 	t1 := t0.Add(2 * time.Second)
-	action, err = svc.IngestEmailFill(ctx, svc.UserID, emailFill("172416726", 3, 7516.25, t1))
+	action, err = svc.IngestEmailFill(ctx, emailFill("172416726", 3, 7516.25, t1))
 	if err != nil || action != EmailUpdated {
 		t.Fatalf("cumulative email = %q err %v, want updated", action, err)
 	}
@@ -70,14 +90,14 @@ func TestIngestEmailFill_Lifecycle(t *testing.T) {
 	}
 
 	// 3. Exact replay of the last email: no-op.
-	action, err = svc.IngestEmailFill(ctx, svc.UserID, emailFill("172416726", 3, 7516.25, t1))
+	action, err = svc.IngestEmailFill(ctx, emailFill("172416726", 3, 7516.25, t1))
 	if err != nil || action != EmailUnchanged {
 		t.Fatalf("replay = %q err %v, want unchanged", action, err)
 	}
 
 	// 3b. Replay of the EARLIER partial snapshot (archive sweep walks
 	// oldest-first): stale, must not rewind the row.
-	action, err = svc.IngestEmailFill(ctx, svc.UserID, emailFill("172416726", 1, 7516.25, t0))
+	action, err = svc.IngestEmailFill(ctx, emailFill("172416726", 1, 7516.25, t0))
 	if err != nil || action != EmailSkippedStale {
 		t.Fatalf("stale replay = %q err %v, want skipped_stale", action, err)
 	}
@@ -119,7 +139,7 @@ func TestIngestEmailFill_Lifecycle(t *testing.T) {
 	}
 
 	// 5. A LATE email for the superseded order must not resurrect anything.
-	action, err = svc.IngestEmailFill(ctx, svc.UserID, emailFill("172416726", 3, 7516.25, t1))
+	action, err = svc.IngestEmailFill(ctx, emailFill("172416726", 3, 7516.25, t1))
 	if err != nil || action != EmailSkippedAuthorative {
 		t.Fatalf("late email = %q err %v, want skipped_authoritative", action, err)
 	}
@@ -146,18 +166,13 @@ func TestIngestEmailFill_LiveSyncSkip(t *testing.T) {
 	ctx := context.Background()
 	q := models.New(conn)
 
-	// Seed the account via a first email (pre-cutover), then set the cutover.
+	acct := createMWAccount(t, q, svc.UserID, "U10000001")
+	// A pre-cutover email lands normally.
 	f := emailFill("500001", 1, 7000, time.Date(2026, 7, 20, 10, 0, 0, 0, time.UTC))
 	f.AccountRef = "U10000001"
 	f.Source = "Interactive Brokers"
-	if action, err := svc.IngestEmailFill(ctx, svc.UserID, f); err != nil || action != EmailInserted {
+	if action, err := svc.IngestEmailFill(ctx, f); err != nil || action != EmailInserted {
 		t.Fatalf("seed email = %q err %v", action, err)
-	}
-	acct, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
-		UserID: svc.UserID, ImportSource: "motivewave_csv", AccountRef: "U10000001",
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	cutover := time.Date(2026, 7, 25, 0, 0, 0, 0, time.UTC)
 	if err := q.SetAccountLiveSyncSince(ctx, models.SetAccountLiveSyncSinceParams{
@@ -169,7 +184,7 @@ func TestIngestEmailFill_LiveSyncSkip(t *testing.T) {
 	g := emailFill("500002", 1, 7001, time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC))
 	g.AccountRef = "U10000001"
 	g.Source = "Interactive Brokers"
-	action, err := svc.IngestEmailFill(ctx, svc.UserID, g)
+	action, err := svc.IngestEmailFill(ctx, g)
 	if err != nil || action != EmailSkippedLiveSync {
 		t.Fatalf("post-cutover email = %q err %v, want skipped_live_sync", action, err)
 	}
@@ -188,18 +203,9 @@ func TestIngestEmailFill_ManualRowGuard(t *testing.T) {
 	ctx := context.Background()
 	q := models.New(conn)
 
-	// Seed the account, then hand-enter a fill the way the reconcile editor
-	// does (manual=1, no order id).
-	at := time.Date(2026, 7, 27, 9, 0, 0, 0, time.UTC)
-	if action, err := svc.IngestEmailFill(ctx, svc.UserID, emailFill("700001", 1, 7500, at)); err != nil || action != EmailInserted {
-		t.Fatalf("seed = %q err %v", action, err)
-	}
-	acct, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
-		UserID: svc.UserID, ImportSource: "motivewave_csv", AccountRef: "LFE050-EXAMPLE1-TEST018",
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
+	// Hand-enter a fill the way the reconcile editor does (manual=1, no
+	// order id).
+	acct := createMWAccount(t, q, svc.UserID, "LFE050-EXAMPLE1-TEST018")
 	manualAt := time.Date(2026, 7, 27, 10, 0, 0, 0, time.UTC)
 	if _, err := q.InsertManualExecution(ctx, models.InsertManualExecutionParams{
 		AccountID: acct.ID, BrokerExecID: "MANUAL-1-guard", Symbol: "MESU6", SymbolRoot: "MES",
@@ -211,7 +217,7 @@ func TestIngestEmailFill_ManualRowGuard(t *testing.T) {
 	// Email for the same fill (time off by 1s - the email clock is derived
 	// from the Date header): must be skipped, nothing inserted.
 	f := emailFill("700002", 2, 7510.25, manualAt.Add(time.Second))
-	action, err := svc.IngestEmailFill(ctx, svc.UserID, f)
+	action, err := svc.IngestEmailFill(ctx, f)
 	if err != nil || action != EmailSkippedMatched {
 		t.Fatalf("duplicate of manual row = %q err %v, want skipped_matched", action, err)
 	}
@@ -223,12 +229,12 @@ func TestIngestEmailFill_ManualRowGuard(t *testing.T) {
 
 	// A different price at the same moment is a different fill: goes in.
 	g := emailFill("700003", 2, 7511.00, manualAt)
-	if action, err := svc.IngestEmailFill(ctx, svc.UserID, g); err != nil || action != EmailInserted {
+	if action, err := svc.IngestEmailFill(ctx, g); err != nil || action != EmailInserted {
 		t.Fatalf("distinct fill = %q err %v, want inserted", action, err)
 	}
 	// Same fields but outside the +-2s window: also a different fill.
 	h := emailFill("700004", 2, 7510.25, manualAt.Add(10*time.Second))
-	if action, err := svc.IngestEmailFill(ctx, svc.UserID, h); err != nil || action != EmailInserted {
+	if action, err := svc.IngestEmailFill(ctx, h); err != nil || action != EmailInserted {
 		t.Fatalf("out-of-window fill = %q err %v, want inserted", action, err)
 	}
 }
@@ -241,14 +247,9 @@ func TestIngestEmailFill_TombstoneRespected(t *testing.T) {
 	q := models.New(conn)
 
 	at := time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC)
-	if action, err := svc.IngestEmailFill(ctx, svc.UserID, emailFill("600001", 2, 7500, at)); err != nil || action != EmailInserted {
+	acct := createMWAccount(t, q, svc.UserID, "LFE050-EXAMPLE1-TEST018")
+	if action, err := svc.IngestEmailFill(ctx, emailFill("600001", 2, 7500, at)); err != nil || action != EmailInserted {
 		t.Fatalf("insert = %q err %v", action, err)
-	}
-	acct, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{
-		UserID: svc.UserID, ImportSource: "motivewave_csv", AccountRef: "LFE050-EXAMPLE1-TEST018",
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	row, err := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{
 		AccountID: acct.ID, BrokerExecID: "MWEMAIL-600001",
@@ -260,8 +261,71 @@ func TestIngestEmailFill_TombstoneRespected(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	action, err := svc.IngestEmailFill(ctx, svc.UserID, emailFill("600001", 3, 7500, at.Add(time.Second)))
+	action, err := svc.IngestEmailFill(ctx, emailFill("600001", 3, 7500, at.Add(time.Second)))
 	if err != nil || action != EmailSkippedTombstoned {
 		t.Fatalf("replay on tombstone = %q err %v, want skipped_tombstoned", action, err)
+	}
+}
+
+// TestIngestEmailFill_UnknownAccountSkipped: an email has no user identity,
+// so a ref no user owns must NOT auto-create an account - the fill stays
+// archive-only until the first authoritative CSV import creates it under
+// the right user.
+func TestIngestEmailFill_UnknownAccountSkipped(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+
+	f := emailFill("800001", 1, 7500, time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC))
+	f.AccountRef = "APEX-999999-01"
+	action, err := svc.IngestEmailFill(ctx, f)
+	if err != nil || action != EmailSkippedUnknownAcct {
+		t.Fatalf("unknown ref = %q err %v, want skipped_unknown_account", action, err)
+	}
+	var count int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM accounts WHERE account_ref='APEX-999999-01'`).Scan(&count); err != nil || count != 0 {
+		t.Errorf("accounts auto-created = %d, want 0", count)
+	}
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM executions`).Scan(&count); err != nil || count != 0 {
+		t.Errorf("executions inserted = %d, want 0", count)
+	}
+}
+
+// TestIngestEmailFill_CrossUserAttribution: the fill books under whichever
+// user owns the account ref - not the bootstrap user. If two users somehow
+// own the same ref, attribution is impossible and the fill is skipped.
+func TestIngestEmailFill_CrossUserAttribution(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+
+	other := createUser(t, conn, "jana")
+	acct := createMWAccount(t, q, other, "LFE050-EXAMPLE1-TEST018")
+
+	at := time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC)
+	if action, err := svc.IngestEmailFill(ctx, emailFill("900001", 2, 7500, at)); err != nil || action != EmailInserted {
+		t.Fatalf("cross-user email = %q err %v, want inserted", action, err)
+	}
+	var ownerID int64
+	if err := conn.QueryRow(`SELECT a.user_id FROM executions e JOIN accounts a ON a.id=e.account_id
+		WHERE e.broker_exec_id='MWEMAIL-900001'`).Scan(&ownerID); err != nil || ownerID != other {
+		t.Fatalf("fill owner = %d err %v, want user %d (not bootstrap %d)", ownerID, err, other, svc.UserID)
+	}
+	// The closing fill builds the trade under the owner too.
+	g := emailFill("900002", 2, 7499, at.Add(time.Minute))
+	g.Side = "buy"
+	if action, err := svc.IngestEmailFill(ctx, g); err != nil || action != EmailInserted {
+		t.Fatalf("closing email = %q err %v", action, err)
+	}
+	var tradeOwner int64
+	if err := conn.QueryRow(`SELECT a.user_id FROM trades t JOIN accounts a ON a.id=t.account_id
+		WHERE t.account_id=?`, acct.ID).Scan(&tradeOwner); err != nil || tradeOwner != other {
+		t.Fatalf("trade owner = %d err %v, want %d", tradeOwner, err, other)
+	}
+
+	// Same ref under a second user: ambiguous, skip.
+	createMWAccount(t, q, svc.UserID, "LFE050-EXAMPLE1-TEST018")
+	action, err := svc.IngestEmailFill(ctx, emailFill("900003", 1, 7500, at.Add(2*time.Minute)))
+	if err != nil || action != EmailSkippedAmbiguous {
+		t.Fatalf("ambiguous ref = %q err %v, want skipped_ambiguous_account", action, err)
 	}
 }

@@ -391,6 +391,15 @@ orders come back unchanged/skipped, and a fill already recorded by a
 manual process (a hand-entered row or an old-format CSV without order
 ids) is detected by (symbol, side, qty, price, time) and left alone.
 
+**User attribution:** an email carries no user identity, only the
+broker account ref, so a fill is booked under whichever journal user
+*already owns* that account — resolved across all users. Refs no user
+owns are deliberately **not** auto-created from email: the fill stays
+archive-only (with a warning in the log) until the account's first CSV
+import creates it under the right user — and that CSV contains those
+very fills, so nothing is lost; the account simply isn't real-time
+until then.
+
 **The MotiveWave CSV export stays authoritative.** The Executions-view
 export carries the same `Order ID` as the emails, so importing it
 replaces the matching provisional rows exactly — an end-of-day
