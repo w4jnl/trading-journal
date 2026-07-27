@@ -4,11 +4,39 @@
 -- DO NOTHING (not upsert) on purpose: execrows drives rebuild scheduling, and
 -- an upsert would report rows on every sync and force constant rebuilds.
 INSERT INTO executions (
-    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data
+    account_id, broker_exec_id, order_id, import_method, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
 ON CONFLICT(account_id, broker_exec_id) DO NOTHING;
+
+-- name: GetExecutionByOrderID :one
+-- Several rows can share (account, order id) when a broker reports multiple
+-- fills for one order (seen on IBKR CSV rows). Authoritative rows sort before
+-- provisional mw_email ones so the email ingest can tell "already covered by
+-- a real import" (skip) from "update my provisional snapshot".
+SELECT * FROM executions
+WHERE account_id = ? AND order_id = ?
+ORDER BY CASE WHEN import_method = 'mw_email' THEN 1 ELSE 0 END, id
+LIMIT 1;
+
+-- name: UpdateProvisionalExecution :exec
+-- MW fill emails report the order's CUMULATIVE filled qty and running avg
+-- price, so a later email for the same order replaces the earlier snapshot in
+-- place. Guarded to provisional rows only - never touches imported data.
+UPDATE executions
+SET side = ?, qty = ?, price = ?, exec_time = ?, raw_data = ?
+WHERE id = ? AND import_method = 'mw_email';
+
+-- name: DeleteProvisionalByOrderID :many
+-- CSV supersede: the authoritative import for this (account, order) has
+-- arrived, so the provisional email snapshot goes away. Tombstoned rows are
+-- kept (user explicitly deleted them - the audit trail wins). Returns the
+-- symbols so the caller can schedule FIFO rebuilds even when the replacing
+-- CSV row itself dedups to a no-op.
+DELETE FROM executions
+WHERE account_id = ? AND order_id = ? AND import_method = 'mw_email' AND deleted_at IS NULL
+RETURNING symbol;
 
 -- name: ListExecutionsByAccount :many
 SELECT * FROM executions WHERE account_id = ? ORDER BY exec_time, id;
@@ -66,9 +94,9 @@ WHERE e.id = ? AND a.user_id = ?;
 -- Hand-created fill from the reconcile editor. broker_exec_id is a synthetic MANUAL-...
 -- id the caller mints; manual=1 tags it. Returns the row (for the rebuild that follows).
 INSERT INTO executions (
-    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, manual
+    account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time, manual, import_method
 ) VALUES (
-    ?, ?, ?, ?, ?, ?, ?, ?, 1
+    ?, ?, ?, ?, ?, ?, ?, ?, 1, 'manual'
 )
 RETURNING *;
 

@@ -30,11 +30,13 @@ type Config struct {
 }
 
 // MWEmail configures the embedded SMTP listener that captures MotiveWave
-// "Send Email On Filled Order" notifications - near-real-time fill capture
-// for accounts without an API connector (Rithmic props, AMP/CQG). Capture
-// layer only: every message is archived verbatim to ArchiveDir and parsed
-// advisorily; nothing is ingested into the journal from email. The listener
-// must only ever bind a LAN/VPN interface - it is not a mail server.
+// "Send Email On Filled Order" notifications - near-real-time fills for
+// accounts without an API connector (Rithmic props, AMP/CQG). Every message
+// is archived verbatim to ArchiveDir; complete fill notifications are also
+// ingested as PROVISIONAL executions (unless Ingest is disabled), which the
+// authoritative MotiveWave CSV import later supersedes via the shared
+// (account, order id) key. The listener must only ever bind a LAN/VPN
+// interface - it is not a mail server.
 //
 // MotiveWave infers encryption from the port number it is given: 25 = plain,
 // 465 = implicit TLS, 587 = STARTTLS. Match TLSMode to the port MW dials.
@@ -47,6 +49,12 @@ type MWEmail struct {
 	Username   string `yaml:"smtp_username"` // both set => AUTH (PLAIN/LOGIN) required
 	Password   string `yaml:"smtp_password"`
 	ArchiveDir string `yaml:"archive_dir"` // default "data/mw-raw"; verbatim .eml audit trail
+	Ingest     *bool  `yaml:"ingest"`      // nil = true; false = capture/archive only, no DB writes
+}
+
+// IngestEnabled resolves the tri-state Ingest flag (nil defaults to on).
+func (m MWEmail) IngestEnabled() bool {
+	return m.Ingest == nil || *m.Ingest
 }
 
 // IBKR configures live sync via Client Portal Gateway(s). Only global knobs

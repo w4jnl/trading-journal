@@ -678,11 +678,17 @@ func run() error {
 	}
 
 	// MotiveWave email capture: embedded SMTP listener archiving MW's
-	// "order filled" notifications (capture layer only - no ingestion).
-	// Run logs its own "listening" line; a startup failure (bad TLS files,
-	// port in use) is fatal only to the module, not the app.
+	// "order filled" notifications and (unless mw_email.ingest is false)
+	// upserting them as provisional executions that the CSV import later
+	// supersedes. Email-created accounts attribute to the bootstrap user,
+	// same as flat watch-folder drops. Run logs its own "listening" line;
+	// a startup failure (bad TLS files, port in use) is fatal only to the
+	// module, not the app.
 	if cfg.MWEmail.Enabled {
 		mwSrv := &mwmail.Server{Cfg: cfg.MWEmail}
+		if cfg.MWEmail.IngestEnabled() {
+			mwSrv.Ingest = mwmail.ImporterIngest(importSvc, importSvc.UserID)
+		}
 		go func() {
 			if err := mwSrv.Run(ctx); err != nil {
 				slog.Error("mw email capture failed", "err", err)

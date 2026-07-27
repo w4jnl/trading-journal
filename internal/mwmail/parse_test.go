@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func readFixture(t *testing.T, name string) []byte {
@@ -13,6 +14,66 @@ func readFixture(t *testing.T, name string) []byte {
 		t.Fatalf("fixture %s: %v", name, err)
 	}
 	return b
+}
+
+// TestParseRealMWFill: the verified real MotiveWave notification shape -
+// labeled key-value block in a multipart/mixed message. Everything must come
+// from the labels, including the account (the "Account ID:" line used to trip
+// the heuristic into extracting the literal word "ID").
+func TestParseRealMWFill(t *testing.T) {
+	res := Parse(readFixture(t, "fill_real_mw.eml"))
+	if !res.Parsed || res.IsTest {
+		t.Fatalf("parsed/test = %v/%v: %+v", res.Parsed, res.IsTest, res)
+	}
+	if res.Side != "sell" || res.Qty != 3 || res.Symbol != "MESU6" || res.Price != 7516.25 {
+		t.Errorf("side/qty/symbol/price = %s/%v/%s/%v", res.Side, res.Qty, res.Symbol, res.Price)
+	}
+	if res.Account != "LFE050-EXAMPLE1-TEST018" {
+		t.Errorf("account = %q, want the full Account ID value", res.Account)
+	}
+	if res.OrderID != "172416726" {
+		t.Errorf("order id = %q", res.OrderID)
+	}
+	if res.Broker != "Rithmic WS" {
+		t.Errorf("broker = %q", res.Broker)
+	}
+	// Execution Time carries no year and no zone; both come from the Date
+	// header (+0200) -> 09:19:33 local = 07:19:33 UTC.
+	want := time.Date(2026, 7, 27, 7, 19, 33, 0, time.UTC)
+	if !res.ExecTime.Equal(want) {
+		t.Errorf("exec time = %v, want %v", res.ExecTime, want)
+	}
+	if !res.IngestReady() {
+		t.Errorf("IngestReady = false: %+v", res)
+	}
+}
+
+// TestParseTestEmail: MW's Email Settings test message must be flagged and
+// never considered ingestable.
+func TestParseTestEmail(t *testing.T) {
+	res := Parse(readFixture(t, "test_email.eml"))
+	if !res.IsTest {
+		t.Error("IsTest = false for the MW test email")
+	}
+	if res.IngestReady() {
+		t.Error("test email reported IngestReady")
+	}
+}
+
+// TestDeriveExecTime_YearBoundary: a fill executed moments before midnight
+// Dec 31 composed into a Jan 1 Date header must roll back to the old year.
+func TestDeriveExecTime_YearBoundary(t *testing.T) {
+	got := deriveExecTime("Dec-31 11:59:58 PM", "Thu, 1 Jan 2026 00:00:05 +0100")
+	want := time.Date(2025, 12, 31, 22, 59, 58, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Errorf("year-boundary exec time = %v, want %v", got, want)
+	}
+	// And the trivial same-day case stays put.
+	got = deriveExecTime("Jul-27 09:19:33 AM", "Mon, 27 Jul 2026 09:19:31 +0200")
+	want = time.Date(2026, 7, 27, 7, 19, 33, 0, time.UTC)
+	if !got.Equal(want) {
+		t.Errorf("same-day exec time = %v, want %v", got, want)
+	}
 }
 
 func TestParseBasicFill(t *testing.T) {

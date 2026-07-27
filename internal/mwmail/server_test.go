@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -181,6 +182,76 @@ func TestUnparseableStillAccepted(t *testing.T) {
 	}
 	if n := len(archiveFiles(t, dir)); n != 1 {
 		t.Errorf("archive = %d files, want 1", n)
+	}
+}
+
+// TestIngestHook: a real-format fill mail reaches the Ingest hook with the
+// parsed Result; test emails and unparseable mail do not. The SMTP reply is
+// 250 in every case, including when the hook errors.
+func TestIngestHook(t *testing.T) {
+	dir := t.TempDir()
+	var mu sync.Mutex
+	var got []Result
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	srv := &Server{
+		Cfg: config.MWEmail{ArchiveDir: dir, ListenAddr: addr},
+		Ingest: func(ctx context.Context, res Result) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			got = append(got, res)
+			return "inserted", nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			c.Close()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	fill, err := os.ReadFile(filepath.Join("testdata", "fill_real_mw.eml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sendMail(addr, nil, string(fill)); err != nil {
+		t.Fatalf("send fill: %v", err)
+	}
+	testMsg, err := os.ReadFile(filepath.Join("testdata", "test_email.eml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sendMail(addr, nil, string(testMsg)); err != nil {
+		t.Fatalf("send test email: %v", err)
+	}
+	if err := sendMail(addr, nil, "Subject: Connection restored\r\n\r\nnothing here\r\n"); err != nil {
+		t.Fatalf("send unparseable: %v", err)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(got) != 1 {
+		t.Fatalf("ingest hook calls = %d, want 1 (fill only)", len(got))
+	}
+	r := got[0]
+	if r.OrderID != "172416726" || r.Account != "LFE050-EXAMPLE1-TEST018" || r.Qty != 3 {
+		t.Errorf("hook got %+v", r)
 	}
 }
 

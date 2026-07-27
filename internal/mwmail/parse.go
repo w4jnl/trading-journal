@@ -7,9 +7,10 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 )
 
-// Result is what the provisional parser extracted from one captured message.
+// Result is what the parser extracted from one captured message.
 // Parsed is true only when side, qty and price were all found - the minimum
 // for a fill to be actionable later.
 type Result struct {
@@ -20,20 +21,47 @@ type Result struct {
 	Body    string
 
 	Parsed      bool
+	IsTest      bool   // MW "Test Email" from the Email Settings panel
 	Side        string // "buy" | "sell"
 	Qty         float64
 	Symbol      string
 	Price       float64
 	Account     string
 	OrderID     string
+	Broker      string // "Broker:" label, e.g. "Rithmic WS" - the source hint for firm guessing / symbol aliasing
 	FillTimeRaw string
+	// ExecTime is FillTimeRaw resolved to UTC. MW writes the execution time
+	// without year or zone ("Jul-27 09:04:52 AM"); both come from the Date
+	// header. Zero when underivable.
+	ExecTime time.Time
 }
 
-// PROVISIONAL: the exact MotiveWave notification format is unknown until real
-// samples are captured (that is what the capture phase is for). This parser
-// is a tolerant best-effort extractor over subject+body, tuned against
-// synthetic fixtures; every captured real .eml becomes a fixture and the
-// patterns get tightened then. Treat its output as advisory.
+// IngestReady reports whether the message carries everything the provisional
+// ingest needs: the fill triple plus the account / order-id join keys and a
+// resolvable execution time.
+func (r Result) IngestReady() bool {
+	return r.Parsed && !r.IsTest && r.Account != "" && r.OrderID != "" &&
+		r.Symbol != "" && !r.ExecTime.IsZero()
+}
+
+// The real MotiveWave notification (verified against live captures) is a
+// labeled key-value block inside a single text/plain MIME part:
+//
+//	Execution Time: Jul-27 09:04:52 AM
+//	Broker: Rithmic WS
+//	Account ID: LFE050-EXAMPLE2-TEST019
+//	Order ID: 172408392
+//	Order Type: LMT
+//	Symbol: ESU6
+//	Buy/Sell: SELL
+//	Quantity: 1
+//	Avg Fill Price: 7515.50
+//	Time In Force: DAY
+//
+// parseLabels reads that shape line by line; the regex heuristics below
+// remain as a FALLBACK for fields the labels did not yield (unknown MW
+// versions / other notification kinds), so the extractor degrades instead
+// of failing outright.
 var (
 	// BUY/SELL/BOT/SLD/BOUGHT/SOLD as a standalone word, optionally followed
 	// by the quantity ("BOT 2", "Bought 10").
@@ -79,11 +107,132 @@ func Parse(raw []byte) Result {
 		body = string(raw)
 	}
 	res.Body = body
+	res.IsTest = strings.Contains(res.Subject, "MotiveWave Test Email")
 
-	// Subject first, then body: MW-style notifications usually put the
-	// essentials in the subject line.
+	// Labeled pass first - the authoritative shape of real MW fill mails.
+	parseLabels(body, &res)
+
+	// Heuristic fallback over subject+body for whatever the labels missed.
+	// MW-style notifications usually put the essentials in the subject line.
 	text := res.Subject + "\n" + body
 
+	if res.Side == "" || res.Qty == 0 {
+		applySideQtyHeuristics(text, &res)
+	}
+	if res.Price == 0 {
+		if m := rePriceAt.FindStringSubmatch(text); m != nil {
+			res.Price = parseNum(m[1])
+		} else if m := rePriceWord.FindStringSubmatch(text); m != nil {
+			res.Price = parseNum(m[1])
+		}
+	}
+	if res.Symbol == "" {
+		res.Symbol = findSymbol(text)
+	}
+	if res.Account == "" {
+		if m := reAccount.FindStringSubmatch(text); m != nil {
+			res.Account = m[1]
+		}
+	}
+	if res.OrderID == "" {
+		if m := reOrderID.FindStringSubmatch(text); m != nil {
+			res.OrderID = m[1]
+		}
+	}
+	if res.FillTimeRaw == "" {
+		if m := reFillTime.FindStringSubmatch(text); m != nil {
+			res.FillTimeRaw = strings.TrimSpace(m[1])
+		}
+	}
+
+	res.Parsed = res.Side != "" && res.Qty > 0 && res.Price > 0
+	res.ExecTime = deriveExecTime(res.FillTimeRaw, res.Date)
+	return res
+}
+
+// labelValue matches one "Key: Value" line of the MW notification block.
+var labelValue = regexp.MustCompile(`^\s*([A-Za-z][A-Za-z /]*?)\s*:\s*(.+?)\s*$`)
+
+// parseLabels fills res from the labeled key-value lines of the body. First
+// occurrence of each label wins.
+func parseLabels(body string, res *Result) {
+	for _, line := range strings.Split(body, "\n") {
+		m := labelValue.FindStringSubmatch(line)
+		if m == nil {
+			continue
+		}
+		val := m[2]
+		switch strings.ToLower(m[1]) {
+		case "execution time":
+			if res.FillTimeRaw == "" {
+				res.FillTimeRaw = val
+			}
+		case "broker":
+			if res.Broker == "" {
+				res.Broker = val
+			}
+		case "account id", "account":
+			if res.Account == "" {
+				res.Account = val
+			}
+		case "order id":
+			if res.OrderID == "" {
+				res.OrderID = val
+			}
+		case "symbol":
+			if res.Symbol == "" {
+				res.Symbol = strings.ToUpper(val)
+			}
+		case "buy/sell", "side":
+			if res.Side == "" {
+				switch strings.ToUpper(val) {
+				case "BUY", "BOT", "BOUGHT":
+					res.Side = "buy"
+				case "SELL", "SLD", "SOLD":
+					res.Side = "sell"
+				}
+			}
+		case "quantity":
+			if res.Qty == 0 {
+				res.Qty = parseNum(val)
+			}
+		case "avg fill price", "fill price":
+			if res.Price == 0 {
+				res.Price = parseNum(val)
+			}
+		}
+	}
+}
+
+// mwExecTimeLayout matches "Jul-27 09:04:52 AM" - no year, no zone.
+const mwExecTimeLayout = "Jan-2 3:04:05 PM"
+
+// deriveExecTime resolves MW's year-less, zone-less execution time using the
+// message's Date header for both. The Date header is stamped at compose time,
+// seconds after the fill at most; if composing straddled New Year the naive
+// combination lands ~a year ahead, so anything more than a day past the
+// header date rolls back one year.
+func deriveExecTime(fillRaw, dateHeader string) time.Time {
+	if fillRaw == "" || dateHeader == "" {
+		return time.Time{}
+	}
+	d, err := mail.ParseDate(dateHeader)
+	if err != nil {
+		return time.Time{}
+	}
+	t, err := time.ParseInLocation(mwExecTimeLayout, fillRaw, d.Location())
+	if err != nil {
+		return time.Time{}
+	}
+	exec := time.Date(d.Year(), t.Month(), t.Day(), t.Hour(), t.Minute(), t.Second(), 0, d.Location())
+	if exec.After(d.Add(24 * time.Hour)) {
+		exec = exec.AddDate(-1, 0, 0)
+	}
+	return exec.UTC()
+}
+
+// applySideQtyHeuristics is the regex fallback for side and quantity.
+func applySideQtyHeuristics(text string, res *Result) {
 	if m := reSideQty.FindStringSubmatch(text); m != nil {
 		switch strings.ToUpper(m[1]) {
 		case "BUY", "BOT", "BOUGHT":
@@ -100,26 +249,6 @@ func Parse(raw []byte) Result {
 			res.Qty = parseNum(m[1])
 		}
 	}
-
-	if m := rePriceAt.FindStringSubmatch(text); m != nil {
-		res.Price = parseNum(m[1])
-	} else if m := rePriceWord.FindStringSubmatch(text); m != nil {
-		res.Price = parseNum(m[1])
-	}
-
-	res.Symbol = findSymbol(text)
-	if m := reAccount.FindStringSubmatch(text); m != nil {
-		res.Account = m[1]
-	}
-	if m := reOrderID.FindStringSubmatch(text); m != nil {
-		res.OrderID = m[1]
-	}
-	if m := reFillTime.FindStringSubmatch(text); m != nil {
-		res.FillTimeRaw = strings.TrimSpace(m[1])
-	}
-
-	res.Parsed = res.Side != "" && res.Qty > 0 && res.Price > 0
-	return res
 }
 
 // monthWords are calendar-month abbreviations that the futures-code pattern

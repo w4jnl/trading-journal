@@ -1,6 +1,7 @@
 package mwmail
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -92,12 +93,12 @@ func (a *archive) store(hash string, raw []byte) (string, error) {
 	return path, nil
 }
 
-// Data is the capture contract (spec section 5), minus ingestion:
-// read fully + hash; dedup (duplicates still get 250); archive verbatim
-// BEFORE parsing (archive failure is the only rejection); parse advisorily
-// and log; always accept. Parse problems are never bounced - a 5xx surfaces
-// as a cryptic error inside MW and can stall its mailer; the archive
-// guarantees nothing is lost.
+// Data is the capture contract (spec section 5): read fully + hash; dedup
+// (duplicates still get 250); archive verbatim BEFORE parsing (archive
+// failure is the only rejection); parse; hand complete fills to the Ingest
+// hook; always accept. Parse and ingest problems are never bounced - a 5xx
+// surfaces as a cryptic error inside MW and can stall its mailer; the
+// archive guarantees nothing is lost.
 func (s *session) Data(r io.Reader) error {
 	raw, err := io.ReadAll(r)
 	if err != nil {
@@ -131,6 +132,30 @@ func (s *session) Data(r io.Reader) error {
 		attrs = append(attrs,
 			"side", res.Side, "qty", res.Qty, "symbol", res.Symbol, "price", res.Price,
 			"account", res.Account, "order_id", res.OrderID, "fill_time", res.FillTimeRaw)
+	}
+
+	// Provisional ingest. Failures are logged, never bounced: the archive
+	// already holds the message, so an end-of-day CSV import (or a manual
+	// `mwmail parse` inspection) recovers anything the live path missed.
+	switch {
+	case s.server.Ingest == nil:
+		attrs = append(attrs, "ingest", "capture_only")
+	case res.IsTest:
+		attrs = append(attrs, "ingest", "test_email")
+	case !res.IngestReady():
+		attrs = append(attrs, "ingest", "not_ingestable")
+	default:
+		ctx := s.server.ctx
+		if ctx == nil {
+			ctx = context.Background()
+		}
+		action, err := s.server.Ingest(ctx, res)
+		if err != nil {
+			log.Error("mwmail: ingest failed", "hash", hash, "order_id", res.OrderID, "err", err)
+			attrs = append(attrs, "ingest", "error")
+		} else {
+			attrs = append(attrs, "ingest", action)
+		}
 	}
 	log.Info("mwmail: message captured", attrs...)
 	return nil

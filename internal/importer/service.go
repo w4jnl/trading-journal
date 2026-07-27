@@ -80,6 +80,7 @@ type Outcome struct {
 	FillsParsed        int    // rows successfully parsed (for TopstepX, only Filled rows)
 	FillsFiltered      int    // CSV rows skipped because the account is live-synced (cutover filter)
 	ExecsInserted      int    // affected-row count from INSERT
+	Superseded         int    // provisional mw_email rows replaced by authoritative rows in this import
 	AccountsCreated    int    // new accounts auto-created during this import
 	InstrumentsStubbed int    // unknown symbol roots auto-created with needs_setup=1
 	TradesCreated      int    // closed trades materialized by the position builder
@@ -307,6 +308,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 	}
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
+	method := importMethod(format, apiSource)
 
 	accounts := map[string]int64{}
 	inlineAccounts := map[int64]bool{} // commission_source = 'inline' -> skip FIFO rebuild
@@ -365,6 +367,26 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			}
 		}
 
+		// Supersede: this fill is the authoritative record for its order, so
+		// any provisional row ingested from a MW fill email for the same
+		// (account, order id) goes away. Runs before the insert; the returned
+		// symbols force a rebuild even when the insert itself dedups to a
+		// no-op (re-import after a previous supersede-less partial run).
+		if f.OrderID != "" {
+			oid := f.OrderID
+			symbols, err := q.DeleteProvisionalByOrderID(ctx, models.DeleteProvisionalByOrderIDParams{
+				AccountID: accountID,
+				OrderID:   &oid,
+			})
+			if err != nil {
+				return fmt.Errorf("supersede order %s/%s: %w", f.AccountRef, f.OrderID, err)
+			}
+			out.Superseded += len(symbols)
+			for _, sym := range symbols {
+				rebuildKeys[positions.Key{AccountID: accountID, Symbol: sym}] = true
+			}
+		}
+
 		var raw *string
 		if f.RawData != "" {
 			r := f.RawData
@@ -373,6 +395,8 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 		n, err := q.InsertExecution(ctx, models.InsertExecutionParams{
 			AccountID:    accountID,
 			BrokerExecID: f.BrokerExecID,
+			OrderID:      strPtrOrNil(f.OrderID),
+			ImportMethod: method,
 			Symbol:       f.Symbol,
 			SymbolRoot:   f.SymbolRoot,
 			Side:         f.Side,
@@ -427,6 +451,22 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 	}
 	s.enqueuePrefetch(ctx, accountIDs...)
 	return nil
+}
+
+// importMethod maps an ingest invocation to the executions.import_method
+// provenance value. CSV files record their Format string directly; API syncs
+// map through the format they reuse (TopstepX sync passes FormatTopstepX,
+// the IBKR gateway sync passes FormatMotiveWave - see ImportAPIFills).
+func importMethod(format Format, apiSource bool) string {
+	if apiSource {
+		switch format {
+		case FormatTopstepX:
+			return "topstepx_api"
+		case FormatMotiveWave:
+			return "ibkr_api"
+		}
+	}
+	return string(format)
 }
 
 // ingestTrades writes pre-aggregated trade rows (TopstepX trades CSV) to
@@ -519,6 +559,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 		entryExecID, err := upsertExecutionReturningID(ctx, q, models.InsertExecutionParams{
 			AccountID:    accountID,
 			BrokerExecID: rec.BrokerTradeID + "-entry",
+			ImportMethod: string(FormatTopstepXTrades),
 			Symbol:       rec.Symbol,
 			SymbolRoot:   rec.SymbolRoot,
 			Side:         entrySide,
@@ -535,6 +576,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 		exitExecID, err := upsertExecutionReturningID(ctx, q, models.InsertExecutionParams{
 			AccountID:    accountID,
 			BrokerExecID: rec.BrokerTradeID + "-exit",
+			ImportMethod: string(FormatTopstepXTrades),
 			Symbol:       rec.Symbol,
 			SymbolRoot:   rec.SymbolRoot,
 			Side:         exitSide,
@@ -1264,6 +1306,9 @@ func (o Outcome) errorOrSummary() string {
 		o.FillsParsed, o.ExecsInserted, o.AccountsCreated, o.InstrumentsStubbed)
 	if o.FillsFiltered > 0 {
 		msg += fmt.Sprintf(" skipped_live_synced=%d", o.FillsFiltered)
+	}
+	if o.Superseded > 0 {
+		msg += fmt.Sprintf(" superseded_email=%d", o.Superseded)
 	}
 	return msg
 }

@@ -32,6 +32,7 @@ func stripBOMBytes(b []byte) []byte {
 type Fill struct {
 	AccountRef   string // raw account string from CSV (e.g. "APEX-100001-28")
 	BrokerExecID string // unique fill/order id within (account, source)
+	OrderID      string // broker order number when the source carries one ("Order ID" CSV column, MW email); "" otherwise
 	Symbol       string // contract code, e.g. "ESM6"; left as-is per source even when SymbolRoot is canonicalized
 	SymbolRoot   string // canonicalized root, e.g. "ES"; CQG's "EP" is mapped to "ES"
 	Exchange     string // optional; empty for TopstepX

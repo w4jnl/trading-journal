@@ -64,9 +64,18 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 		}
 
 		source := strings.TrimSpace(row[cols["Source"]])
+		// "Order ID" is an optional column: present in the Executions-panel
+		// export shape, absent from the older 10-column shape. It carries the
+		// broker order number - the join key that lets this import supersede
+		// provisional rows ingested from MW fill-notification emails.
+		orderID := ""
+		if oi, ok := cols["Order ID"]; ok && oi < len(row) {
+			orderID = strings.TrimSpace(row[oi])
+		}
 		fills = append(fills, Fill{
 			AccountRef:   strings.TrimSpace(row[cols["Account"]]),
 			BrokerExecID: strings.TrimSpace(row[cols["Ticket"]]),
+			OrderID:      orderID,
 			Symbol:       strings.TrimSpace(row[cols["Symbol"]]),
 			SymbolRoot:   CanonicalizeSymbolRoot(strings.TrimSpace(row[cols["Underlying"]]), source),
 			Exchange:     strings.TrimSpace(row[cols["Exchange"]]),

@@ -31,18 +31,26 @@ the extracted fields. Captured messages live in mw_email.archive_dir
 			return err
 		}
 		res := mwmail.Parse(raw)
-		fmt.Printf("from:      %s\n", res.From)
-		fmt.Printf("to:        %s\n", res.To)
-		fmt.Printf("date:      %s\n", res.Date)
-		fmt.Printf("subject:   %s\n", res.Subject)
-		fmt.Printf("parsed:    %v\n", res.Parsed)
-		fmt.Printf("side:      %s\n", res.Side)
-		fmt.Printf("qty:       %g\n", res.Qty)
-		fmt.Printf("symbol:    %s\n", res.Symbol)
-		fmt.Printf("price:     %g\n", res.Price)
-		fmt.Printf("account:   %s\n", res.Account)
-		fmt.Printf("order_id:  %s\n", res.OrderID)
-		fmt.Printf("fill_time: %s\n", res.FillTimeRaw)
+		fmt.Printf("from:         %s\n", res.From)
+		fmt.Printf("to:           %s\n", res.To)
+		fmt.Printf("date:         %s\n", res.Date)
+		fmt.Printf("subject:      %s\n", res.Subject)
+		fmt.Printf("parsed:       %v\n", res.Parsed)
+		fmt.Printf("test_email:   %v\n", res.IsTest)
+		fmt.Printf("side:         %s\n", res.Side)
+		fmt.Printf("qty:          %g\n", res.Qty)
+		fmt.Printf("symbol:       %s\n", res.Symbol)
+		fmt.Printf("price:        %g\n", res.Price)
+		fmt.Printf("account:      %s\n", res.Account)
+		fmt.Printf("order_id:     %s\n", res.OrderID)
+		fmt.Printf("broker:       %s\n", res.Broker)
+		fmt.Printf("fill_time:    %s\n", res.FillTimeRaw)
+		if !res.ExecTime.IsZero() {
+			fmt.Printf("exec_utc:     %s\n", res.ExecTime.Format("2006-01-02 15:04:05 MST"))
+		} else {
+			fmt.Printf("exec_utc:     (underivable)\n")
+		}
+		fmt.Printf("ingest_ready: %v\n", res.IngestReady())
 		return nil
 	default:
 		return fmt.Errorf("unknown mwmail subcommand %q (try: parse)", args[0])

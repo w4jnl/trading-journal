@@ -90,6 +90,8 @@ type Execution struct {
 	DeletedAt    *time.Time `json:"deleted_at"`
 	Manual       int64      `json:"manual"`
 	EditedAt     *time.Time `json:"edited_at"`
+	OrderID      *string    `json:"order_id"`
+	ImportMethod string     `json:"import_method"`
 }
 
 type IbkrGateway struct {

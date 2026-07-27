@@ -2,9 +2,10 @@
 // "Send Email On Filled Order" notifications. It is a capture layer, not a
 // mail server: no relaying, no mailboxes, no outbound mail, LAN/VPN only.
 // Every received message is archived verbatim to disk (the audit trail and
-// parser-development corpus) and parsed advisorily for logging; nothing is
-// ingested into the journal from email in this phase. The authoritative
-// record remains the manual MotiveWave export import.
+// parser corpus) and parsed; when an Ingest hook is wired and the message
+// carries a complete fill, it is handed over for PROVISIONAL ingestion -
+// near-real-time executions that the authoritative MotiveWave CSV import
+// later supersedes via the shared (account, order id) key.
 package mwmail
 
 import (
@@ -23,12 +24,23 @@ import (
 	"github.com/w4jnl/trading-journal/internal/config"
 )
 
+// IngestFunc hands a fully-parsed fill notification to the journal for
+// provisional ingestion. It returns a short action word for the capture log
+// ("inserted", "updated", "skipped_live_sync", ...). Errors are logged and
+// swallowed by the caller - ingest problems must never bounce mail back at
+// MotiveWave.
+type IngestFunc func(ctx context.Context, res Result) (string, error)
+
 // Server runs the embedded SMTP listener per the mw_email config section.
 type Server struct {
 	Cfg    config.MWEmail
 	Logger *slog.Logger // nil -> slog.Default()
+	// Ingest, when non-nil, receives every captured message that parses to a
+	// complete fill (IngestReady). Nil keeps the listener in capture-only mode.
+	Ingest IngestFunc
 
 	archive *archive
+	ctx     context.Context // Run's ctx; scopes ingest DB work to app lifetime
 }
 
 func (s *Server) logger() *slog.Logger {
@@ -48,6 +60,7 @@ func (s *Server) Run(ctx context.Context) error {
 		return fmt.Errorf("mwmail: archive: %w", err)
 	}
 	s.archive = arch
+	s.ctx = ctx
 
 	srv := smtp.NewServer(&backend{server: s})
 	srv.Addr = s.Cfg.ListenAddr
@@ -88,7 +101,7 @@ func (s *Server) Run(ctx context.Context) error {
 	s.logger().Info("mw email capture listening",
 		"addr", s.Cfg.ListenAddr, "tls_mode", s.Cfg.TLSMode,
 		"auth", s.Cfg.Username != "", "archive_dir", s.Cfg.ArchiveDir,
-		"seeded_dedup", arch.size())
+		"seeded_dedup", arch.size(), "ingest", s.Ingest != nil)
 
 	select {
 	case <-ctx.Done():

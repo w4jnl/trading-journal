@@ -359,17 +359,39 @@ and use the flat `processed/` / `failed/` paths. The UI upload at
 `/import` always uses the request's logged-in user, regardless of
 where the staged file ends up.
 
-### MotiveWave email capture (experimental)
+### MotiveWave email capture + live ingest
 
 MotiveWave can send an email on every order fill
-(**Preferences → Orders → Send Email On Filled Order**). The app can act
-as MW's SMTP server so those notifications land here instead of a real
-mail provider — near-real-time fill *capture* for the accounts that have
-no API connector (Rithmic props, AMP/CQG). This is a **capture layer
-only**: every message is archived verbatim as `.eml` under
-`mw_email.archive_dir` (default `data/mw-raw/`) and parsed advisorily
-for the logs; nothing is ingested into the journal from email. The
-authoritative record remains the MotiveWave CSV export import.
+(**Preferences → Orders → Send Email On Filled Order**). The app acts as
+MW's SMTP server so those notifications land here instead of a real mail
+provider — near-real-time fills for the accounts that have no API
+connector (Rithmic props, AMP/CQG). Verified against live captures: the
+notification carries the account id, order id, symbol, side, cumulative
+filled quantity, and average fill price, and copier-target fills are
+emailed individually per account.
+
+Two layers, both on by default when `mw_email.enabled`:
+
+- **Capture** — every message is archived verbatim as `.eml` under
+  `mw_email.archive_dir` (default `data/mw-raw/`). Duplicate deliveries
+  (SMTP retries) are dropped by content hash, surviving restarts; parse
+  or storage problems are logged, never bounced back to MW.
+- **Ingest** (`mw_email.ingest`, default true) — complete fill
+  notifications become **provisional executions** immediately: trades
+  and stats update in near-real-time. MW emails *cumulative* order
+  snapshots (a 3-lot filling 1+2 sends "Quantity: 1" then
+  "Quantity: 3"), so provisional rows are upserted per
+  (account, order id), never appended per email.
+
+**The MotiveWave CSV export stays authoritative.** The Executions-view
+export carries the same `Order ID` as the emails, so importing it
+replaces the matching provisional rows exactly — an end-of-day
+re-import (full or partial, once or repeatedly) never double-counts.
+`/admin/transactions` shows each row's import method in the *Via*
+column; provisional rows carry an `email · provisional` badge until a
+CSV import supersedes them. Accounts live-synced via a broker API
+(IBKR) skip email ingest automatically — their fills arrive through the
+API; the email copy is archive-only.
 
 Setup:
 
@@ -383,21 +405,12 @@ Setup:
    any from/to addresses. **MW applies mail settings only after a full
    restart** — Apply → OK → restart MW → Send Test Email.
 3. MW **Preferences → Orders**: enable *Send Email On Filled Order*.
-4. Capture checklist: a manual fill, a copier fill on *each* prop
-   account, an AMP/CQG fill. The captures must answer two open
-   questions: does MW email fills for orders it did not itself originate
-   (copier fan-out)? and does the body carry the account id? If either
-   fails, email capture only covers MW-originated orders.
 
-Inspect a captured message with the parser tuning tool:
+Inspect any captured message (and what the parser makes of it) with:
 
 ```
 ./trading-journal mwmail parse data/mw-raw/<file>.eml
 ```
-
-Duplicate deliveries (SMTP retries) are detected by content hash and
-dropped, surviving restarts; parse or storage problems are logged, never
-bounced back to MW.
 
 ## Backup
 

@@ -1,0 +1,27 @@
+Date: Mon, 27 Jul 2026 09:19:31 +0200 (CEST)
+From: "mw@example.com" <mw@example.com>
+To: mw@example.com
+Message-ID: <1918723259.3.1785135892833@[192.0.2.15]>
+Subject: MotiveWave Order Filled:  MESU6.CME.RITHMIC Sold 3@7516.25
+MIME-Version: 1.0
+Content-Type: multipart/mixed; 
+	boundary="----=_Part_2_1962343658.1785135892822"
+
+------=_Part_2_1962343658.1785135892822
+Content-Type: text/plain; charset=us-ascii
+Content-Transfer-Encoding: 7bit
+
+The following order has been filled: 
+
+Execution Time: Jul-27 09:19:33 AM
+Broker: Rithmic WS
+Account ID: LFE050-EXAMPLE1-TEST018
+Order ID: 172416726
+Order Type: LMT
+Symbol: MESU6
+Buy/Sell: SELL
+Quantity: 3
+Avg Fill Price: 7516.25
+Time In Force: DAY
+
+------=_Part_2_1962343658.1785135892822--
