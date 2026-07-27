@@ -16,37 +16,67 @@ import (
 	"github.com/emersion/go-smtp"
 )
 
-// archive owns the verbatim .eml store and the restart-surviving dedup set.
-// Filenames are <utc-timestamp>_<hash12>.eml; the hash suffix doubles as the
-// persistent dedup key, so a restart rebuilds the set from a directory scan
-// instead of needing any database state.
+// replayJournalName is the sidecar in the archive dir recording which
+// captured messages have been terminally processed by ingest (live or
+// replay), one "<hash12> <action>" line each. Deleting the file forces the
+// next boot to re-attempt the whole archive - the documented escape hatch
+// after an app upgrade whose improved parser could recover messages that
+// were journaled as not_ingestable.
+const replayJournalName = "replay-state.log"
+
+// archive owns the verbatim .eml store, the restart-surviving dedup set, and
+// the replay journal. Filenames are <utc-timestamp>_<hash12>.eml; the hash
+// suffix doubles as the persistent dedup key, so a restart rebuilds the set
+// from a directory scan instead of needing any database state.
 type archive struct {
 	dir  string
 	mu   sync.Mutex
 	seen map[string]bool // 12-hex short hash -> captured
+	done map[string]bool // 12-hex short hash -> terminally processed by ingest
 }
 
 func newArchive(dir string) (*archive, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	a := &archive{dir: dir, seen: map[string]bool{}}
+	a := &archive{dir: dir, seen: map[string]bool{}, done: map[string]bool{}}
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
 	for _, e := range entries {
-		name := e.Name()
-		if e.IsDir() || !strings.HasSuffix(name, ".eml") {
+		if e.IsDir() {
 			continue
 		}
-		// <timestamp>_<hash12>.eml
-		base := strings.TrimSuffix(name, ".eml")
-		if i := strings.LastIndexByte(base, '_'); i >= 0 && len(base)-i-1 == 12 {
-			a.seen[base[i+1:]] = true
+		if h := hashFromName(e.Name()); h != "" {
+			a.seen[h] = true
 		}
 	}
+	// Load the replay journal, tolerantly: first field is the hash, the rest
+	// is informational. Missing file just means nothing was processed yet.
+	if raw, err := os.ReadFile(filepath.Join(dir, replayJournalName)); err == nil {
+		for _, line := range strings.Split(string(raw), "\n") {
+			if fields := strings.Fields(line); len(fields) > 0 && len(fields[0]) == 12 {
+				a.done[fields[0]] = true
+			}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, fmt.Errorf("read replay journal: %w", err)
+	}
 	return a, nil
+}
+
+// hashFromName extracts the 12-hex content hash from an archived filename
+// (<timestamp>_<hash12>.eml); "" when the name does not match.
+func hashFromName(name string) string {
+	if !strings.HasSuffix(name, ".eml") {
+		return ""
+	}
+	base := strings.TrimSuffix(name, ".eml")
+	if i := strings.LastIndexByte(base, '_'); i >= 0 && len(base)-i-1 == 12 {
+		return base[i+1:]
+	}
+	return ""
 }
 
 func (a *archive) size() int {
@@ -88,6 +118,37 @@ func (a *archive) unmark(hash string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	delete(a.seen, hash)
+}
+
+// isDone reports whether the message was already terminally processed by
+// ingest (live or a previous replay) - such files are never re-attempted.
+func (a *archive) isDone(hash string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.done[hash]
+}
+
+// markDone journals a terminal ingest outcome. Append-after-commit ordering:
+// a crash between the ingest transaction and this write costs exactly one
+// idempotent re-attempt on the next boot. Journal write failures are
+// returned for logging but do not undo the ingest.
+func (a *archive) markDone(hash, action string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.done[hash] {
+		return nil
+	}
+	a.done[hash] = true
+	f, err := os.OpenFile(filepath.Join(a.dir, replayJournalName),
+		os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(f, "%s %s\n", hash, action); err != nil {
+		f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 // store writes the raw message verbatim. O_EXCL + a nanosecond timestamp keep
@@ -154,15 +215,20 @@ func (s *session) Data(r io.Reader) error {
 	}
 
 	// Provisional ingest. Failures are logged, never bounced: the archive
-	// already holds the message, so an end-of-day CSV import (or a manual
-	// `mwmail parse` inspection) recovers anything the live path missed.
+	// already holds the message, so the boot-time replay (or an end-of-day
+	// CSV import) recovers anything the live path missed. Terminal outcomes
+	// are journaled so the replay never re-attempts this message; hook
+	// errors and capture-only mode are NOT journaled - those retry later.
+	terminal := ""
 	switch {
 	case s.server.Ingest == nil:
 		attrs = append(attrs, "ingest", "capture_only")
 	case res.IsTest:
-		attrs = append(attrs, "ingest", "test_email")
+		terminal = "test_email"
+		attrs = append(attrs, "ingest", terminal)
 	case !res.IngestReady():
-		attrs = append(attrs, "ingest", "not_ingestable")
+		terminal = "not_ingestable"
+		attrs = append(attrs, "ingest", terminal)
 	default:
 		ctx := s.server.ctx
 		if ctx == nil {
@@ -173,7 +239,13 @@ func (s *session) Data(r io.Reader) error {
 			log.Error("mwmail: ingest failed", "hash", hash, "order_id", res.OrderID, "err", err)
 			attrs = append(attrs, "ingest", "error")
 		} else {
+			terminal = action
 			attrs = append(attrs, "ingest", action)
+		}
+	}
+	if terminal != "" {
+		if err := arch.markDone(hash, terminal); err != nil {
+			log.Warn("mwmail: replay journal write failed", "hash", hash, "err", err)
 		}
 	}
 	log.Info("mwmail: message captured", attrs...)

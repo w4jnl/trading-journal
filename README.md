@@ -386,10 +386,15 @@ Two layers, both on by default when `mw_email.enabled`:
 At every startup the archive is **replayed** through the same ingest
 path (oldest first, in the background), so fills whose live ingest was
 missed — a crash between archive and ingest, a capture-only period, a
-transient DB error — still land. The replay is idempotent: covered
-orders come back unchanged/skipped, and a fill already recorded by a
-manual process (a hand-entered row or an old-format CSV without order
-ids) is detected by (symbol, side, qty, price, time) and left alone.
+transient DB error — still land. Each captured message is attempted
+**once, ever**: terminal outcomes (ingested or skipped, including
+unparseable) are recorded in `<archive_dir>/replay-state.log` and never
+re-attempted on later boots; only transient errors retry. Delete that
+file to force a full re-pass — useful after an app upgrade whose
+improved parser could recover messages previously recorded as
+unparseable. A fill already recorded by a manual process (a
+hand-entered row or an old-format CSV without order ids) is detected by
+(symbol, side, qty, price, time) and left alone.
 
 **User attribution:** an email carries no user identity, only the
 broker account ref, so a fill is booked under whichever journal user

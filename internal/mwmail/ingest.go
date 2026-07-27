@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	"path/filepath"
 
 	"github.com/w4jnl/trading-journal/internal/importer"
 )
 
-// replayArchive runs every archived message through Parse + Ingest, oldest
-// first. Recovery counts (inserted/updated) are what the live path missed;
-// everything else is the idempotent steady state.
+// replayArchive runs archived messages through Parse + Ingest, oldest first,
+// skipping everything the replay journal already records as terminally
+// processed (by a previous replay or the live path) - each capture is
+// attempted once, ever. Recovery counts (inserted/updated) are what the live
+// path missed; read and ingest errors are NOT journaled, so they retry on
+// the next boot.
 func (s *Server) replayArchive(ctx context.Context) {
 	paths, err := s.archive.list()
 	if err != nil {
@@ -18,9 +22,22 @@ func (s *Server) replayArchive(ctx context.Context) {
 		return
 	}
 	counts := map[string]int{}
+	mark := func(hash, action string) {
+		if hash == "" { // unrecognizable filename - nothing stable to key on
+			return
+		}
+		if err := s.archive.markDone(hash, action); err != nil {
+			s.logger().Warn("mwmail: replay journal write failed", "hash", hash, "err", err)
+		}
+	}
 	for _, p := range paths {
 		if ctx.Err() != nil {
 			return
+		}
+		hash := hashFromName(filepath.Base(p))
+		if hash != "" && s.archive.isDone(hash) {
+			counts["already_done"]++
+			continue
 		}
 		raw, err := os.ReadFile(p)
 		if err != nil {
@@ -31,6 +48,7 @@ func (s *Server) replayArchive(ctx context.Context) {
 		res := Parse(raw)
 		if res.IsTest || !res.IngestReady() {
 			counts["not_ingestable"]++
+			mark(hash, "not_ingestable")
 			continue
 		}
 		action, err := s.Ingest(ctx, res)
@@ -41,6 +59,7 @@ func (s *Server) replayArchive(ctx context.Context) {
 			continue
 		}
 		counts[action]++
+		mark(hash, action)
 		s.logger().Debug("mwmail: archive replayed",
 			"file", p, "order_id", res.OrderID, "action", action)
 	}

@@ -221,10 +221,6 @@ func TestIngestHook(t *testing.T) {
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	defer func() {
-		cancel()
-		<-done
-	}()
 
 	fill, err := os.ReadFile(filepath.Join("testdata", "fill_real_mw.eml"))
 	if err != nil {
@@ -245,13 +241,50 @@ func TestIngestHook(t *testing.T) {
 	}
 
 	mu.Lock()
-	defer mu.Unlock()
 	if len(got) != 1 {
+		mu.Unlock()
 		t.Fatalf("ingest hook calls = %d, want 1 (fill only)", len(got))
 	}
 	r := got[0]
 	if r.OrderID != "172416726" || r.Account != "LFE050-EXAMPLE1-TEST018" || r.Qty != 3 {
 		t.Errorf("hook got %+v", r)
+	}
+	mu.Unlock()
+
+	// Live ingest journals the message: a restart over the same archive dir
+	// must not re-offer it to the hook via the boot replay.
+	cancel()
+	<-done
+	var replayCalls int
+	var rmu sync.Mutex
+	srv2 := &Server{
+		Cfg: config.MWEmail{ArchiveDir: dir, ListenAddr: addr},
+		Ingest: func(ctx context.Context, res Result) (string, error) {
+			rmu.Lock()
+			defer rmu.Unlock()
+			replayCalls++
+			return "inserted", nil
+		},
+	}
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	done2 := make(chan error, 1)
+	go func() { done2 <- srv2.Run(ctx2) }()
+	deadline = time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
+		if err == nil {
+			c.Close()
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	time.Sleep(300 * time.Millisecond) // give the background replay a beat
+	cancel2()
+	<-done2
+	rmu.Lock()
+	defer rmu.Unlock()
+	if replayCalls != 0 {
+		t.Errorf("restart replayed %d live-ingested fills, want 0", replayCalls)
 	}
 }
 
@@ -302,10 +335,6 @@ func TestArchiveReplay(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
-	defer func() {
-		cancel()
-		<-done
-	}()
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
@@ -318,12 +347,69 @@ func TestArchiveReplay(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 	mu.Lock()
-	defer mu.Unlock()
 	if len(qtys) != 2 {
+		mu.Unlock()
 		t.Fatalf("replayed fills = %d, want 2 (test email must be filtered)", len(qtys))
 	}
 	if qtys[0] != 1 || qtys[1] != 3 {
 		t.Errorf("replay order qtys = %v, want [1 3] (oldest first)", qtys)
+	}
+	mu.Unlock()
+	cancel()
+	<-done
+
+	// The journal must hold all three files (fills + the test email).
+	journal := filepath.Join(dir, replayJournalName)
+	raw, err := os.ReadFile(journal)
+	if err != nil {
+		t.Fatalf("replay journal: %v", err)
+	}
+	if n := len(strings.Fields(strings.ReplaceAll(string(raw), "\n", " "))) / 2; n != 3 {
+		t.Fatalf("journal entries = %d, want 3:\n%s", n, raw)
+	}
+
+	// Second server over the same dir: everything already_done, hook silent.
+	runOnce := func() int {
+		var calls int
+		var cmu sync.Mutex
+		srv2 := &Server{
+			Cfg: config.MWEmail{ArchiveDir: dir, ListenAddr: addr},
+			Ingest: func(ctx context.Context, res Result) (string, error) {
+				cmu.Lock()
+				defer cmu.Unlock()
+				calls++
+				return "inserted", nil
+			},
+		}
+		ctx2, cancel2 := context.WithCancel(context.Background())
+		done2 := make(chan error, 1)
+		go func() { done2 <- srv2.Run(ctx2) }()
+		deadline := time.Now().Add(3 * time.Second)
+		for time.Now().Before(deadline) {
+			cmu.Lock()
+			n := calls
+			cmu.Unlock()
+			if n >= 2 {
+				break
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		cancel2()
+		<-done2
+		cmu.Lock()
+		defer cmu.Unlock()
+		return calls
+	}
+	if n := runOnce(); n != 0 {
+		t.Errorf("second boot replayed %d fills, want 0 (journal must suppress)", n)
+	}
+
+	// Escape hatch: deleting the journal forces a full re-pass.
+	if err := os.Remove(journal); err != nil {
+		t.Fatal(err)
+	}
+	if n := runOnce(); n != 2 {
+		t.Errorf("post-delete boot replayed %d fills, want 2", n)
 	}
 }
 
