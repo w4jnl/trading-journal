@@ -431,6 +431,60 @@ func (q *Queries) ListOpenPositions(ctx context.Context, userID int64) ([]ListOp
 	return items, nil
 }
 
+const listUnorderedExecsForAccountSymbol = `-- name: ListUnorderedExecsForAccountSymbol :many
+SELECT id, side, qty, price, exec_time FROM executions
+WHERE account_id = ? AND symbol = ? AND order_id IS NULL
+  AND import_method != 'mw_email' AND deleted_at IS NULL
+`
+
+type ListUnorderedExecsForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+type ListUnorderedExecsForAccountSymbolRow struct {
+	ID       int64     `json:"id"`
+	Side     string    `json:"side"`
+	Qty      float64   `json:"qty"`
+	Price    float64   `json:"price"`
+	ExecTime time.Time `json:"exec_time"`
+}
+
+// Non-email rows that carry NO broker order id: hand-entered fills and rows
+// from old-format CSV exports. The email ingest checks these before inserting
+// a provisional row - an order already recorded by such a "manual process"
+// must not be double-counted just because the order-id join cannot see it.
+// Rows WITH an order id are intentionally excluded: they dedup exactly, and
+// including them here could false-match a genuinely distinct same-second fill.
+func (q *Queries) ListUnorderedExecsForAccountSymbol(ctx context.Context, arg ListUnorderedExecsForAccountSymbolParams) ([]ListUnorderedExecsForAccountSymbolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUnorderedExecsForAccountSymbol, arg.AccountID, arg.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUnorderedExecsForAccountSymbolRow
+	for rows.Next() {
+		var i ListUnorderedExecsForAccountSymbolRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Side,
+			&i.Qty,
+			&i.Price,
+			&i.ExecTime,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const softDeleteExecution = `-- name: SoftDeleteExecution :exec
 UPDATE executions
 SET deleted_at = CURRENT_TIMESTAMP

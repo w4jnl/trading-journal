@@ -383,6 +383,14 @@ Two layers, both on by default when `mw_email.enabled`:
   "Quantity: 3"), so provisional rows are upserted per
   (account, order id), never appended per email.
 
+At every startup the archive is **replayed** through the same ingest
+path (oldest first, in the background), so fills whose live ingest was
+missed — a crash between archive and ingest, a capture-only period, a
+transient DB error — still land. The replay is idempotent: covered
+orders come back unchanged/skipped, and a fill already recorded by a
+manual process (a hand-entered row or an old-format CSV without order
+ids) is detected by (symbol, side, qty, price, time) and left alone.
+
 **The MotiveWave CSV export stays authoritative.** The Executions-view
 export carries the same `Order ID` as the emails, so importing it
 replaces the matching provisional rows exactly — an end-of-day

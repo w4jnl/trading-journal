@@ -28,6 +28,17 @@ UPDATE executions
 SET side = ?, qty = ?, price = ?, exec_time = ?, raw_data = ?
 WHERE id = ? AND import_method = 'mw_email';
 
+-- name: ListUnorderedExecsForAccountSymbol :many
+-- Non-email rows that carry NO broker order id: hand-entered fills and rows
+-- from old-format CSV exports. The email ingest checks these before inserting
+-- a provisional row - an order already recorded by such a "manual process"
+-- must not be double-counted just because the order-id join cannot see it.
+-- Rows WITH an order id are intentionally excluded: they dedup exactly, and
+-- including them here could false-match a genuinely distinct same-second fill.
+SELECT id, side, qty, price, exec_time FROM executions
+WHERE account_id = ? AND symbol = ? AND order_id IS NULL
+  AND import_method != 'mw_email' AND deleted_at IS NULL;
+
 -- name: DeleteProvisionalByOrderID :many
 -- CSV supersede: the authoritative import for this (account, order) has
 -- arrived, so the provisional email snapshot goes away. Tombstoned rows are

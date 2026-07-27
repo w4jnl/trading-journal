@@ -21,6 +21,8 @@ const (
 	EmailSkippedTombstoned  = "skipped_tombstoned"    // user deleted the provisional row; email must not resurrect it
 	EmailSkippedLiveSync    = "skipped_live_sync"     // account is API-synced (IBKR); email is capture-only for it
 	EmailSkippedInline      = "skipped_inline"        // trades-CSV account; executions are synthetic there
+	EmailSkippedMatched     = "skipped_matched"       // an order-id-less manual/old-CSV row already records this fill
+	EmailSkippedStale       = "skipped_stale"         // older cumulative snapshot than the row we hold (archive replay)
 )
 
 // IngestEmailFill upserts one PROVISIONAL execution from a MotiveWave
@@ -82,6 +84,19 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, userID int64, f Fil
 	})
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
+		// No row knows this order id. Before inserting, guard against fills
+		// already recorded WITHOUT one - hand-entered rows and old-format CSV
+		// imports - by matching (symbol, side, qty, price, time). Scoped to
+		// order-id-less rows on purpose: anything with an order id dedups
+		// exactly above, and a same-second same-price fill from a DIFFERENT
+		// order would carry its own id and must not be swallowed here.
+		matched, err := manualRowMatches(ctx, q, acct.ID, f)
+		if err != nil {
+			return "", fmt.Errorf("manual-row guard: %w", err)
+		}
+		if matched {
+			return EmailSkippedMatched, tx.Commit()
+		}
 		n, err := q.InsertExecution(ctx, models.InsertExecutionParams{
 			AccountID:    acct.ID,
 			BrokerExecID: f.BrokerExecID,
@@ -113,6 +128,13 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, userID int64, f Fil
 	case existing.Side == f.Side && existing.Qty == f.Qty && existing.Price == f.Price &&
 		existing.ExecTime.Equal(f.ExecTime):
 		return EmailUnchanged, tx.Commit()
+	case f.ExecTime.Before(existing.ExecTime),
+		f.ExecTime.Equal(existing.ExecTime) && f.Qty < existing.Qty:
+		// An OLDER cumulative snapshot than the row we hold - the archive
+		// replay walks oldest-first over messages the live path already
+		// applied. Rewinding and re-advancing would churn rows and FIFO
+		// rebuilds on every boot; snapshots only ever move forward.
+		return EmailSkippedStale, tx.Commit()
 	default:
 		if err := q.UpdateProvisionalExecution(ctx, models.UpdateProvisionalExecutionParams{
 			Side:     f.Side,
@@ -147,4 +169,36 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, userID int64, f Fil
 	}
 	s.enqueuePrefetch(ctx, acct.ID)
 	return action, nil
+}
+
+// manualRowMatchWindow absorbs the precision mismatch between MW's email time
+// (whole seconds, reconstructed from the Date header) and manually entered or
+// old-CSV times (typed to the second, or millisecond-precise).
+const manualRowMatchWindow = 2 * time.Second
+
+// manualRowMatches reports whether a non-email execution WITHOUT an order id
+// already records this fill on the account: same contract, side, qty, price,
+// and an exec time within manualRowMatchWindow. Times are compared in Go
+// rather than SQL to sidestep stored-datetime string-format comparisons.
+func manualRowMatches(ctx context.Context, q *models.Queries, accountID int64, f Fill) (bool, error) {
+	rows, err := q.ListUnorderedExecsForAccountSymbol(ctx, models.ListUnorderedExecsForAccountSymbolParams{
+		AccountID: accountID,
+		Symbol:    f.Symbol,
+	})
+	if err != nil {
+		return false, err
+	}
+	for _, r := range rows {
+		if r.Side != f.Side || r.Qty != f.Qty || r.Price != f.Price {
+			continue
+		}
+		d := r.ExecTime.Sub(f.ExecTime)
+		if d < 0 {
+			d = -d
+		}
+		if d <= manualRowMatchWindow {
+			return true, nil
+		}
+	}
+	return false, nil
 }

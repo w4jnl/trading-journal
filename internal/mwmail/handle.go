@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,24 @@ func (a *archive) size() int {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	return len(a.seen)
+}
+
+// list returns every archived .eml path in capture order (the filename's
+// leading UTC timestamp makes the lexical sort chronological - which matters
+// for replay: cumulative order snapshots must apply oldest-first).
+func (a *archive) list() ([]string, error) {
+	entries, err := os.ReadDir(a.dir)
+	if err != nil {
+		return nil, err
+	}
+	var paths []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".eml") {
+			paths = append(paths, filepath.Join(a.dir, e.Name()))
+		}
+	}
+	sort.Strings(paths)
+	return paths, nil
 }
 
 // markNew records the hash; false if it was already captured (duplicate).

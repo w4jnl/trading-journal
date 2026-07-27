@@ -103,6 +103,16 @@ func (s *Server) Run(ctx context.Context) error {
 		"auth", s.Cfg.Username != "", "archive_dir", s.Cfg.ArchiveDir,
 		"seeded_dedup", arch.size(), "ingest", s.Ingest != nil)
 
+	// Boot sweep: replay the archive through the ingest path so fills whose
+	// live ingest was missed (capture-only phase, crash between archive and
+	// ingest, transient DB error) still land. Safe to run every boot: replay
+	// is idempotent - already-ingested orders come back "unchanged", CSV- or
+	// manually-covered ones "skipped_*". Runs in the background so a large
+	// archive never delays SMTP availability.
+	if s.Ingest != nil {
+		go s.replayArchive(ctx)
+	}
+
 	select {
 	case <-ctx.Done():
 		_ = srv.Close()

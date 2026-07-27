@@ -255,6 +255,78 @@ func TestIngestHook(t *testing.T) {
 	}
 }
 
+// TestArchiveReplay: files already in the archive at boot are replayed
+// through the Ingest hook (oldest first) without any SMTP traffic; test
+// emails and unparseable captures are filtered out.
+func TestArchiveReplay(t *testing.T) {
+	dir := t.TempDir()
+	fill, err := os.ReadFile(filepath.Join("testdata", "fill_real_mw.eml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	testMsg, err := os.ReadFile(filepath.Join("testdata", "test_email.eml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Pre-seed the archive as a previous run would have left it. The second
+	// fill is a later cumulative snapshot of the same order (qty 3 -> the
+	// timestamps in the names force replay order oldest-first).
+	early := strings.Replace(string(fill), "Quantity: 3", "Quantity: 1", 1)
+	writeArchived := func(name, content string) {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	writeArchived("20260727T071931.000000000Z_aaaaaaaaaaaa.eml", early)
+	writeArchived("20260727T071933.000000000Z_bbbbbbbbbbbb.eml", string(fill))
+	writeArchived("20260727T080000.000000000Z_cccccccccccc.eml", string(testMsg))
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	var mu sync.Mutex
+	var qtys []float64
+	srv := &Server{
+		Cfg: config.MWEmail{ArchiveDir: dir, ListenAddr: addr},
+		Ingest: func(ctx context.Context, res Result) (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			qtys = append(qtys, res.Qty)
+			return "inserted", nil
+		},
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	defer func() {
+		cancel()
+		<-done
+	}()
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		mu.Lock()
+		n := len(qtys)
+		mu.Unlock()
+		if n == 2 {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(qtys) != 2 {
+		t.Fatalf("replayed fills = %d, want 2 (test email must be filtered)", len(qtys))
+	}
+	if qtys[0] != 1 || qtys[1] != 3 {
+		t.Errorf("replay order qtys = %v, want [1 3] (oldest first)", qtys)
+	}
+}
+
 // TestImplicitTLS: tls_mode=implicit serves TLS-wrapped SMTP (465-style).
 func TestImplicitTLS(t *testing.T) {
 	dir := t.TempDir()
