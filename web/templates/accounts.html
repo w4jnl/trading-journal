@@ -66,6 +66,28 @@
 -->
 <form id="accounts-form" method="post" action="/accounts/save" data-dirty-form></form>
 
+{{if .EmailAlerts}}
+{{/* Admin-only: MW email fills captured for account ids nothing matches.
+     Recomputed from the capture archive on every load, so fixing the cause
+     (alias set + fills imported) clears the card by itself. */}}
+<div class="flash error mt-16">
+  <strong>MotiveWave email fills without a matching account</strong>
+  <ul style="margin: 6px 0 2px 18px; padding: 0;">
+    {{range .EmailAlerts}}
+    <li style="margin: 2px 0;">
+      <code class="num">{{.Ref}}</code> —
+      {{if eq .Status "unknown"}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: no account carries this id.
+        Set <em>acct id in emails</em> on the owning account (Edit mode below), or import that account's CSV export.
+      {{else if eq .Status "ambiguous"}}{{.Count}} fill(s): this id matches accounts of several users — cannot attribute.
+      {{else}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: id now resolves to <strong>{{.OwnerName}}</strong>,
+        but these orders were never imported. Import that account's CSV covering the period.
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+</div>
+{{end}}
+
 {{/* Read-only by default, like the reconcile table: the Edit button adds
      #accts.editing, which swaps the .tv view spans for the .te inputs.
      The inputs are always in the DOM (just hidden), so the bulk-save form

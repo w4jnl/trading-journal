@@ -414,6 +414,12 @@ in Edit mode) to the id the emails carry; fills addressed to it then
 resolve to the account. An exact account-ref match always beats an
 alias match.
 
+Admins see a warning card on `/accounts` when captured email fills
+could not be attributed to any account (unknown or ambiguous id). It
+is recomputed from the capture archive on every load and clears itself
+once the id resolves and the affected orders exist in the journal (via
+CSV import or the alias).
+
 **The MotiveWave CSV export stays authoritative.** The Executions-view
 export carries the same `Order ID` as the emails, so importing it
 replaces the matching provisional rows exactly — an end-of-day

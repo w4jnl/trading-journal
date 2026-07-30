@@ -76,6 +76,42 @@ func TestDeriveExecTime_YearBoundary(t *testing.T) {
 	}
 }
 
+// TestUnprocessedFills: only journal entries with unattributable actions
+// surface, mapped back to their parsed captures; resolved/ingested actions
+// and a missing journal yield nothing.
+func TestUnprocessedFills(t *testing.T) {
+	dir := t.TempDir()
+	if got, err := UnprocessedFills(dir); err != nil || got != nil {
+		t.Fatalf("no journal = %v, %v; want nil, nil", got, err)
+	}
+	fill, err := os.ReadFile(filepath.Join("testdata", "fill_real_mw.eml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	write := func(name string, b []byte) {
+		if err := os.WriteFile(filepath.Join(dir, name), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("20260727T071933.000000000Z_aaaaaaaaaaaa.eml", fill)
+	write("20260727T071934.000000000Z_bbbbbbbbbbbb.eml", fill)
+	write(replayJournalName, []byte(
+		"aaaaaaaaaaaa skipped_unknown_account\nbbbbbbbbbbbb inserted\nmalformed line\n"))
+
+	got, err := UnprocessedFills(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("unprocessed = %d entries, want 1 (only the unknown-account one)", len(got))
+	}
+	u := got[0]
+	if u.Account != "LFE050-EXAMPLE1-TEST018" || u.OrderID != "172416726" ||
+		u.Action != "skipped_unknown_account" || u.ExecTime.IsZero() {
+		t.Errorf("entry = %+v", u)
+	}
+}
+
 // TestDeriveExecTime_24HourWithMarker: MW appends AM/PM to a 24-HOUR clock -
 // afternoon fills read "15:31:26 PM" (seen live) and used to fail the
 // 12-hour parse, making every after-noon fill not_ingestable.

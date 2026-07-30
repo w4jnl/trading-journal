@@ -685,6 +685,7 @@ func run() error {
 	// its own "listening" line; a startup failure (bad TLS files, port in
 	// use) is fatal only to the module, not the app.
 	if cfg.MWEmail.Enabled {
+		h.MWEmailArchiveDir = cfg.MWEmail.ArchiveDir // admin alert card on /accounts
 		mwSrv := &mwmail.Server{Cfg: cfg.MWEmail}
 		if cfg.MWEmail.IngestEnabled() {
 			mwSrv.Ingest = mwmail.ImporterIngest(importSvc)
