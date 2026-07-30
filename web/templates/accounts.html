@@ -100,6 +100,11 @@
           <td>
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
+            {{if eq $a.ImportSource "motivewave_csv"}}
+            <br><label class="subtle" style="font-size: 11px;" title="Alternate account id used ONLY to match MotiveWave fill-notification EMAILS. Needed when the email reports a different id than the CSV export — seen on AMP/CQG, where the email carries the CQG-internal account id. Leave empty when email and CSV agree (Rithmic, IBKR).">email ref
+              <input form="accounts-form" type="text" name="accounts.{{$a.ID}}.email_ref" value="{{if $a.EmailRef}}{{derefStr $a.EmailRef}}{{end}}" placeholder="—" style="width: 110px;">
+            </label>
+            {{end}}
             <details class="reassign">
               <summary>Move trades…</summary>
               <div class="row mt-8">

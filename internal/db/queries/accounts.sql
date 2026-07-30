@@ -29,7 +29,7 @@ SELECT * FROM accounts WHERE id = ? AND user_id = ?;
 
 -- name: UpdateAccount :one
 UPDATE accounts
-SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
+SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?, email_ref = ?
 WHERE id = ? AND user_id = ?
 RETURNING *;
 
@@ -74,5 +74,10 @@ UPDATE accounts SET api_backfill_done = ? WHERE id = ? AND user_id = ?;
 -- carries only the broker account ref - no user identity - so ownership is
 -- derived from which user already has the account. A real broker ref belongs
 -- to exactly one person; the caller treats 0 rows as "unknown account, do
--- not ingest" and 2+ rows as ambiguous (skip and warn).
-SELECT * FROM accounts WHERE import_source = ? AND account_ref = ?;
+-- not ingest" and ambiguity as "skip and warn".
+-- email_ref is the alias for connections whose email id differs from the
+-- CSV ref (AMP/CQG); the caller prefers an exact account_ref match when
+-- both kinds of row come back.
+SELECT * FROM accounts
+WHERE import_source = sqlc.arg(import_source)
+  AND (account_ref = sqlc.arg(ref) OR email_ref = sqlc.arg(ref));

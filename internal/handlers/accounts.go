@@ -154,6 +154,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 		Firm     string
 		Type     string
 		Currency string
+		EmailRef string
 		Active   bool
 	}
 	byID := map[int64]*rowInput{}
@@ -191,6 +192,8 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			ri.Type = v
 		case "currency":
 			ri.Currency = v
+		case "email_ref":
+			ri.EmailRef = v
 		case "active":
 			ri.Active = v == "on" || v == "1"
 		}
@@ -238,6 +241,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			Currency:   ri.Currency,
 			Active:     boolToInt(ri.Active),
 			NeedsSetup: needsSetup,
+			EmailRef:   strPtrOrNil(ri.EmailRef),
 			ID:         acc.ID,
 			UserID:     auth.MustUser(ctx).ID,
 		}); err != nil {

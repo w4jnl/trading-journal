@@ -267,6 +267,57 @@ func TestIngestEmailFill_TombstoneRespected(t *testing.T) {
 	}
 }
 
+// TestIngestEmailFill_EmailRefAlias: the AMP/CQG connection's emails carry
+// the CQG-internal account id while the CSV uses the AMP number. An account
+// with email_ref set must resolve fills addressed to that alias - and an
+// exact account_ref match must always beat an alias match, so an alias
+// colliding with another account's real ref can never steal its fills.
+func TestIngestEmailFill_EmailRefAlias(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+
+	amp := createMWAccount(t, q, svc.UserID, "120042")
+	firm := "amp"
+	typ := "prop_eval"
+	emailRef := "1234567"
+	if _, err := q.UpdateAccount(ctx, models.UpdateAccountParams{
+		Name: amp.Name, Firm: &firm, Type: &typ, Currency: "USD",
+		Active: 1, EmailRef: &emailRef, ID: amp.ID, UserID: svc.UserID,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Email addressed to the CQG id lands on the AMP account.
+	at := time.Date(2026, 7, 30, 20, 28, 27, 0, time.UTC)
+	f := emailFill("1844363409", 4, 7490, at)
+	f.AccountRef = "1234567"
+	f.Source = "AMP Global Clearing - CQG"
+	if action, err := svc.IngestEmailFill(ctx, f); err != nil || action != EmailInserted {
+		t.Fatalf("alias email = %q err %v, want inserted", action, err)
+	}
+	row, err := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{
+		AccountID: amp.ID, BrokerExecID: "MWEMAIL-1844363409",
+	})
+	if err != nil || row.AccountID != amp.ID {
+		t.Fatalf("aliased fill = %+v err %v, want on account %d", row, err, amp.ID)
+	}
+
+	// A second account whose REAL ref equals the alias: the exact match wins.
+	real := createMWAccount(t, q, svc.UserID, "1234567")
+	g := emailFill("1844400000", 1, 7491, at.Add(time.Minute))
+	g.AccountRef = "1234567"
+	if action, err := svc.IngestEmailFill(ctx, g); err != nil || action != EmailInserted {
+		t.Fatalf("exact-ref email = %q err %v, want inserted", action, err)
+	}
+	row2, err := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{
+		AccountID: real.ID, BrokerExecID: "MWEMAIL-1844400000",
+	})
+	if err != nil || row2.AccountID != real.ID {
+		t.Fatalf("exact-ref fill landed wrong: %+v err %v, want account %d", row2, err, real.ID)
+	}
+}
+
 // TestIngestEmailFill_UnknownAccountSkipped: an email has no user identity,
 // so a ref no user owns must NOT auto-create an account - the fill stays
 // archive-only until the first authoritative CSV import creates it under
