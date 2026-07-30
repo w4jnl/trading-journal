@@ -405,13 +405,14 @@ import creates it under the right user — and that CSV contains those
 very fills, so nothing is lost; the account simply isn't real-time
 until then.
 
-**AMP/CQG email ref:** the CQG connection's emails report the
-CQG-internal account id (e.g. `1234567`) while the CSV export carries
-the AMP account number (e.g. `120042`) — Rithmic and IBKR use the same
-ref in both. For such accounts, set the **email ref** field on
-`/accounts` (shown under Source/Ref for MotiveWave accounts) to the id
-the emails carry; fills addressed to it then resolve to the account.
-An exact account-ref match always beats an alias match.
+**AMP/CQG account id in emails:** the CQG connection's emails report
+the CQG-internal account id (e.g. `1234567`) while the CSV export
+carries the AMP account number (e.g. `120042`) — Rithmic and IBKR use
+the same id in both. For such accounts, set the **acct id in emails**
+field on `/accounts` (shown under Source/Ref for MotiveWave accounts,
+in Edit mode) to the id the emails carry; fills addressed to it then
+resolve to the account. An exact account-ref match always beats an
+alias match.
 
 **The MotiveWave CSV export stays authoritative.** The Executions-view
 export carries the same `Order ID` as the emails, so importing it

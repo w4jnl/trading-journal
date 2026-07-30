@@ -109,8 +109,8 @@
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
             {{if eq $a.ImportSource "motivewave_csv"}}
-            {{if $a.EmailRef}}<span class="tv subtle" style="font-size: 11px;" title="Alternate id matched by the MW email ingest (AMP/CQG reports a different id in email than in the CSV)."><br>email ref <code class="num">{{derefStr $a.EmailRef}}</code></span>{{end}}
-            <div class="te subtle" style="font-size: 11px;" title="Alternate account id used ONLY to match MotiveWave fill-notification EMAILS. Needed when the email reports a different id than the CSV export — seen on AMP/CQG, where the email carries the CQG-internal account id. Leave empty when email and CSV agree (Rithmic, IBKR).">email ref
+            {{if $a.EmailRef}}<span class="tv subtle" style="font-size: 11px;" title="The account id as MotiveWave's fill-notification emails report it (AMP/CQG emails carry a different id than the CSV export)."><br>acct id in emails <code class="num">{{derefStr $a.EmailRef}}</code></span>{{end}}
+            <div class="te subtle" style="font-size: 11px;" title="The account id as MotiveWave's fill-notification EMAILS report it. Needed when it differs from the CSV export's account ref — seen on AMP/CQG, where emails carry the CQG-internal account id. Leave empty when email and CSV agree (Rithmic, IBKR).">acct id in emails
               <input form="accounts-form" type="text" name="accounts.{{$a.ID}}.email_ref" value="{{if $a.EmailRef}}{{derefStr $a.EmailRef}}{{end}}" placeholder="—" style="width: 110px;">
             </div>
             {{end}}
