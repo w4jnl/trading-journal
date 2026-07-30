@@ -66,7 +66,15 @@
 -->
 <form id="accounts-form" method="post" action="/accounts/save" data-dirty-form></form>
 
-<div class="table-scroll mt-16">
+{{/* Read-only by default, like the reconcile table: the Edit button adds
+     #accts.editing, which swaps the .tv view spans for the .te inputs.
+     The inputs are always in the DOM (just hidden), so the bulk-save form
+     and dirty-tracking work identically in both modes. */}}
+<div class="row mt-16" style="justify-content: flex-end; gap: 8px;">
+  <button type="button" class="btn btn--secondary btn--sm" id="accts-edit">Edit</button>
+  <button type="button" class="btn btn--ghost btn--sm" id="accts-done" style="display:none;">Done</button>
+</div>
+<div id="accts" class="table-scroll mt-8">
   <table class="accounts">
     <thead>
       <tr>
@@ -101,10 +109,14 @@
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
             {{if eq $a.ImportSource "motivewave_csv"}}
-            <br><label class="subtle" style="font-size: 11px;" title="Alternate account id used ONLY to match MotiveWave fill-notification EMAILS. Needed when the email reports a different id than the CSV export — seen on AMP/CQG, where the email carries the CQG-internal account id. Leave empty when email and CSV agree (Rithmic, IBKR).">email ref
+            {{if $a.EmailRef}}<span class="tv subtle" style="font-size: 11px;" title="Alternate id matched by the MW email ingest (AMP/CQG reports a different id in email than in the CSV)."><br>email ref <code class="num">{{derefStr $a.EmailRef}}</code></span>{{end}}
+            <div class="te subtle" style="font-size: 11px;" title="Alternate account id used ONLY to match MotiveWave fill-notification EMAILS. Needed when the email reports a different id than the CSV export — seen on AMP/CQG, where the email carries the CQG-internal account id. Leave empty when email and CSV agree (Rithmic, IBKR).">email ref
               <input form="accounts-form" type="text" name="accounts.{{$a.ID}}.email_ref" value="{{if $a.EmailRef}}{{derefStr $a.EmailRef}}{{end}}" placeholder="—" style="width: 110px;">
-            </label>
+            </div>
             {{end}}
+            <details class="reassign">
+              <summary>Manage…</summary>
+              <div class="mt-8">
             <details class="reassign">
               <summary>Move trades…</summary>
               <div class="row mt-8">
@@ -196,26 +208,39 @@
               </div>
             </details>
             {{end}}
+              </div>
+            </details>
           </td>
-          <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;"></td>
           <td>
-            <select form="accounts-form" name="accounts.{{$a.ID}}.firm">
+            <span class="tv">{{$a.Name}}</span>
+            <input class="te" form="accounts-form" type="text" name="accounts.{{$a.ID}}.name" value="{{$a.Name}}" required style="width: 100%;">
+          </td>
+          <td>
+            <span class="tv">{{if $a.Firm}}{{derefStr $a.Firm}}{{else}}<span class="muted">—</span>{{end}}</span>
+            <select class="te" form="accounts-form" name="accounts.{{$a.ID}}.firm">
               {{range $.FirmOptions}}
                 <option value="{{.}}" {{if and $a.Firm (eq . (derefStr $a.Firm))}}selected{{end}}{{if and (not $a.Firm) (eq . "")}}selected{{end}}>{{if eq . ""}}—{{else}}{{.}}{{end}}</option>
               {{end}}
             </select>
           </td>
           <td>
-            <select form="accounts-form" name="accounts.{{$a.ID}}.type">
+            <span class="tv">{{if $a.Type}}{{range $.TypeOptions}}{{if eq .Value (derefStr $a.Type)}}{{.Label}}{{end}}{{end}}{{else}}<span class="muted">—</span>{{end}}</span>
+            <select class="te" form="accounts-form" name="accounts.{{$a.ID}}.type">
               <option value="" {{if not $a.Type}}selected{{end}}>—</option>
               {{range $.TypeOptions}}
                 <option value="{{.Value}}" {{if and $a.Type (eq .Value (derefStr $a.Type))}}selected{{end}}>{{.Label}}</option>
               {{end}}
             </select>
           </td>
-          <td><input form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;"></td>
+          <td>
+            <span class="tv">{{$a.Currency}}</span>
+            <input class="te" form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;">
+          </td>
           {{template "balance_cell" (dict "Account" $a "Balance" (index $.Balances $a.ID) "Today" $.Today "Currency" $a.Currency)}}
-          <td style="text-align: center;"><input form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}></td>
+          <td style="text-align: center;">
+            <span class="tv">{{if eq $a.Active 1}}✓{{else}}<span class="muted">—</span>{{end}}</span>
+            <input class="te" form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}>
+          </td>
           <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
         </tr>
       {{else}}
@@ -335,6 +360,28 @@
         return;
       }
 
+    });
+  })();
+
+  // Edit/Done toggle - same mechanics as the reconcile table: .editing on the
+  // wrapper swaps the .tv view spans for the .te inputs. Done restores loaded
+  // values via the shared dirty-tracker, so backing out never leaves edits.
+  (function () {
+    var wrap = document.getElementById('accts');
+    var editBtn = document.getElementById('accts-edit');
+    var doneBtn = document.getElementById('accts-done');
+    var form = document.getElementById('accounts-form');
+    if (!wrap || !editBtn || !doneBtn) return;
+    editBtn.addEventListener('click', function () {
+      wrap.classList.add('editing');
+      editBtn.style.display = 'none';
+      doneBtn.style.display = '';
+    });
+    doneBtn.addEventListener('click', function () {
+      if (form && form.__dirtyReset) form.__dirtyReset();
+      wrap.classList.remove('editing');
+      doneBtn.style.display = 'none';
+      editBtn.style.display = '';
     });
   })();
 </script>

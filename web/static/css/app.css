@@ -1881,6 +1881,15 @@ table.reconcile select { min-width: 80px; padding-right: 4px; }
 #recon.editing .recon-del { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 table.reconcile .recon-del input[type=checkbox] { width: auto; height: auto; }
 .recon-del-col { width: 84px; }
+
+/* Accounts table: same read-only-by-default mechanics as the reconcile table -
+   the Edit button adds #accts.editing, swapping .tv view spans for .te inputs.
+   Inputs stay in the DOM either way, so bulk-save and dirty-tracking are
+   identical in both modes. */
+table.accounts .te { display: none; }
+#accts.editing .tv { display: none; }
+#accts.editing .te { display: inline-block; }
+table.accounts input[type=checkbox].te { width: auto; height: auto; }
 tr.txn-item--deleted { opacity: 0.55; }
 
 /* Trade-row fetch in flight (hx-indicator="closest tr" on /trades rows):
