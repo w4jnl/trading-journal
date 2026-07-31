@@ -15,7 +15,7 @@ INSERT INTO accounts (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, ?
 )
-RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since, email_ref
 `
 
 type CreateAccountParams struct {
@@ -59,12 +59,13 @@ func (q *Queries) CreateAccount(ctx context.Context, arg CreateAccountParams) (A
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
 		&i.LiveSyncSince,
+		&i.EmailRef,
 	)
 	return i, err
 }
 
 const getAccountByID = `-- name: GetAccountByID :one
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE id = ? AND user_id = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since, email_ref FROM accounts WHERE id = ? AND user_id = ?
 `
 
 type GetAccountByIDParams struct {
@@ -94,12 +95,13 @@ func (q *Queries) GetAccountByID(ctx context.Context, arg GetAccountByIDParams) 
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
 		&i.LiveSyncSince,
+		&i.EmailRef,
 	)
 	return i, err
 }
 
 const getAccountByRef = `-- name: GetAccountByRef :one
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since, email_ref FROM accounts WHERE user_id = ? AND import_source = ? AND account_ref = ?
 `
 
 type GetAccountByRefParams struct {
@@ -130,6 +132,7 @@ func (q *Queries) GetAccountByRef(ctx context.Context, arg GetAccountByRefParams
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
 		&i.LiveSyncSince,
+		&i.EmailRef,
 	)
 	return i, err
 }
@@ -165,7 +168,7 @@ func (q *Queries) GetAccountImportClaim(ctx context.Context, arg GetAccountImpor
 }
 
 const listAccounts = `-- name: ListAccounts :many
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE user_id = ? ORDER BY name
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since, email_ref FROM accounts WHERE user_id = ? ORDER BY name
 `
 
 func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, error) {
@@ -193,6 +196,7 @@ func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, er
 			&i.ExcludedFromStats,
 			&i.ApiBackfillDone,
 			&i.LiveSyncSince,
+			&i.EmailRef,
 		); err != nil {
 			return nil, err
 		}
@@ -208,21 +212,26 @@ func (q *Queries) ListAccounts(ctx context.Context, userID int64) ([]Account, er
 }
 
 const listAccountsByRefAnyUser = `-- name: ListAccountsByRefAnyUser :many
-SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since FROM accounts WHERE import_source = ? AND account_ref = ?
+SELECT id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since, email_ref FROM accounts
+WHERE import_source = ?1
+  AND (account_ref = ?2 OR email_ref = ?2)
 `
 
 type ListAccountsByRefAnyUserParams struct {
 	ImportSource string `json:"import_source"`
-	AccountRef   string `json:"account_ref"`
+	Ref          string `json:"ref"`
 }
 
 // Cross-user resolution for the MW email ingest. A fill-notification email
 // carries only the broker account ref - no user identity - so ownership is
 // derived from which user already has the account. A real broker ref belongs
 // to exactly one person; the caller treats 0 rows as "unknown account, do
-// not ingest" and 2+ rows as ambiguous (skip and warn).
+// not ingest" and ambiguity as "skip and warn".
+// email_ref is the alias for connections whose email id differs from the
+// CSV ref (AMP/CQG); the caller prefers an exact account_ref match when
+// both kinds of row come back.
 func (q *Queries) ListAccountsByRefAnyUser(ctx context.Context, arg ListAccountsByRefAnyUserParams) ([]Account, error) {
-	rows, err := q.db.QueryContext(ctx, listAccountsByRefAnyUser, arg.ImportSource, arg.AccountRef)
+	rows, err := q.db.QueryContext(ctx, listAccountsByRefAnyUser, arg.ImportSource, arg.Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -246,6 +255,7 @@ func (q *Queries) ListAccountsByRefAnyUser(ctx context.Context, arg ListAccounts
 			&i.ExcludedFromStats,
 			&i.ApiBackfillDone,
 			&i.LiveSyncSince,
+			&i.EmailRef,
 		); err != nil {
 			return nil, err
 		}
@@ -373,9 +383,9 @@ func (q *Queries) SetAccountExcluded(ctx context.Context, arg SetAccountExcluded
 
 const updateAccount = `-- name: UpdateAccount :one
 UPDATE accounts
-SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?
+SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?, email_ref = ?
 WHERE id = ? AND user_id = ?
-RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since
+RETURNING id, user_id, name, firm, import_source, account_ref, type, currency, needs_setup, active, commission_source, created_at, excluded_from_stats, api_backfill_done, live_sync_since, email_ref
 `
 
 type UpdateAccountParams struct {
@@ -385,6 +395,7 @@ type UpdateAccountParams struct {
 	Currency   string  `json:"currency"`
 	Active     int64   `json:"active"`
 	NeedsSetup int64   `json:"needs_setup"`
+	EmailRef   *string `json:"email_ref"`
 	ID         int64   `json:"id"`
 	UserID     int64   `json:"user_id"`
 }
@@ -397,6 +408,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		arg.Currency,
 		arg.Active,
 		arg.NeedsSetup,
+		arg.EmailRef,
 		arg.ID,
 		arg.UserID,
 	)
@@ -417,6 +429,7 @@ func (q *Queries) UpdateAccount(ctx context.Context, arg UpdateAccountParams) (A
 		&i.ExcludedFromStats,
 		&i.ApiBackfillDone,
 		&i.LiveSyncSince,
+		&i.EmailRef,
 	)
 	return i, err
 }

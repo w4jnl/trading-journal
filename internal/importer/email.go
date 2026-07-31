@@ -69,12 +69,25 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 	defer tx.Rollback()
 	q := s.Queries.WithTx(tx)
 
-	owners, err := q.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
+	candidates, err := q.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
 		ImportSource: string(FormatMotiveWave),
-		AccountRef:   f.AccountRef,
+		Ref:          f.AccountRef,
 	})
 	if err != nil {
 		return "", fmt.Errorf("resolve account %s: %w", f.AccountRef, err)
+	}
+	// Prefer exact account_ref matches over email_ref alias matches, so an
+	// alias that happens to collide with another account's real ref can
+	// never steal its fills. Ambiguity within the winning tier cannot be
+	// attributed and is skipped.
+	var owners []models.Account
+	for _, a := range candidates {
+		if a.AccountRef == f.AccountRef {
+			owners = append(owners, a)
+		}
+	}
+	if len(owners) == 0 {
+		owners = candidates
 	}
 	switch {
 	case len(owners) == 0:

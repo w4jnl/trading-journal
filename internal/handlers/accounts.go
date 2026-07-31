@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -13,6 +15,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/mwmail"
 )
 
 // validFirms are the firms recognized by the commission_rates seed and the
@@ -62,6 +65,97 @@ func accountTypeOptions() []accountTypeOption {
 		{"live", "Live"},
 		{"paper", "Paper"},
 	}
+}
+
+// emailFillAlert is one admin warning line on /accounts: MW email fills were
+// captured for this account ref but never booked. Status tells the fix:
+// "unknown" - no account matches the ref (set "acct id in emails" on the
+// owning account, or import that account's CSV); "ambiguous" - several users
+// own the ref; "unimported" - the ref resolves NOW but some captured orders
+// never made it into executions (the alias was set after the fills, and no
+// CSV import covered them yet).
+type emailFillAlert struct {
+	Ref       string
+	Status    string // unknown | ambiguous | unimported
+	OwnerName string // set for unimported
+	Count     int
+	LastSeen  time.Time
+}
+
+// emailFillAlerts recomputes the alert list from the capture archive's replay
+// journal, filtered against CURRENT data - entries that resolve and whose
+// orders are imported disappear on their own. Empty when the email listener
+// is disabled. Best-effort: errors log and hide the card rather than break
+// the page.
+func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
+	if h.MWEmailArchiveDir == "" {
+		return nil
+	}
+	fills, err := mwmail.UnprocessedFills(h.MWEmailArchiveDir)
+	if err != nil {
+		h.logger().Warn("unprocessed email fills scan failed", "err", err)
+		return nil
+	}
+	byRef := map[string][]mwmail.UnprocessedFill{}
+	var order []string
+	for _, f := range fills {
+		if f.Account == "" {
+			continue
+		}
+		if _, seen := byRef[f.Account]; !seen {
+			order = append(order, f.Account)
+		}
+		byRef[f.Account] = append(byRef[f.Account], f)
+	}
+	var out []emailFillAlert
+	for _, ref := range order {
+		group := byRef[ref]
+		a := emailFillAlert{Ref: ref}
+		owners, err := h.Queries.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
+			ImportSource: "motivewave_csv",
+			Ref:          ref,
+		})
+		if err != nil {
+			continue
+		}
+		switch {
+		case len(owners) == 0:
+			a.Status = "unknown"
+			for _, f := range group {
+				a.Count++
+				if f.ExecTime.After(a.LastSeen) {
+					a.LastSeen = f.ExecTime
+				}
+			}
+		case len(owners) > 1:
+			a.Status = "ambiguous"
+			a.Count = len(group)
+		default:
+			// Resolves today - only orders still absent from executions count.
+			acct := owners[0]
+			for _, f := range group {
+				if f.OrderID == "" {
+					continue
+				}
+				oid := f.OrderID
+				if _, err := h.Queries.GetExecutionByOrderID(ctx, models.GetExecutionByOrderIDParams{
+					AccountID: acct.ID, OrderID: &oid,
+				}); errors.Is(err, sql.ErrNoRows) {
+					a.Count++
+					if f.ExecTime.After(a.LastSeen) {
+						a.LastSeen = f.ExecTime
+					}
+				}
+			}
+			if a.Count == 0 {
+				continue // fully covered by later imports - stale journal history
+			}
+			a.Status = "unimported"
+			a.OwnerName = acct.Name
+		}
+		out = append(out, a)
+	}
+	return out
 }
 
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
@@ -116,10 +210,17 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		flash = ""
 	}
+	// Unattributable email-fill warnings are operator material: the email
+	// names no journal user, so only admins see the card.
+	var emailAlerts []emailFillAlert
+	if auth.MustUser(ctx).IsAdmin {
+		emailAlerts = h.emailFillAlerts(ctx)
+	}
 	h.renderPage(w, r, "accounts.html", map[string]any{
 		"NavActive":      "accounts",
 		"BackHref":       validBackHref(r),
 		"Accounts":       accounts,
+		"EmailAlerts":    emailAlerts,
 		"TopstepxSync":   h.TopstepxSync != nil,
 		"FirmOptions":    []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
 		"TypeOptions":    accountTypeOptions(),
@@ -154,6 +255,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 		Firm     string
 		Type     string
 		Currency string
+		EmailRef string
 		Active   bool
 	}
 	byID := map[int64]*rowInput{}
@@ -191,6 +293,8 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			ri.Type = v
 		case "currency":
 			ri.Currency = v
+		case "email_ref":
+			ri.EmailRef = v
 		case "active":
 			ri.Active = v == "on" || v == "1"
 		}
@@ -238,6 +342,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			Currency:   ri.Currency,
 			Active:     boolToInt(ri.Active),
 			NeedsSetup: needsSetup,
+			EmailRef:   strPtrOrNil(ri.EmailRef),
 			ID:         acc.ID,
 			UserID:     auth.MustUser(ctx).ID,
 		}); err != nil {

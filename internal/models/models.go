@@ -24,6 +24,7 @@ type Account struct {
 	ExcludedFromStats int64      `json:"excluded_from_stats"`
 	ApiBackfillDone   int64      `json:"api_backfill_done"`
 	LiveSyncSince     *time.Time `json:"live_sync_since"`
+	EmailRef          *string    `json:"email_ref"`
 }
 
 type ApiKey struct {

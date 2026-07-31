@@ -79,6 +79,12 @@ type Handlers struct {
 	// disables the feature (ibkr.enabled=false); enqueue hooks nil-safe.
 	IbkrSync *ibkr.SyncService
 
+	// MWEmailArchiveDir is the MW email capture archive (mw_email.archive_dir)
+	// when the listener is enabled; "" otherwise. The accounts page reads the
+	// replay journal in it to warn admins about captured fills that could not
+	// be attributed to any account.
+	MWEmailArchiveDir string
+
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
 	// distinguish page renders ("page:<name>") from partial renders
