@@ -23,6 +23,7 @@ type Config struct {
 	MarketData   MarketData   `yaml:"market_data"`
 	MCP          MCP          `yaml:"mcp"`
 	AI           AI           `yaml:"ai"`
+	GEX          GEX          `yaml:"gex"`
 	TopstepX     TopstepX     `yaml:"topstepx"`
 	IBKR         IBKR         `yaml:"ibkr"`
 	MWEmail      MWEmail      `yaml:"mw_email"`
@@ -172,6 +173,18 @@ type AI struct {
 	Headers     map[string]string `yaml:"headers"`
 }
 
+// GEX configures the gamma-exposure context annotations (design §8 / P4): during
+// daily review prep, each ES/NQ trade entry gets a regime/flip/wall block fetched
+// from a gex-engine instance's snapshot API. Disabled by default; the whole
+// feature is gated on Enabled. APIKey is the engine's bearer token (its
+// GEX_API_TOKEN) and can be injected via the TJ_GEX_API_KEY env var.
+type GEX struct {
+	Enabled    bool   `yaml:"enabled"`
+	BaseURL    string `yaml:"base_url"`
+	APIKey     string `yaml:"api_key"`
+	TimeoutSec int    `yaml:"timeout_sec"`
+}
+
 // MarketData configures the historical price-bar source behind the trade-replay
 // charts. The v1 source is Yahoo Finance v8 (free, no key). Enabled (nil = true)
 // toggles the whole feature; Prefetch (nil = true) toggles only the background
@@ -287,6 +300,7 @@ func defaults() Config {
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
 		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30"},
 		AI:         AI{Provider: "openai", BaseURL: "http://0.0.0.0:8080/v1", TimeoutSec: 120, MaxTokens: 1024, Temperature: 0.4},
+		GEX:        GEX{TimeoutSec: 5},
 		TopstepX: TopstepX{
 			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
@@ -353,6 +367,14 @@ func (c Config) Validate() error {
 		}
 		if c.AI.TimeoutSec < 0 {
 			return fmt.Errorf("ai.timeout_sec must be >= 0, got %d", c.AI.TimeoutSec)
+		}
+	}
+	if c.GEX.Enabled {
+		if c.GEX.BaseURL == "" {
+			return fmt.Errorf("gex.enabled requires gex.base_url")
+		}
+		if c.GEX.TimeoutSec < 0 {
+			return fmt.Errorf("gex.timeout_sec must be >= 0, got %d", c.GEX.TimeoutSec)
 		}
 	}
 	if c.TopstepX.EncryptionKey != "" {
@@ -425,9 +447,10 @@ func (c Config) Validate() error {
 // Load reads cfgPath if it exists, otherwise returns defaults.
 // A missing file is not an error: defaults are sensible for first boot.
 // Environment variables override the YAML for a small allowlist of
-// secret-like fields - currently TJ_SESSION_SECRET. Env wins over file so
-// you can ship a checked-in config.yaml and inject the secret at run
-// time (Docker secrets, systemd EnvironmentFile, etc.).
+// secret-like fields (TJ_SESSION_SECRET, TJ_AI_API_KEY, TJ_GEX_API_KEY,
+// TJ_TOPSTEPX_ENC_KEY). Env wins over file so you can ship a checked-in
+// config.yaml and inject the secret at run time (Docker secrets, systemd
+// EnvironmentFile, etc.).
 func Load(cfgPath string) (Config, error) {
 	cfg := defaults()
 	abs, err := filepath.Abs(cfgPath)
@@ -448,6 +471,9 @@ func Load(cfgPath string) (Config, error) {
 	}
 	if v := os.Getenv("TJ_AI_API_KEY"); v != "" {
 		cfg.AI.APIKey = v
+	}
+	if v := os.Getenv("TJ_GEX_API_KEY"); v != "" {
+		cfg.GEX.APIKey = v
 	}
 	if v := os.Getenv("TJ_TOPSTEPX_ENC_KEY"); v != "" {
 		cfg.TopstepX.EncryptionKey = v

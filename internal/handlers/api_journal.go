@@ -655,7 +655,9 @@ const (
 	aiPlaceholderBody = "---\n\n_AI review_"
 )
 
-// prepDayTrade is one closed trade on the target day plus what the clusterer needs.
+// prepDayTrade is one closed trade on the target day plus what the clusterer
+// and the gex annotator need. Exit fields are present because the query
+// filters status='closed' (ExitPrice stays a pointer to match the column).
 type prepDayTrade struct {
 	ID         int64
 	Symbol     string
@@ -663,6 +665,8 @@ type prepDayTrade struct {
 	Direction  string
 	EntryTime  time.Time
 	EntryPrice float64
+	ExitTime   time.Time
+	ExitPrice  *float64
 	AccountID  int64
 	Account    string
 	NetPnl     *float64
@@ -710,6 +714,10 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 	}
 	groups, solos := clusterCopytrader(trades)
 
+	// Best-effort gamma-context annotation (see gex_annotate.go). No-op when
+	// gex is disabled; a marker in the body keeps re-prepared days idempotent.
+	gexAnn := &gexAnnotator{h: h}
+
 	entries := make([]preparedEntry, 0, len(groups)+len(solos))
 	for _, g := range groups {
 		ids := tradeIDsOf(g)
@@ -728,6 +736,7 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 			}
 			pe.EntryID, pe.Created = e.ID, true
 		}
+		gexAnn.annotate(ctx, pe.EntryID, g[0])
 		entries = append(entries, pe)
 	}
 	for _, t := range solos {
@@ -745,6 +754,7 @@ func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string, tz *ti
 		} else {
 			pe.EntryID, pe.Created = e.ID, true
 		}
+		gexAnn.annotate(ctx, pe.EntryID, t)
 		entries = append(entries, pe)
 	}
 
@@ -787,7 +797,7 @@ func (h *Handlers) lastTradingDay(ctx context.Context, tz *time.Location) (time.
 func (h *Handlers) loadDayTradesForPrep(ctx context.Context, day time.Time, tz *time.Location) ([]prepDayTrade, error) {
 	end := day.AddDate(0, 0, 1)
 	rows, err := h.DB.QueryContext(ctx, `
-		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.entry_time, t.entry_price, t.account_id, a.name, t.net_pnl
+		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.entry_time, t.entry_price, t.exit_time, t.exit_price, t.account_id, a.name, t.net_pnl
 		FROM trades t JOIN accounts a ON a.id = t.account_id
 		WHERE t.status = 'closed' AND t.exit_time IS NOT NULL AND a.active = 1 AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
@@ -799,7 +809,7 @@ func (h *Handlers) loadDayTradesForPrep(ctx context.Context, day time.Time, tz *
 	var out []prepDayTrade
 	for rows.Next() {
 		var t prepDayTrade
-		if err := rows.Scan(&t.ID, &t.Symbol, &t.SymbolRoot, &t.Direction, &t.EntryTime, &t.EntryPrice, &t.AccountID, &t.Account, &t.NetPnl); err != nil {
+		if err := rows.Scan(&t.ID, &t.Symbol, &t.SymbolRoot, &t.Direction, &t.EntryTime, &t.EntryPrice, &t.ExitTime, &t.ExitPrice, &t.AccountID, &t.Account, &t.NetPnl); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
