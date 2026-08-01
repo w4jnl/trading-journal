@@ -23,6 +23,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/backup"
 	"github.com/w4jnl/trading-journal/internal/config"
 	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/handlers"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
@@ -276,6 +277,22 @@ func run() error {
 		slog.Info("AI analysis enabled", "provider", cfg.AI.Provider, "base_url", cfg.AI.BaseURL, "model", cfg.AI.Model)
 	}
 
+	// Gamma-exposure annotations (gex-engine). Nil when disabled; the
+	// prepare-day annotator is a no-op on a nil client.
+	var gexClient *gex.Client
+	if cfg.GEX.Enabled {
+		c, err := gex.New(gex.Options{
+			BaseURL: cfg.GEX.BaseURL,
+			APIKey:  cfg.GEX.APIKey,
+			Timeout: time.Duration(cfg.GEX.TimeoutSec) * time.Second,
+		})
+		if err != nil {
+			return fmt.Errorf("gex: %w", err)
+		}
+		gexClient = c
+		slog.Info("GEX annotations enabled", "base_url", cfg.GEX.BaseURL)
+	}
+
 	inbox := filepath.Join(cfg.Imports.Root, "inbox")
 	processed := filepath.Join(cfg.Imports.Root, "processed")
 	failed := filepath.Join(cfg.Imports.Root, "failed")
@@ -466,6 +483,7 @@ func run() error {
 		MCPInstanceLabel: cfg.MCP.InstanceLabel,
 		AI:               aiClient,
 		AIJobs:           aiJobs,
+		GEX:              gexClient,
 		TopstepxSync:     topstepxSync,
 		IbkrSync:         ibkrSync,
 	}

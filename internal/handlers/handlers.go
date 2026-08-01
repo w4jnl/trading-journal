@@ -21,6 +21,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
@@ -69,6 +70,10 @@ type Handlers struct {
 	// from cfg.AI when ai.enabled.
 	AI     ai.Client
 	AIJobs *ai.JobManager
+
+	// GEX fetches gamma-exposure snapshots for review-time trade annotations.
+	// Nil = gex.enabled false; prepare-day then skips annotation entirely.
+	GEX *gex.Client
 
 	// TopstepxSync pulls trade history from the TopstepX API. Nil disables the
 	// feature (no topstepx.encryption_key configured); the enqueue hooks are

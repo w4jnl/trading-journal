@@ -89,6 +89,24 @@ ai:
   # Optional extra request headers (e.g. OpenRouter's HTTP-Referer / X-Title).
   headers: {}
 
+# Gamma-exposure context (gex-engine). During daily review prep, each ES/NQ
+# trade/group entry gets a gamma block appended once: regime + percentile,
+# side of / distance to the gamma flip, and tick distances to the call/put
+# walls, from the engine snapshot that was live at the trade's entry and exit
+# times. Other symbols and pre-history days are skipped silently; the fetch
+# never blocks or fails a review. Disabled by default.
+gex:
+  enabled: false
+  # gex-engine base URL. Local dev: "http://127.0.0.1:8420"; Docker on the
+  # shared network: "http://gex-engine:8420" (direct container-to-container).
+  base_url: ""
+  # Bearer token = the engine's GEX_API_TOKEN. Override with the
+  # TJ_GEX_API_KEY env var to keep this file in git.
+  api_key: ""
+  # Per-request timeout (seconds). Kept short: annotation runs inside the
+  # prepare-day path and must not stall reviews when the engine is down.
+  timeout_sec: 5
+
 # TopstepX (ProjectX Gateway) API sync. Users connect their own TopstepX
 # username + API key in Settings; trades then sync automatically on page
 # visits (throttled) and hourly during CME Globex hours. The feature turns on
