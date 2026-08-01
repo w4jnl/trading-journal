@@ -18,41 +18,91 @@ import (
 // and the per-strike net-GEX profile chart. This is the same data the review
 // annotations condense; the page is the browsable view of it. Feature-gated
 // on Handlers.GEX like every optional service: nil hides the nav item
-// (gexEnabled func) and 404s the route.
+// (gexEnabled func) and 404s the routes.
+//
+// Two ways to move through time: a scrub slider over the recent session grid
+// (fed by the GEXData JSON endpoint so dragging updates tiles + chart in
+// place, no reloads) and the "as of" picker for anything older.
 
 // gexPageMoment is the "as of" input format (a datetime-local control,
 // interpreted in the journal's trading timezone).
 const gexPageMoment = "2006-01-02T15:04"
 
+// gexHistoryStart is the engine's first stored session (nothing exists at or
+// before any earlier moment, per the P4 handoff).
+var gexHistoryStart = time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC)
+
+// gexGridSessions caps the scrub slider's window. 60 sessions x 75 slots is
+// a ~50KB inline array; the "as of" picker covers anything older.
+const gexGridSessions = 60
+
 // gexPageLevel is one row of the levels table, pre-formatted.
 type gexPageLevel struct {
-	Label   string
-	Bucket  string
-	Index   string
-	Futures string
-	Gex     string
-	Dist    string // signed points from spot (futures terms)
+	Label   string `json:"label"`
+	Bucket  string `json:"bucket"`
+	Index   string `json:"index"`
+	Futures string `json:"futures"`
+	Gex     string `json:"gex"`
+	Dist    string `json:"dist"` // signed points from spot (futures terms)
+}
+
+// gexChart is the profile chart's data blob (index-denominated).
+type gexChart struct {
+	Strikes []float64 `json:"strikes"`
+	Gex     []float64 `json:"gex"`
+	Spot    float64   `json:"spot"`
+	Flip    *float64  `json:"flip"`
+	CW      *float64  `json:"cw"`
+	PW      *float64  `json:"pw"`
+}
+
+// gexView is the pre-formatted view model for one snapshot, shared verbatim
+// by the HTML render and the GEXData JSON endpoint so the scrub JS can
+// repaint the exact same fields the server rendered.
+type gexView struct {
+	AsOfET      string         `json:"asOfET"`
+	Stale       bool           `json:"stale"` // as_of lags the viewed moment (prior-session close)
+	Regime      string         `json:"regime"`
+	RegimeClass string         `json:"regimeClass"`
+	Pctl        string         `json:"pctl"`
+	NetGex      string         `json:"netGex"`
+	SpotIndex   string         `json:"spotIndex"`
+	SpotFutures string         `json:"spotFutures"`
+	ConvLine    string         `json:"convLine"`
+	FlipFutures string         `json:"flipFutures"`
+	FlipSub     string         `json:"flipSub"`
+	EM          string         `json:"em"`
+	Levels      []gexPageLevel `json:"levels"`
+	Chart       gexChart       `json:"chart"`
+	HasProfile  bool           `json:"hasProfile"`
+}
+
+// gexMarketParam resolves the {market} path value ("" defaults to ES).
+func gexMarketParam(r *http.Request) (string, bool) {
+	market := strings.ToUpper(strings.TrimSpace(r.PathValue("market")))
+	if market == "" {
+		market = "ES"
+	}
+	return market, market == "ES" || market == "NQ"
 }
 
 // GEXPage renders /gex and /gex/{market}. Engine trouble never 5xxes the
 // page: a missing snapshot renders an empty state, transport errors render a
-// flash, and the shell (market toggle, as-of picker) stays usable.
+// flash, and the shell (market toggle, slider, as-of picker) stays usable.
 func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	if h.GEX == nil {
 		http.NotFound(w, r)
 		return
 	}
-	market := strings.ToUpper(strings.TrimSpace(r.PathValue("market")))
-	if market == "" {
-		market = "ES"
-	}
-	if market != "ES" && market != "NQ" {
+	market, ok := gexMarketParam(r)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
 	tz := h.localTZ()
-	at := time.Now()
+	now := time.Now()
+	at := now
 	latest := true
 	atParam := strings.TrimSpace(r.URL.Query().Get("at"))
 	if atParam != "" {
@@ -72,6 +122,23 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		"Latest":    latest,
 	}
 
+	// Scrub-slider grid: recent session slots, oldest first, plus the initial
+	// position (the last slot at or before the viewed moment; -1 = older than
+	// the window, slider then starts parked without a seeded view).
+	grid := gexSessionGrid(now)
+	if len(grid) > 1 {
+		pos := -1
+		for i, ts := range grid {
+			if ts <= at.Unix() {
+				pos = i
+			}
+		}
+		if b, err := json.Marshal(grid); err == nil {
+			data["GridJSON"] = template.JS(b)
+			data["GridPos"] = pos
+		}
+	}
+
 	s, err := h.GEX.Snapshot(r.Context(), market, at)
 	switch {
 	case errors.Is(err, gex.ErrNoSnapshot):
@@ -81,67 +148,143 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		h.logger().Warn("gex page: snapshot fetch failed", "market", market, "err", err)
 		data["EngineError"] = err.Error()
 	default:
-		gexPageFill(data, s, latest)
+		ref := at
+		if latest {
+			ref = now
+		}
+		view := gexBuildView(s, ref)
+		data["View"] = view
+		data["SessionClosed"] = latest && view.Stale
+		if b, err := json.Marshal(view); err == nil {
+			data["ViewJSON"] = template.JS(b)
+		}
 	}
 	h.renderPage(w, r, "gex.html", data)
 }
 
-// gexPageFill turns a snapshot into the template's pre-formatted view model.
-// Every engine-nullable value renders "-" instead of erroring (client.go
-// documents which ones those are).
-func gexPageFill(data map[string]any, s *gex.Snapshot, latest bool) {
+// GEXData serves one snapshot's view model as JSON for the scrub slider.
+// at is unix seconds (a grid slot plus the JS-side fetch buffer). A missing
+// snapshot is a normal state ({"empty":true}), not an error; only transport
+// trouble is a non-200.
+func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
+	if h.GEX == nil {
+		http.NotFound(w, r)
+		return
+	}
+	market, ok := gexMarketParam(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	sec, err := strconv.ParseInt(r.URL.Query().Get("at"), 10, 64)
+	if err != nil || sec <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "at must be unix seconds")
+		return
+	}
+	at := time.Unix(sec, 0)
+
+	s, err := h.GEX.Snapshot(r.Context(), market, at)
+	switch {
+	case errors.Is(err, gex.ErrNoSnapshot):
+		writeJSON(w, http.StatusOK, map[string]any{"empty": true})
+	case err != nil:
+		h.logger().Warn("gex data: snapshot fetch failed", "market", market, "err", err)
+		writeJSONError(w, http.StatusBadGateway, "gex-engine unreachable")
+	default:
+		writeJSON(w, http.StatusOK, gexBuildView(s, at))
+	}
+}
+
+// gexSessionGrid returns the scrub slider's time slots: 09:50-16:00 ET in
+// five-minute steps (the engine's snapshot grid) for the most recent
+// gexGridSessions weekdays, ascending, bounded by the engine history start
+// and now. Holidays are left in - their slots resolve to the prior session's
+// close via at-or-before, which the stale flag surfaces honestly.
+func gexSessionGrid(now time.Time) []int64 {
 	et := gexEastern()
-	data["AsOf"] = s.AsOf
-	data["AsOfET"] = s.AsOf.In(et).Format("Mon Jan 2, 15:04:05 ET")
-	data["Stale"] = latest && time.Since(s.AsOf) > gexStaleAfter
+	// gexHistoryStart is a plain DATE; take its components rather than
+	// converting the instant (which would slide it into the prior ET day).
+	sy, sm, sd := gexHistoryStart.Date()
+	startDay := time.Date(sy, sm, sd, 0, 0, 0, 0, et)
 
-	state := s.Regime.State
-	data["Regime"] = state
-	switch state {
+	n := now.In(et)
+	day := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, et)
+	var days []time.Time
+	for len(days) < gexGridSessions && !day.Before(startDay) {
+		if wd := day.Weekday(); wd != time.Saturday && wd != time.Sunday {
+			days = append(days, day)
+		}
+		day = day.AddDate(0, 0, -1)
+	}
+
+	var out []int64
+	for i := len(days) - 1; i >= 0; i-- {
+		for m := 9*60 + 50; m <= 16*60; m += 5 {
+			t := days[i].Add(time.Duration(m) * time.Minute)
+			if t.After(now) {
+				break
+			}
+			out = append(out, t.Unix())
+		}
+	}
+	return out
+}
+
+// gexBuildView turns a snapshot into the pre-formatted view model. ref is
+// the moment being viewed (now for the live view); Stale flags an as_of
+// lagging it by more than the grid step allows - the prior-session-close
+// case. Every engine-nullable value renders "-" instead of erroring
+// (client.go documents which ones those are).
+func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
+	et := gexEastern()
+	v := gexView{
+		AsOfET: s.AsOf.In(et).Format("Mon Jan 2, 15:04:05 ET"),
+		Stale:  ref.Sub(s.AsOf) > gexStaleAfter,
+		Regime: s.Regime.State,
+		Pctl:   "—",
+		NetGex: gexFmtB(s.Regime.NetGexAtSpot),
+		EM:     "—",
+	}
+	switch s.Regime.State {
 	case "positive":
-		data["RegimeClass"] = "pnl-pos"
+		v.RegimeClass = "pnl-pos"
 	case "negative":
-		data["RegimeClass"] = "pnl-neg"
+		v.RegimeClass = "pnl-neg"
 	}
-	data["Pctl"] = "—"
-	if v := s.Regime.Percentile20D; v != nil {
-		data["Pctl"] = strconv.FormatFloat(*v, 'f', 0, 64)
+	if p := s.Regime.Percentile20D; p != nil {
+		v.Pctl = strconv.FormatFloat(*p, 'f', 0, 64)
 	}
-	data["NetGex"] = gexFmtB(s.Regime.NetGexAtSpot)
+	if e := s.ExpectedMove1D; e != nil {
+		v.EM = fmt.Sprintf("%.1f pts", *e)
+	}
 
-	data["SpotIndex"] = fmt.Sprintf("%.2f", s.SpotIndex)
+	v.SpotIndex = fmt.Sprintf("%.2f", s.SpotIndex)
+	v.SpotFutures = "—"
 	var spotFut *float64
 	if fc := s.FuturesConversion; fc != nil {
 		f := s.SpotIndex * fc.Ratio
 		spotFut = &f
-		data["SpotFutures"] = fmt.Sprintf("%.2f", f)
-		data["ConvLine"] = fmt.Sprintf("futures conversion %.4f · %s · paired %s",
+		v.SpotFutures = fmt.Sprintf("%.2f", f)
+		v.ConvLine = fmt.Sprintf("futures conversion %.4f · %s · paired %s",
 			fc.Ratio, fc.Source, fc.PairedAt.In(et).Format("15:04 ET"))
 	} else {
-		data["SpotFutures"] = "—"
-		data["ConvLine"] = "futures conversion unavailable (cold basis) — futures-denominated values missing"
+		v.ConvLine = "futures conversion unavailable (cold basis) — futures-denominated values missing"
 	}
 
-	data["FlipFutures"] = "—"
-	data["FlipSub"] = ""
+	v.FlipFutures = "—"
 	if f := s.Flip.Futures; f != nil {
-		data["FlipFutures"] = fmt.Sprintf("%.2f", *f)
+		v.FlipFutures = fmt.Sprintf("%.2f", *f)
 		if spotFut != nil {
 			d := *spotFut - *f
 			side := "above"
 			if d < 0 {
 				side = "below"
 			}
-			data["FlipSub"] = fmt.Sprintf("spot %+.2f pts (%s flip)", d, side)
+			v.FlipSub = fmt.Sprintf("spot %+.2f pts (%s flip)", d, side)
 		}
 	}
 
-	data["EM"] = "—"
-	if v := s.ExpectedMove1D; v != nil {
-		data["EM"] = fmt.Sprintf("%.1f pts", *v)
-	}
-
-	levels := make([]gexPageLevel, 0, len(s.Levels))
+	v.Levels = make([]gexPageLevel, 0, len(s.Levels))
 	for _, l := range s.Levels {
 		row := gexPageLevel{
 			Label:   gexLevelName(l.Type),
@@ -157,23 +300,20 @@ func gexPageFill(data map[string]any, s *gex.Snapshot, latest bool) {
 				row.Dist = fmt.Sprintf("%+.2f pts", *l.Futures-*spotFut)
 			}
 		}
-		levels = append(levels, row)
+		v.Levels = append(v.Levels, row)
 	}
-	data["Levels"] = levels
 
-	chart := map[string]any{
-		"strikes": s.Profile.StrikesIndex,
-		"gex":     s.Profile.NetGex,
-		"spot":    s.SpotIndex,
-		"flip":    s.Flip.Index,
-		"cw":      gexWallIndex(s, "call_wall"),
-		"pw":      gexWallIndex(s, "put_wall"),
+	v.Chart = gexChart{
+		Strikes: s.Profile.StrikesIndex,
+		Gex:     s.Profile.NetGex,
+		Spot:    s.SpotIndex,
+		Flip:    s.Flip.Index,
+		CW:      gexWallIndex(s, "call_wall"),
+		PW:      gexWallIndex(s, "put_wall"),
 	}
-	if b, err := json.Marshal(chart); err == nil {
-		data["ChartJSON"] = template.JS(b)
-	}
-	data["HasProfile"] = len(s.Profile.StrikesIndex) > 1 &&
+	v.HasProfile = len(s.Profile.StrikesIndex) > 1 &&
 		len(s.Profile.StrikesIndex) == len(s.Profile.NetGex)
+	return v
 }
 
 // gexFmtB renders a raw gamma-dollar value at billions scale ("+74.5B").

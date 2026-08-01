@@ -21,6 +21,11 @@
   .gex-seg a { padding: 5px 14px; font-size: 13px; text-decoration: none; color: var(--fg-muted); }
   .gex-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
+  /* Time scrub: a full-width range input over the recent session grid. */
+  .gex-scrub { display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
+  .gex-scrub input[type=range] { flex: 1; accent-color: var(--accent); }
+  .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; min-width: 132px; text-align: right; }
+
   .chart-host { width: 100%; }
 
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
@@ -44,6 +49,14 @@
   </form>
 </div>
 
+{{if .GridJSON}}
+<div class="card card--compact mb-16 gex-scrub">
+  <span class="muted" style="font-size: 12px;">scrub</span>
+  <input type="range" id="gx-scrub" aria-label="Scrub snapshot time">
+  <span class="muted gex-scrub-when" id="gx-scrub-when"></span>
+</div>
+{{end}}
+
 {{if .EngineError}}
 <div class="flash error mb-16" role="alert">
   gex-engine unreachable — {{.EngineError}}
@@ -57,53 +70,52 @@
 </div>
 {{end}}
 
-{{if .AsOf}}
-{{if .Stale}}
+{{if .View}}
+{{if .SessionClosed}}
 <div class="flash info mb-16" role="status">
-  Options session closed — showing the last snapshot, as of {{.AsOfET}}.
+  Options session closed — showing the last snapshot, as of {{.View.AsOfET}}.
 </div>
 {{end}}
 
 <div class="stat-strip">
   <div class="card stat-tile">
     <div class="label">Regime</div>
-    <div class="num--lg {{.RegimeClass}}">{{.Regime}}</div>
-    <div class="sub">20d percentile: P{{.Pctl}}</div>
+    <div class="num--lg {{.View.RegimeClass}}" id="gx-regime">{{.View.Regime}}</div>
+    <div class="sub" id="gx-pctl">20d percentile: P{{.View.Pctl}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Net GEX at spot</div>
-    <div class="num--lg">{{.NetGex}}</div>
+    <div class="num--lg" id="gx-netgex">{{.View.NetGex}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Spot</div>
-    <div class="num--lg">{{.SpotIndex}}</div>
-    <div class="sub">futures {{.SpotFutures}}</div>
+    <div class="num--lg" id="gx-spot">{{.View.SpotIndex}}</div>
+    <div class="sub" id="gx-spotfut">futures {{.View.SpotFutures}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Gamma flip</div>
-    <div class="num--lg">{{.FlipFutures}}</div>
-    {{if .FlipSub}}<div class="sub">{{.FlipSub}}</div>{{end}}
+    <div class="num--lg" id="gx-flip">{{.View.FlipFutures}}</div>
+    <div class="sub" id="gx-flipsub">{{.View.FlipSub}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Expected move 1d</div>
-    <div class="num--lg">{{.EM}}</div>
+    <div class="num--lg" id="gx-em">{{.View.EM}}</div>
   </div>
 </div>
 
 <div class="card mb-16">
-  <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of {{.AsOfET}}</div>
+  <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></div>
   <div id="gex-profile" class="chart-host" style="height: 320px;"></div>
 </div>
 
-{{if .Levels}}
 <div class="card card--bare mb-16">
   <div class="table-scroll">
     <table>
       <thead>
         <tr><th>Level</th><th>Bucket</th><th class="num">Index</th><th class="num">Futures</th><th class="num">GEX</th><th class="num">vs spot</th></tr>
       </thead>
-      <tbody>
-        {{range .Levels}}
+      <tbody id="gx-levels">
+        {{range .View.Levels}}
         <tr>
           <td>{{.Label}}</td>
           <td class="muted">{{.Bucket}}</td>
@@ -117,14 +129,16 @@
     </table>
   </div>
 </div>
-{{end}}
 
-<div class="muted" style="font-size: 12px;">{{.ConvLine}} · snapshot {{ltime .AsOf "datetime-sec"}}</div>
+<div class="muted" style="font-size: 12px;" id="gx-conv">{{.View.ConvLine}} · snapshot {{.View.AsOfET}}</div>
 
 {{template "uplot_assets" .}}
 <script>
-  // Chart data is rendered into the page as inline JSON by the handler.
-  const gexData = {{.ChartJSON}};
+  // The initial view model is rendered into the page as inline JSON by the
+  // handler; the scrub slider fetches sibling moments from /gex/data and
+  // repaints in place - no reloads mid-drag.
+  const gexInit = {{.ViewJSON}};
+  const gexData = gexInit.chart;
   let gexChart = null;
 
   function buildGexChart() {
@@ -135,6 +149,7 @@
       el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No profile data in this snapshot.</div>';
       return;
     }
+    el.innerHTML = '';
     const c = uplotHelpers.colors();
     const rgba = uplotHelpers.rgba;
     const cs = getComputedStyle(document.documentElement);
@@ -142,12 +157,13 @@
     const fmtB = (v) => v == null ? '—' : (v / 1e9).toFixed(2) + 'B';
 
     // Vertical reference lines: spot (solid accent), flip / call wall /
-    // put wall (dashed). Drawn in canvas pixels after each plot pass.
+    // put wall (dashed). Values are read from gexData at draw time so a
+    // scrub-triggered setData repaints them without a rebuild.
     const marks = [
-      { v: gexData.spot, color: c.accent, dash: [],     label: 'spot' },
-      { v: gexData.flip, color: flipColor, dash: [6, 4], label: 'flip' },
-      { v: gexData.cw,   color: c.pos,    dash: [6, 4], label: 'CW' },
-      { v: gexData.pw,   color: c.neg,    dash: [6, 4], label: 'PW' },
+      { key: 'spot', color: c.accent, dash: [],     label: 'spot' },
+      { key: 'flip', color: flipColor, dash: [6, 4], label: 'flip' },
+      { key: 'cw',   color: c.pos,    dash: [6, 4], label: 'CW' },
+      { key: 'pw',   color: c.neg,    dash: [6, 4], label: 'PW' },
     ];
     const drawMarks = (u) => {
       const ctx = u.ctx;
@@ -155,8 +171,9 @@
       ctx.save();
       ctx.font = (11 * dpr) + 'px system-ui, sans-serif';
       marks.forEach((m, i) => {
-        if (m.v == null) return;
-        const x = u.valToPos(m.v, 'x', true);
+        const val = gexData[m.key];
+        if (val == null) return;
+        const x = u.valToPos(val, 'x', true);
         if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) return;
         ctx.strokeStyle = m.color;
         ctx.setLineDash(m.dash.map((d) => d * dpr));
@@ -182,7 +199,8 @@
           label: 'Net GEX',
           /* Per-bar sign coloring needs the bars builder's disp option - a
              series-level stroke(u, idx) callback gets the SERIES index, not
-             the bar index, and would paint the whole series one color. */
+             the bar index, and would paint the whole series one color. The
+             values closures read gexData live so scrubs recolor correctly. */
           paths: uPlot.paths.bars({
             size: [0.9, 10],
             disp: {
@@ -209,9 +227,114 @@
   buildGexChart();
   uplotHelpers.onRebuild(buildGexChart);
 
+  // applyView repaints every server-formatted field of the page from one
+  // /gex/data view model (the same shape the server rendered inline).
+  const $id = (id) => document.getElementById(id);
+  function applyView(v) {
+    if (!v || v.empty) return;
+    const regime = $id('gx-regime');
+    regime.textContent = v.regime;
+    regime.className = 'num--lg ' + (v.regimeClass || '');
+    $id('gx-pctl').textContent = '20d percentile: P' + v.pctl;
+    $id('gx-netgex').textContent = v.netGex;
+    $id('gx-spot').textContent = v.spotIndex;
+    $id('gx-spotfut').textContent = 'futures ' + v.spotFutures;
+    $id('gx-flip').textContent = v.flipFutures;
+    $id('gx-flipsub').textContent = v.flipSub || '';
+    $id('gx-em').textContent = v.em;
+    $id('gx-chart-asof').textContent = v.asOfET + (v.stale ? ' (prior session close)' : '');
+    $id('gx-conv').textContent = v.convLine + ' · snapshot ' + v.asOfET;
+
+    const tb = $id('gx-levels');
+    tb.textContent = '';
+    (v.levels || []).forEach((l) => {
+      const tr = document.createElement('tr');
+      [[l.label, ''], [l.bucket, 'muted'], [l.index, 'num'], [l.futures, 'num'], [l.gex, 'num'], [l.dist, 'num']].forEach(([txt, cls]) => {
+        const td = document.createElement('td');
+        if (cls) td.className = cls;
+        td.textContent = txt;
+        tr.appendChild(td);
+      });
+      tb.appendChild(tr);
+    });
+
+    Object.assign(gexData, v.chart);
+    if (gexChart && v.hasProfile) {
+      gexChart.setData([gexData.strikes, gexData.gex]);
+    } else {
+      buildGexChart();
+    }
+  }
+
+  {{if .GridJSON}}
+  // Time scrub over the recent session grid (5-minute ET slots, oldest
+  // first). Smoothness comes from three things: a per-slot cache (revisits
+  // repaint instantly), a single in-flight fetch that chases the latest
+  // wanted slot (dragging never queues a backlog), and applyView updating
+  // the DOM/chart in place.
+  (function () {
+    const grid = {{.GridJSON}};
+    const slider = $id('gx-scrub');
+    const when = $id('gx-scrub-when');
+    if (!slider || grid.length < 2) return;
+    let pos = {{.GridPos}};
+    slider.min = 0;
+    slider.max = grid.length - 1;
+    slider.value = pos >= 0 ? pos : 0;
+
+    const cache = new Map();
+    if (pos >= 0 && gexInit && gexInit.chart) cache.set(grid[pos], gexInit);
+
+    const fmtET = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const label = (ts) => fmtET.format(new Date(ts * 1000)) + ' ET';
+    if (pos >= 0) when.textContent = label(grid[pos]);
+
+    let inflight = false;
+    let wanted = 0;
+    function request(ts) {
+      wanted = ts;
+      if (inflight) return;
+      inflight = true;
+      // +120s: snapshots land a few seconds AFTER their grid point, so
+      // querying the exact slot time would at-or-before onto the previous
+      // snapshot. The buffer stays well inside the 5-minute step.
+      fetch('/gex/data/{{.Market}}?at=' + (ts + 120))
+        .then((r) => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
+        .then((v) => cache.set(ts, v))
+        .catch(() => cache.set(ts, { empty: true }))
+        .finally(() => {
+          inflight = false;
+          if (wanted !== ts) { request(wanted); return; }
+          const v = cache.get(ts);
+          if (v && v.empty) { when.textContent = label(ts) + ' — no data'; return; }
+          applyView(v);
+        });
+    }
+    slider.addEventListener('input', () => {
+      pos = +slider.value;
+      const ts = grid[pos];
+      when.textContent = label(ts);
+      const v = cache.get(ts);
+      if (v) {
+        if (v.empty) { when.textContent = label(ts) + ' — no data'; return; }
+        applyView(v);
+        return;
+      }
+      request(ts);
+    });
+  })();
+  {{end}}
+
   {{if .Latest}}
-  // Snapshots land on a 5-minute grid; refresh the live view on that cadence.
-  setTimeout(() => location.reload(), 300000);
+  // Refresh the live view on the 5-minute snapshot cadence - but never yank
+  // the page out from under a scrub through history.
+  setInterval(() => {
+    const s = $id('gx-scrub');
+    if (!s || +s.value === +s.max) location.reload();
+  }, 300000);
   {{end}}
 </script>
 {{end}}

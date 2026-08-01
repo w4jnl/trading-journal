@@ -592,8 +592,10 @@ func run() error {
 	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/file/{name}", h.OIDashboardFile)
 
-	// Gamma-exposure view (handler 404s when gex is disabled).
+	// Gamma-exposure view (handlers 404 when gex is disabled). /gex/data
+	// feeds the page's scrub slider with per-moment JSON.
 	mux.HandleFunc("GET /gex", h.GEXPage)
+	mux.HandleFunc("GET /gex/data/{market}", h.GEXData)
 	mux.HandleFunc("GET /gex/{market}", h.GEXPage)
 
 	// Admin user management. RequireAdmin wraps each handler so non-admins

@@ -420,9 +420,17 @@
           {},
           {
             label: 'Net daily',
-            paths: uPlot.paths.bars({ size: [0.7, 16] }),
-            stroke: (u, idx) => u.data[1][idx] >= 0 ? c.pos : c.neg,
-            fill:   (u, idx) => u.data[1][idx] >= 0 ? hexToRgba(c.pos, 0.6) : hexToRgba(c.neg, 0.6),
+            /* Per-bar sign coloring must go through the bars builder's disp
+               option: a series-level stroke/fill callback receives the SERIES
+               index (not the bar index), and uPlot also invokes it during
+               legend init before u.data exists - the old u.data[1][idx]
+               callbacks threw there and killed this chart entirely. */
+            paths: uPlot.paths.bars({ size: [0.7, 16], disp: {
+              stroke: { unit: 3, values: () => chartData.nets.map((v) => v >= 0 ? c.pos : c.neg) },
+              fill:   { unit: 3, values: () => chartData.nets.map((v) => v >= 0 ? hexToRgba(c.pos, 0.6) : hexToRgba(c.neg, 0.6)) },
+            } }),
+            stroke: c.pos, /* legend marker */
+            fill: hexToRgba(c.pos, 0.6),
           },
         ],
         axes: commonAxes(),
