@@ -217,6 +217,8 @@ func (h *Handlers) funcMap() template.FuncMap {
 		// aiEnabled gates the in-app AI-analysis UI affordances; true only when
 		// ai.enabled wired a job manager.
 		"aiEnabled": func() bool { return h.AIJobs != nil },
+		// gexEnabled gates the Market > Gamma (GEX) nav item + palette entry.
+		"gexEnabled": func() bool { return h.GEX != nil },
 		// aiAnalyzed reports whether a body already carries the LOCAL AI marker, so the
 		// in-app Analyze button hides on an already-analyzed entry (re-running it is a
 		// no-op - analyzeEntry skips a marked entry).

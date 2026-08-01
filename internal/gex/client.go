@@ -63,7 +63,7 @@ func New(opts Options) (*Client, error) {
 // legitimately null in the API: percentile until 20 sessions are stored, flip
 // when there is no zero crossing that day, every futures-denominated value
 // when the basis is cold, and levels can be empty. Render those as "-",
-// never treat them as errors. The heavy per-strike profile is not decoded.
+// never treat them as errors.
 type Snapshot struct {
 	Market            string             `json:"market"`
 	AsOf              time.Time          `json:"as_of"`
@@ -72,7 +72,15 @@ type Snapshot struct {
 	Regime            Regime             `json:"regime"`
 	Flip              Flip               `json:"flip"`
 	Levels            []Level            `json:"levels"`
+	Profile           Profile            `json:"profile"`
 	ExpectedMove1D    *float64           `json:"expected_move_1d"`
+}
+
+// Profile is the per-strike net-GEX curve behind the summary levels
+// (index-denominated strikes, ~150 points). Powers the Market page's chart.
+type Profile struct {
+	StrikesIndex []float64 `json:"strikes_index"`
+	NetGex       []float64 `json:"net_gex"`
 }
 
 // FuturesConversion records the index->futures ratio stored with the

@@ -94,7 +94,9 @@ ai:
 # side of / distance to the gamma flip, and tick distances to the call/put
 # walls, from the engine snapshot that was live at the trade's entry and exit
 # times. Other symbols and pre-history days are skipped silently; the fetch
-# never blocks or fails a review. Disabled by default.
+# never blocks or fails a review. Also powers the Market > Gamma (GEX) page
+# (live/as-of regime, levels, and the strike profile chart). Disabled by
+# default.
 gex:
   enabled: false
   # gex-engine base URL. Local dev: "http://127.0.0.1:8420"; Docker on the

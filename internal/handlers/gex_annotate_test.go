@@ -68,22 +68,29 @@ func gexEntryBody(t *testing.T, db *sql.DB, id int64) string {
 	return b
 }
 
-// gexFakeEngine serves a realistic ES snapshot with a configurable as_of and
-// counts requests.
+// gexSnapshotJSON is a realistic ES snapshot payload with a configurable
+// as_of, shared by the annotate and page tests.
+func gexSnapshotJSON(asOf string) string {
+	return fmt.Sprintf(`{
+		"market": "ES", "as_of": %q, "spot_index": 7494.55,
+		"futures_conversion": {"ratio": 1.0038, "source": "mw_marks", "paired_at": "2026-07-31T19:34:39Z"},
+		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null},
+		"flip": {"index": 7437.55, "futures": 7465.788539891167},
+		"levels": [
+			{"type": "call_wall", "index": 7530.0, "futures": 7558.584773164092, "gex": 1.08e10, "bucket": "all"},
+			{"type": "put_wall", "index": 7300.0, "futures": 7327.711665882853, "gex": -3.9e9, "bucket": "all"}
+		],
+		"profile": {"strikes_index": [7300, 7530], "net_gex": [-3.9e9, 1.08e10]},
+		"expected_move_1d": 9.7
+	}`, asOf)
+}
+
+// gexFakeEngine serves gexSnapshotJSON and counts requests.
 func gexFakeEngine(asOf string, calls *atomic.Int64) *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		calls.Add(1)
-		fmt.Fprintf(w, `{
-			"market": "ES", "as_of": %q, "spot_index": 7494.55,
-			"futures_conversion": {"ratio": 1.0038, "source": "mw_marks", "paired_at": "2026-07-31T19:34:39Z"},
-			"regime": {"state": "positive", "net_gex_at_spot": 7.4e10, "percentile_20d": null},
-			"flip": {"index": 7437.55, "futures": 7465.788539891167},
-			"levels": [
-				{"type": "call_wall", "index": 7530.0, "futures": 7558.584773164092, "gex": 1.08e10, "bucket": "all"},
-				{"type": "put_wall", "index": 7300.0, "futures": 7327.711665882853, "gex": -3.9e9, "bucket": "all"}
-			],
-			"expected_move_1d": 9.7
-		}`, asOf)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, gexSnapshotJSON(asOf))
 	}))
 }
 
