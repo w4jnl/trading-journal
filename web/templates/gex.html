@@ -1,0 +1,218 @@
+{{define "title"}}Gamma (GEX){{end}}
+
+{{define "content"}}
+<style>
+  /* Stat strip - same shape as the dashboard trailing strip. */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
+  .stat-tile { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .stat-tile .label { margin-bottom: 2px; }
+
+  .gex-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+  .gex-toolbar form { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .gex-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+  .gex-seg a { padding: 5px 14px; font-size: 13px; text-decoration: none; color: var(--fg-muted); }
+  .gex-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+
+  .chart-host { width: 100%; }
+
+  /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
+  [data-theme="dark"] .u-legend { color: var(--fg); }
+  [data-theme="dark"] .u-axis { color: var(--fg-muted); }
+</style>
+
+{{template "back_button" .}}
+
+<div class="gex-toolbar">
+  <h1 style="margin: 0;">Gamma (GEX)</h1>
+  <div class="gex-seg">
+    <a href="/gex{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
+    <a href="/gex/NQ{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
+  </div>
+  <form method="get" action="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}">
+    <label class="label" for="gex-at">As of</label>
+    <input type="datetime-local" id="gex-at" name="at" value="{{.AtValue}}">
+    <button type="submit" class="btn btn--sm">Go</button>
+    {{if not .Latest}}<a class="btn btn--sm" href="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}">Latest</a>{{end}}
+  </form>
+</div>
+
+{{if .EngineError}}
+<div class="flash error mb-16" role="alert">
+  gex-engine unreachable — {{.EngineError}}
+</div>
+{{end}}
+
+{{if .Empty}}
+<div class="empty-state">
+  <div class="empty-title">No snapshot at or before {{.EmptyWhen}}</div>
+  <div class="empty-sub">The engine's history starts 2026-07-30, and snapshots exist on the 09:50&ndash;16:00 ET five-minute grid on trading days.</div>
+</div>
+{{end}}
+
+{{if .AsOf}}
+{{if .Stale}}
+<div class="flash info mb-16" role="status">
+  Options session closed — showing the last snapshot, as of {{.AsOfET}}.
+</div>
+{{end}}
+
+<div class="stat-strip">
+  <div class="card stat-tile">
+    <div class="label">Regime</div>
+    <div class="num--lg {{.RegimeClass}}">{{.Regime}}</div>
+    <div class="sub">20d percentile: P{{.Pctl}}</div>
+  </div>
+  <div class="card stat-tile">
+    <div class="label">Net GEX at spot</div>
+    <div class="num--lg">{{.NetGex}}</div>
+  </div>
+  <div class="card stat-tile">
+    <div class="label">Spot</div>
+    <div class="num--lg">{{.SpotIndex}}</div>
+    <div class="sub">futures {{.SpotFutures}}</div>
+  </div>
+  <div class="card stat-tile">
+    <div class="label">Gamma flip</div>
+    <div class="num--lg">{{.FlipFutures}}</div>
+    {{if .FlipSub}}<div class="sub">{{.FlipSub}}</div>{{end}}
+  </div>
+  <div class="card stat-tile">
+    <div class="label">Expected move 1d</div>
+    <div class="num--lg">{{.EM}}</div>
+  </div>
+</div>
+
+<div class="card mb-16">
+  <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of {{.AsOfET}}</div>
+  <div id="gex-profile" class="chart-host" style="height: 320px;"></div>
+</div>
+
+{{if .Levels}}
+<div class="card card--bare mb-16">
+  <div class="table-scroll">
+    <table>
+      <thead>
+        <tr><th>Level</th><th>Bucket</th><th class="num">Index</th><th class="num">Futures</th><th class="num">GEX</th><th class="num">vs spot</th></tr>
+      </thead>
+      <tbody>
+        {{range .Levels}}
+        <tr>
+          <td>{{.Label}}</td>
+          <td class="muted">{{.Bucket}}</td>
+          <td class="num">{{.Index}}</td>
+          <td class="num">{{.Futures}}</td>
+          <td class="num">{{.Gex}}</td>
+          <td class="num">{{.Dist}}</td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
+<div class="muted" style="font-size: 12px;">{{.ConvLine}} · snapshot {{ltime .AsOf "datetime-sec"}}</div>
+
+{{template "uplot_assets" .}}
+<script>
+  // Chart data is rendered into the page as inline JSON by the handler.
+  const gexData = {{.ChartJSON}};
+  let gexChart = null;
+
+  function buildGexChart() {
+    if (gexChart) { gexChart.destroy(); gexChart = null; }
+    const el = document.getElementById('gex-profile');
+    if (!el) return;
+    if (!gexData || !gexData.strikes || gexData.strikes.length < 2) {
+      el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No profile data in this snapshot.</div>';
+      return;
+    }
+    const c = uplotHelpers.colors();
+    const rgba = uplotHelpers.rgba;
+    const cs = getComputedStyle(document.documentElement);
+    const flipColor = cs.getPropertyValue('--group').trim() || '#7c3aed';
+    const fmtB = (v) => v == null ? '—' : (v / 1e9).toFixed(2) + 'B';
+
+    // Vertical reference lines: spot (solid accent), flip / call wall /
+    // put wall (dashed). Drawn in canvas pixels after each plot pass.
+    const marks = [
+      { v: gexData.spot, color: c.accent, dash: [],     label: 'spot' },
+      { v: gexData.flip, color: flipColor, dash: [6, 4], label: 'flip' },
+      { v: gexData.cw,   color: c.pos,    dash: [6, 4], label: 'CW' },
+      { v: gexData.pw,   color: c.neg,    dash: [6, 4], label: 'PW' },
+    ];
+    const drawMarks = (u) => {
+      const ctx = u.ctx;
+      const dpr = window.devicePixelRatio || 1;
+      ctx.save();
+      ctx.font = (11 * dpr) + 'px system-ui, sans-serif';
+      marks.forEach((m, i) => {
+        if (m.v == null) return;
+        const x = u.valToPos(m.v, 'x', true);
+        if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) return;
+        ctx.strokeStyle = m.color;
+        ctx.setLineDash(m.dash.map((d) => d * dpr));
+        ctx.lineWidth = dpr;
+        ctx.beginPath();
+        ctx.moveTo(x, u.bbox.top);
+        ctx.lineTo(x, u.bbox.top + u.bbox.height);
+        ctx.stroke();
+        ctx.setLineDash([]);
+        ctx.fillStyle = m.color;
+        // Stagger labels so overlapping levels stay readable.
+        ctx.fillText(m.label, x + 4 * dpr, u.bbox.top + (12 + i * 13) * dpr);
+      });
+      ctx.restore();
+    };
+
+    gexChart = new uPlot({
+      width: el.clientWidth, height: 320,
+      scales: { x: { time: false } }, /* strikes are prices, not timestamps */
+      series: [
+        { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
+        {
+          label: 'Net GEX',
+          /* Per-bar sign coloring needs the bars builder's disp option - a
+             series-level stroke(u, idx) callback gets the SERIES index, not
+             the bar index, and would paint the whole series one color. */
+          paths: uPlot.paths.bars({
+            size: [0.9, 10],
+            disp: {
+              stroke: { unit: 3, values: () => gexData.gex.map((v) => v >= 0 ? c.pos : c.neg) },
+              fill:   { unit: 3, values: () => gexData.gex.map((v) => v >= 0 ? rgba(c.pos, 0.55) : rgba(c.neg, 0.55)) },
+            },
+          }),
+          stroke: c.pos, /* legend marker */
+          fill: rgba(c.pos, 0.55),
+          value: (u, v) => fmtB(v),
+        },
+      ],
+      axes: [
+        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+        {
+          stroke: c.label, grid: { stroke: c.grid, width: 1 }, size: 64,
+          values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(1) + 'B'),
+        },
+      ],
+      hooks: { draw: [drawMarks] },
+    }, [gexData.strikes, gexData.gex], el);
+  }
+
+  buildGexChart();
+  uplotHelpers.onRebuild(buildGexChart);
+
+  {{if .Latest}}
+  // Snapshots land on a 5-minute grid; refresh the live view on that cadence.
+  setTimeout(() => location.reload(), 300000);
+  {{end}}
+</script>
+{{end}}
+{{end}}

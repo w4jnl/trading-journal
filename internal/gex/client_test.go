@@ -82,6 +82,10 @@ func TestSnapshot(t *testing.T) {
 	if s.ExpectedMove1D == nil || *s.ExpectedMove1D != 9.7 {
 		t.Errorf("expected_move_1d = %v", s.ExpectedMove1D)
 	}
+	if len(s.Profile.StrikesIndex) != 2 || s.Profile.StrikesIndex[0] != 7300.0 ||
+		len(s.Profile.NetGex) != 2 || s.Profile.NetGex[1] != 1.08e10 {
+		t.Errorf("profile = %+v", s.Profile)
+	}
 }
 
 // Null flip / empty levels / cold conversion are legitimate states, not
