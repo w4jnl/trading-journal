@@ -111,7 +111,9 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 	} else {
 		line("regime percentile (20d): not available yet")
 	}
-	line("net gamma at spot: %s", gexFmtB(s.Regime.NetGexAtSpot))
+	if total, ok := s.Regime.Total(); ok {
+		line("total net gamma across the whole book: %s", gexFmtB(total))
+	}
 	line("spot: %.2f", spot)
 	if em > 0 {
 		line("expected move (1 session, 1 standard deviation): %.1f points", em)
