@@ -95,6 +95,16 @@ type Execution struct {
 	ImportMethod string     `json:"import_method"`
 }
 
+type GexAnalysis struct {
+	ID        int64     `json:"id"`
+	UserID    int64     `json:"user_id"`
+	Market    string    `json:"market"`
+	AsOf      string    `json:"as_of"`
+	Model     string    `json:"model"`
+	Body      string    `json:"body"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type IbkrGateway struct {
 	ID          int64     `json:"id"`
 	UserID      int64     `json:"user_id"`

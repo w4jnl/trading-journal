@@ -155,6 +155,26 @@
   </div>
 </div>
 
+{{if .AIEnabled}}
+<div class="card mb-16" id="gx-analysis">
+  <div class="card-title-row">
+    <div class="card-title">AI read · <span id="gx-analysis-when">{{.View.AsOfET}}</span></div>
+    <button type="button" class="btn btn--sm" id="gx-analysis-btn"
+            hx-post="/gex/analyze/{{.Market}}?at={{.View.AsOfUnix}}"
+            hx-target="#gx-analysis-body" hx-swap="innerHTML"
+            hx-indicator="#gx-analysis-spin" hx-disabled-elt="this">
+      Analyze with AI
+    </button>
+  </div>
+  <div id="gx-analysis-body" class="mt-8">
+    {{template "gex_analysis_body" (dict "Analysis" .View.Analysis "Market" .Market "AsOfUnix" .View.AsOfUnix)}}
+  </div>
+  <div id="gx-analysis-spin" class="htmx-indicator muted mt-8" style="font-size: 12px;">
+    Reading the snapshot — a local model can take a minute…
+  </div>
+</div>
+{{end}}
+
 <div class="muted" style="font-size: 12px;" id="gx-conv">{{.View.ConvLine}} · snapshot {{.View.AsOfET}}</div>
 
 {{template "uplot_assets" .}}
@@ -475,6 +495,17 @@
       });
       tb.appendChild(tr);
     });
+
+    // The AI read is retained per snapshot, so scrubbing shows the stored one
+    // for whatever moment you land on - and re-points the button at it.
+    const panel = $id('gx-analysis-body');
+    if (panel) {
+      panel.innerHTML = v.analysisHTML ||
+        '<p class="muted" style="margin: 0;">No AI read for this snapshot yet.</p>';
+      $id('gx-analysis-when').textContent = v.asOfET;
+      $id('gx-analysis-btn').setAttribute('hx-post',
+        '/gex/analyze/{{.Market}}?at=' + v.asOfUnix);
+    }
 
     Object.assign(gexData, v.chart);
     gexLadderData = v.ladder;

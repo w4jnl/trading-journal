@@ -95,6 +95,14 @@ type gexView struct {
 	Chart       gexChart       `json:"chart"`
 	Ladder      gexLadder      `json:"ladder"`
 	HasProfile  bool           `json:"hasProfile"`
+	// AsOfUnix identifies the snapshot for the AI-read endpoint. The retained
+	// read is carried twice on purpose: Analysis is the markdown the page
+	// template renders through the shared partial, AnalysisHTML the sanitized
+	// HTML the scrub path swaps in (no markdown pass in JS). Only the latter
+	// is serialized, so the JSON never ships both.
+	AsOfUnix     int64         `json:"asOfUnix"`
+	Analysis     string        `json:"-"`
+	AnalysisHTML template.HTML `json:"analysisHTML"`
 }
 
 // gexMarketParam resolves the {market} path value ("" defaults to ES).
@@ -173,8 +181,10 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 			ref = now
 		}
 		view := gexBuildView(s, ref)
+		h.gexAttachAnalysis(r.Context(), &view, market, s.AsOf)
 		data["View"] = view
 		data["SessionClosed"] = latest && view.Stale
+		data["AIEnabled"] = h.AI != nil
 		if b, err := json.Marshal(view); err == nil {
 			data["ViewJSON"] = template.JS(b)
 		}
@@ -211,7 +221,9 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 		h.logger().Warn("gex data: snapshot fetch failed", "market", market, "err", err)
 		writeJSONError(w, http.StatusBadGateway, "gex-engine unreachable")
 	default:
-		writeJSON(w, http.StatusOK, gexBuildView(s, at))
+		v := gexBuildView(s, at)
+		h.gexAttachAnalysis(r.Context(), &v, market, s.AsOf)
+		writeJSON(w, http.StatusOK, v)
 	}
 }
 

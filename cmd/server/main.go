@@ -483,6 +483,7 @@ func run() error {
 		MCPInstanceLabel: cfg.MCP.InstanceLabel,
 		AI:               aiClient,
 		AIJobs:           aiJobs,
+		AIModel:          cfg.AI.Model,
 		GEX:              gexClient,
 		TopstepxSync:     topstepxSync,
 		IbkrSync:         ibkrSync,
@@ -596,6 +597,7 @@ func run() error {
 	// feeds the page's scrub slider with per-moment JSON.
 	mux.HandleFunc("GET /gex", h.GEXPage)
 	mux.HandleFunc("GET /gex/data/{market}", h.GEXData)
+	mux.HandleFunc("POST /gex/analyze/{market}", h.GEXAnalyze)
 	mux.HandleFunc("GET /gex/{market}", h.GEXPage)
 
 	// Admin user management. RequireAdmin wraps each handler so non-admins
