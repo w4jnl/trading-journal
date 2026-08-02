@@ -56,6 +56,24 @@ type gexChart struct {
 	PW      *float64  `json:"pw"`
 }
 
+// gexLadder is the numeric model behind the vertical regime-ladder panel:
+// the price structure around spot, in ONE denomination so the panel can be
+// read at a glance. Futures when the basis is warm (that is the price you
+// fill at), index otherwise; Denom names which, and the panel labels it.
+// Nil levels are simply not drawn.
+type gexLadder struct {
+	Denom  string   `json:"denom"`
+	Spot   float64  `json:"spot"`
+	Flip   *float64 `json:"flip"`
+	CW     *float64 `json:"cw"`
+	PW     *float64 `json:"pw"`
+	EMHigh *float64 `json:"emHigh"`
+	EMLow  *float64 `json:"emLow"`
+	CWGex  string   `json:"cwGex"`
+	PWGex  string   `json:"pwGex"`
+	Regime string   `json:"regime"`
+}
+
 // gexView is the pre-formatted view model for one snapshot, shared verbatim
 // by the HTML render and the GEXData JSON endpoint so the scrub JS can
 // repaint the exact same fields the server rendered.
@@ -75,6 +93,7 @@ type gexView struct {
 	EM          string         `json:"em"`
 	Levels      []gexPageLevel `json:"levels"`
 	Chart       gexChart       `json:"chart"`
+	Ladder      gexLadder      `json:"ladder"`
 	HasProfile  bool           `json:"hasProfile"`
 }
 
@@ -337,9 +356,56 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		CW:      gexWallIndex(s, "call_wall"),
 		PW:      gexWallIndex(s, "put_wall"),
 	}
+	v.Ladder = gexBuildLadder(s, spotFut)
 	v.HasProfile = len(s.Profile.StrikesIndex) > 1 &&
 		len(s.Profile.StrikesIndex) == len(s.Profile.NetGex)
 	return v
+}
+
+// gexBuildLadder assembles the regime-ladder panel's levels in a single
+// denomination. spotFut is nil when the futures basis is cold, in which case
+// the whole ladder falls back to index terms rather than dropping out.
+//
+// The expected-move band is spot +/- expected_move_1d. That figure is
+// index-denominated at source (it comes from the SPX 0DTE ATM straddle), so
+// the futures band scales it by the same conversion ratio the engine applies
+// to its own levels.
+func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
+	useFut := spotFut != nil
+	lad := gexLadder{Denom: "index", Spot: s.SpotIndex, Regime: s.Regime.State}
+	if useFut {
+		lad.Denom, lad.Spot = "futures", *spotFut
+	}
+
+	pickWall := func(typ string) (*float64, string) {
+		l := gexWall(s, typ)
+		if l == nil {
+			return nil, ""
+		}
+		if useFut {
+			return l.Futures, gexFmtB(l.Gex)
+		}
+		idx := l.Index
+		return &idx, gexFmtB(l.Gex)
+	}
+	lad.CW, lad.CWGex = pickWall("call_wall")
+	lad.PW, lad.PWGex = pickWall("put_wall")
+
+	if useFut {
+		lad.Flip = s.Flip.Futures
+	} else {
+		lad.Flip = s.Flip.Index
+	}
+
+	if e := s.ExpectedMove1D; e != nil {
+		d := *e
+		if useFut && s.FuturesConversion != nil {
+			d *= s.FuturesConversion.Ratio
+		}
+		hi, lo := lad.Spot+d, lad.Spot-d
+		lad.EMHigh, lad.EMLow = &hi, &lo
+	}
+	return lad
 }
 
 // gexFmtB renders a raw gamma-dollar value at billions scale ("+74.5B").

@@ -28,6 +28,14 @@
 
   .chart-host { width: 100%; }
 
+  /* Charts on the left, the vertical regime ladder alongside them. */
+  .gex-main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+  @media (max-width: 1000px) { .gex-main { grid-template-columns: 1fr; } }
+  .gex-ladder-svg { width: 100%; display: block; }
+  .gex-ladder-svg text { font-size: 10px; fill: var(--fg-muted); }
+  .gex-ladder-svg text.lv { font-family: "JetBrains Mono", monospace; font-size: 10.5px; fill: var(--fg); }
+  .gex-ladder-svg text.zone { font-size: 10.5px; font-weight: 600; }
+
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
   [data-theme="dark"] .u-legend { color: var(--fg); }
   [data-theme="dark"] .u-axis { color: var(--fg-muted); }
@@ -104,9 +112,20 @@
   </div>
 </div>
 
-<div class="card mb-16">
-  <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></div>
-  <div id="gex-profile" class="chart-host" style="height: 320px;"></div>
+<div class="gex-main mb-16">
+  <div class="card">
+    <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></div>
+    <!-- Hosts are taller than their charts: uPlot renders its legend as a
+         sibling below the canvas, and a tight host lets it spill into the
+         next block. -->
+    <div id="gex-profile" class="chart-host" style="height: 340px;"></div>
+    <div class="card-title" style="margin-top: 8px;">Cumulative net GEX — running sum across strikes (ends at net GEX at spot)</div>
+    <div id="gex-cumulative" class="chart-host" style="height: 208px;"></div>
+  </div>
+  <div class="card">
+    <div class="card-title">Regime ladder · <span id="gx-ladder-denom">{{.View.Ladder.Denom}}</span></div>
+    <div id="gx-ladder"></div>
+  </div>
 </div>
 
 <div class="card card--bare mb-16">
@@ -140,9 +159,93 @@
   // repaints in place - no reloads mid-drag.
   const gexInit = {{.ViewJSON}};
   const gexData = gexInit.chart;
-  let gexChart = null;
+  let gexLadderData = gexInit.ladder;
+  let gexChart = null, gexCumChart = null;
 
-  function buildGexChart() {
+  // Cumulative net GEX: a running sum across strikes, low to high. Its final
+  // value is the snapshot's net GEX at spot, and its minimum marks where the
+  // book stops shedding negative gamma - the same curve the engine dashboard
+  // plots under its profile. Derived here rather than fetched; the profile
+  // arrays already carry everything it needs.
+  function gexCumulative() {
+    let run = 0;
+    return gexData.gex.map((v) => (run += v));
+  }
+
+  function buildCharts() {
+    buildProfile();
+    buildCumulative();
+  }
+
+  // Shared vertical reference lines for both charts: spot (solid accent),
+  // flip / call wall / put wall (dashed). Values and colors are read at DRAW
+  // time, so a scrub-triggered setData and a theme toggle both repaint them
+  // without rebuilding the chart.
+  function gexDrawMarks(u) {
+    const c = uplotHelpers.colors();
+    const flipColor = getComputedStyle(document.documentElement).getPropertyValue('--group').trim() || '#7c3aed';
+    const marks = [
+      { key: 'spot', color: c.accent, dash: [],      label: 'spot' },
+      { key: 'flip', color: flipColor, dash: [6, 4], label: 'flip' },
+      { key: 'cw',   color: c.pos,     dash: [6, 4], label: 'CW' },
+      { key: 'pw',   color: c.neg,     dash: [6, 4], label: 'PW' },
+    ];
+    const ctx = u.ctx;
+    const dpr = window.devicePixelRatio || 1;
+    ctx.save();
+    ctx.font = (11 * dpr) + 'px system-ui, sans-serif';
+    marks.forEach((m, i) => {
+      const val = gexData[m.key];
+      if (val == null) return;
+      const x = u.valToPos(val, 'x', true);
+      if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) return;
+      ctx.strokeStyle = m.color;
+      ctx.setLineDash(m.dash.map((d) => d * dpr));
+      ctx.lineWidth = dpr;
+      ctx.beginPath();
+      ctx.moveTo(x, u.bbox.top);
+      ctx.lineTo(x, u.bbox.top + u.bbox.height);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = m.color;
+      // Stagger labels so overlapping levels stay readable.
+      ctx.fillText(m.label, x + 4 * dpr, u.bbox.top + (12 + i * 13) * dpr);
+    });
+    ctx.restore();
+  }
+
+  function buildCumulative() {
+    if (gexCumChart) { gexCumChart.destroy(); gexCumChart = null; }
+    const el = document.getElementById('gex-cumulative');
+    if (!el) return;
+    if (!gexData || !gexData.strikes || gexData.strikes.length < 2) { el.innerHTML = ''; return; }
+    el.innerHTML = '';
+    const c = uplotHelpers.colors();
+    gexCumChart = new uPlot({
+      width: el.clientWidth, height: 170,
+      scales: { x: { time: false } },
+      series: [
+        { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
+        {
+          label: 'Cumulative',
+          stroke: c.accent,
+          fill: uplotHelpers.rgba(c.accent, 0.12),
+          width: 1.6,
+          value: (u, v) => v == null ? '—' : (v / 1e9).toFixed(1) + 'B',
+        },
+      ],
+      axes: [
+        { stroke: c.label, grid: { stroke: c.grid, width: 1 } },
+        {
+          stroke: c.label, grid: { stroke: c.grid, width: 1 }, size: 64,
+          values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(0) + 'B'),
+        },
+      ],
+      hooks: { draw: [gexDrawMarks] },
+    }, [gexData.strikes, gexCumulative()], el);
+  }
+
+  function buildProfile() {
     if (gexChart) { gexChart.destroy(); gexChart = null; }
     const el = document.getElementById('gex-profile');
     if (!el) return;
@@ -153,46 +256,10 @@
     el.innerHTML = '';
     const c = uplotHelpers.colors();
     const rgba = uplotHelpers.rgba;
-    const cs = getComputedStyle(document.documentElement);
-    const flipColor = cs.getPropertyValue('--group').trim() || '#7c3aed';
     const fmtB = (v) => v == null ? '—' : (v / 1e9).toFixed(2) + 'B';
 
-    // Vertical reference lines: spot (solid accent), flip / call wall /
-    // put wall (dashed). Values are read from gexData at draw time so a
-    // scrub-triggered setData repaints them without a rebuild.
-    const marks = [
-      { key: 'spot', color: c.accent, dash: [],     label: 'spot' },
-      { key: 'flip', color: flipColor, dash: [6, 4], label: 'flip' },
-      { key: 'cw',   color: c.pos,    dash: [6, 4], label: 'CW' },
-      { key: 'pw',   color: c.neg,    dash: [6, 4], label: 'PW' },
-    ];
-    const drawMarks = (u) => {
-      const ctx = u.ctx;
-      const dpr = window.devicePixelRatio || 1;
-      ctx.save();
-      ctx.font = (11 * dpr) + 'px system-ui, sans-serif';
-      marks.forEach((m, i) => {
-        const val = gexData[m.key];
-        if (val == null) return;
-        const x = u.valToPos(val, 'x', true);
-        if (x < u.bbox.left || x > u.bbox.left + u.bbox.width) return;
-        ctx.strokeStyle = m.color;
-        ctx.setLineDash(m.dash.map((d) => d * dpr));
-        ctx.lineWidth = dpr;
-        ctx.beginPath();
-        ctx.moveTo(x, u.bbox.top);
-        ctx.lineTo(x, u.bbox.top + u.bbox.height);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = m.color;
-        // Stagger labels so overlapping levels stay readable.
-        ctx.fillText(m.label, x + 4 * dpr, u.bbox.top + (12 + i * 13) * dpr);
-      });
-      ctx.restore();
-    };
-
     gexChart = new uPlot({
-      width: el.clientWidth, height: 320,
+      width: el.clientWidth, height: 300,
       scales: { x: { time: false } }, /* strikes are prices, not timestamps */
       series: [
         { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
@@ -221,12 +288,107 @@
           values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(1) + 'B'),
         },
       ],
-      hooks: { draw: [drawMarks] },
+      hooks: { draw: [gexDrawMarks] },
     }, [gexData.strikes, gexData.gex], el);
   }
 
-  buildGexChart();
-  uplotHelpers.onRebuild(buildGexChart);
+  // Regime ladder: the price structure read vertically, in one denomination.
+  // Above the flip is long gamma (dealers dampen moves - chop, mean
+  // reversion); below it is short gamma (dealers amplify - momentum,
+  // expansion). The scale is linear across the whole level set, so a put wall
+  // 200 points away honestly looks 200 points away.
+  function renderLadder() {
+    const host = document.getElementById('gx-ladder');
+    if (!host) return;
+    const lad = gexLadderData;
+    if (!lad || !lad.spot) { host.innerHTML = '<div class="muted" style="padding:16px 0;">No levels in this snapshot.</div>'; return; }
+
+    const c = uplotHelpers.colors();
+    const rgba = uplotHelpers.rgba;
+    const cs = getComputedStyle(document.documentElement);
+    const flipColor = cs.getPropertyValue('--group').trim() || '#7c3aed';
+    const muted = c.label;
+
+    const W = 288, H = 470, bandW = 132, padT = 16, padB = 16;
+    const rows = [
+      { v: lad.cw,     label: 'call wall', color: c.pos,    note: lad.cwGex },
+      { v: lad.emHigh, label: 'EM high',   color: muted,    dash: true },
+      { v: lad.spot,   label: 'spot',      color: c.accent, bold: true },
+      { v: lad.emLow,  label: 'EM low',    color: muted,    dash: true },
+      { v: lad.flip,   label: 'gamma flip', color: flipColor, note: 'regime' },
+      { v: lad.pw,     label: 'put wall',  color: c.neg,    note: lad.pwGex },
+    ].filter((r) => r.v != null);
+
+    const vals = rows.map((r) => r.v);
+    let hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
+    const pad = (hi - lo) * 0.07 || 1;
+    hi += pad; lo -= pad;
+    const y = (v) => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+
+    const parts = [];
+    const lineYs = rows.map((r) => y(r.v));
+
+    // Zone captions go in the zone's largest line-free gap, so they never sit
+    // under a level line - with spot, both EM edges and a wall inside the
+    // long-gamma band, a centered caption would land on top of one of them.
+    const caption = (yTop, yBot, title, sub, color) => {
+      const stops = [yTop, yBot].concat(lineYs.filter((v) => v > yTop && v < yBot)).sort((a, b) => a - b);
+      let best = 0, mid = (yTop + yBot) / 2;
+      for (let i = 1; i < stops.length; i++) {
+        if (stops[i] - stops[i - 1] > best) { best = stops[i] - stops[i - 1]; mid = (stops[i] + stops[i - 1]) / 2; }
+      }
+      if (best < 16) return;
+      if (best >= 30) {
+        parts.push(`<text class="zone" x="${bandW / 2}" y="${mid - 3}" text-anchor="middle" fill="${color}">${title}</text>`);
+        parts.push(`<text x="${bandW / 2}" y="${mid + 10}" text-anchor="middle">${sub}</text>`);
+      } else {
+        parts.push(`<text class="zone" x="${bandW / 2}" y="${mid + 4}" text-anchor="middle" fill="${color}">${title}</text>`);
+      }
+    };
+
+    // Gamma zones: split at the flip when there is one, otherwise tint the
+    // whole band by the reported regime.
+    if (lad.flip != null) {
+      const yf = y(lad.flip);
+      parts.push(`<rect x="0" y="${padT}" width="${bandW}" height="${yf - padT}" fill="${rgba(c.pos, 0.13)}"/>`);
+      parts.push(`<rect x="0" y="${yf}" width="${bandW}" height="${H - padB - yf}" fill="${rgba(c.neg, 0.13)}"/>`);
+      caption(padT, yf, 'Long gamma', 'chop, mean reversion', c.pos);
+      caption(yf, H - padB, 'Short gamma', 'momentum, expansion', c.neg);
+    } else {
+      const tint = lad.regime === 'negative' ? c.neg : c.pos;
+      parts.push(`<rect x="0" y="${padT}" width="${bandW}" height="${H - padT - padB}" fill="${rgba(tint, 0.13)}"/>`);
+      parts.push(`<text class="zone" x="${bandW / 2}" y="${H / 2}" text-anchor="middle" fill="${tint}">${lad.regime || 'gamma'} — no flip</text>`);
+    }
+    // Expected-move band edges, drawn as a hairline box around spot.
+    if (lad.emHigh != null && lad.emLow != null) {
+      parts.push(`<rect x="1" y="${y(lad.emHigh)}" width="${bandW - 2}" height="${y(lad.emLow) - y(lad.emHigh)}" fill="none" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>`);
+    }
+
+    // Level lines + labels. Each label is two lines tall, so labels for
+    // near-coincident levels (a call wall and an EM edge a few points apart)
+    // are pushed down to clear the one above; the connector line keeps each
+    // label tied to its true position on the band.
+    const labelH = 24;
+    const placed = [];
+    rows.forEach((r) => {
+      const yv = y(r.v);
+      let ty = yv;
+      placed.forEach((p) => { if (ty - p < labelH && p - ty < labelH) ty = p + labelH; });
+      placed.push(ty);
+      parts.push(`<line x1="0" y1="${yv}" x2="${bandW}" y2="${yv}" stroke="${r.color}" stroke-width="${r.bold ? 2 : 1.2}"${r.dash ? ' stroke-dasharray="4 3"' : ''}/>`);
+      parts.push(`<line x1="${bandW}" y1="${yv}" x2="${bandW + 8}" y2="${ty - 3}" stroke="${r.color}" stroke-width="1" opacity="0.5"/>`);
+      const d = r.v - lad.spot;
+      const delta = r.label === 'spot' ? '' : `  ${d >= 0 ? '+' : ''}${d.toFixed(1)} pts`;
+      parts.push(`<text class="lv" x="${bandW + 11}" y="${ty}" fill="${r.color}">${r.v.toFixed(2)}</text>`);
+      parts.push(`<text x="${bandW + 11}" y="${ty + 11}">${r.label}${delta}${r.note ? ' · ' + r.note : ''}</text>`);
+    });
+
+    host.innerHTML = `<svg class="gex-ladder-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Gamma regime ladder">${parts.join('')}</svg>`;
+  }
+
+  buildCharts();
+  renderLadder();
+  uplotHelpers.onRebuild(() => { buildCharts(); renderLadder(); });
 
   // applyView repaints every server-formatted field of the page from one
   // /gex/data view model (the same shape the server rendered inline).
@@ -261,10 +423,14 @@
     });
 
     Object.assign(gexData, v.chart);
-    if (gexChart && v.hasProfile) {
+    gexLadderData = v.ladder;
+    $id('gx-ladder-denom').textContent = (v.ladder && v.ladder.denom) || '';
+    renderLadder();
+    if (gexChart && gexCumChart && v.hasProfile) {
       gexChart.setData([gexData.strikes, gexData.gex]);
+      gexCumChart.setData([gexData.strikes, gexCumulative()]);
     } else {
-      buildGexChart();
+      buildCharts();
     }
   }
 

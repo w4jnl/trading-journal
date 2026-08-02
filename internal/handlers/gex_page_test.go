@@ -202,6 +202,68 @@ func TestGEXPageDenominations(t *testing.T) {
 	}
 }
 
+// The regime ladder resolves to ONE denomination: futures while the basis is
+// warm, index when it goes cold, never a silent mix. The expected-move band
+// is spot +/- EM, with EM scaled into futures terms the same way the engine
+// scales its own levels.
+func TestGexBuildLadder(t *testing.T) {
+	ratio := 1.0038
+	spot := 7494.55
+	em := 9.7
+	cwFut, pwFut, flipFut := 7558.58, 7327.71, 7465.79
+	snap := &gex.Snapshot{
+		SpotIndex:         spot,
+		FuturesConversion: &gex.FuturesConversion{Ratio: ratio},
+		Regime:            gex.Regime{State: "positive"},
+		Flip:              gex.Flip{Index: f64(7437.55), Futures: &flipFut},
+		Levels: []gex.Level{
+			{Type: "call_wall", Index: 7530, Futures: &cwFut, Gex: 1.08e10, Bucket: "all"},
+			{Type: "put_wall", Index: 7300, Futures: &pwFut, Gex: -3.9e9, Bucket: "all"},
+		},
+		ExpectedMove1D: &em,
+	}
+
+	spotFut := spot * ratio
+	lad := gexBuildLadder(snap, &spotFut)
+	if lad.Denom != "futures" {
+		t.Fatalf("denom = %q, want futures", lad.Denom)
+	}
+	if *lad.CW != cwFut || *lad.PW != pwFut || *lad.Flip != flipFut {
+		t.Errorf("levels not futures-denominated: %+v", lad)
+	}
+	// EM is index-denominated at source; the futures band scales it.
+	if got, want := *lad.EMHigh-lad.Spot, em*ratio; got-want > 1e-9 || want-got > 1e-9 {
+		t.Errorf("EM half-width = %v, want %v (em scaled by ratio)", got, want)
+	}
+	if *lad.EMLow >= lad.Spot || *lad.EMHigh <= lad.Spot {
+		t.Errorf("EM band does not straddle spot: %+v", lad)
+	}
+	if lad.CWGex != "+10.8B" || lad.PWGex != "-3.9B" {
+		t.Errorf("wall gex = %q / %q", lad.CWGex, lad.PWGex)
+	}
+
+	// Cold basis: the whole ladder falls back to index rather than emptying.
+	snap.FuturesConversion = nil
+	lad = gexBuildLadder(snap, nil)
+	if lad.Denom != "index" || lad.Spot != spot {
+		t.Fatalf("cold basis denom/spot = %q/%v", lad.Denom, lad.Spot)
+	}
+	if *lad.CW != 7530 || *lad.Flip != 7437.55 {
+		t.Errorf("cold basis levels not index: %+v", lad)
+	}
+	if got, want := *lad.EMHigh-lad.Spot, em; got-want > 1e-9 || want-got > 1e-9 {
+		t.Errorf("cold-basis EM half-width = %v, want unscaled %v", got, want)
+	}
+
+	// No flip (no zero crossing that day) must not drop the other levels.
+	snap.Flip = gex.Flip{}
+	if lad = gexBuildLadder(snap, nil); lad.Flip != nil || lad.CW == nil {
+		t.Errorf("null flip mishandled: %+v", lad)
+	}
+}
+
+func f64(v float64) *float64 { return &v }
+
 func TestGEXData(t *testing.T) {
 	db := gexTestDB(t)
 	var lastAt string
