@@ -27,6 +27,8 @@
   .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; min-width: 132px; text-align: right; }
 
   .chart-host { width: 100%; }
+  #gx-analysis-spin { display: none; }
+  #gx-analysis-spin.gx-on { display: block; }
 
   /* Charts on the left, the vertical regime ladder alongside them. The row
      stretches so the ladder card matches the charts' height, and the ladder
@@ -158,18 +160,13 @@
 {{if .AIEnabled}}
 <div class="card mb-16" id="gx-analysis">
   <div class="card-title-row">
-    <div class="card-title">AI read · <span id="gx-analysis-when">{{.View.AsOfET}}</span></div>
-    <button type="button" class="btn btn--sm" id="gx-analysis-btn"
-            hx-post="/gex/analyze/{{.Market}}?at={{.View.AsOfUnix}}"
-            hx-target="#gx-analysis-body" hx-swap="innerHTML"
-            hx-indicator="#gx-analysis-spin" hx-disabled-elt="this">
-      Analyze with AI
-    </button>
+    <div class="card-title">AI read · <span id="gx-analysis-when">{{.View.AsOfET}}{{if .View.Stale}} · prior session close{{end}}</span></div>
+    <button type="button" class="btn btn--sm" id="gx-analysis-btn">Analyze with AI</button>
   </div>
   <div id="gx-analysis-body" class="mt-8">
     {{template "gex_analysis_body" (dict "Analysis" .View.Analysis "Market" .Market "AsOfUnix" .View.AsOfUnix)}}
   </div>
-  <div id="gx-analysis-spin" class="htmx-indicator muted mt-8" style="font-size: 12px;">
+  <div id="gx-analysis-spin" class="muted mt-8" style="font-size: 12px;">
     Reading the snapshot — a local model can take a minute…
   </div>
 </div>
@@ -185,6 +182,11 @@
   const gexInit = {{.ViewJSON}};
   const gexData = gexInit.chart;
   let gexLadderData = gexInit.ladder;
+  // Which snapshot is on screen right now. The AI read is pinned to THIS
+  // moment, so scrubbing must keep it current.
+  let gexAsOfUnix = gexInit.asOfUnix;
+  let gexStale = !!gexInit.stale;
+  const $id = (id) => document.getElementById(id);
   let gexChart = null, gexCumChart = null;
 
   // Cumulative net GEX: a running sum across strikes, low to high. Its final
@@ -464,9 +466,31 @@
   renderLadder();
   uplotHelpers.onRebuild(() => { buildCharts(); renderLadder(); });
 
+  // The AI read is pinned to the snapshot on screen, so the button must
+  // resolve its URL at CLICK time. htmx captures hx-post when it processes an
+  // element and ignores later attribute changes (verified against the
+  // vendored build), so a scrubbed page kept re-analyzing whatever snapshot it
+  // was loaded with. htmx.ajax() takes the url as an argument and still runs
+  // through htmx's pipeline, so the CSRF header listener applies.
+  (function () {
+    const btn = $id('gx-analysis-btn');
+    if (!btn) return;
+    const spin = $id('gx-analysis-spin');
+    btn.addEventListener('click', function () {
+      btn.disabled = true;
+      if (spin) spin.classList.add('gx-on');
+      htmx.ajax('POST', '/gex/analyze/{{.Market}}?at=' + gexAsOfUnix,
+        { target: '#gx-analysis-body', swap: 'innerHTML' })
+        .catch(function () { /* the fragment carries its own error text */ })
+        .then(function () {
+          btn.disabled = false;
+          if (spin) spin.classList.remove('gx-on');
+        });
+    });
+  })();
+
   // applyView repaints every server-formatted field of the page from one
   // /gex/data view model (the same shape the server rendered inline).
-  const $id = (id) => document.getElementById(id);
   function applyView(v) {
     if (!v || v.empty) return;
     const regime = $id('gx-regime');
@@ -498,13 +522,21 @@
 
     // The AI read is retained per snapshot, so scrubbing shows the stored one
     // for whatever moment you land on - and re-points the button at it.
+    gexAsOfUnix = v.asOfUnix;
+    gexStale = !!v.stale;
     const panel = $id('gx-analysis-body');
     if (panel) {
       panel.innerHTML = v.analysisHTML ||
         '<p class="muted" style="margin: 0;">No AI read for this snapshot yet.</p>';
-      $id('gx-analysis-when').textContent = v.asOfET;
-      $id('gx-analysis-btn').setAttribute('hx-post',
-        '/gex/analyze/{{.Market}}?at=' + v.asOfUnix);
+      $id('gx-analysis-when').textContent = v.asOfET + (v.stale ? ' · prior session close' : '');
+    }
+    // Several slider positions can resolve to ONE snapshot (outside the
+    // session, on a holiday, or wherever the engine has no data): show the
+    // snapshot actually on screen so an unchanged view - and an unchanged AI
+    // read - is explained rather than looking stuck.
+    const slotLabel = $id('gx-scrub-when');
+    if (slotLabel && slotLabel.dataset.slot) {
+      slotLabel.textContent = slotLabel.dataset.slot + (v.stale ? ' → ' + v.asOfET : '');
     }
 
     Object.assign(gexData, v.chart);
@@ -560,7 +592,14 @@
       atInput.value = p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
     }
 
-    if (pos >= 0) { when.textContent = label(grid[pos]); syncPicker(grid[pos]); }
+    // dataset.slot keeps the raw slot label so applyView can append the
+    // snapshot actually resolved when the two differ.
+    function setSlot(ts) {
+      when.dataset.slot = label(ts);
+      when.textContent = when.dataset.slot;
+      syncPicker(ts);
+    }
+    if (pos >= 0) setSlot(grid[pos]);
 
     let inflight = false;
     let wanted = 0;
@@ -586,8 +625,7 @@
     slider.addEventListener('input', () => {
       pos = +slider.value;
       const ts = grid[pos];
-      when.textContent = label(ts);
-      syncPicker(ts);
+      setSlot(ts);
       const v = cache.get(ts);
       if (v) {
         if (v.empty) { when.textContent = label(ts) + ' — no data'; return; }
@@ -601,11 +639,16 @@
 
   {{if .Latest}}
   // Refresh the live view on the 5-minute snapshot cadence - but never yank
-  // the page out from under a scrub through history.
-  setInterval(() => {
-    const s = $id('gx-scrub');
-    if (!s || +s.value === +s.max) location.reload();
-  }, 300000);
+  // the page out from under a scrub through history, and back off once the
+  // session has closed: no new snapshot arrives until the next one opens, so
+  // reloading every 5 minutes all night just burns requests on unchanged data.
+  (function schedule() {
+    setTimeout(function () {
+      const s = $id('gx-scrub');
+      if (!s || +s.value === +s.max) { location.reload(); return; }
+      schedule();
+    }, gexStale ? 900000 : 300000);
+  })();
   {{end}}
 </script>
 {{end}}
