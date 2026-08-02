@@ -264,6 +264,89 @@ func TestGexBuildLadder(t *testing.T) {
 
 func f64(v float64) *float64 { return &v }
 
+// The engine publishes spot_futures from v0.3.0 and the contract asks
+// consumers never to re-derive a futures price. The published value must win
+// outright; the ratio arithmetic survives only as a fallback for an older
+// engine, and neither applies when the basis is cold.
+func TestGexSpotFutures(t *testing.T) {
+	published := 7532.25
+	s := &gex.Snapshot{
+		SpotIndex:         7503.54,
+		SpotFutures:       &published,
+		FuturesConversion: &gex.FuturesConversion{Ratio: 1.5}, // absurd on purpose
+	}
+	if got := gexSpotFutures(s); got == nil || *got != published {
+		t.Errorf("= %v, want the published %v (not ratio arithmetic)", got, published)
+	}
+
+	s.SpotFutures = nil
+	s.FuturesConversion = &gex.FuturesConversion{Ratio: 1.004}
+	if got := gexSpotFutures(s); got == nil || *got != 7503.54*1.004 {
+		t.Errorf("pre-v0.3.0 fallback = %v", got)
+	}
+
+	s.FuturesConversion = nil
+	if got := gexSpotFutures(s); got != nil {
+		t.Errorf("cold basis = %v, want nil (never invent a conversion)", got)
+	}
+}
+
+// Cold basis (engine v0.3.0 fixture shape): every futures field is null while
+// index values, regime, profile and expected move stay populated. The page
+// must degrade to index-only - not to "no data" - and say so.
+func TestGEXPageColdBasis(t *testing.T) {
+	db := gexTestDB(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{
+			"market": "ES", "as_of": "2026-07-31T20:00:03.058037Z",
+			"spot_index": 7503.54, "spot_futures": null, "futures_conversion": null,
+			"regime": {"state": "positive", "net_gex_at_spot": 44964082924.8574, "percentile_20d": null},
+			"flip": {"index": 7442.540346680423, "futures": null},
+			"levels": [
+				{"type": "call_wall", "index": 7550.0, "futures": null, "gex": 5406021999.0, "bucket": "all"},
+				{"type": "put_wall", "index": 7300.0, "futures": null, "gex": -3793769564.0, "bucket": "all"}
+			],
+			"profile": {"strikes_index": [6760.0, 6770.0], "net_gex": [-33493001.0, -131439900.0]},
+			"expected_move_1d": 41.7
+		}`)
+	}))
+	defer srv.Close()
+	c, _ := gex.New(gex.Options{BaseURL: srv.URL})
+	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
+
+	rec := gexPageGet(t, h, "/gex")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cold basis = %d, want a rendered page", rec.Code)
+	}
+	body := rec.Body.String()
+	// Index-denominated content survives; the ladder switches denomination.
+	for _, want := range []string{
+		"7503.54",                   // spot index
+		"7442.54",                   // flip index, in tile + ladder row
+		"positive",                  // regime
+		"41.7 pts",                  // expected move
+		`"denom":"index"`,           // ladder falls back rather than emptying
+		"showing index values only", // and the page says why
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("cold-basis page missing %q", want)
+		}
+	}
+	// No fabricated futures price anywhere near spot or the flip.
+	for _, forbidden := range []string{"7532.25", "7471.02", "7578.89"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("cold basis invented a futures price (%s)", forbidden)
+		}
+	}
+
+	// The ladder must carry the raw, unscaled expected move in index terms.
+	i := strings.Index(body, "const gexInit")
+	blob := body[i : i+strings.Index(body[i:], "\n")]
+	if !strings.Contains(blob, `"emHigh":7545.24`) {
+		t.Errorf("cold-basis EM band not index-denominated: %s", blob)
+	}
+}
+
 func TestGEXData(t *testing.T) {
 	db := gexTestDB(t)
 	var lastAt string

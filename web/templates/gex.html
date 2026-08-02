@@ -28,9 +28,14 @@
 
   .chart-host { width: 100%; }
 
-  /* Charts on the left, the vertical regime ladder alongside them. */
-  .gex-main { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 12px; align-items: start; }
+  /* Charts on the left, the vertical regime ladder alongside them. The row
+     stretches so the ladder card matches the charts' height, and the ladder
+     host takes whatever is left under the title - renderLadder measures it
+     and draws to that exact pixel height. */
+  .gex-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: stretch; }
   @media (max-width: 1000px) { .gex-main { grid-template-columns: 1fr; } }
+  .gex-ladder-card { display: flex; flex-direction: column; }
+  #gx-ladder { flex: 1; min-height: 320px; }
   .gex-ladder-svg { width: 100%; display: block; }
   .gex-ladder-svg text { font-size: 10px; fill: var(--fg-muted); }
   .gex-ladder-svg text.lv { font-family: "JetBrains Mono", monospace; font-size: 10.5px; fill: var(--fg); }
@@ -122,7 +127,7 @@
     <div class="card-title" style="margin-top: 8px;">Cumulative net GEX — running sum across strikes (ends at net GEX at spot)</div>
     <div id="gex-cumulative" class="chart-host" style="height: 208px;"></div>
   </div>
-  <div class="card">
+  <div class="card gex-ladder-card">
     <div class="card-title">Regime ladder · <span id="gx-ladder-denom">{{.View.Ladder.Denom}}</span></div>
     <div id="gx-ladder"></div>
   </div>
@@ -309,7 +314,12 @@
     const flipColor = cs.getPropertyValue('--group').trim() || '#7c3aed';
     const muted = c.label;
 
-    const W = 288, H = 470, bandW = 132, padT = 16, padB = 16;
+    // Draw at the host's real pixel size so the ladder fills its column and
+    // the text renders at its natural size (a fixed viewBox scaled to fit
+    // shrinks the labels and leaves dead space under the panel).
+    const W = Math.max(240, host.clientWidth || 288);
+    const H = Math.max(320, host.clientHeight || 470);
+    const bandW = Math.round(W * 0.40), padT = 16, padB = 16;
     const rows = [
       { v: lad.cw,     label: 'call wall', color: c.pos,    note: lad.cwGex },
       { v: lad.emHigh, label: 'EM high',   color: muted,    dash: true },
@@ -383,7 +393,7 @@
       parts.push(`<text x="${bandW + 11}" y="${ty + 11}">${r.label}${delta}${r.note ? ' · ' + r.note : ''}</text>`);
     });
 
-    host.innerHTML = `<svg class="gex-ladder-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMin meet" role="img" aria-label="Gamma regime ladder">${parts.join('')}</svg>`;
+    host.innerHTML = `<svg class="gex-ladder-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gamma regime ladder">${parts.join('')}</svg>`;
   }
 
   buildCharts();

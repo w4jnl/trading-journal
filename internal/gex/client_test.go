@@ -16,6 +16,7 @@ const snapshotFixture = `{
   "as_of": "2026-07-31T19:50:02.722581Z",
   "sources": ["SPX", "SPY"],
   "spot_index": 7494.5498,
+  "spot_futures": 7523.0,
   "oi_date": "2026-07-31",
   "futures_conversion": {
     "ratio": 1.0037961186140893, "source": "mw_marks",
@@ -67,6 +68,9 @@ func TestSnapshot(t *testing.T) {
 	if s.Market != "ES" || s.Regime.State != "positive" {
 		t.Errorf("market/regime = %q/%q", s.Market, s.Regime.State)
 	}
+	if s.SpotFutures == nil || *s.SpotFutures != 7523.0 {
+		t.Errorf("spot_futures = %v (engine-published, not derived)", s.SpotFutures)
+	}
 	if !s.AsOf.Equal(time.Date(2026, 7, 31, 19, 50, 2, 722581000, time.UTC)) {
 		t.Errorf("as_of = %v", s.AsOf)
 	}
@@ -112,6 +116,60 @@ func TestSnapshotNullFields(t *testing.T) {
 	}
 	if s.Regime.Percentile20D == nil || *s.Regime.Percentile20D != 37.5 {
 		t.Errorf("percentile = %v", s.Regime.Percentile20D)
+	}
+}
+
+// coldBasisFixture is a REAL engine v0.3.0 response captured against a copy
+// of the live database with basis_ratios emptied (supplied by the engine in
+// docs/p4-engine-response.md §3.5). Cold basis nulls the futures fields only:
+// index values, regime, profile and expected move stay populated, so a
+// consumer must degrade to index-only rather than to "no data".
+const coldBasisFixture = `{
+  "market": "ES",
+  "as_of": "2026-07-31T20:00:03.058037Z",
+  "sources": ["SPX", "SPY"],
+  "spot_index": 7503.54,
+  "spot_futures": null,
+  "oi_date": "2026-07-31",
+  "futures_conversion": null,
+  "regime": { "state": "positive", "net_gex_at_spot": 44964082924.8574, "percentile_20d": null },
+  "flip": { "index": 7442.540346680423, "futures": null },
+  "levels": [
+    { "type": "call_wall", "index": 7550.0, "futures": null, "gex": 5406021999.0, "bucket": "all" },
+    { "type": "put_wall",  "index": 7300.0, "futures": null, "gex": -3793769564.0, "bucket": "all" }
+  ],
+  "profile": { "strikes_index": [6760.0, 6770.0], "net_gex": [-33493001.0, -131439900.0] },
+  "expected_move_1d": 41.7
+}`
+
+func TestSnapshotColdBasis(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(coldBasisFixture))
+	}))
+	defer srv.Close()
+
+	c, _ := New(Options{BaseURL: srv.URL})
+	s, err := c.Snapshot(context.Background(), "ES", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.SpotFutures != nil || s.FuturesConversion != nil || s.Flip.Futures != nil {
+		t.Errorf("futures fields not null under cold basis: %+v", s)
+	}
+	for _, l := range s.Levels {
+		if l.Futures != nil {
+			t.Errorf("%s futures not null: %v", l.Type, *l.Futures)
+		}
+	}
+	// Everything index-denominated survives.
+	if s.SpotIndex != 7503.54 || s.Flip.Index == nil || *s.Flip.Index != 7442.540346680423 {
+		t.Errorf("index values lost: spot %v flip %v", s.SpotIndex, s.Flip.Index)
+	}
+	if s.Regime.State != "positive" || s.ExpectedMove1D == nil || *s.ExpectedMove1D != 41.7 {
+		t.Errorf("regime/EM lost: %+v", s.Regime)
+	}
+	if len(s.Profile.StrikesIndex) != 2 || len(s.Profile.NetGex) != 2 {
+		t.Errorf("profile lost: %+v", s.Profile)
 	}
 }
 

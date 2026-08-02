@@ -65,9 +65,14 @@ func New(opts Options) (*Client, error) {
 // when the basis is cold, and levels can be empty. Render those as "-",
 // never treat them as errors.
 type Snapshot struct {
-	Market            string             `json:"market"`
-	AsOf              time.Time          `json:"as_of"`
+	Market string    `json:"market"`
+	AsOf   time.Time `json:"as_of"`
+	// SpotIndex is always populated; SpotFutures is the engine's own
+	// conversion of it (engine >= v0.3.0), null on index-only markets and
+	// whenever the basis is cold. Prefer it over multiplying by the ratio -
+	// the contract asks consumers never to re-derive a futures price.
 	SpotIndex         float64            `json:"spot_index"`
+	SpotFutures       *float64           `json:"spot_futures"`
 	FuturesConversion *FuturesConversion `json:"futures_conversion"`
 	Regime            Regime             `json:"regime"`
 	Flip              Flip               `json:"flip"`

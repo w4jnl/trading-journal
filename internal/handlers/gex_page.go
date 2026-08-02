@@ -280,15 +280,15 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 
 	v.SpotIndex = fmt.Sprintf("%.2f", s.SpotIndex)
 	v.SpotFutures = "—"
-	var spotFut *float64
+	spotFut := gexSpotFutures(s)
+	if spotFut != nil {
+		v.SpotFutures = fmt.Sprintf("%.2f", *spotFut)
+	}
 	if fc := s.FuturesConversion; fc != nil {
-		f := s.SpotIndex * fc.Ratio
-		spotFut = &f
-		v.SpotFutures = fmt.Sprintf("%.2f", f)
 		v.ConvLine = fmt.Sprintf("futures conversion %.4f · %s · paired %s",
 			fc.Ratio, fc.Source, fc.PairedAt.In(et).Format("15:04 ET"))
 	} else {
-		v.ConvLine = "futures conversion unavailable (cold basis) — futures-denominated values missing"
+		v.ConvLine = "futures conversion unavailable (cold basis) — showing index values only"
 	}
 
 	// The flip is published in BOTH denominations. The tile leads with
@@ -362,6 +362,23 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 	return v
 }
 
+// gexSpotFutures resolves spot in futures terms. The engine publishes it
+// directly from v0.3.0 (contract: "consumers must never re-derive a futures
+// price themselves - spot included"); the ratio fallback exists only so an
+// older engine still renders, and disappears with it. Nil means the basis is
+// cold or the market is index-only, in which case the page shows index values
+// and says so rather than inventing a conversion.
+func gexSpotFutures(s *gex.Snapshot) *float64 {
+	if s.SpotFutures != nil {
+		return s.SpotFutures
+	}
+	if fc := s.FuturesConversion; fc != nil {
+		f := s.SpotIndex * fc.Ratio
+		return &f
+	}
+	return nil
+}
+
 // gexBuildLadder assembles the regime-ladder panel's levels in a single
 // denomination. spotFut is nil when the futures basis is cold, in which case
 // the whole ladder falls back to index terms rather than dropping out.
@@ -398,6 +415,10 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 	}
 
 	if e := s.ExpectedMove1D; e != nil {
+		// expected_move_1d is a DISTANCE in index points and is not
+		// basis-converted at source (engine contract §4). Placing it around a
+		// futures spot therefore scales the distance by the same ratio - the
+		// engine's own ladder does this too (its EM rows carry both columns).
 		d := *e
 		if useFut && s.FuturesConversion != nil {
 			d *= s.FuturesConversion.Ratio
