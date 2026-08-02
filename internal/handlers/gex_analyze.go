@@ -8,7 +8,6 @@ import (
 	"html/template"
 	"math"
 	"net/http"
-	"strconv"
 	"strings"
 	"time"
 
@@ -258,7 +257,7 @@ func (h *Handlers) gexAnalysisFor(ctx context.Context, market string, asOf time.
 // Kept off gexBuildView (which stays a pure function of the snapshot) because
 // this part needs the request's user.
 func (h *Handlers) gexAttachAnalysis(ctx context.Context, v *gexView, market string, asOf time.Time) {
-	v.AsOfUnix = asOf.Unix()
+	v.AsOfParam = asOf.UTC().Format(time.RFC3339Nano)
 	if body := h.gexAnalysisFor(ctx, market, asOf); body != "" {
 		v.Analysis = body
 		v.AnalysisHTML = template.HTML(renderMarkdown(body))
@@ -279,14 +278,20 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	sec, err := strconv.ParseInt(r.URL.Query().Get("at"), 10, 64)
-	if err != nil || sec <= 0 {
-		http.Error(w, "at must be unix seconds", http.StatusBadRequest)
+	// at is the snapshot's own as_of, RFC3339 with its fractional second
+	// intact. Whole-second precision is NOT enough: as_of sits a fraction of
+	// a second past its grid mark, so a truncated value is earlier than the
+	// snapshot and at-or-before hands back the previous one - the read would
+	// then be pinned to a moment the user never looked at.
+	atParam := strings.TrimSpace(r.URL.Query().Get("at"))
+	at, err := time.Parse(time.RFC3339, atParam)
+	if err != nil {
+		http.Error(w, "at must be an RFC3339 timestamp", http.StatusBadRequest)
 		return
 	}
 
 	ctx := r.Context()
-	s, err := h.GEX.Snapshot(ctx, market, time.Unix(sec, 0))
+	s, err := h.GEX.Snapshot(ctx, market, at)
 	if err != nil {
 		if errors.Is(err, gex.ErrNoSnapshot) {
 			http.Error(w, "no snapshot at that moment", http.StatusNotFound)
@@ -329,8 +334,6 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 
 	h.renderPartial(w, "_gex_analysis.html", "gex_analysis_body", map[string]any{
 		"Analysis": body,
-		"Market":   market,
-		"AsOfUnix": s.AsOf.Unix(),
 	})
 }
 

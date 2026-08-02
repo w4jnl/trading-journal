@@ -61,6 +61,15 @@ func TestSnapshot(t *testing.T) {
 	if gotAt != "2026-07-31T19:55:00Z" {
 		t.Errorf("at = %q, want UTC Z form", gotAt)
 	}
+	// Sub-second precision must survive: passing a snapshot's own as_of back
+	// in has to address THAT snapshot, not its predecessor.
+	exact := time.Date(2026, 7, 31, 19, 0, 2, 501055000, time.UTC)
+	if _, err := c.Snapshot(context.Background(), "ES", exact); err != nil {
+		t.Fatal(err)
+	}
+	if gotAt != "2026-07-31T19:00:02.501055Z" {
+		t.Errorf("at = %q, want the fractional second preserved", gotAt)
+	}
 	if gotAuth != "Bearer sekrit" {
 		t.Errorf("auth = %q", gotAuth)
 	}

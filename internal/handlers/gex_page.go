@@ -95,12 +95,17 @@ type gexView struct {
 	Chart       gexChart       `json:"chart"`
 	Ladder      gexLadder      `json:"ladder"`
 	HasProfile  bool           `json:"hasProfile"`
-	// AsOfUnix identifies the snapshot for the AI-read endpoint. The retained
-	// read is carried twice on purpose: Analysis is the markdown the page
-	// template renders through the shared partial, AnalysisHTML the sanitized
-	// HTML the scrub path swaps in (no markdown pass in JS). Only the latter
-	// is serialized, so the JSON never ships both.
-	AsOfUnix     int64         `json:"asOfUnix"`
+	// AsOfParam identifies the snapshot for the AI-read endpoint, as
+	// RFC3339Nano. It must keep SUB-SECOND precision: as_of lands a fraction
+	// of a second past its grid mark (19:00:02.501055Z), so a value truncated
+	// to whole seconds is EARLIER than the snapshot and at-or-before resolves
+	// it to the previous one - which pinned reads to the wrong moment.
+	//
+	// The retained read is carried twice on purpose: Analysis is the markdown
+	// the page template renders through the shared partial, AnalysisHTML the
+	// sanitized HTML the scrub path swaps in (no markdown pass in JS). Only
+	// the latter is serialized, so the JSON never ships both.
+	AsOfParam    string        `json:"asOfParam"`
 	Analysis     string        `json:"-"`
 	AnalysisHTML template.HTML `json:"analysisHTML"`
 }

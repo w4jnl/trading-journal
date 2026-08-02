@@ -71,7 +71,7 @@ func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 		Timezone: time.UTC, GEX: c, AI: ai, AIModel: "test-model",
 	}
 
-	rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=1785526202")
+	rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:50:02.5Z")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("analyze = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -83,7 +83,7 @@ func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 	}
 
 	// A different requested moment resolving to the same snapshot: retained.
-	rec = gexAnalyzePost(t, h, "/gex/analyze/ES?at=1785526500")
+	rec = gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:53:00Z")
 	if ai.calls.Load() != 1 {
 		t.Errorf("retained read re-called the model (%d calls)", ai.calls.Load())
 	}
@@ -102,7 +102,7 @@ func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 
 	// force=1 regenerates and replaces in place.
 	ai.out = "Second read."
-	rec = gexAnalyzePost(t, h, "/gex/analyze/ES?at=1785526202&force=1")
+	rec = gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:50:02.5Z&force=1")
 	if ai.calls.Load() != 2 {
 		t.Errorf("force did not regenerate (%d calls)", ai.calls.Load())
 	}
@@ -144,7 +144,7 @@ func TestGEXAnalyzeFailures(t *testing.T) {
 
 	// AI disabled: route is invisible even though gex is on.
 	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
-	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=1785526202"); rec.Code != http.StatusNotFound {
+	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:50:02.5Z"); rec.Code != http.StatusNotFound {
 		t.Errorf("ai disabled = %d, want 404", rec.Code)
 	}
 	page := gexPageGet(t, h, "/gex").Body.String()
@@ -154,13 +154,13 @@ func TestGEXAnalyzeFailures(t *testing.T) {
 
 	failing := &stubAI{err: fmt.Errorf("model offline")}
 	h.AI = failing
-	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=abc"); rec.Code != http.StatusBadRequest {
+	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=notatime"); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad at = %d, want 400", rec.Code)
 	}
-	if rec := gexAnalyzePost(t, h, "/gex/analyze/CL?at=1785526202"); rec.Code != http.StatusNotFound {
+	if rec := gexAnalyzePost(t, h, "/gex/analyze/CL?at=2026-07-31T19:50:02.5Z"); rec.Code != http.StatusNotFound {
 		t.Errorf("bad market = %d, want 404", rec.Code)
 	}
-	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=1785526202"); rec.Code != http.StatusBadGateway {
+	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:50:02.5Z"); rec.Code != http.StatusBadGateway {
 		t.Errorf("model error = %d, want 502", rec.Code)
 	}
 	var n int
@@ -176,7 +176,7 @@ func TestGEXAnalyzeFailures(t *testing.T) {
 	down.Close()
 	h.GEX, _ = gex.New(gex.Options{BaseURL: down.URL})
 	h.AI = &stubAI{out: "x"}
-	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=1785526202"); rec.Code != http.StatusBadGateway {
+	if rec := gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:50:02.5Z"); rec.Code != http.StatusBadGateway {
 		t.Errorf("engine down = %d, want 502", rec.Code)
 	}
 }
