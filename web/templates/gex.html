@@ -209,7 +209,10 @@
     const dpr = window.devicePixelRatio || 1;
     ctx.save();
     ctx.font = (11 * dpr) + 'px system-ui, sans-serif';
-    marks.forEach((m, i) => {
+    // Lines first; labels are collected and placed afterwards so they can be
+    // spaced against one another.
+    const labels = [];
+    marks.forEach((m) => {
       const val = gexData[m.key];
       if (val == null) return;
       const x = u.valToPos(val, 'x', true);
@@ -222,9 +225,36 @@
       ctx.lineTo(x, u.bbox.top + u.bbox.height);
       ctx.stroke();
       ctx.setLineDash([]);
-      ctx.fillStyle = m.color;
-      // Stagger labels so overlapping levels stay readable.
-      ctx.fillText(m.label, x + 4 * dpr, u.bbox.top + (12 + i * 13) * dpr);
+      labels.push({ x: x, color: m.color, text: m.label, w: ctx.measureText(m.label).width });
+    });
+
+    // One row in the chart's reserved top padding, clear of the plot area.
+    // These used to be staggered INSIDE the plot, where bars and the curve
+    // ran straight through them. Each label centres on its line and is
+    // pushed right only as far as its neighbour forces; a faint connector
+    // keeps a nudged label tied to its line (spot and the call wall can sit
+    // a few points apart).
+    labels.sort((a, b) => a.x - b.x);
+    const gap = 6 * dpr;
+    const rowY = u.bbox.top - 6 * dpr;
+    let prevRight = -Infinity;
+    labels.forEach((l) => {
+      let left = Math.max(l.x - l.w / 2, prevRight + gap);
+      left = Math.min(left, u.bbox.left + u.bbox.width - l.w);
+      prevRight = left + l.w;
+      const cx = left + l.w / 2;
+      if (Math.abs(cx - l.x) > 2 * dpr) {
+        ctx.strokeStyle = l.color;
+        ctx.globalAlpha = 0.45;
+        ctx.lineWidth = dpr;
+        ctx.beginPath();
+        ctx.moveTo(cx, rowY + 2 * dpr);
+        ctx.lineTo(l.x, u.bbox.top);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
+      ctx.fillStyle = l.color;
+      ctx.fillText(l.text, left, rowY);
     });
     ctx.restore();
   }
@@ -240,6 +270,7 @@
       width: el.clientWidth, height: 170,
       scales: { x: { time: false } },
       cursor: { sync: gexCursorSync() },
+      padding: [24, 10, null, null], /* top row reserved for the level labels */
       series: [
         { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
         {
@@ -278,6 +309,7 @@
       width: el.clientWidth, height: 300,
       scales: { x: { time: false } }, /* strikes are prices, not timestamps */
       cursor: { sync: gexCursorSync() },
+      padding: [24, 10, null, null], /* top row reserved for the level labels */
       series: [
         { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
         {
