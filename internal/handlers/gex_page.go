@@ -70,6 +70,7 @@ type gexView struct {
 	SpotFutures string         `json:"spotFutures"`
 	ConvLine    string         `json:"convLine"`
 	FlipFutures string         `json:"flipFutures"`
+	FlipIndex   string         `json:"flipIndex"`
 	FlipSub     string         `json:"flipSub"`
 	EM          string         `json:"em"`
 	Levels      []gexPageLevel `json:"levels"`
@@ -271,7 +272,15 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		v.ConvLine = "futures conversion unavailable (cold basis) — futures-denominated values missing"
 	}
 
-	v.FlipFutures = "—"
+	// The flip is published in BOTH denominations. The tile leads with
+	// futures (journal fill prices are futures prices, so that is the number
+	// you trade against) and carries the index value the profile chart plots
+	// - one unlabeled flip number next to an index-denominated spot tile
+	// reads as a unit bug even when the math is right.
+	v.FlipFutures, v.FlipIndex = "—", "—"
+	if i := s.Flip.Index; i != nil {
+		v.FlipIndex = fmt.Sprintf("%.2f", *i)
+	}
 	if f := s.Flip.Futures; f != nil {
 		v.FlipFutures = fmt.Sprintf("%.2f", *f)
 		if spotFut != nil {
@@ -284,7 +293,24 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		}
 	}
 
-	v.Levels = make([]gexPageLevel, 0, len(s.Levels))
+	v.Levels = make([]gexPageLevel, 0, len(s.Levels)+1)
+	// The flip leads the ladder: it is a price level like the walls, and
+	// listing it here is what pins its denomination - both columns present,
+	// same level-minus-spot convention as every other row. (The engine
+	// publishes no GEX for the flip; it is the zero crossing by definition.)
+	if s.Flip.Index != nil || s.Flip.Futures != nil {
+		row := gexPageLevel{Label: "Gamma flip", Bucket: "—", Index: "—", Futures: "—", Gex: "—", Dist: "—"}
+		if i := s.Flip.Index; i != nil {
+			row.Index = fmt.Sprintf("%.2f", *i)
+		}
+		if f := s.Flip.Futures; f != nil {
+			row.Futures = fmt.Sprintf("%.2f", *f)
+			if spotFut != nil {
+				row.Dist = fmt.Sprintf("%+.2f pts", *f-*spotFut)
+			}
+		}
+		v.Levels = append(v.Levels, row)
+	}
 	for _, l := range s.Levels {
 		row := gexPageLevel{
 			Label:   gexLevelName(l.Type),

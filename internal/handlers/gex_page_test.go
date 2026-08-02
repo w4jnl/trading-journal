@@ -154,6 +154,54 @@ func TestGEXPageScrubSlider(t *testing.T) {
 	}
 }
 
+// Denominations must never be ambiguous on the page: the flip is shown in
+// BOTH index and futures terms, every spot-relative distance is computed
+// futures-vs-futures, and the profile chart's reference lines stay in index
+// terms (it plots index strikes). A reviewer reading one unlabeled flip
+// number next to an index-led spot tile previously mistook this for a unit
+// bug - the numbers were right, the labeling was not.
+func TestGEXPageDenominations(t *testing.T) {
+	db := gexTestDB(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
+	}))
+	defer srv.Close()
+	c, _ := gex.New(gex.Options{BaseURL: srv.URL})
+	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
+
+	// Fixture: spot_index 7494.55, ratio 1.0038 -> spot futures 7523.03;
+	// flip index 7437.55, flip futures 7465.788539891167.
+	body := gexPageGet(t, h, "/gex").Body.String()
+	for _, want := range []string{
+		"Spot · index",         // tile states its own denomination
+		"Gamma flip · futures", // ...and so does the flip
+		"index 7437.55",        // flip's index value, the one the chart plots
+		"7465.79",              // flip's futures value (tile + ladder row)
+		"Gamma flip</td>",      // flip listed in the level ladder
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing %q", want)
+		}
+	}
+
+	// The distance must be futures-minus-futures (7523.03 - 7465.79 =
+	// +57.24). Mixing units against the INDEX flip would read +85.48.
+	if !strings.Contains(body, "spot &#43;57.24 pts (above flip)") {
+		t.Errorf("flip distance is not futures-vs-futures")
+	}
+	if strings.Contains(body, "85.48") {
+		t.Errorf("flip distance mixed futures spot with index flip")
+	}
+
+	// The chart plots index strikes, so its reference lines must be index
+	// values - the flip line at 7437.55, never the futures 7465.79.
+	i := strings.Index(body, "const gexInit")
+	blob := body[i : i+strings.Index(body[i:], "\n")]
+	if !strings.Contains(blob, `"flip":7437.55`) || !strings.Contains(blob, `"spot":7494.55`) {
+		t.Errorf("chart reference lines are not index-denominated: %s", blob)
+	}
+}
+
 func TestGEXData(t *testing.T) {
 	db := gexTestDB(t)
 	var lastAt string

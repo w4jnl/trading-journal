@@ -88,13 +88,14 @@
     <div class="num--lg" id="gx-netgex">{{.View.NetGex}}</div>
   </div>
   <div class="card stat-tile">
-    <div class="label">Spot</div>
+    <div class="label">Spot · index</div>
     <div class="num--lg" id="gx-spot">{{.View.SpotIndex}}</div>
     <div class="sub" id="gx-spotfut">futures {{.View.SpotFutures}}</div>
   </div>
   <div class="card stat-tile">
-    <div class="label">Gamma flip</div>
+    <div class="label">Gamma flip · futures</div>
     <div class="num--lg" id="gx-flip">{{.View.FlipFutures}}</div>
+    <div class="sub" id="gx-flipidx">index {{.View.FlipIndex}}</div>
     <div class="sub" id="gx-flipsub">{{.View.FlipSub}}</div>
   </div>
   <div class="card stat-tile">
@@ -240,6 +241,7 @@
     $id('gx-spot').textContent = v.spotIndex;
     $id('gx-spotfut').textContent = 'futures ' + v.spotFutures;
     $id('gx-flip').textContent = v.flipFutures;
+    $id('gx-flipidx').textContent = 'index ' + v.flipIndex;
     $id('gx-flipsub').textContent = v.flipSub || '';
     $id('gx-em').textContent = v.em;
     $id('gx-chart-asof').textContent = v.asOfET + (v.stale ? ' (prior session close)' : '');
