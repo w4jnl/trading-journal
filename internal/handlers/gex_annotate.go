@@ -235,7 +235,10 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 	}
 
 	var b strings.Builder
-	b.WriteString("_Gamma context (GEX)_\n\n")
+	// Name the denomination: every level and tick distance in this block is
+	// futures-priced (matching the trade's own fill prices), while the
+	// engine also publishes index values for the same levels.
+	b.WriteString("_Gamma context (GEX) — futures prices_\n\n")
 	b.WriteString("|  | " + en.label + " | " + ex.label + " |\n|---|---|---|\n")
 	b.WriteString("| regime | " + regimeCell(en) + " | " + regimeCell(ex) + " |\n")
 	b.WriteString("| flip " + gexLevelLabel(enSnap.Flip.Futures) + " | " + flipCell(en, nil) + " | " + flipCell(ex, enSnap.Flip.Futures) + " |\n")

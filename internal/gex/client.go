@@ -65,9 +65,14 @@ func New(opts Options) (*Client, error) {
 // when the basis is cold, and levels can be empty. Render those as "-",
 // never treat them as errors.
 type Snapshot struct {
-	Market            string             `json:"market"`
-	AsOf              time.Time          `json:"as_of"`
+	Market string    `json:"market"`
+	AsOf   time.Time `json:"as_of"`
+	// SpotIndex is always populated; SpotFutures is the engine's own
+	// conversion of it (engine >= v0.3.0), null on index-only markets and
+	// whenever the basis is cold. Prefer it over multiplying by the ratio -
+	// the contract asks consumers never to re-derive a futures price.
 	SpotIndex         float64            `json:"spot_index"`
+	SpotFutures       *float64           `json:"spot_futures"`
 	FuturesConversion *FuturesConversion `json:"futures_conversion"`
 	Regime            Regime             `json:"regime"`
 	Flip              Flip               `json:"flip"`
@@ -119,8 +124,13 @@ type Level struct {
 // market is "ES" or "NQ". at is sent in UTC RFC3339; the engine 422s naive
 // timestamps.
 func (c *Client) Snapshot(ctx context.Context, market string, at time.Time) (*Snapshot, error) {
+	// RFC3339Nano, not RFC3339: snapshot as_of values carry a fractional
+	// second (19:00:02.501055Z), and truncating to whole seconds asks for an
+	// instant strictly BEFORE the snapshot, which at-or-before answers with
+	// the previous one. Callers that pass a snapshot's own as_of back in -
+	// pinning an analysis to it - would silently address its predecessor.
 	u := c.baseURL + "/v1/snapshots/" + url.PathEscape(market) +
-		"?at=" + url.QueryEscape(at.UTC().Format(time.RFC3339))
+		"?at=" + url.QueryEscape(at.UTC().Format(time.RFC3339Nano))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("gex: build request: %w", err)

@@ -133,7 +133,7 @@ func TestGexAnnotate(t *testing.T) {
 		t.Fatalf("engine calls = %d, want 2 (entry + exit)", calls.Load())
 	}
 	// Seed-replaced the placeholder, visible block + distances present.
-	if !strings.HasPrefix(body, "---\n\n_Gamma context (GEX)_") {
+	if !strings.HasPrefix(body, "---\n\n_Gamma context (GEX) — futures prices_") {
 		t.Errorf("gamma block did not seed-replace the placeholder:\n%s", body)
 	}
 	if strings.Contains(body, "_AI review_") {

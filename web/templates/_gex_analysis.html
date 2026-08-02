@@ -1,0 +1,15 @@
+{{/* AI read of one gamma snapshot.
+
+    "gex_analysis_body" is the swappable inner part: the retained read, or a
+    prompt to generate one. The POST handler renders this same template, so
+    the button's response and the page's initial render cannot drift.
+
+    Data: Analysis (markdown, "" when none). */}}
+
+{{define "gex_analysis_body"}}
+{{if .Analysis}}
+<div class="gex-read">{{markdown .Analysis}}</div>
+{{else}}
+<p class="muted" style="margin: 0;">No AI read for this snapshot yet.</p>
+{{end}}
+{{end}}

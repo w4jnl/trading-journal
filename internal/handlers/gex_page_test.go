@@ -87,7 +87,9 @@ func TestGEXPage(t *testing.T) {
 	if calls.Load() != before+1 {
 		t.Fatalf("rewind did not hit the engine")
 	}
-	if lastAt != "2026-07-31T10:54:00Z" {
+	// The picker's minute is queried at its END, so a grid minute resolves to
+	// that minute's snapshot rather than the previous slot.
+	if lastAt != "2026-07-31T10:54:59Z" {
 		t.Errorf("engine at = %q (tz = UTC in this harness)", lastAt)
 	}
 	body = rec.Body.String()
@@ -151,6 +153,199 @@ func TestGEXPageScrubSlider(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
 		}
+	}
+}
+
+// Denominations must never be ambiguous on the page: the flip is shown in
+// BOTH index and futures terms, every spot-relative distance is computed
+// futures-vs-futures, and the profile chart's reference lines stay in index
+// terms (it plots index strikes). A reviewer reading one unlabeled flip
+// number next to an index-led spot tile previously mistook this for a unit
+// bug - the numbers were right, the labeling was not.
+func TestGEXPageDenominations(t *testing.T) {
+	db := gexTestDB(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
+	}))
+	defer srv.Close()
+	c, _ := gex.New(gex.Options{BaseURL: srv.URL})
+	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
+
+	// Fixture: spot_index 7494.55, ratio 1.0038 -> spot futures 7523.03;
+	// flip index 7437.55, flip futures 7465.788539891167.
+	body := gexPageGet(t, h, "/gex").Body.String()
+	for _, want := range []string{
+		"Spot · index",         // tile states its own denomination
+		"Gamma flip · futures", // ...and so does the flip
+		"index 7437.55",        // flip's index value, the one the chart plots
+		"7465.79",              // flip's futures value (tile + ladder row)
+		"Gamma flip</td>",      // flip listed in the level ladder
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing %q", want)
+		}
+	}
+
+	// The distance must be futures-minus-futures (7523.03 - 7465.79 =
+	// +57.24). Mixing units against the INDEX flip would read +85.48.
+	if !strings.Contains(body, "spot &#43;57.24 pts (above flip)") {
+		t.Errorf("flip distance is not futures-vs-futures")
+	}
+	if strings.Contains(body, "85.48") {
+		t.Errorf("flip distance mixed futures spot with index flip")
+	}
+
+	// The chart plots index strikes, so its reference lines must be index
+	// values - the flip line at 7437.55, never the futures 7465.79.
+	i := strings.Index(body, "const gexInit")
+	blob := body[i : i+strings.Index(body[i:], "\n")]
+	if !strings.Contains(blob, `"flip":7437.55`) || !strings.Contains(blob, `"spot":7494.55`) {
+		t.Errorf("chart reference lines are not index-denominated: %s", blob)
+	}
+}
+
+// The regime ladder resolves to ONE denomination: futures while the basis is
+// warm, index when it goes cold, never a silent mix. The expected-move band
+// is spot +/- EM, with EM scaled into futures terms the same way the engine
+// scales its own levels.
+func TestGexBuildLadder(t *testing.T) {
+	ratio := 1.0038
+	spot := 7494.55
+	em := 9.7
+	cwFut, pwFut, flipFut := 7558.58, 7327.71, 7465.79
+	snap := &gex.Snapshot{
+		SpotIndex:         spot,
+		FuturesConversion: &gex.FuturesConversion{Ratio: ratio},
+		Regime:            gex.Regime{State: "positive"},
+		Flip:              gex.Flip{Index: f64(7437.55), Futures: &flipFut},
+		Levels: []gex.Level{
+			{Type: "call_wall", Index: 7530, Futures: &cwFut, Gex: 1.08e10, Bucket: "all"},
+			{Type: "put_wall", Index: 7300, Futures: &pwFut, Gex: -3.9e9, Bucket: "all"},
+		},
+		ExpectedMove1D: &em,
+	}
+
+	spotFut := spot * ratio
+	lad := gexBuildLadder(snap, &spotFut)
+	if lad.Denom != "futures" {
+		t.Fatalf("denom = %q, want futures", lad.Denom)
+	}
+	if *lad.CW != cwFut || *lad.PW != pwFut || *lad.Flip != flipFut {
+		t.Errorf("levels not futures-denominated: %+v", lad)
+	}
+	// EM is index-denominated at source; the futures band scales it.
+	if got, want := *lad.EMHigh-lad.Spot, em*ratio; got-want > 1e-9 || want-got > 1e-9 {
+		t.Errorf("EM half-width = %v, want %v (em scaled by ratio)", got, want)
+	}
+	if *lad.EMLow >= lad.Spot || *lad.EMHigh <= lad.Spot {
+		t.Errorf("EM band does not straddle spot: %+v", lad)
+	}
+	if lad.CWGex != "+10.8B" || lad.PWGex != "-3.9B" {
+		t.Errorf("wall gex = %q / %q", lad.CWGex, lad.PWGex)
+	}
+
+	// Cold basis: the whole ladder falls back to index rather than emptying.
+	snap.FuturesConversion = nil
+	lad = gexBuildLadder(snap, nil)
+	if lad.Denom != "index" || lad.Spot != spot {
+		t.Fatalf("cold basis denom/spot = %q/%v", lad.Denom, lad.Spot)
+	}
+	if *lad.CW != 7530 || *lad.Flip != 7437.55 {
+		t.Errorf("cold basis levels not index: %+v", lad)
+	}
+	if got, want := *lad.EMHigh-lad.Spot, em; got-want > 1e-9 || want-got > 1e-9 {
+		t.Errorf("cold-basis EM half-width = %v, want unscaled %v", got, want)
+	}
+
+	// No flip (no zero crossing that day) must not drop the other levels.
+	snap.Flip = gex.Flip{}
+	if lad = gexBuildLadder(snap, nil); lad.Flip != nil || lad.CW == nil {
+		t.Errorf("null flip mishandled: %+v", lad)
+	}
+}
+
+func f64(v float64) *float64 { return &v }
+
+// The engine publishes spot_futures from v0.3.0 and the contract asks
+// consumers never to re-derive a futures price. The published value must win
+// outright; the ratio arithmetic survives only as a fallback for an older
+// engine, and neither applies when the basis is cold.
+func TestGexSpotFutures(t *testing.T) {
+	published := 7532.25
+	s := &gex.Snapshot{
+		SpotIndex:         7503.54,
+		SpotFutures:       &published,
+		FuturesConversion: &gex.FuturesConversion{Ratio: 1.5}, // absurd on purpose
+	}
+	if got := gexSpotFutures(s); got == nil || *got != published {
+		t.Errorf("= %v, want the published %v (not ratio arithmetic)", got, published)
+	}
+
+	s.SpotFutures = nil
+	s.FuturesConversion = &gex.FuturesConversion{Ratio: 1.004}
+	if got := gexSpotFutures(s); got == nil || *got != 7503.54*1.004 {
+		t.Errorf("pre-v0.3.0 fallback = %v", got)
+	}
+
+	s.FuturesConversion = nil
+	if got := gexSpotFutures(s); got != nil {
+		t.Errorf("cold basis = %v, want nil (never invent a conversion)", got)
+	}
+}
+
+// Cold basis (engine v0.3.0 fixture shape): every futures field is null while
+// index values, regime, profile and expected move stay populated. The page
+// must degrade to index-only - not to "no data" - and say so.
+func TestGEXPageColdBasis(t *testing.T) {
+	db := gexTestDB(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, `{
+			"market": "ES", "as_of": "2026-07-31T20:00:03.058037Z",
+			"spot_index": 7503.54, "spot_futures": null, "futures_conversion": null,
+			"regime": {"state": "positive", "net_gex_at_spot": 44964082924.8574, "percentile_20d": null},
+			"flip": {"index": 7442.540346680423, "futures": null},
+			"levels": [
+				{"type": "call_wall", "index": 7550.0, "futures": null, "gex": 5406021999.0, "bucket": "all"},
+				{"type": "put_wall", "index": 7300.0, "futures": null, "gex": -3793769564.0, "bucket": "all"}
+			],
+			"profile": {"strikes_index": [6760.0, 6770.0], "net_gex": [-33493001.0, -131439900.0]},
+			"expected_move_1d": 41.7
+		}`)
+	}))
+	defer srv.Close()
+	c, _ := gex.New(gex.Options{BaseURL: srv.URL})
+	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
+
+	rec := gexPageGet(t, h, "/gex")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("cold basis = %d, want a rendered page", rec.Code)
+	}
+	body := rec.Body.String()
+	// Index-denominated content survives; the ladder switches denomination.
+	for _, want := range []string{
+		"7503.54",                   // spot index
+		"7442.54",                   // flip index, in tile + ladder row
+		"positive",                  // regime
+		"41.7 pts",                  // expected move
+		`"denom":"index"`,           // ladder falls back rather than emptying
+		"showing index values only", // and the page says why
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("cold-basis page missing %q", want)
+		}
+	}
+	// No fabricated futures price anywhere near spot or the flip.
+	for _, forbidden := range []string{"7532.25", "7471.02", "7578.89"} {
+		if strings.Contains(body, forbidden) {
+			t.Errorf("cold basis invented a futures price (%s)", forbidden)
+		}
+	}
+
+	// The ladder must carry the raw, unscaled expected move in index terms.
+	i := strings.Index(body, "const gexInit")
+	blob := body[i : i+strings.Index(body[i:], "\n")]
+	if !strings.Contains(blob, `"emHigh":7545.24`) {
+		t.Errorf("cold-basis EM band not index-denominated: %s", blob)
 	}
 }
 

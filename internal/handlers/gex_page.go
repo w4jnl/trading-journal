@@ -56,6 +56,24 @@ type gexChart struct {
 	PW      *float64  `json:"pw"`
 }
 
+// gexLadder is the numeric model behind the vertical regime-ladder panel:
+// the price structure around spot, in ONE denomination so the panel can be
+// read at a glance. Futures when the basis is warm (that is the price you
+// fill at), index otherwise; Denom names which, and the panel labels it.
+// Nil levels are simply not drawn.
+type gexLadder struct {
+	Denom  string   `json:"denom"`
+	Spot   float64  `json:"spot"`
+	Flip   *float64 `json:"flip"`
+	CW     *float64 `json:"cw"`
+	PW     *float64 `json:"pw"`
+	EMHigh *float64 `json:"emHigh"`
+	EMLow  *float64 `json:"emLow"`
+	CWGex  string   `json:"cwGex"`
+	PWGex  string   `json:"pwGex"`
+	Regime string   `json:"regime"`
+}
+
 // gexView is the pre-formatted view model for one snapshot, shared verbatim
 // by the HTML render and the GEXData JSON endpoint so the scrub JS can
 // repaint the exact same fields the server rendered.
@@ -70,11 +88,26 @@ type gexView struct {
 	SpotFutures string         `json:"spotFutures"`
 	ConvLine    string         `json:"convLine"`
 	FlipFutures string         `json:"flipFutures"`
+	FlipIndex   string         `json:"flipIndex"`
 	FlipSub     string         `json:"flipSub"`
 	EM          string         `json:"em"`
 	Levels      []gexPageLevel `json:"levels"`
 	Chart       gexChart       `json:"chart"`
+	Ladder      gexLadder      `json:"ladder"`
 	HasProfile  bool           `json:"hasProfile"`
+	// AsOfParam identifies the snapshot for the AI-read endpoint, as
+	// RFC3339Nano. It must keep SUB-SECOND precision: as_of lands a fraction
+	// of a second past its grid mark (19:00:02.501055Z), so a value truncated
+	// to whole seconds is EARLIER than the snapshot and at-or-before resolves
+	// it to the previous one - which pinned reads to the wrong moment.
+	//
+	// The retained read is carried twice on purpose: Analysis is the markdown
+	// the page template renders through the shared partial, AnalysisHTML the
+	// sanitized HTML the scrub path swaps in (no markdown pass in JS). Only
+	// the latter is serialized, so the JSON never ships both.
+	AsOfParam    string        `json:"asOfParam"`
+	Analysis     string        `json:"-"`
+	AnalysisHTML template.HTML `json:"analysisHTML"`
 }
 
 // gexMarketParam resolves the {market} path value ("" defaults to ES).
@@ -107,7 +140,12 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	atParam := strings.TrimSpace(r.URL.Query().Get("at"))
 	if atParam != "" {
 		if t, err := time.ParseInLocation(gexPageMoment, atParam, tz); err == nil {
-			at, latest = t, false
+			// The picker has minute resolution, so "14:55" denotes that whole
+			// minute - query its END. Snapshots are stamped 1-3 s AFTER their
+			// grid minute (engine contract), so asking at :00 would resolve
+			// at-or-before to the PREVIOUS slot, and the picker would
+			// disagree with the scrub slider sitting on the same minute.
+			at, latest = t.Add(59*time.Second), false
 		} else {
 			atParam = ""
 		}
@@ -153,8 +191,10 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 			ref = now
 		}
 		view := gexBuildView(s, ref)
+		h.gexAttachAnalysis(r.Context(), &view, market, s.AsOf)
 		data["View"] = view
 		data["SessionClosed"] = latest && view.Stale
+		data["AIEnabled"] = h.AI != nil
 		if b, err := json.Marshal(view); err == nil {
 			data["ViewJSON"] = template.JS(b)
 		}
@@ -191,7 +231,9 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 		h.logger().Warn("gex data: snapshot fetch failed", "market", market, "err", err)
 		writeJSONError(w, http.StatusBadGateway, "gex-engine unreachable")
 	default:
-		writeJSON(w, http.StatusOK, gexBuildView(s, at))
+		v := gexBuildView(s, at)
+		h.gexAttachAnalysis(r.Context(), &v, market, s.AsOf)
+		writeJSON(w, http.StatusOK, v)
 	}
 }
 
@@ -260,18 +302,26 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 
 	v.SpotIndex = fmt.Sprintf("%.2f", s.SpotIndex)
 	v.SpotFutures = "—"
-	var spotFut *float64
+	spotFut := gexSpotFutures(s)
+	if spotFut != nil {
+		v.SpotFutures = fmt.Sprintf("%.2f", *spotFut)
+	}
 	if fc := s.FuturesConversion; fc != nil {
-		f := s.SpotIndex * fc.Ratio
-		spotFut = &f
-		v.SpotFutures = fmt.Sprintf("%.2f", f)
 		v.ConvLine = fmt.Sprintf("futures conversion %.4f · %s · paired %s",
 			fc.Ratio, fc.Source, fc.PairedAt.In(et).Format("15:04 ET"))
 	} else {
-		v.ConvLine = "futures conversion unavailable (cold basis) — futures-denominated values missing"
+		v.ConvLine = "futures conversion unavailable (cold basis) — showing index values only"
 	}
 
-	v.FlipFutures = "—"
+	// The flip is published in BOTH denominations. The tile leads with
+	// futures (journal fill prices are futures prices, so that is the number
+	// you trade against) and carries the index value the profile chart plots
+	// - one unlabeled flip number next to an index-denominated spot tile
+	// reads as a unit bug even when the math is right.
+	v.FlipFutures, v.FlipIndex = "—", "—"
+	if i := s.Flip.Index; i != nil {
+		v.FlipIndex = fmt.Sprintf("%.2f", *i)
+	}
 	if f := s.Flip.Futures; f != nil {
 		v.FlipFutures = fmt.Sprintf("%.2f", *f)
 		if spotFut != nil {
@@ -284,7 +334,24 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		}
 	}
 
-	v.Levels = make([]gexPageLevel, 0, len(s.Levels))
+	v.Levels = make([]gexPageLevel, 0, len(s.Levels)+1)
+	// The flip leads the ladder: it is a price level like the walls, and
+	// listing it here is what pins its denomination - both columns present,
+	// same level-minus-spot convention as every other row. (The engine
+	// publishes no GEX for the flip; it is the zero crossing by definition.)
+	if s.Flip.Index != nil || s.Flip.Futures != nil {
+		row := gexPageLevel{Label: "Gamma flip", Bucket: "—", Index: "—", Futures: "—", Gex: "—", Dist: "—"}
+		if i := s.Flip.Index; i != nil {
+			row.Index = fmt.Sprintf("%.2f", *i)
+		}
+		if f := s.Flip.Futures; f != nil {
+			row.Futures = fmt.Sprintf("%.2f", *f)
+			if spotFut != nil {
+				row.Dist = fmt.Sprintf("%+.2f pts", *f-*spotFut)
+			}
+		}
+		v.Levels = append(v.Levels, row)
+	}
 	for _, l := range s.Levels {
 		row := gexPageLevel{
 			Label:   gexLevelName(l.Type),
@@ -311,9 +378,77 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		CW:      gexWallIndex(s, "call_wall"),
 		PW:      gexWallIndex(s, "put_wall"),
 	}
+	v.Ladder = gexBuildLadder(s, spotFut)
 	v.HasProfile = len(s.Profile.StrikesIndex) > 1 &&
 		len(s.Profile.StrikesIndex) == len(s.Profile.NetGex)
 	return v
+}
+
+// gexSpotFutures resolves spot in futures terms. The engine publishes it
+// directly from v0.3.0 (contract: "consumers must never re-derive a futures
+// price themselves - spot included"); the ratio fallback exists only so an
+// older engine still renders, and disappears with it. Nil means the basis is
+// cold or the market is index-only, in which case the page shows index values
+// and says so rather than inventing a conversion.
+func gexSpotFutures(s *gex.Snapshot) *float64 {
+	if s.SpotFutures != nil {
+		return s.SpotFutures
+	}
+	if fc := s.FuturesConversion; fc != nil {
+		f := s.SpotIndex * fc.Ratio
+		return &f
+	}
+	return nil
+}
+
+// gexBuildLadder assembles the regime-ladder panel's levels in a single
+// denomination. spotFut is nil when the futures basis is cold, in which case
+// the whole ladder falls back to index terms rather than dropping out.
+//
+// The expected-move band is spot +/- expected_move_1d. That figure is
+// index-denominated at source (it comes from the SPX 0DTE ATM straddle), so
+// the futures band scales it by the same conversion ratio the engine applies
+// to its own levels.
+func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
+	useFut := spotFut != nil
+	lad := gexLadder{Denom: "index", Spot: s.SpotIndex, Regime: s.Regime.State}
+	if useFut {
+		lad.Denom, lad.Spot = "futures", *spotFut
+	}
+
+	pickWall := func(typ string) (*float64, string) {
+		l := gexWall(s, typ)
+		if l == nil {
+			return nil, ""
+		}
+		if useFut {
+			return l.Futures, gexFmtB(l.Gex)
+		}
+		idx := l.Index
+		return &idx, gexFmtB(l.Gex)
+	}
+	lad.CW, lad.CWGex = pickWall("call_wall")
+	lad.PW, lad.PWGex = pickWall("put_wall")
+
+	if useFut {
+		lad.Flip = s.Flip.Futures
+	} else {
+		lad.Flip = s.Flip.Index
+	}
+
+	if e := s.ExpectedMove1D; e != nil {
+		// expected_move_1d is a DISTANCE in index points and is not
+		// basis-converted at source (engine contract §4). Placing it around a
+		// futures spot therefore scales the distance by the same ratio - the
+		// engine's own ladder does this too (its EM rows carry both columns).
+		d := *e
+		if useFut && s.FuturesConversion != nil {
+			d *= s.FuturesConversion.Ratio
+		}
+		hi, lo := lad.Spot+d, lad.Spot-d
+		lad.EMHigh, lad.EMLow = &hi, &lo
+	}
+	return lad
 }
 
 // gexFmtB renders a raw gamma-dollar value at billions scale ("+74.5B").
