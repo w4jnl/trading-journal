@@ -24,10 +24,10 @@
   /* Time scrub: a full-width range input over the recent session grid. */
   .gex-scrub { display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
   .gex-scrub input[type=range] { flex: 1; accent-color: var(--accent); }
-  /* Fixed width, not min-width: the label can gain a "-> snapshot" suffix,
-     and a growing label would shrink the flex slider next to it, making the
+  /* Fixed width and nowrap: the label always holds ONE timestamp, and a
+     label that could grow would shrink the flex slider beside it, making the
      thumb jump sideways under the cursor mid-drag. */
-  .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; width: 250px; flex: 0 0 250px; text-align: right; }
+  .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; width: 168px; flex: 0 0 168px; text-align: right; white-space: nowrap; }
 
   .chart-host { width: 100%; }
   #gx-analysis-spin { display: none; }
@@ -191,12 +191,30 @@
   let gexStale = !!gexInit.stale;
   const $id = (id) => document.getElementById(id);
 
-  // Compact ET stamp for the scrub label's "-> snapshot" suffix.
+  // The scrub label's stamp. One format everywhere, so the label's length
+  // never changes as it moves between a slot and the snapshot it resolved to.
   const gexShortETFmt = new Intl.DateTimeFormat('en-US', {
     timeZone: 'America/New_York',
     month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
   });
   const gexShortET = (d) => gexShortETFmt.format(d) + ' ET';
+
+  // The "as of" picker is parsed server-side in the TRADING timezone, so
+  // keeping it in step with the view means formatting in that zone - not ET
+  // (which the scrub label uses) and not the browser's. Lives out here
+  // because both the slider and applyView drive it.
+  const gexFmtTrading = new Intl.DateTimeFormat('en-CA', {
+    timeZone: '{{tradingTZ}}',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  });
+  function syncPicker(ts) {
+    const atInput = $id('gex-at');
+    if (!atInput) return;
+    const p = {};
+    gexFmtTrading.formatToParts(new Date(ts * 1000)).forEach((x) => { p[x.type] = x.value; });
+    atInput.value = p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
+  }
   let gexChart = null, gexCumChart = null;
 
   // Cumulative net GEX: a running sum across strikes, low to high. Its final
@@ -540,18 +558,13 @@
         '<p class="muted" style="margin: 0;">No AI read for this snapshot yet.</p>';
       $id('gx-analysis-when').textContent = v.asOfET;
     }
-    // Several slider positions can resolve to ONE snapshot (a holiday, or
-    // wherever the engine has no data), which makes an unchanged view and an
-    // unchanged AI read look stuck. Name the snapshot actually on screen when
-    // it is not from the slot's own minute - the usual few-seconds offset
-    // between a slot and its snapshot is not worth annotating.
+    // The label states what is actually on screen: the snapshot's own time.
+    // The slot that was dragged to is an input, not a result - showing both
+    // was noise, and it changed length depending on whether they agreed.
+    const snapAt = new Date(v.asOfParam);
     const slotLabel = $id('gx-scrub-when');
-    if (slotLabel && slotLabel.dataset.slot) {
-      const snapMin = Math.floor(new Date(v.asOfParam).getTime() / 60000);
-      const slotMin = Math.floor(Number(slotLabel.dataset.slotTs) / 60);
-      slotLabel.textContent = slotLabel.dataset.slot +
-        (snapMin !== slotMin ? ' → ' + gexShortET(new Date(v.asOfParam)) : '');
-    }
+    if (slotLabel) slotLabel.textContent = gexShortET(snapAt);
+    syncPicker(snapAt.getTime() / 1000);
 
     Object.assign(gexData, v.chart);
     gexLadderData = v.ladder;
@@ -584,34 +597,10 @@
     const cache = new Map();
     if (pos >= 0 && gexInit && gexInit.chart) cache.set(grid[pos], gexInit);
 
-    const fmtET = new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/New_York',
-      month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-    });
-    const label = (ts) => fmtET.format(new Date(ts * 1000)) + ' ET';
-
-    // The "as of" picker is parsed server-side in the TRADING timezone, so
-    // keeping it in step with the slider means formatting each slot in that
-    // zone - not ET (which the slider label uses) and not the browser's.
-    const atInput = $id('gex-at');
-    const fmtTrading = new Intl.DateTimeFormat('en-CA', {
-      timeZone: '{{tradingTZ}}',
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    });
-    function syncPicker(ts) {
-      if (!atInput) return;
-      const p = {};
-      fmtTrading.formatToParts(new Date(ts * 1000)).forEach((x) => { p[x.type] = x.value; });
-      atInput.value = p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
-    }
-
-    // dataset.slot keeps the raw slot label so applyView can append the
-    // snapshot actually resolved when the two differ.
+    // Immediate feedback while dragging; applyView corrects both to the
+    // snapshot that the slot actually resolved to once the fetch lands.
     function setSlot(ts) {
-      when.dataset.slot = label(ts);
-      when.dataset.slotTs = String(ts);
-      when.textContent = when.dataset.slot;
+      when.textContent = gexShortET(new Date(ts * 1000));
       syncPicker(ts);
     }
     if (pos >= 0) setSlot(grid[pos]);
@@ -633,7 +622,7 @@
           inflight = false;
           if (wanted !== ts) { request(wanted); return; }
           const v = cache.get(ts);
-          if (v && v.empty) { when.textContent = label(ts) + ' — no data'; return; }
+          if (v && v.empty) { when.textContent = 'no snapshot'; return; }
           applyView(v);
         });
     }
@@ -643,7 +632,7 @@
       setSlot(ts);
       const v = cache.get(ts);
       if (v) {
-        if (v.empty) { when.textContent = label(ts) + ' — no data'; return; }
+        if (v.empty) { when.textContent = 'no snapshot'; return; }
         applyView(v);
         return;
       }
