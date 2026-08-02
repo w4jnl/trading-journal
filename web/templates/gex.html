@@ -543,7 +543,24 @@
       month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
     });
     const label = (ts) => fmtET.format(new Date(ts * 1000)) + ' ET';
-    if (pos >= 0) when.textContent = label(grid[pos]);
+
+    // The "as of" picker is parsed server-side in the TRADING timezone, so
+    // keeping it in step with the slider means formatting each slot in that
+    // zone - not ET (which the slider label uses) and not the browser's.
+    const atInput = $id('gex-at');
+    const fmtTrading = new Intl.DateTimeFormat('en-CA', {
+      timeZone: '{{tradingTZ}}',
+      year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    });
+    function syncPicker(ts) {
+      if (!atInput) return;
+      const p = {};
+      fmtTrading.formatToParts(new Date(ts * 1000)).forEach((x) => { p[x.type] = x.value; });
+      atInput.value = p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
+    }
+
+    if (pos >= 0) { when.textContent = label(grid[pos]); syncPicker(grid[pos]); }
 
     let inflight = false;
     let wanted = 0;
@@ -570,6 +587,7 @@
       pos = +slider.value;
       const ts = grid[pos];
       when.textContent = label(ts);
+      syncPicker(ts);
       const v = cache.get(ts);
       if (v) {
         if (v.empty) { when.textContent = label(ts) + ' — no data'; return; }

@@ -135,7 +135,12 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	atParam := strings.TrimSpace(r.URL.Query().Get("at"))
 	if atParam != "" {
 		if t, err := time.ParseInLocation(gexPageMoment, atParam, tz); err == nil {
-			at, latest = t, false
+			// The picker has minute resolution, so "14:55" denotes that whole
+			// minute - query its END. Snapshots are stamped 1-3 s AFTER their
+			// grid minute (engine contract), so asking at :00 would resolve
+			// at-or-before to the PREVIOUS slot, and the picker would
+			// disagree with the scrub slider sitting on the same minute.
+			at, latest = t.Add(59*time.Second), false
 		} else {
 			atParam = ""
 		}

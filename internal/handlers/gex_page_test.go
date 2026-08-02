@@ -87,7 +87,9 @@ func TestGEXPage(t *testing.T) {
 	if calls.Load() != before+1 {
 		t.Fatalf("rewind did not hit the engine")
 	}
-	if lastAt != "2026-07-31T10:54:00Z" {
+	// The picker's minute is queried at its END, so a grid minute resolves to
+	// that minute's snapshot rather than the previous slot.
+	if lastAt != "2026-07-31T10:54:59Z" {
 		t.Errorf("engine at = %q (tz = UTC in this harness)", lastAt)
 	}
 	body = rec.Body.String()
