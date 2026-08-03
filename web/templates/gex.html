@@ -102,7 +102,7 @@
     <div class="sub" id="gx-pctl">20d percentile: P{{.View.Pctl}}</div>
   </div>
   <div class="card stat-tile">
-    <div class="label">Net GEX at spot</div>
+    <div class="label">Net GEX · total</div>
     <div class="num--lg" id="gx-netgex">{{.View.NetGex}}</div>
   </div>
   <div class="card stat-tile">
@@ -129,7 +129,7 @@
          sibling below the canvas, and a tight host lets it spill into the
          next block. -->
     <div id="gex-profile" class="chart-host" style="height: 340px;"></div>
-    <div class="card-title" style="margin-top: 8px;">Cumulative net GEX — running sum across strikes (ends at net GEX at spot)</div>
+    <div class="card-title" style="margin-top: 8px;">Cumulative net GEX — running sum across strikes (ends at the total)</div>
     <div id="gex-cumulative" class="chart-host" style="height: 208px;"></div>
   </div>
   <div class="card gex-ladder-card">
@@ -218,10 +218,11 @@
   let gexChart = null, gexCumChart = null;
 
   // Cumulative net GEX: a running sum across strikes, low to high. Its final
-  // value is the snapshot's net GEX at spot, and its minimum marks where the
-  // book stops shedding negative gamma - the same curve the engine dashboard
-  // plots under its profile. Derived here rather than fetched; the profile
-  // arrays already carry everything it needs.
+  // value is the snapshot's TOTAL net gamma (which is what the regime tile
+  // shows), and its minimum marks where the book stops shedding negative
+  // gamma - the same curve the engine dashboard plots under its profile.
+  // Derived here rather than fetched; the profile arrays already carry
+  // everything it needs.
   function gexCumulative() {
     let run = 0;
     return gexData.gex.map((v) => (run += v));

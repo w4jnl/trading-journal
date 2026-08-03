@@ -284,7 +284,7 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		Stale:  ref.Sub(s.AsOf) > gexStaleAfter,
 		Regime: s.Regime.State,
 		Pctl:   "—",
-		NetGex: gexFmtB(s.Regime.NetGexAtSpot),
+		NetGex: "—",
 		EM:     "—",
 	}
 	switch s.Regime.State {
@@ -292,6 +292,9 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		v.RegimeClass = "pnl-pos"
 	case "negative":
 		v.RegimeClass = "pnl-neg"
+	}
+	if total, ok := s.Regime.Total(); ok {
+		v.NetGex = gexFmtB(total)
 	}
 	if p := s.Regime.Percentile20D; p != nil {
 		v.Pctl = strconv.FormatFloat(*p, 'f', 0, 64)

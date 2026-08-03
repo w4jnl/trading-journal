@@ -182,6 +182,49 @@ func TestSnapshotColdBasis(t *testing.T) {
 	}
 }
 
+// net_gex_total is the current field; net_gex_at_spot is a deprecated alias
+// carrying the identical value (the old name misdescribed it - nothing is
+// evaluated at spot). Prefer the new name, fall back to the alias so a
+// pre-v0.3.1 engine still renders, and report absence honestly.
+func TestRegimeTotal(t *testing.T) {
+	cases := []struct {
+		name   string
+		regime Regime
+		want   float64
+		ok     bool
+	}{
+		{"both present (current engine)", Regime{NetGexTotal: p(45.0e9), NetGexAtSpot: p(45.0e9)}, 45.0e9, true},
+		{"alias only (older engine)", Regime{NetGexAtSpot: p(45.0e9)}, 45.0e9, true},
+		{"total only (alias retired)", Regime{NetGexTotal: p(45.0e9)}, 45.0e9, true},
+		{"genuine zero is not absence", Regime{NetGexTotal: p(0)}, 0, true},
+		{"neither", Regime{}, 0, false},
+	}
+	for _, c := range cases {
+		got, ok := c.regime.Total()
+		if got != c.want || ok != c.ok {
+			t.Errorf("%s: = %v,%v want %v,%v", c.name, got, ok, c.want, c.ok)
+		}
+	}
+
+	// And it decodes from an older engine's payload, which omits the new key.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"market":"ES","as_of":"2026-07-31T20:00:03Z","spot_index":7503.54,
+			"regime":{"state":"positive","net_gex_at_spot":44964082924.8574,"percentile_20d":null},
+			"flip":{"index":null,"futures":null},"levels":[]}`))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{BaseURL: srv.URL})
+	s, err := c.Snapshot(context.Background(), "ES", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if total, ok := s.Regime.Total(); !ok || total != 44964082924.8574 {
+		t.Errorf("pre-v0.3.1 payload = %v,%v", total, ok)
+	}
+}
+
+func p(v float64) *float64 { return &v }
+
 func TestSnapshotStatusMapping(t *testing.T) {
 	status := http.StatusNotFound
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

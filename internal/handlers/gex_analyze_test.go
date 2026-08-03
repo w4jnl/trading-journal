@@ -191,7 +191,7 @@ func TestGexAnalysisFacts(t *testing.T) {
 		SpotIndex:         7494.55,
 		SpotFutures:       f64(7523.03),
 		FuturesConversion: &gex.FuturesConversion{Ratio: 1.0038},
-		Regime:            gex.Regime{State: "positive", NetGexAtSpot: 7.4e10},
+		Regime:            gex.Regime{State: "positive", NetGexTotal: f64(7.4e10)},
 		Flip:              gex.Flip{Index: f64(7437.55), Futures: &flipFut},
 		Levels: []gex.Level{
 			{Type: "call_wall", Index: 7530, Futures: &cwFut, Gex: 1.08e10, Bucket: "all"},
@@ -208,9 +208,10 @@ func TestGexAnalysisFacts(t *testing.T) {
 	for _, want := range []string{
 		"all prices below are futures-denominated",
 		"spot: 7523.03",
-		"expected move (1 session", // the yardstick
-		"x the expected move",      // distances expressed in EM multiples
-		"spot is ABOVE the flip",   // which side of the regime line
+		"total net gamma across the whole book", // named for what it is, not "at spot"
+		"expected move (1 session",              // the yardstick
+		"x the expected move",                   // distances expressed in EM multiples
+		"spot is ABOVE the flip",                // which side of the regime line
 		"long-gamma pocket (flip to call wall)",
 		"largest positive node: 7558.61 at +10.8B - this IS the call wall", // futures terms + named, so one level never reads as two
 		"NO positive-gamma shelf", // the air below the flip

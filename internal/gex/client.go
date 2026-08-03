@@ -96,11 +96,31 @@ type FuturesConversion struct {
 	PairedAt time.Time `json:"paired_at"`
 }
 
-// Regime is the net-GEX state at spot.
+// Regime is the book's net-GEX state.
 type Regime struct {
-	State         string   `json:"state"`
-	NetGexAtSpot  float64  `json:"net_gex_at_spot"`
+	State string `json:"state"`
+	// NetGexTotal is the whole-book net gamma - the sum across every strike,
+	// which is why the profile's running total ends exactly there.
+	// NetGexAtSpot is the engine's DEPRECATED alias carrying the identical
+	// value; the old name misdescribed it (nothing is evaluated at spot). It
+	// is still decoded so a pre-v0.3.1 engine keeps rendering. Both are
+	// pointers so "field absent" is distinguishable from a genuine zero.
+	NetGexTotal   *float64 `json:"net_gex_total"`
+	NetGexAtSpot  *float64 `json:"net_gex_at_spot"`
 	Percentile20D *float64 `json:"percentile_20d"`
+}
+
+// Total returns the whole-book net gamma, preferring the current field name
+// and falling back to the deprecated alias. ok is false only when the engine
+// sent neither.
+func (r Regime) Total() (v float64, ok bool) {
+	switch {
+	case r.NetGexTotal != nil:
+		return *r.NetGexTotal, true
+	case r.NetGexAtSpot != nil:
+		return *r.NetGexAtSpot, true
+	}
+	return 0, false
 }
 
 // Flip is the gamma zero-crossing level, in index and futures terms.
