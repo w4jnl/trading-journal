@@ -9,6 +9,7 @@
 {{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
 {{if eq .Flash "created"}}<div class="flash created">Account created.</div>{{end}}
 {{if eq .Flash "createfail"}}<div class="flash error">Could not create account: {{.FlashErr}}</div>{{end}}
+{{if .MWFills}}<div class="flash created">Imported <span class="num">{{.MWFills}}</span> captured MotiveWave email fill{{if ne .MWFills 1}}s{{end}} from the archive — no CSV export needed.</div>{{end}}
 {{if eq .Flash "reassignsame"}}<div class="flash error">Source and target are the same account.</div>{{end}}
 {{if .MovedCount}}<div class="flash moved">Moved <span class="num">{{.MovedCount}}</span> trades.</div>{{end}}
 {{if .DeletedName}}<div class="flash deleted">Deleted account <strong>{{.DeletedName}}</strong> and all of its trades, executions, and journal entries.</div>{{end}}
@@ -80,11 +81,19 @@
         Set <em>acct id in emails</em> on the owning account (Edit mode below), or import that account's CSV export.
       {{else if eq .Status "ambiguous"}}{{.Count}} fill(s): this id matches accounts of several users — cannot attribute.
       {{else}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: id now resolves to <strong>{{.OwnerName}}</strong>,
-        but these orders were never imported. Import that account's CSV covering the period.
+        but these orders were never imported.
       {{end}}
     </li>
     {{end}}
   </ul>
+  {{if .CanRetryEmailFills}}
+  {{/* The captures are already on disk, so recovering them needs no CSV -
+       one pass re-offers every ref that resolves today. */}}
+  <form method="post" action="/accounts/email-fills/retry" style="margin-top: 8px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button type="submit" class="btn btn--sm">Import them now</button>
+  </form>
+  {{end}}
 </div>
 {{end}}
 

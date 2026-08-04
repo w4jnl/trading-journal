@@ -518,6 +518,9 @@ func run() error {
 	mux.HandleFunc("GET /reconcile/copy", h.CopyReconcilePage)
 	mux.HandleFunc("POST /accounts/save", h.AccountsBulkSave)
 	mux.HandleFunc("POST /accounts/new", h.AccountsCreate)
+	// Admin-only: the alert card's catch-up for captured email fills whose
+	// account exists but whose orders were never booked.
+	mux.Handle("POST /accounts/email-fills/retry", auth.RequireAdmin(http.HandlerFunc(h.AccountsRetryEmailFills)))
 	mux.HandleFunc("POST /accounts/recompute", h.AccountsRecomputeAll)
 	mux.HandleFunc("POST /accounts/{id}/reassign", h.AccountsReassign)
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)

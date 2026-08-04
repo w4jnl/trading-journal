@@ -49,11 +49,19 @@ func UnprocessedFills(archiveDir string) ([]UnprocessedFill, error) {
 	if err != nil {
 		return nil, err
 	}
-	flagged := map[string]string{} // hash -> action
+	// LAST outcome per hash wins: a retry appends its new result, so a
+	// capture that has since been ingested must stop being flagged.
+	last := map[string]string{}
 	for _, line := range strings.Split(string(raw), "\n") {
 		fields := strings.Fields(line)
-		if len(fields) >= 2 && len(fields[0]) == 12 && unattributedActions[fields[1]] {
-			flagged[fields[0]] = fields[1]
+		if len(fields) >= 2 && len(fields[0]) == 12 {
+			last[fields[0]] = fields[1]
+		}
+	}
+	flagged := map[string]string{} // hash -> action
+	for hash, action := range last {
+		if unattributedActions[action] {
+			flagged[hash] = action
 		}
 	}
 	if len(flagged) == 0 {

@@ -82,6 +82,65 @@ type emailFillAlert struct {
 	LastSeen  time.Time
 }
 
+// retryEmailFillsFor re-ingests archived MotiveWave email captures whose
+// account ref has just become resolvable - a manually created account, or an
+// email alias pointed at an existing one. Those captures were skipped when
+// they arrived because nothing owned the ref, and the normal replay never
+// revisits a terminal outcome, so without this the operator would have to
+// export and import a CSV covering the period purely to recover fills the
+// app already holds.
+//
+// Best-effort by design: no MW archive, no importer, or a failing pass
+// returns 0 and leaves the alert in place rather than failing the account
+// save the user actually asked for.
+func (h *Handlers) retryEmailFillsFor(ctx context.Context, refs ...string) int {
+	if h.MWEmailArchiveDir == "" || h.ImportSvc == nil {
+		return 0
+	}
+	set := map[string]bool{}
+	for _, r := range refs {
+		if r = strings.TrimSpace(r); r != "" {
+			set[r] = true
+		}
+	}
+	if len(set) == 0 {
+		return 0
+	}
+	res, err := mwmail.RetryUnattributed(ctx, h.MWEmailArchiveDir, mwmail.ImporterIngest(h.ImportSvc), set)
+	if err != nil {
+		h.logger().Warn("mw email retry after account change failed", "err", err)
+	}
+	if res.Attempted > 0 {
+		h.logger().Info("mw email fills retried after account change",
+			"refs", refs, "attempted", res.Attempted, "ingested", res.Ingested, "skipped", res.Skipped)
+	}
+	return res.Ingested
+}
+
+// AccountsRetryEmailFills handles POST /accounts/email-fills/retry - the
+// "Import them now" action on the admin alert card. It re-offers every
+// captured-but-unattributed fill whose ref resolves TODAY, which covers the
+// accounts that already existed when the emails were skipped (a ref created
+// by a CSV import, or an alias set before this feature shipped). Creating an
+// account or setting an alias retries on its own; this is the catch-up for
+// everything already in that state.
+func (h *Handlers) AccountsRetryEmailFills(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	var refs []string
+	for _, a := range h.emailFillAlerts(ctx) {
+		// Only refs that resolve now can be booked; unknown/ambiguous ones
+		// need the operator to act first.
+		if a.Status == "unimported" {
+			refs = append(refs, a.Ref)
+		}
+	}
+	dest := "/accounts?flash=saved"
+	if n := h.retryEmailFillsFor(ctx, refs...); n > 0 {
+		dest = "/accounts?mwfills=" + strconv.Itoa(n)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
 // emailFillAlerts recomputes the alert list from the capture archive's replay
 // journal, filtered against CURRENT data - entries that resolve and whose
 // orders are imported disappear on their own. Empty when the email listener
@@ -210,29 +269,44 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		flash = ""
 	}
+	// Count of captured email fills booked by the save/create that redirected
+	// here (see retryEmailFillsFor) - 0 means there were none to recover.
+	mwFills, _ := strconv.Atoi(r.URL.Query().Get("mwfills"))
+
 	// Unattributable email-fill warnings are operator material: the email
 	// names no journal user, so only admins see the card.
 	var emailAlerts []emailFillAlert
+	canRetry := false
 	if auth.MustUser(ctx).IsAdmin {
 		emailAlerts = h.emailFillAlerts(ctx)
+		for _, a := range emailAlerts {
+			// Only a ref that resolves today can be booked from the archive;
+			// unknown/ambiguous ones need the operator to act first.
+			if a.Status == "unimported" {
+				canRetry = true
+				break
+			}
+		}
 	}
 	h.renderPage(w, r, "accounts.html", map[string]any{
-		"NavActive":      "accounts",
-		"BackHref":       validBackHref(r),
-		"Accounts":       accounts,
-		"EmailAlerts":    emailAlerts,
-		"TopstepxSync":   h.TopstepxSync != nil,
-		"FirmOptions":    []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
-		"TypeOptions":    accountTypeOptions(),
-		"Flash":          flash,
-		"FlashErr":       flashErr,
-		"MovedCount":     movedCount,
-		"DeletedName":    deletedName,
-		"RecomputedOK":   recomputedOK,
-		"RecomputedFail": recomputedFail,
-		"Balances":       balances,
-		"Today":          time.Now().In(h.localTZ()).Format("2006-01-02"),
-		"ClonedID":       clonedID,
+		"NavActive":          "accounts",
+		"BackHref":           validBackHref(r),
+		"Accounts":           accounts,
+		"EmailAlerts":        emailAlerts,
+		"CanRetryEmailFills": canRetry && h.MWEmailArchiveDir != "" && h.ImportSvc != nil,
+		"TopstepxSync":       h.TopstepxSync != nil,
+		"FirmOptions":        []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
+		"TypeOptions":        accountTypeOptions(),
+		"Flash":              flash,
+		"FlashErr":           flashErr,
+		"MWFills":            mwFills,
+		"MovedCount":         movedCount,
+		"DeletedName":        deletedName,
+		"RecomputedOK":       recomputedOK,
+		"RecomputedFail":     recomputedFail,
+		"Balances":           balances,
+		"Today":              time.Now().In(h.localTZ()).Format("2006-01-02"),
+		"ClonedID":           clonedID,
 	})
 }
 
@@ -310,6 +384,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	firmChanged := map[int64]bool{}
+	var aliasRefs []string
 	for _, acc := range allAccounts {
 		ri, present := byID[acc.ID]
 		if !present {
@@ -334,6 +409,10 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 		if acc.Firm != nil {
 			prevFirm = *acc.Firm
 		}
+		prevAlias := ""
+		if acc.EmailRef != nil {
+			prevAlias = *acc.EmailRef
+		}
 
 		if _, err := h.Queries.UpdateAccount(ctx, models.UpdateAccountParams{
 			Name:       ri.Name,
@@ -352,6 +431,12 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 		if prevFirm != ri.Firm {
 			firmChanged[acc.ID] = true
 		}
+		// A newly pointed email alias is the other way a stranded capture
+		// becomes attributable (the AMP/CQG case: emails carry a different id
+		// than the CSV). Retry that ref, and the account's own, once saved.
+		if ri.EmailRef != "" && ri.EmailRef != prevAlias {
+			aliasRefs = append(aliasRefs, ri.EmailRef, acc.AccountRef)
+		}
 	}
 
 	for id := range firmChanged {
@@ -361,7 +446,11 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	http.Redirect(w, r, "/accounts?flash=saved", http.StatusSeeOther)
+	dest := "/accounts?flash=saved"
+	if n := h.retryEmailFillsFor(ctx, aliasRefs...); n > 0 {
+		dest += "&mwfills=" + strconv.Itoa(n)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // AccountsCreate handles POST /accounts/new — a small manual-create form
@@ -428,7 +517,13 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
 		return
 	}
-	http.Redirect(w, r, "/accounts?flash=created", http.StatusSeeOther)
+	// The new account may be exactly what a pile of captured-but-unattributed
+	// email fills were waiting for; book them now instead of asking for a CSV.
+	dest := "/accounts?flash=created"
+	if n := h.retryEmailFillsFor(ctx, ref); n > 0 {
+		dest += "&mwfills=" + strconv.Itoa(n)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
 // AccountsClone handles POST /accounts/{id}/clone — creates a new account
