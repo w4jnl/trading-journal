@@ -128,16 +128,31 @@ func (a *archive) isDone(hash string) bool {
 	return a.done[hash]
 }
 
-// markDone journals a terminal ingest outcome. Append-after-commit ordering:
-// a crash between the ingest transaction and this write costs exactly one
-// idempotent re-attempt on the next boot. Journal write failures are
-// returned for logging but do not undo the ingest.
+// markDone journals a terminal ingest outcome ONCE. Append-after-commit
+// ordering: a crash between the ingest transaction and this write costs
+// exactly one idempotent re-attempt on the next boot. Journal write failures
+// are returned for logging but do not undo the ingest.
 func (a *archive) markDone(hash, action string) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if a.done[hash] {
 		return nil
 	}
+	return a.appendLocked(hash, action)
+}
+
+// journalOutcome appends an outcome unconditionally. markDone is the
+// once-only path used by normal processing; a deliberate retry
+// (RetryUnattributed) uses this to record its NEW result over an earlier
+// skip - the last line for a hash wins, which is what clears the alert.
+func (a *archive) journalOutcome(hash, action string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.appendLocked(hash, action)
+}
+
+// appendLocked writes one journal line; callers hold a.mu.
+func (a *archive) appendLocked(hash, action string) error {
 	a.done[hash] = true
 	f, err := os.OpenFile(filepath.Join(a.dir, replayJournalName),
 		os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
