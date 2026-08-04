@@ -260,6 +260,12 @@
     const dpr = window.devicePixelRatio || 1;
     ctx.save();
     ctx.font = (11 * dpr) + 'px system-ui, sans-serif';
+    // Set alignment explicitly: uPlot assigns ctx.textAlign while drawing its
+    // own axis labels and leaves it set, so inheriting it made fillText treat
+    // the computed LEFT edge as a right edge - every label landed a full
+    // width left of the line it belongs to.
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
     // Lines first; labels are collected and placed afterwards so they can be
     // spaced against one another.
     const labels = [];
