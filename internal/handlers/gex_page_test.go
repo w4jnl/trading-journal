@@ -58,13 +58,13 @@ func TestGEXPage(t *testing.T) {
 	}
 	body := rec.Body.String()
 	for _, want := range []string{
-		"positive",      // regime tile
-		"&#43;74.5B",    // net gex tile (html/template escapes the plus)
-		"7465.79",       // flip futures
-		"Call wall",     // levels table
-		`const gexData`, // chart blob
-		`"strikes":[7300,7530]`,
-		"ET", // as-of label
+		"positive",                    // regime tile
+		"&#43;74.5B",                  // net gex tile (html/template escapes the plus)
+		"7465.79",                     // flip futures
+		"Call wall",                   // levels table
+		`const gexData`,               // chart blob
+		`"strikes":[7327.74,7558.614`, // futures-scaled strike axis (index x 1.0038)
+		"ET",                          // as-of label
 		// Engine v0.5.0 surface (update 002):
 		"1h -9.2B",                    // net GEX change sub-line on the tile
 		"Gamma wall",                  // 0DTE wall row label
@@ -178,10 +178,11 @@ func TestGEXPageScrubSlider(t *testing.T) {
 
 // Denominations must never be ambiguous on the page: the flip is shown in
 // BOTH index and futures terms, every spot-relative distance is computed
-// futures-vs-futures, and the profile chart's reference lines stay in index
-// terms (it plots index strikes). A reviewer reading one unlabeled flip
-// number next to an index-led spot tile previously mistook this for a unit
-// bug - the numbers were right, the labeling was not.
+// futures-vs-futures, and the profile chart is denominated like the ladder
+// (futures when the basis is warm) so the two price axes read as one. A
+// reviewer reading one unlabeled flip number next to an index-led spot tile
+// previously mistook this for a unit bug - the numbers were right, the
+// labeling was not.
 func TestGEXPageDenominations(t *testing.T) {
 	db := gexTestDB(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -197,7 +198,7 @@ func TestGEXPageDenominations(t *testing.T) {
 	for _, want := range []string{
 		"Spot · index",         // tile states its own denomination
 		"Gamma flip · futures", // ...and so does the flip
-		"index 7437.55",        // flip's index value, the one the chart plots
+		"index 7437.55",        // flip's index value (tile sub-line)
 		"7465.79",              // flip's futures value (tile + ladder row)
 		"Gamma flip</td>",      // flip listed in the level ladder
 	} {
@@ -215,12 +216,24 @@ func TestGEXPageDenominations(t *testing.T) {
 		t.Errorf("flip distance mixed futures spot with index flip")
 	}
 
-	// The chart plots index strikes, so its reference lines must be index
-	// values - the flip line at 7437.55, never the futures 7465.79.
+	// The chart is denominated like the ladder - futures when the basis is
+	// warm - so its two price axes never disagree with the panel beside it.
+	// Reference lines use the engine's PUBLISHED futures values (flip
+	// 7465.788..., not index 7437.55 x ratio = 7465.82), and the strike axis
+	// is index x the snapshot's stored ratio (7300 x 1.0038 = 7327.74).
 	i := strings.Index(body, "const gexInit")
 	blob := body[i : i+strings.Index(body[i:], "\n")]
-	if !strings.Contains(blob, `"flip":7437.55`) || !strings.Contains(blob, `"spot":7494.55`) {
-		t.Errorf("chart reference lines are not index-denominated: %s", blob)
+	for _, want := range []string{
+		`"denom":"futures"`,
+		`"flip":7465.788539891167`, // published futures value, verbatim
+		`"strikes":[7327.74,`,      // scaled strike axis
+	} {
+		if !strings.Contains(blob, want) {
+			t.Errorf("chart blob missing %q: %s", want, blob)
+		}
+	}
+	if strings.Contains(blob, `"flip":7437.55`) {
+		t.Errorf("chart flip still index-denominated")
 	}
 }
 

@@ -125,7 +125,7 @@
 
 <div class="gex-main mb-16">
   <div class="card">
-    <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span>
+    <div class="card-title">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span>
       <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">drag-select zooms all views · dblclick resets</span>
     </div>
     <!-- Hosts are taller than their charts: uPlot renders its legend as a
@@ -576,18 +576,19 @@
   }
 
   // The ladder's zoom window drives the charts' x-range, so all three views
-  // focus on the same price band. The charts plot INDEX strikes while the
-  // ladder may be futures-denominated; lad.spot IS the engine's conversion of
-  // the chart's index spot, so their ratio recovers the exact factor without
-  // any extra server surface. Unzoomed, the charts get their full data range
-  // back (uPlot's own auto range is exactly the data extremes).
+  // focus on the same price band. Charts and ladder are built in the SAME
+  // denomination server-side, so the spot ratio below is exactly 1 - it is
+  // kept as a factor (rather than assumed away) so a corner case where the
+  // two ever diverge converts correctly instead of silently misaligning.
+  // Unzoomed, the charts get their full data range back (uPlot's own auto
+  // range is exactly the data extremes).
   function gexSyncChartsToLadder() {
     const s = (gexData && gexData.strikes) || [];
     if (!gexChart || !gexCumChart || s.length < 2) return;
     let min = s[0], max = s[s.length - 1];
     const z = gexLadderZoom, lad = gexLadderData;
     if (z && lad && lad.spot && gexData.spot) {
-      const f = lad.denom === 'futures' ? gexData.spot / lad.spot : 1;
+      const f = gexData.spot / lad.spot;
       min = z.lo * f; max = z.hi * f;
     }
     if (!(max > min)) return;
@@ -610,7 +611,7 @@
     if (sc.min <= s[0] + 1e-9 && sc.max >= s[s.length - 1] - 1e-9) {
       gexLadderZoom = null; // chart reset to full range = ladder auto fit
     } else if (lad && lad.spot && gexData.spot) {
-      const g = lad.denom === 'futures' ? lad.spot / gexData.spot : 1;
+      const g = lad.spot / gexData.spot; // same denomination -> exactly 1; kept for safety
       gexLadderZoom = { lo: sc.min * g, hi: sc.max * g };
     } else {
       return;
@@ -733,6 +734,7 @@
     $id('gx-flipsub').textContent = v.flipSub || '';
     $id('gx-em').textContent = v.em;
     $id('gx-chart-asof').textContent = v.asOfET + (v.stale ? ' (prior session close)' : '');
+    $id('gx-chart-denom').textContent = (v.chart && v.chart.denom) || '';
     $id('gx-conv').textContent = v.convLine + ' · snapshot ' + v.asOfET;
 
     const tb = $id('gx-levels');

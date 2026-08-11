@@ -46,8 +46,11 @@ type gexPageLevel struct {
 	Dist    string `json:"dist"` // signed points from spot (futures terms)
 }
 
-// gexChart is the profile chart's data blob (index-denominated).
+// gexChart is the profile chart's data blob. Denominated like the ladder:
+// futures when the basis is warm, index when cold - Denom names which, so
+// the vertical and horizontal price axes always read as one.
 type gexChart struct {
+	Denom   string    `json:"denom"`
 	Strikes []float64 `json:"strikes"`
 	Gex     []float64 `json:"gex"`
 	Spot    float64   `json:"spot"`
@@ -417,14 +420,7 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		v.Levels = append(v.Levels, row)
 	}
 
-	v.Chart = gexChart{
-		Strikes: s.Profile.StrikesIndex,
-		Gex:     s.Profile.NetGex,
-		Spot:    s.SpotIndex,
-		Flip:    s.Flip.Index,
-		CW:      gexWallIndex(s, "call_wall"),
-		PW:      gexWallIndex(s, "put_wall"),
-	}
+	v.Chart = gexBuildChart(s, spotFut)
 	v.Ladder = gexBuildLadder(s, spotFut)
 	v.HasProfile = len(s.Profile.StrikesIndex) > 1 &&
 		len(s.Profile.StrikesIndex) == len(s.Profile.NetGex)
@@ -547,11 +543,59 @@ func gexLevelName(typ string) string {
 	}
 }
 
-// gexWallIndex is the chart-side wall position (index-denominated; walls
-// always carry an index value even when the futures conversion is cold).
-func gexWallIndex(s *gex.Snapshot, typ string) *float64 {
-	if l := gexWall(s, typ); l != nil {
-		return &l.Index
+// gexBuildChart assembles the profile chart's data blob in the LADDER's
+// denomination, so the two price axes on the page never disagree: futures
+// when the basis is warm, index otherwise. Spot, flip and walls use the
+// engine's published futures values (contract: never re-derive a futures
+// price the engine publishes); the profile's strike axis has no published
+// futures form, so it is scaled by the snapshot's own stored conversion
+// ratio - the factor the engine applied to those very levels, which keeps
+// each wall line exactly on its bar. The same scaling is the fallback for a
+// level whose futures field is unexpectedly null while the ratio is warm.
+func gexBuildChart(s *gex.Snapshot, spotFut *float64) gexChart {
+	ch := gexChart{
+		Denom:   "index",
+		Strikes: s.Profile.StrikesIndex,
+		Gex:     s.Profile.NetGex,
+		Spot:    s.SpotIndex,
+		Flip:    s.Flip.Index,
 	}
-	return nil
+	cw, pw := gexWall(s, "call_wall"), gexWall(s, "put_wall")
+	if cw != nil {
+		ch.CW = &cw.Index
+	}
+	if pw != nil {
+		ch.PW = &pw.Index
+	}
+	fc := s.FuturesConversion
+	if spotFut == nil || fc == nil || fc.Ratio <= 0 {
+		return ch
+	}
+
+	ch.Denom = "futures"
+	ch.Spot = *spotFut
+	strikes := make([]float64, len(s.Profile.StrikesIndex))
+	for i, v := range s.Profile.StrikesIndex {
+		strikes[i] = v * fc.Ratio
+	}
+	ch.Strikes = strikes
+	scaled := func(published *float64, index float64) *float64 {
+		if published != nil {
+			return published
+		}
+		f := index * fc.Ratio
+		return &f
+	}
+	if s.Flip.Index != nil {
+		ch.Flip = scaled(s.Flip.Futures, *s.Flip.Index)
+	} else {
+		ch.Flip = s.Flip.Futures
+	}
+	if cw != nil {
+		ch.CW = scaled(cw.Futures, cw.Index)
+	}
+	if pw != nil {
+		ch.PW = scaled(pw.Futures, pw.Index)
+	}
+	return ch
 }
