@@ -134,7 +134,9 @@
     <div id="gex-cumulative" class="chart-host" style="height: 208px;"></div>
   </div>
   <div class="card gex-ladder-card">
-    <div class="card-title">Regime ladder · <span id="gx-ladder-denom">{{.View.Ladder.Denom}}</span></div>
+    <div class="card-title">Regime ladder · <span id="gx-ladder-denom">{{.View.Ladder.Denom}}</span>
+      <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · dblclick resets</span>
+    </div>
     <div id="gx-ladder"></div>
   </div>
 </div>
@@ -186,6 +188,12 @@
   const gexInit = {{.ViewJSON}};
   const gexData = gexInit.chart;
   let gexLadderData = gexInit.ladder;
+  // Wheel-zoom window over the ladder's price axis: {lo, hi} in the ladder's
+  // denomination, or null for the auto fit across every level. Fit is
+  // remembered per render so zooming out lands exactly back on it.
+  let gexLadderZoom = null;
+  let gexLadderFit = null;
+  const GEX_LADDER_PAD = 16; // top/bottom padding shared by render + cursor math
   // Which snapshot is on screen right now. The AI read is pinned to THIS
   // moment, so scrubbing must keep it current.
   let gexAsOfParam = gexInit.asOfParam;
@@ -408,7 +416,11 @@
     const host = document.getElementById('gx-ladder');
     if (!host) return;
     const lad = gexLadderData;
-    if (!lad || !lad.spot) { host.innerHTML = '<div class="muted" style="padding:16px 0;">No levels in this snapshot.</div>'; return; }
+    if (!lad || !lad.spot) {
+      gexLadderFit = null;
+      host.innerHTML = '<div class="muted" style="padding:16px 0;">No levels in this snapshot.</div>';
+      return;
+    }
 
     const c = uplotHelpers.colors();
     const rgba = uplotHelpers.rgba;
@@ -421,7 +433,7 @@
     // shrinks the labels and leaves dead space under the panel).
     const W = Math.max(240, host.clientWidth || 288);
     const H = Math.max(320, host.clientHeight || 470);
-    const bandW = Math.round(W * 0.40), padT = 16, padB = 16;
+    const bandW = Math.round(W * 0.40), padT = GEX_LADDER_PAD, padB = GEX_LADDER_PAD;
     // Engine v0.5.0 adds the 0DTE book's walls/flip (dashed, thin), the
     // ranked gamma magnets G1-G3 (short ticks) and the prior session's EM
     // band (dotted). All null on older snapshots, so the ladder degrades to
@@ -447,13 +459,24 @@
     const rows = defs.filter((r) => r.v != null).sort((a, b) => b.v - a.v);
 
     const vals = rows.map((r) => r.v);
-    let hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
-    const pad = (hi - lo) * 0.07 || 1;
-    hi += pad; lo -= pad;
+    let fitHi = Math.max.apply(null, vals), fitLo = Math.min.apply(null, vals);
+    const pad = (fitHi - fitLo) * 0.07 || 1;
+    fitHi += pad; fitLo -= pad;
+    gexLadderFit = { lo: fitLo, hi: fitHi };
+    // A wheel-zoomed window overrides the auto fit. Levels outside it are
+    // culled from the band but pinned as edge markers, so the structure that
+    // was zoomed away stays acknowledged (a -195 pt put wall must not just
+    // vanish).
+    const z = gexLadderZoom;
+    const hi = z ? z.hi : fitHi, lo = z ? z.lo : fitLo;
     const y = (v) => padT + (hi - v) / (hi - lo) * (H - padT - padB);
+    const yClamp = (v) => Math.max(padT, Math.min(H - padB, y(v)));
+    const shown = z ? rows.filter((r) => r.v <= hi && r.v >= lo) : rows;
+    const above = z ? rows.filter((r) => r.v > hi) : [];
+    const below = z ? rows.filter((r) => r.v < lo) : [];
 
     const parts = [];
-    const lineYs = rows.map((r) => y(r.v));
+    const lineYs = shown.map((r) => y(r.v));
 
     // Zone captions go in the zone's largest line-free gap, so they never sit
     // under a level line - with spot, both EM edges and a wall inside the
@@ -474,9 +497,10 @@
     };
 
     // Gamma zones: split at the flip when there is one, otherwise tint the
-    // whole band by the reported regime.
+    // whole band by the reported regime. Clamped to the window: a flip zoomed
+    // off-screen still tints the whole visible band with the correct side.
     if (lad.flip != null) {
-      const yf = y(lad.flip);
+      const yf = yClamp(lad.flip);
       parts.push(`<rect x="0" y="${padT}" width="${bandW}" height="${yf - padT}" fill="${rgba(c.pos, 0.13)}"/>`);
       parts.push(`<rect x="0" y="${yf}" width="${bandW}" height="${H - padB - yf}" fill="${rgba(c.neg, 0.13)}"/>`);
       caption(padT, yf, 'Long gamma', 'chop, mean reversion', c.pos);
@@ -486,9 +510,13 @@
       parts.push(`<rect x="0" y="${padT}" width="${bandW}" height="${H - padT - padB}" fill="${rgba(tint, 0.13)}"/>`);
       parts.push(`<text class="zone" x="${bandW / 2}" y="${H / 2}" text-anchor="middle" fill="${tint}">${lad.regime || 'gamma'} — no flip</text>`);
     }
-    // Expected-move band edges, drawn as a hairline box around spot.
-    if (lad.emHigh != null && lad.emLow != null) {
-      parts.push(`<rect x="1" y="${y(lad.emHigh)}" width="${bandW - 2}" height="${y(lad.emLow) - y(lad.emHigh)}" fill="none" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>`);
+    // Expected-move band edges, drawn as a hairline box around spot (clamped;
+    // dropped when the whole band is outside the window).
+    if (lad.emHigh != null && lad.emLow != null && lad.emHigh >= lo && lad.emLow <= hi) {
+      const yTop = yClamp(lad.emHigh), yBot = yClamp(lad.emLow);
+      if (yBot - yTop > 0) {
+        parts.push(`<rect x="1" y="${yTop}" width="${bandW - 2}" height="${yBot - yTop}" fill="none" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>`);
+      }
     }
 
     // Level lines + labels. Each label is two lines tall, so labels for
@@ -497,7 +525,27 @@
     // label tied to its true position on the band.
     const labelH = 24;
     const placed = [];
-    rows.forEach((r) => {
+    // Culled-level edge markers first, so the push-down keeps real labels
+    // clear of them: one line per level pinned at the window edge it left
+    // through. Both stacks keep the ladder's axis order - price decreases
+    // downward - so the marker nearest its edge sits nearest the window.
+    const edgeLabel = (r) => {
+      if (r.label === 'spot') return 'spot';
+      const d = r.v - lad.spot;
+      return `${r.label} ${d >= 0 ? '+' : ''}${d.toFixed(1)}`;
+    };
+    above.forEach((r, i) => {
+      const ey = padT + 10 + i * 12;
+      parts.push(`<text x="${bandW + 11}" y="${ey}" fill="${r.color}">▲ ${edgeLabel(r)}</text>`);
+      placed.push(ey);
+    });
+    // (Bottom markers are not fed into the push-down: it only moves labels
+    // DOWN, so a reservation here would push a colliding label INTO them.)
+    below.slice().reverse().forEach((r, i) => {
+      const ey = H - padB - 2 - i * 12;
+      parts.push(`<text x="${bandW + 11}" y="${ey}" fill="${r.color}">▼ ${edgeLabel(r)}</text>`);
+    });
+    shown.forEach((r) => {
       const yv = y(r.v);
       let ty = yv;
       placed.forEach((p) => { if (ty - p < labelH && p - ty < labelH) ty = p + labelH; });
@@ -520,6 +568,44 @@
   buildCharts();
   renderLadder();
   uplotHelpers.onRebuild(() => { buildCharts(); renderLadder(); });
+
+  // Wheel-zoom on the ladder, anchored at the cursor's price; double-click
+  // resets to the auto fit. The listener is non-passive and scoped to the
+  // ladder host alone, so page scroll is only eaten inside the panel (the
+  // usual charting trade-off, kept to a narrow column).
+  (function () {
+    const host = document.getElementById('gx-ladder');
+    if (!host) return;
+    host.addEventListener('wheel', function (e) {
+      if (!gexLadderFit) return;
+      e.preventDefault();
+      const cur = gexLadderZoom || gexLadderFit;
+      const span = cur.hi - cur.lo;
+      const fitSpan = gexLadderFit.hi - gexLadderFit.lo;
+      // Normalize deltaMode (0 px / 1 lines / 2 pages) so trackpads and
+      // wheel mice zoom at comparable speed; exp keeps steps multiplicative.
+      let dy = e.deltaY;
+      if (e.deltaMode === 1) dy *= 33; else if (e.deltaMode === 2) dy *= 300;
+      const newSpan = Math.min(fitSpan, Math.max(fitSpan * 0.02, span * Math.exp(dy * 0.0015)));
+      if (newSpan >= fitSpan) {
+        // Zoomed all the way back out: return to auto fit exactly.
+        if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); }
+        return;
+      }
+      // The price under the cursor keeps its pixel position through the zoom.
+      const svg = host.querySelector('svg');
+      const rect = (svg || host).getBoundingClientRect();
+      const inner = Math.max(1, rect.height - 2 * GEX_LADDER_PAD);
+      const frac = Math.min(1, Math.max(0, (e.clientY - rect.top - GEX_LADDER_PAD) / inner));
+      const p = cur.hi - frac * span;
+      const lo = p - (p - cur.lo) * (newSpan / span);
+      gexLadderZoom = { lo: lo, hi: lo + newSpan };
+      renderLadder();
+    }, { passive: false });
+    host.addEventListener('dblclick', function () {
+      if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); }
+    });
+  })();
 
   // The AI read is pinned to the snapshot on screen, so the button must
   // resolve its URL at CLICK time. htmx captures hx-post when it processes an
@@ -595,6 +681,15 @@
     syncPicker(snapAt.getTime() / 1000);
 
     Object.assign(gexData, v.chart);
+    // A held zoom survives scrubbing (prices are comparable slot to slot),
+    // but resets when it stops making sense: spot drifted out of the window,
+    // or the denomination flipped (index vs futures - same digits, different
+    // axis).
+    if (gexLadderZoom && (!v.ladder || !v.ladder.spot ||
+        v.ladder.denom !== (gexLadderData && gexLadderData.denom) ||
+        v.ladder.spot < gexLadderZoom.lo || v.ladder.spot > gexLadderZoom.hi)) {
+      gexLadderZoom = null;
+    }
     gexLadderData = v.ladder;
     $id('gx-ladder-denom').textContent = (v.ladder && v.ladder.denom) || '';
     renderLadder();
