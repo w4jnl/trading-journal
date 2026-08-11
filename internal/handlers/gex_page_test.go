@@ -65,10 +65,30 @@ func TestGEXPage(t *testing.T) {
 		`const gexData`, // chart blob
 		`"strikes":[7300,7530]`,
 		"ET", // as-of label
+		// Engine v0.5.0 surface (update 002):
+		"1h -9.2B",                    // net GEX change sub-line on the tile
+		"Gamma wall",                  // 0DTE wall row label
+		"Gamma magnet 1",              // ranked magnet row label
+		"Prior EM low",                // prior-session EM band row label
+		`<td class="muted">0dte</td>`, // 0DTE bucket column
+		`"flip0":7488.35`,             // ladder: 0DTE flip
+		`"gw0":7528.5`,                // ladder: 0DTE gamma wall
+		`"em1High":7548.29`,           // ladder: prior EM band (futures denom)
+		`"magnets":[{"v":7528.5,"n":1,"gex":"+8.4B"}`, // ladder: G1 leads the magnet list
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
 		}
+	}
+	// The bucket guard end-to-end: the fixture lists the 0DTE call wall
+	// (7538.54) FIRST, but the ladder/chart wall stays the all-book one.
+	if !strings.Contains(body, `"cw":7558.58`) {
+		t.Errorf("ladder cw is not the all-book wall")
+	}
+	// The prior-day EM band's contractual gex 0.0 renders as absent, not as a
+	// measured "+0.0B".
+	if strings.Contains(body, "0.0B") {
+		t.Errorf("EM band gex rendered as a measured zero")
 	}
 
 	// Market path routes through to the engine; junk markets 404 locally.

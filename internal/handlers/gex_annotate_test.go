@@ -69,18 +69,31 @@ func gexEntryBody(t *testing.T, db *sql.DB, id int64) string {
 }
 
 // gexSnapshotJSON is a realistic ES snapshot payload with a configurable
-// as_of, shared by the annotate and page tests.
+// as_of, shared by the annotate and page tests. It carries the full engine
+// v0.5.0 level menu (update 002), with the 0DTE walls listed BEFORE the
+// all-book ones so every consumer path exercises the bucket guard.
 func gexSnapshotJSON(asOf string) string {
 	return fmt.Sprintf(`{
 		"market": "ES", "as_of": %q, "spot_index": 7494.55,
 		"futures_conversion": {"ratio": 1.0038, "source": "mw_marks", "paired_at": "2026-07-31T19:34:39Z"},
 		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null},
 		"flip": {"index": 7437.55, "futures": 7465.788539891167},
+		"flip_0dte": {"index": 7460.0, "futures": 7488.35},
 		"levels": [
+			{"type": "call_wall", "index": 7510.0, "futures": 7538.54, "gex": 2.1e9, "bucket": "0dte"},
+			{"type": "put_wall", "index": 7450.0, "futures": 7478.31, "gex": -1.2e9, "bucket": "0dte"},
+			{"type": "gamma_wall", "index": 7500.0, "futures": 7528.5, "gex": 1.5e9, "bucket": "0dte"},
 			{"type": "call_wall", "index": 7530.0, "futures": 7558.584773164092, "gex": 1.08e10, "bucket": "all"},
-			{"type": "put_wall", "index": 7300.0, "futures": 7327.711665882853, "gex": -3.9e9, "bucket": "all"}
+			{"type": "put_wall", "index": 7300.0, "futures": 7327.711665882853, "gex": -3.9e9, "bucket": "all"},
+			{"type": "gamma_1", "index": 7500.0, "futures": 7528.5, "gex": 8.4e9, "bucket": "all"},
+			{"type": "gamma_2", "index": 7450.0, "futures": 7478.31, "gex": 6.1e9, "bucket": "all"},
+			{"type": "gamma_3", "index": 7480.0, "futures": 7508.42, "gex": 4.4e9, "bucket": "all"},
+			{"type": "em_1d_min", "index": 7455.3, "futures": 7483.63, "gex": 0.0, "bucket": "all"},
+			{"type": "em_1d_max", "index": 7519.7, "futures": 7548.29, "gex": 0.0, "bucket": "all"}
 		],
 		"profile": {"strikes_index": [7300, 7530], "net_gex": [-3.9e9, 1.08e10]},
+		"net_gex_change_1h": -9.2e9,
+		"net_gex_change_1d": 1.13e10,
 		"expected_move_1d": 9.7
 	}`, asOf)
 }
@@ -256,6 +269,26 @@ func TestGexMarket(t *testing.T) {
 		if m != c.market || ok != c.ok {
 			t.Errorf("gexMarket(%q) = %q,%v want %q,%v", c.root, m, ok, c.market, c.ok)
 		}
+	}
+}
+
+func TestGexWallBucketGuard(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	s := &gex.Snapshot{Levels: []gex.Level{
+		// Engine v0.5.0 lists the 0DTE book's walls alongside the all-book
+		// ones; ordering is not contractual, so the 0dte entry comes first
+		// here to prove selection is by bucket, not position.
+		{Type: "call_wall", Bucket: "0dte", Index: 7400, Futures: f(7428)},
+		{Type: "call_wall", Bucket: "all", Index: 7530, Futures: f(7558)},
+		{Type: "put_wall", Bucket: "0dte", Index: 7350, Futures: f(7378)},
+	}}
+	if l := gexWall(s, "call_wall"); l == nil || l.Bucket != "all" || l.Index != 7530 {
+		t.Errorf("call_wall = %+v, want the all-bucket level", l)
+	}
+	// A wall present only in the 0DTE book is not the all-book wall - absent
+	// beats wrong.
+	if l := gexWall(s, "put_wall"); l != nil {
+		t.Errorf("put_wall = %+v, want nil (only 0dte present)", l)
 	}
 }
 
