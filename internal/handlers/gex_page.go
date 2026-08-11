@@ -72,6 +72,27 @@ type gexLadder struct {
 	CWGex  string   `json:"cwGex"`
 	PWGex  string   `json:"pwGex"`
 	Regime string   `json:"regime"`
+	// Engine v0.5.0 additions (update 002), all absent on older snapshots:
+	// today's expiring book's walls and flip, the ranked gamma magnets, and
+	// the prior session's close +/- its expected move (static all day).
+	Flip0   *float64    `json:"flip0"`
+	CW0     *float64    `json:"cw0"`
+	PW0     *float64    `json:"pw0"`
+	GW0     *float64    `json:"gw0"`
+	CW0Gex  string      `json:"cw0Gex"`
+	PW0Gex  string      `json:"pw0Gex"`
+	GW0Gex  string      `json:"gw0Gex"`
+	Magnets []gexMagnet `json:"magnets"`
+	EM1High *float64    `json:"em1High"`
+	EM1Low  *float64    `json:"em1Low"`
+}
+
+// gexMagnet is one ranked gamma magnet (gamma_1..gamma_3) in the ladder's
+// denomination.
+type gexMagnet struct {
+	V   float64 `json:"v"`
+	N   int     `json:"n"` // rank, 1 = largest
+	Gex string  `json:"gex"`
 }
 
 // gexView is the pre-formatted view model for one snapshot, shared verbatim
@@ -84,6 +105,7 @@ type gexView struct {
 	RegimeClass string         `json:"regimeClass"`
 	Pctl        string         `json:"pctl"`
 	NetGex      string         `json:"netGex"`
+	NetGexSub   string         `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
 	SpotIndex   string         `json:"spotIndex"`
 	SpotFutures string         `json:"spotFutures"`
 	ConvLine    string         `json:"convLine"`
@@ -296,6 +318,17 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 	if total, ok := s.Regime.Total(); ok {
 		v.NetGex = gexFmtB(total)
 	}
+	// Serve-time history: how the book moved into this moment (under ?at=
+	// these are relative to that historical moment, so scrubbing stays
+	// reproducible). Absent on markets/engines that do not publish them.
+	var chg []string
+	if d := s.NetGexChange1H; d != nil {
+		chg = append(chg, "1h "+gexFmtB(*d))
+	}
+	if d := s.NetGexChange1D; d != nil {
+		chg = append(chg, "1d "+gexFmtB(*d))
+	}
+	v.NetGexSub = strings.Join(chg, " · ")
 	if p := s.Regime.Percentile20D; p != nil {
 		v.Pctl = strconv.FormatFloat(*p, 'f', 0, 64)
 	}
@@ -337,17 +370,20 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		}
 	}
 
-	v.Levels = make([]gexPageLevel, 0, len(s.Levels)+1)
-	// The flip leads the ladder: it is a price level like the walls, and
+	v.Levels = make([]gexPageLevel, 0, len(s.Levels)+2)
+	// The flips lead the ladder: each is a price level like the walls, and
 	// listing it here is what pins its denomination - both columns present,
 	// same level-minus-spot convention as every other row. (The engine
-	// publishes no GEX for the flip; it is the zero crossing by definition.)
-	if s.Flip.Index != nil || s.Flip.Futures != nil {
-		row := gexPageLevel{Label: "Gamma flip", Bucket: "—", Index: "—", Futures: "—", Gex: "—", Dist: "—"}
-		if i := s.Flip.Index; i != nil {
+	// publishes no GEX for a flip; it is the zero crossing by definition.)
+	flipRow := func(fl gex.Flip, bucket string) {
+		if fl.Index == nil && fl.Futures == nil {
+			return
+		}
+		row := gexPageLevel{Label: "Gamma flip", Bucket: bucket, Index: "—", Futures: "—", Gex: "—", Dist: "—"}
+		if i := fl.Index; i != nil {
 			row.Index = fmt.Sprintf("%.2f", *i)
 		}
-		if f := s.Flip.Futures; f != nil {
+		if f := fl.Futures; f != nil {
 			row.Futures = fmt.Sprintf("%.2f", *f)
 			if spotFut != nil {
 				row.Dist = fmt.Sprintf("%+.2f pts", *f-*spotFut)
@@ -355,6 +391,8 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		}
 		v.Levels = append(v.Levels, row)
 	}
+	flipRow(s.Flip, "—")
+	flipRow(s.Flip0DTE, "0dte")
 	for _, l := range s.Levels {
 		row := gexPageLevel{
 			Label:   gexLevelName(l.Type),
@@ -363,6 +401,12 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 			Futures: "—",
 			Gex:     gexFmtB(l.Gex),
 			Dist:    "—",
+		}
+		if strings.HasPrefix(l.Type, "em_1d_") {
+			// The prior-day EM band carries gex 0.0 by contract - it is a
+			// static price band, not a gamma concentration; "+0.0B" would
+			// read as a measured zero.
+			row.Gex = "—"
 		}
 		if l.Futures != nil {
 			row.Futures = fmt.Sprintf("%.2f", *l.Futures)
@@ -419,8 +463,8 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 		lad.Denom, lad.Spot = "futures", *spotFut
 	}
 
-	pickWall := func(typ string) (*float64, string) {
-		l := gexWall(s, typ)
+	pick := func(typ, bucket string) (*float64, string) {
+		l := gexLevelIn(s, typ, bucket)
 		if l == nil {
 			return nil, ""
 		}
@@ -430,13 +474,27 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 		idx := l.Index
 		return &idx, gexFmtB(l.Gex)
 	}
-	lad.CW, lad.CWGex = pickWall("call_wall")
-	lad.PW, lad.PWGex = pickWall("put_wall")
+	lad.CW, lad.CWGex = pick("call_wall", "all")
+	lad.PW, lad.PWGex = pick("put_wall", "all")
+	lad.CW0, lad.CW0Gex = pick("call_wall", "0dte")
+	lad.PW0, lad.PW0Gex = pick("put_wall", "0dte")
+	lad.GW0, lad.GW0Gex = pick("gamma_wall", "0dte")
+	for i, typ := range []string{"gamma_1", "gamma_2", "gamma_3"} {
+		if v, note := pick(typ, "all"); v != nil {
+			lad.Magnets = append(lad.Magnets, gexMagnet{V: *v, N: i + 1, Gex: note})
+		}
+	}
+	// The prior-day band carries gex 0.0 by contract - the note would only
+	// say "+0", so it is dropped.
+	lad.EM1High, _ = pick("em_1d_max", "all")
+	lad.EM1Low, _ = pick("em_1d_min", "all")
 
 	if useFut {
 		lad.Flip = s.Flip.Futures
+		lad.Flip0 = s.Flip0DTE.Futures
 	} else {
 		lad.Flip = s.Flip.Index
+		lad.Flip0 = s.Flip0DTE.Index
 	}
 
 	if e := s.ExpectedMove1D; e != nil {
@@ -476,6 +534,14 @@ func gexLevelName(typ string) string {
 		return "Call wall"
 	case "put_wall":
 		return "Put wall"
+	case "gamma_wall":
+		return "Gamma wall"
+	case "gamma_1", "gamma_2", "gamma_3":
+		return "Gamma magnet " + typ[len(typ)-1:]
+	case "em_1d_min":
+		return "Prior EM low"
+	case "em_1d_max":
+		return "Prior EM high"
 	default:
 		return strings.ReplaceAll(typ, "_", " ")
 	}

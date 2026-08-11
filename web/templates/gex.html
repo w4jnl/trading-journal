@@ -104,6 +104,7 @@
   <div class="card stat-tile">
     <div class="label">Net GEX · total</div>
     <div class="num--lg" id="gx-netgex">{{.View.NetGex}}</div>
+    <div class="sub" id="gx-netgexsub">{{.View.NetGexSub}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Spot · index</div>
@@ -421,14 +422,29 @@
     const W = Math.max(240, host.clientWidth || 288);
     const H = Math.max(320, host.clientHeight || 470);
     const bandW = Math.round(W * 0.40), padT = 16, padB = 16;
-    const rows = [
-      { v: lad.cw,     label: 'call wall', color: c.pos,    note: lad.cwGex },
-      { v: lad.emHigh, label: 'EM high',   color: muted,    dash: true },
-      { v: lad.spot,   label: 'spot',      color: c.accent, bold: true },
-      { v: lad.emLow,  label: 'EM low',    color: muted,    dash: true },
-      { v: lad.flip,   label: 'gamma flip', color: flipColor, note: 'regime' },
-      { v: lad.pw,     label: 'put wall',  color: c.neg,    note: lad.pwGex },
-    ].filter((r) => r.v != null);
+    // Engine v0.5.0 adds the 0DTE book's walls/flip (dashed, thin), the
+    // ranked gamma magnets G1-G3 (short ticks) and the prior session's EM
+    // band (dotted). All null on older snapshots, so the ladder degrades to
+    // its classic six rows. Sorted by price so the label push-down cascades
+    // top to bottom regardless of which levels are present.
+    const defs = [
+      { v: lad.cw,      label: 'call wall',       color: c.pos,    note: lad.cwGex },
+      { v: lad.cw0,     label: 'call wall 0DTE',  color: c.pos,    dash: true, thin: true, note: lad.cw0Gex },
+      { v: lad.gw0,     label: 'gamma wall 0DTE', color: muted,    thin: true, note: lad.gw0Gex },
+      { v: lad.pw0,     label: 'put wall 0DTE',   color: c.neg,    dash: true, thin: true, note: lad.pw0Gex },
+      { v: lad.emHigh,  label: 'EM high',         color: muted,    dash: true },
+      { v: lad.em1High, label: 'prior EM high',   color: muted,    dotted: true, thin: true },
+      { v: lad.spot,    label: 'spot',            color: c.accent, bold: true },
+      { v: lad.em1Low,  label: 'prior EM low',    color: muted,    dotted: true, thin: true },
+      { v: lad.emLow,   label: 'EM low',          color: muted,    dash: true },
+      { v: lad.flip,    label: 'gamma flip',      color: flipColor, note: 'regime' },
+      { v: lad.flip0,   label: 'gamma flip 0DTE', color: flipColor, dash: true, thin: true },
+      { v: lad.pw,      label: 'put wall',        color: c.neg,    note: lad.pwGex },
+    ];
+    (lad.magnets || []).forEach((m) => {
+      defs.push({ v: m.v, label: 'G' + m.n, color: c.accent, thin: true, tick: true, note: m.gex });
+    });
+    const rows = defs.filter((r) => r.v != null).sort((a, b) => b.v - a.v);
 
     const vals = rows.map((r) => r.v);
     let hi = Math.max.apply(null, vals), lo = Math.min.apply(null, vals);
@@ -486,7 +502,11 @@
       let ty = yv;
       placed.forEach((p) => { if (ty - p < labelH && p - ty < labelH) ty = p + labelH; });
       placed.push(ty);
-      parts.push(`<line x1="0" y1="${yv}" x2="${bandW}" y2="${yv}" stroke="${r.color}" stroke-width="${r.bold ? 2 : 1.2}"${r.dash ? ' stroke-dasharray="4 3"' : ''}/>`);
+      // Magnets are ticks (right half of the band), not full structure lines.
+      const x0 = r.tick ? Math.round(bandW * 0.55) : 0;
+      const width = r.bold ? 2 : r.thin ? 1 : 1.2;
+      const dashAttr = r.dotted ? ' stroke-dasharray="1 3"' : r.dash ? ' stroke-dasharray="4 3"' : '';
+      parts.push(`<line x1="${x0}" y1="${yv}" x2="${bandW}" y2="${yv}" stroke="${r.color}" stroke-width="${width}"${dashAttr}/>`);
       parts.push(`<line x1="${bandW}" y1="${yv}" x2="${bandW + 8}" y2="${ty - 3}" stroke="${r.color}" stroke-width="1" opacity="0.5"/>`);
       const d = r.v - lad.spot;
       const delta = r.label === 'spot' ? '' : `  ${d >= 0 ? '+' : ''}${d.toFixed(1)} pts`;
@@ -533,6 +553,7 @@
     regime.className = 'num--lg ' + (v.regimeClass || '');
     $id('gx-pctl').textContent = '20d percentile: P' + v.pctl;
     $id('gx-netgex').textContent = v.netGex;
+    $id('gx-netgexsub').textContent = v.netGexSub || '';
     $id('gx-spot').textContent = v.spotIndex;
     $id('gx-spotfut').textContent = 'futures ' + v.spotFutures;
     $id('gx-flip').textContent = v.flipFutures;

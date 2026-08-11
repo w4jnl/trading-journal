@@ -166,9 +166,15 @@ func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tic
 // level; the bucket guard is contract-mandated (engine design doc, update
 // 002). Nil when the snapshot has no such level.
 func gexWall(s *gex.Snapshot, typ string) *gex.Level {
+	return gexLevelIn(s, typ, "all")
+}
+
+// gexLevelIn picks the snapshot's level of the given type and bucket; nil
+// when absent.
+func gexLevelIn(s *gex.Snapshot, typ, bucket string) *gex.Level {
 	for i := range s.Levels {
 		l := &s.Levels[i]
-		if l.Type == typ && l.Bucket == "all" {
+		if l.Type == typ && l.Bucket == bucket {
 			return l
 		}
 	}

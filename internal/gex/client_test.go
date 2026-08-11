@@ -24,11 +24,15 @@ const snapshotFixture = `{
   },
   "regime": { "state": "positive", "net_gex_at_spot": 74486642363.04909, "percentile_20d": null },
   "flip": { "index": 7437.554700050995, "futures": 7465.788539891167 },
+  "flip_0dte": { "index": 7460.0, "futures": 7488.35 },
   "levels": [
     { "type": "call_wall", "index": 7530.0, "futures": 7558.584773164092, "gex": 10838901323.0, "bucket": "all" },
-    { "type": "put_wall",  "index": 7300.0, "futures": 7327.711665882853, "gex": -3897046844.0, "bucket": "all" }
+    { "type": "put_wall",  "index": 7300.0, "futures": 7327.711665882853, "gex": -3897046844.0, "bucket": "all" },
+    { "type": "gamma_wall", "index": 7500.0, "futures": 7528.5, "gex": 1.5e9, "bucket": "0dte" }
   ],
   "profile": { "strikes_index": [7300.0, 7530.0], "net_gex": [-3.9e9, 1.08e10] },
+  "net_gex_change_1h": -9.2e9,
+  "net_gex_change_1d": 11.3e9,
   "expected_move_1d": 9.7
 }`
 
@@ -89,8 +93,18 @@ func TestSnapshot(t *testing.T) {
 	if s.Flip.Futures == nil || *s.Flip.Futures != 7465.788539891167 {
 		t.Errorf("flip.futures = %v", s.Flip.Futures)
 	}
-	if len(s.Levels) != 2 || s.Levels[0].Type != "call_wall" || s.Levels[0].Futures == nil {
+	if len(s.Levels) != 3 || s.Levels[0].Type != "call_wall" || s.Levels[0].Futures == nil {
 		t.Errorf("levels = %+v", s.Levels)
+	}
+	if s.Levels[2].Bucket != "0dte" {
+		t.Errorf("levels[2].bucket = %q, want 0dte decoded", s.Levels[2].Bucket)
+	}
+	if s.Flip0DTE.Index == nil || *s.Flip0DTE.Index != 7460.0 {
+		t.Errorf("flip_0dte.index = %v", s.Flip0DTE.Index)
+	}
+	if s.NetGexChange1H == nil || *s.NetGexChange1H != -9.2e9 ||
+		s.NetGexChange1D == nil || *s.NetGexChange1D != 11.3e9 {
+		t.Errorf("net_gex_change 1h/1d = %v/%v", s.NetGexChange1H, s.NetGexChange1D)
 	}
 	if s.ExpectedMove1D == nil || *s.ExpectedMove1D != 9.7 {
 		t.Errorf("expected_move_1d = %v", s.ExpectedMove1D)
@@ -122,6 +136,11 @@ func TestSnapshotNullFields(t *testing.T) {
 	}
 	if s.FuturesConversion != nil || s.Flip.Futures != nil || len(s.Levels) != 0 || s.ExpectedMove1D != nil {
 		t.Errorf("null fields not preserved: %+v", s)
+	}
+	// Pre-v0.5.0 payload: every update-002 field stays nil, never zero.
+	if s.Flip0DTE.Index != nil || s.Flip0DTE.Futures != nil ||
+		s.NetGexChange1H != nil || s.NetGexChange1D != nil {
+		t.Errorf("absent v0.5.0 fields not nil: %+v", s)
 	}
 	if s.Regime.Percentile20D == nil || *s.Regime.Percentile20D != 37.5 {
 		t.Errorf("percentile = %v", s.Regime.Percentile20D)

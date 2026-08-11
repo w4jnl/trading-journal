@@ -76,9 +76,19 @@ type Snapshot struct {
 	FuturesConversion *FuturesConversion `json:"futures_conversion"`
 	Regime            Regime             `json:"regime"`
 	Flip              Flip               `json:"flip"`
-	Levels            []Level            `json:"levels"`
-	Profile           Profile            `json:"profile"`
-	ExpectedMove1D    *float64           `json:"expected_move_1d"`
+	// Flip0DTE is today's expiring book's zero crossing (engine v0.5.0,
+	// update 002). JSON null - no crossing today, or a pre-v0.5.0 snapshot -
+	// leaves both fields nil.
+	Flip0DTE Flip    `json:"flip_0dte"`
+	Levels   []Level `json:"levels"`
+	Profile  Profile `json:"profile"`
+	// NetGexChange1H/1D compare the whole-book net GEX against the same
+	// session's grid ~1h earlier / the prior session's final snapshot. They
+	// are computed at SERVE time relative to the requested moment, so under
+	// ?at= they are reproducible history, not drift from "now".
+	NetGexChange1H *float64 `json:"net_gex_change_1h"`
+	NetGexChange1D *float64 `json:"net_gex_change_1d"`
+	ExpectedMove1D *float64 `json:"expected_move_1d"`
 }
 
 // Profile is the per-strike net-GEX curve behind the summary levels
@@ -129,7 +139,12 @@ type Flip struct {
 	Futures *float64 `json:"futures"`
 }
 
-// Level is one structural level (call_wall / put_wall).
+// Level is one structural level. Types as of engine v0.5.0: call_wall /
+// put_wall (bucket "all", and again with bucket "0dte" for today's expiring
+// book), gamma_wall (bucket "0dte"), gamma_1..gamma_3 (bucket "all", ranked
+// gamma magnets with the walls excluded), and em_1d_min / em_1d_max (prior
+// session close +/- its expected move, gex 0.0). Consumers must ignore types
+// they do not recognize and match walls on type AND bucket.
 type Level struct {
 	Type    string   `json:"type"`
 	Index   float64  `json:"index"`
