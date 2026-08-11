@@ -160,23 +160,19 @@ func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tic
 	return m
 }
 
-// gexWall picks the snapshot's wall of the given type, preferring the "all"
-// bucket. Nil when the snapshot has no such level.
+// gexWall picks the snapshot's all-book wall of the given type. Since engine
+// v0.5.0 the wall types also appear with bucket "0dte" (today's expiring
+// book), so matching on type alone would misread a 0DTE wall as the all-book
+// level; the bucket guard is contract-mandated (engine design doc, update
+// 002). Nil when the snapshot has no such level.
 func gexWall(s *gex.Snapshot, typ string) *gex.Level {
-	var fallback *gex.Level
 	for i := range s.Levels {
 		l := &s.Levels[i]
-		if l.Type != typ {
-			continue
-		}
-		if l.Bucket == "all" {
+		if l.Type == typ && l.Bucket == "all" {
 			return l
 		}
-		if fallback == nil {
-			fallback = l
-		}
 	}
-	return fallback
+	return nil
 }
 
 // gexTicks is the signed tick distance from the trade price to a level.

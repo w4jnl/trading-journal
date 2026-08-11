@@ -259,6 +259,26 @@ func TestGexMarket(t *testing.T) {
 	}
 }
 
+func TestGexWallBucketGuard(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	s := &gex.Snapshot{Levels: []gex.Level{
+		// Engine v0.5.0 lists the 0DTE book's walls alongside the all-book
+		// ones; ordering is not contractual, so the 0dte entry comes first
+		// here to prove selection is by bucket, not position.
+		{Type: "call_wall", Bucket: "0dte", Index: 7400, Futures: f(7428)},
+		{Type: "call_wall", Bucket: "all", Index: 7530, Futures: f(7558)},
+		{Type: "put_wall", Bucket: "0dte", Index: 7350, Futures: f(7378)},
+	}}
+	if l := gexWall(s, "call_wall"); l == nil || l.Bucket != "all" || l.Index != 7530 {
+		t.Errorf("call_wall = %+v, want the all-bucket level", l)
+	}
+	// A wall present only in the 0DTE book is not the all-book wall - absent
+	// beats wrong.
+	if l := gexWall(s, "put_wall"); l != nil {
+		t.Errorf("put_wall = %+v, want nil (only 0dte present)", l)
+	}
+}
+
 func TestGexTickSizeFallback(t *testing.T) {
 	db := gexTestDB(t)
 	h := &Handlers{DB: db, Queries: models.New(db)}
