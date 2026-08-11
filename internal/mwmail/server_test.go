@@ -366,16 +366,23 @@ func TestArchiveReplay(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 
+	// The sweep is complete when the JOURNAL holds all three outcomes (two
+	// fills + the test email) - that write is the sweep's last act per file.
+	// Polling the ingest count instead raced the third file's journal write:
+	// a cancel issued right after the second ingest stopped the sweep before
+	// the test email was journaled, and the assertion below flaked.
+	journal := filepath.Join(dir, replayJournalName)
+	journalEntries := func() int {
+		raw, _ := os.ReadFile(journal)
+		return len(strings.Fields(string(raw))) / 2
+	}
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		n := len(qtys)
-		mu.Unlock()
-		if n == 2 {
-			break
-		}
+	for time.Now().Before(deadline) && journalEntries() < 3 {
 		time.Sleep(20 * time.Millisecond)
 	}
+	cancel()
+	<-done
+
 	mu.Lock()
 	if len(qtys) != 2 {
 		mu.Unlock()
@@ -385,11 +392,7 @@ func TestArchiveReplay(t *testing.T) {
 		t.Errorf("replay order qtys = %v, want [1 3] (oldest first)", qtys)
 	}
 	mu.Unlock()
-	cancel()
-	<-done
 
-	// The journal must hold all three files (fills + the test email).
-	journal := filepath.Join(dir, replayJournalName)
 	raw, err := os.ReadFile(journal)
 	if err != nil {
 		t.Fatalf("replay journal: %v", err)

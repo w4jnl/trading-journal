@@ -121,9 +121,20 @@ func (s *Server) Run(ctx context.Context) error {
 	// ingest, transient DB error) still land. Safe to run every boot: replay
 	// is idempotent - already-ingested orders come back "unchanged", CSV- or
 	// manually-covered ones "skipped_*". Runs in the background so a large
-	// archive never delays SMTP availability.
+	// archive never delays SMTP availability - but Run JOINS it on exit:
+	// returning while the sweep can still touch the archive and journal let
+	// writes land after the caller tore the directory down. rcancel bounds
+	// the wait to the file in flight (the sweep checks ctx per file).
+	rctx, rcancel := context.WithCancel(ctx)
+	defer rcancel()
+	replayDone := make(chan struct{})
 	if s.Ingest != nil {
-		go s.replayArchive(ctx)
+		go func() {
+			defer close(replayDone)
+			s.replayArchive(rctx)
+		}()
+	} else {
+		close(replayDone)
 	}
 
 	select {
@@ -134,8 +145,11 @@ func (s *Server) Run(ctx context.Context) error {
 		// srv.Close already got it.
 		_ = ln.Close()
 		<-errCh // wait for Serve to return
+		<-replayDone
 		return nil
 	case err := <-errCh:
+		rcancel()
+		<-replayDone
 		if err != nil && !errors.Is(err, smtp.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			return fmt.Errorf("mwmail: serve: %w", err)
 		}
