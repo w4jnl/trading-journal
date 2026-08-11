@@ -65,6 +65,36 @@ func startServer(t *testing.T, cfg config.MWEmail) (addr string, stop func()) {
 	return "", nil
 }
 
+// TestRunReturnsOnImmediateCancel: shutdown racing startup must still win.
+// go-smtp's Close only closes listeners Serve has already registered, so the
+// old ListenAndServe-in-a-goroutine shape could Close before the bind, leave
+// the fresh listener accepting forever, and hang Run on its errCh - the
+// TestArchiveReplay CI hang (its runOnce cancels milliseconds after boot). A
+// context cancelled BEFORE Run makes that near-deterministic: Run reaches
+// shutdown while the serve goroutine is still unscheduled.
+func TestRunReturnsOnImmediateCancel(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	srv := &Server{Cfg: config.MWEmail{ArchiveDir: t.TempDir(), ListenAddr: addr}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancel (close/listen race)")
+	}
+}
+
 func archiveFiles(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
@@ -336,16 +366,23 @@ func TestArchiveReplay(t *testing.T) {
 	done := make(chan error, 1)
 	go func() { done <- srv.Run(ctx) }()
 
+	// The sweep is complete when the JOURNAL holds all three outcomes (two
+	// fills + the test email) - that write is the sweep's last act per file.
+	// Polling the ingest count instead raced the third file's journal write:
+	// a cancel issued right after the second ingest stopped the sweep before
+	// the test email was journaled, and the assertion below flaked.
+	journal := filepath.Join(dir, replayJournalName)
+	journalEntries := func() int {
+		raw, _ := os.ReadFile(journal)
+		return len(strings.Fields(string(raw))) / 2
+	}
 	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		mu.Lock()
-		n := len(qtys)
-		mu.Unlock()
-		if n == 2 {
-			break
-		}
+	for time.Now().Before(deadline) && journalEntries() < 3 {
 		time.Sleep(20 * time.Millisecond)
 	}
+	cancel()
+	<-done
+
 	mu.Lock()
 	if len(qtys) != 2 {
 		mu.Unlock()
@@ -355,11 +392,7 @@ func TestArchiveReplay(t *testing.T) {
 		t.Errorf("replay order qtys = %v, want [1 3] (oldest first)", qtys)
 	}
 	mu.Unlock()
-	cancel()
-	<-done
 
-	// The journal must hold all three files (fills + the test email).
-	journal := filepath.Join(dir, replayJournalName)
 	raw, err := os.ReadFile(journal)
 	if err != nil {
 		t.Fatalf("replay journal: %v", err)

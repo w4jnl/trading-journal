@@ -74,7 +74,12 @@ func (s *Server) Run(ctx context.Context) error {
 	// MW's login fails opaquely.
 	srv.AllowInsecureAuth = true
 
-	errCh := make(chan error, 1)
+	// The listener is created HERE, synchronously, never inside the serve
+	// goroutine (no ListenAndServe): go-smtp's Close only closes listeners
+	// Serve has already registered, so a shutdown racing the bind would close
+	// nothing and Serve would accept forever while Run blocks on errCh. With
+	// the listener in hand, shutdown closes it directly and the race is gone.
+	var ln net.Listener
 	switch s.Cfg.TLSMode {
 	case "implicit":
 		// Implicit TLS (465-style): wrap the LISTENER, not STARTTLS config.
@@ -82,21 +87,29 @@ func (s *Server) Run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("mwmail: load tls keypair: %w", err)
 		}
-		ln, err := tls.Listen("tcp", s.Cfg.ListenAddr, &tls.Config{Certificates: []tls.Certificate{cert}})
+		ln, err = tls.Listen("tcp", s.Cfg.ListenAddr, &tls.Config{Certificates: []tls.Certificate{cert}})
 		if err != nil {
 			return fmt.Errorf("mwmail: listen (implicit tls): %w", err)
 		}
-		go func() { errCh <- srv.Serve(ln) }()
 	case "starttls":
 		cert, err := tls.LoadX509KeyPair(s.Cfg.TLSCert, s.Cfg.TLSKey)
 		if err != nil {
 			return fmt.Errorf("mwmail: load tls keypair: %w", err)
 		}
 		srv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{cert}}
-		go func() { errCh <- srv.ListenAndServe() }()
+		ln, err = net.Listen("tcp", s.Cfg.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("mwmail: listen: %w", err)
+		}
 	default: // "off"
-		go func() { errCh <- srv.ListenAndServe() }()
+		var err error
+		ln, err = net.Listen("tcp", s.Cfg.ListenAddr)
+		if err != nil {
+			return fmt.Errorf("mwmail: listen: %w", err)
+		}
 	}
+	errCh := make(chan error, 1)
+	go func() { errCh <- srv.Serve(ln) }()
 
 	s.logger().Info("mw email capture listening",
 		"addr", s.Cfg.ListenAddr, "tls_mode", s.Cfg.TLSMode,
@@ -108,17 +121,35 @@ func (s *Server) Run(ctx context.Context) error {
 	// ingest, transient DB error) still land. Safe to run every boot: replay
 	// is idempotent - already-ingested orders come back "unchanged", CSV- or
 	// manually-covered ones "skipped_*". Runs in the background so a large
-	// archive never delays SMTP availability.
+	// archive never delays SMTP availability - but Run JOINS it on exit:
+	// returning while the sweep can still touch the archive and journal let
+	// writes land after the caller tore the directory down. rcancel bounds
+	// the wait to the file in flight (the sweep checks ctx per file).
+	rctx, rcancel := context.WithCancel(ctx)
+	defer rcancel()
+	replayDone := make(chan struct{})
 	if s.Ingest != nil {
-		go s.replayArchive(ctx)
+		go func() {
+			defer close(replayDone)
+			s.replayArchive(rctx)
+		}()
+	} else {
+		close(replayDone)
 	}
 
 	select {
 	case <-ctx.Done():
 		_ = srv.Close()
+		// Close the listener ourselves too: srv.Close misses it if Serve has
+		// not registered it yet (the close/listen race above). Idempotent when
+		// srv.Close already got it.
+		_ = ln.Close()
 		<-errCh // wait for Serve to return
+		<-replayDone
 		return nil
 	case err := <-errCh:
+		rcancel()
+		<-replayDone
 		if err != nil && !errors.Is(err, smtp.ErrServerClosed) && !errors.Is(err, net.ErrClosed) {
 			return fmt.Errorf("mwmail: serve: %w", err)
 		}
