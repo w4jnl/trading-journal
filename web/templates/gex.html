@@ -125,7 +125,9 @@
 
 <div class="gex-main mb-16">
   <div class="card">
-    <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></div>
+    <div class="card-title">Net GEX profile — {{.Market}} (index strikes) · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span>
+      <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">drag-select zooms all views · dblclick resets</span>
+    </div>
     <!-- Hosts are taller than their charts: uPlot renders its legend as a
          sibling below the canvas, and a tight host lets it spill into the
          next block. -->
@@ -225,6 +227,12 @@
     atInput.value = p.year + '-' + p.month + '-' + p.day + 'T' + p.hour + ':' + p.minute;
   }
   let gexChart = null, gexCumChart = null;
+  // Re-entrancy guard for bidirectional zoom sync: every PROGRAMMATIC scale
+  // change (our ladder->chart sync, setData auto-ranges, chart construction)
+  // runs inside gexGuarded, so the setScale hook only reacts to USER zooms
+  // (drag-select, double-click reset).
+  let gexSyncGuard = false;
+  function gexGuarded(fn) { gexSyncGuard = true; try { fn(); } finally { gexSyncGuard = false; } }
 
   // Cumulative net GEX: a running sum across strikes, low to high. Its final
   // value is the snapshot's TOTAL net gamma (which is what the regime tile
@@ -354,7 +362,7 @@
           values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(0) + 'B'),
         },
       ],
-      hooks: { draw: [gexDrawMarks] },
+      hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook] },
     }, [gexData.strikes, gexCumulative()], el);
   }
 
@@ -403,7 +411,7 @@
           values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(1) + 'B'),
         },
       ],
-      hooks: { draw: [gexDrawMarks] },
+      hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook] },
     }, [gexData.strikes, gexData.gex], el);
   }
 
@@ -583,13 +591,37 @@
       min = z.lo * f; max = z.hi * f;
     }
     if (!(max > min)) return;
-    gexChart.setScale('x', { min: min, max: max });
-    gexCumChart.setScale('x', { min: min, max: max });
+    gexGuarded(() => {
+      gexChart.setScale('x', { min: min, max: max });
+      gexCumChart.setScale('x', { min: min, max: max });
+    });
   }
 
-  buildCharts();
+  // The reverse direction: a USER zoom on either chart (uPlot's drag-select,
+  // or its double-click reset) drives the ladder window and mirrors onto the
+  // sibling chart. The guard filters out every programmatic setScale, so this
+  // only fires for genuine chart interactions.
+  function gexChartZoomHook(u, key) {
+    if (key !== 'x' || gexSyncGuard) return;
+    const s = (gexData && gexData.strikes) || [];
+    const sc = u.scales.x;
+    if (s.length < 2 || sc.min == null || sc.max == null) return;
+    const lad = gexLadderData;
+    if (sc.min <= s[0] + 1e-9 && sc.max >= s[s.length - 1] - 1e-9) {
+      gexLadderZoom = null; // chart reset to full range = ladder auto fit
+    } else if (lad && lad.spot && gexData.spot) {
+      const g = lad.denom === 'futures' ? lad.spot / gexData.spot : 1;
+      gexLadderZoom = { lo: sc.min * g, hi: sc.max * g };
+    } else {
+      return;
+    }
+    renderLadder();
+    gexSyncChartsToLadder();
+  }
+
+  gexGuarded(buildCharts);
   renderLadder();
-  uplotHelpers.onRebuild(() => { buildCharts(); renderLadder(); gexSyncChartsToLadder(); });
+  uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
 
   // Wheel-zoom on the ladder, anchored at the cursor's price; double-click
   // resets to the auto fit. The listener is non-passive and scoped to the
@@ -747,12 +779,14 @@
     gexLadderData = v.ladder;
     $id('gx-ladder-denom').textContent = (v.ladder && v.ladder.denom) || '';
     renderLadder();
-    if (gexChart && gexCumChart && v.hasProfile) {
-      gexChart.setData([gexData.strikes, gexData.gex]);
-      gexCumChart.setData([gexData.strikes, gexCumulative()]);
-    } else {
-      buildCharts();
-    }
+    gexGuarded(() => {
+      if (gexChart && gexCumChart && v.hasProfile) {
+        gexChart.setData([gexData.strikes, gexData.gex]);
+        gexCumChart.setData([gexData.strikes, gexCumulative()]);
+      } else {
+        buildCharts();
+      }
+    });
     gexSyncChartsToLadder(); // setData/rebuild reset x to auto; reapply the window
   }
 
