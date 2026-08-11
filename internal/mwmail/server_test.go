@@ -65,6 +65,36 @@ func startServer(t *testing.T, cfg config.MWEmail) (addr string, stop func()) {
 	return "", nil
 }
 
+// TestRunReturnsOnImmediateCancel: shutdown racing startup must still win.
+// go-smtp's Close only closes listeners Serve has already registered, so the
+// old ListenAndServe-in-a-goroutine shape could Close before the bind, leave
+// the fresh listener accepting forever, and hang Run on its errCh - the
+// TestArchiveReplay CI hang (its runOnce cancels milliseconds after boot). A
+// context cancelled BEFORE Run makes that near-deterministic: Run reaches
+// shutdown while the serve goroutine is still unscheduled.
+func TestRunReturnsOnImmediateCancel(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	addr := ln.Addr().String()
+	ln.Close()
+
+	srv := &Server{Cfg: config.MWEmail{ArchiveDir: t.TempDir(), ListenAddr: addr}}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	done := make(chan error, 1)
+	go func() { done <- srv.Run(ctx) }()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("Run = %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not return after cancel (close/listen race)")
+	}
+}
+
 func archiveFiles(t *testing.T, dir string) []string {
 	t.Helper()
 	entries, err := os.ReadDir(dir)
