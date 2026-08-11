@@ -40,7 +40,7 @@
   .gex-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: stretch; }
   @media (max-width: 1000px) { .gex-main { grid-template-columns: 1fr; } }
   .gex-ladder-card { display: flex; flex-direction: column; }
-  #gx-ladder { flex: 1; min-height: 320px; }
+  #gx-ladder { flex: 1; min-height: 320px; user-select: none; } /* SVG labels must not select mid-pan */
   .gex-ladder-svg { width: 100%; display: block; }
   .gex-ladder-svg text { font-size: 10px; fill: var(--fg-muted); }
   .gex-ladder-svg text.lv { font-family: "JetBrains Mono", monospace; font-size: 10.5px; fill: var(--fg); }
@@ -135,7 +135,7 @@
   </div>
   <div class="card gex-ladder-card">
     <div class="card-title">Regime ladder · <span id="gx-ladder-denom">{{.View.Ladder.Denom}}</span>
-      <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · dblclick resets</span>
+      <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · drag pans · dblclick resets</span>
     </div>
     <div id="gx-ladder"></div>
   </div>
@@ -418,6 +418,7 @@
     const lad = gexLadderData;
     if (!lad || !lad.spot) {
       gexLadderFit = null;
+      host.style.cursor = '';
       host.innerHTML = '<div class="muted" style="padding:16px 0;">No levels in this snapshot.</div>';
       return;
     }
@@ -563,11 +564,32 @@
     });
 
     host.innerHTML = `<svg class="gex-ladder-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gamma regime ladder">${parts.join('')}</svg>`;
+    host.style.cursor = z ? 'grab' : '';
+  }
+
+  // The ladder's zoom window drives the charts' x-range, so all three views
+  // focus on the same price band. The charts plot INDEX strikes while the
+  // ladder may be futures-denominated; lad.spot IS the engine's conversion of
+  // the chart's index spot, so their ratio recovers the exact factor without
+  // any extra server surface. Unzoomed, the charts get their full data range
+  // back (uPlot's own auto range is exactly the data extremes).
+  function gexSyncChartsToLadder() {
+    const s = (gexData && gexData.strikes) || [];
+    if (!gexChart || !gexCumChart || s.length < 2) return;
+    let min = s[0], max = s[s.length - 1];
+    const z = gexLadderZoom, lad = gexLadderData;
+    if (z && lad && lad.spot && gexData.spot) {
+      const f = lad.denom === 'futures' ? gexData.spot / lad.spot : 1;
+      min = z.lo * f; max = z.hi * f;
+    }
+    if (!(max > min)) return;
+    gexChart.setScale('x', { min: min, max: max });
+    gexCumChart.setScale('x', { min: min, max: max });
   }
 
   buildCharts();
   renderLadder();
-  uplotHelpers.onRebuild(() => { buildCharts(); renderLadder(); });
+  uplotHelpers.onRebuild(() => { buildCharts(); renderLadder(); gexSyncChartsToLadder(); });
 
   // Wheel-zoom on the ladder, anchored at the cursor's price; double-click
   // resets to the auto fit. The listener is non-passive and scoped to the
@@ -589,7 +611,7 @@
       const newSpan = Math.min(fitSpan, Math.max(fitSpan * 0.02, span * Math.exp(dy * 0.0015)));
       if (newSpan >= fitSpan) {
         // Zoomed all the way back out: return to auto fit exactly.
-        if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); }
+        if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); gexSyncChartsToLadder(); }
         return;
       }
       // The price under the cursor keeps its pixel position through the zoom.
@@ -601,10 +623,42 @@
       const lo = p - (p - cur.lo) * (newSpan / span);
       gexLadderZoom = { lo: lo, hi: lo + newSpan };
       renderLadder();
+      gexSyncChartsToLadder();
     }, { passive: false });
     host.addEventListener('dblclick', function () {
-      if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); }
+      if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); gexSyncChartsToLadder(); }
     });
+
+    // Drag-to-pan once zoomed: the window follows the pointer (drag down to
+    // look higher), clamped to the auto fit so every level stays reachable.
+    // Pointer capture keeps a fast drag alive when it leaves the panel.
+    let panFrom = null; // {y, lo, hi} at pointerdown
+    host.addEventListener('pointerdown', function (e) {
+      if (!gexLadderZoom || e.button !== 0) return;
+      panFrom = { y: e.clientY, lo: gexLadderZoom.lo, hi: gexLadderZoom.hi };
+      // Capture is an enhancement (keeps a fast drag alive outside the
+      // panel); a pointer that cannot be captured must not kill the pan.
+      try { host.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+      host.style.cursor = 'grabbing';
+    });
+    host.addEventListener('pointermove', function (e) {
+      if (!panFrom || !gexLadderZoom || !gexLadderFit) return;
+      const svg = host.querySelector('svg');
+      const rect = (svg || host).getBoundingClientRect();
+      const inner = Math.max(1, rect.height - 2 * GEX_LADDER_PAD);
+      const span = panFrom.hi - panFrom.lo;
+      let shift = (e.clientY - panFrom.y) * span / inner;
+      shift = Math.min(gexLadderFit.hi - panFrom.hi, Math.max(gexLadderFit.lo - panFrom.lo, shift));
+      gexLadderZoom = { lo: panFrom.lo + shift, hi: panFrom.hi + shift };
+      renderLadder();
+      gexSyncChartsToLadder();
+    });
+    const panEnd = function () {
+      panFrom = null;
+      host.style.cursor = gexLadderZoom ? 'grab' : '';
+    };
+    host.addEventListener('pointerup', panEnd);
+    host.addEventListener('pointercancel', panEnd);
   })();
 
   // The AI read is pinned to the snapshot on screen, so the button must
@@ -699,6 +753,7 @@
     } else {
       buildCharts();
     }
+    gexSyncChartsToLadder(); // setData/rebuild reset x to auto; reapply the window
   }
 
   {{if .GridJSON}}
