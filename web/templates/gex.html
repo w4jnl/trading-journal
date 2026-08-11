@@ -195,6 +195,7 @@
   // remembered per render so zooming out lands exactly back on it.
   let gexLadderZoom = null;
   let gexLadderFit = null;
+  let gexLadderView = null; // current render's window + geometry, for the crosshair
   const GEX_LADDER_PAD = 16; // top/bottom padding shared by render + cursor math
   // Which snapshot is on screen right now. The AI read is pinned to THIS
   // moment, so scrubbing must keep it current.
@@ -343,7 +344,7 @@
     gexCumChart = new uPlot({
       width: el.clientWidth, height: 170,
       scales: { x: { time: false } },
-      cursor: { sync: gexCursorSync() },
+      cursor: { y: false, sync: gexCursorSync() }, /* one shared PRICE crosshair; a y-line would imply a GEX readout the ladder cannot mirror */
       padding: [24, 10, null, null], /* top row reserved for the level labels */
       series: [
         { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
@@ -362,7 +363,7 @@
           values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(0) + 'B'),
         },
       ],
-      hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook] },
+      hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook], setCursor: [gexChartCursorHook] },
     }, [gexData.strikes, gexCumulative()], el);
   }
 
@@ -382,7 +383,7 @@
     gexChart = new uPlot({
       width: el.clientWidth, height: 300,
       scales: { x: { time: false } }, /* strikes are prices, not timestamps */
-      cursor: { sync: gexCursorSync() },
+      cursor: { y: false, sync: gexCursorSync() }, /* one shared PRICE crosshair; a y-line would imply a GEX readout the ladder cannot mirror */
       padding: [24, 10, null, null], /* top row reserved for the level labels */
       series: [
         { label: 'Strike', value: (u, v) => v == null ? '—' : v.toFixed(0) },
@@ -411,7 +412,7 @@
           values: (u, splits) => splits.map((v) => (v / 1e9).toFixed(1) + 'B'),
         },
       ],
-      hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook] },
+      hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook], setCursor: [gexChartCursorHook] },
     }, [gexData.strikes, gexData.gex], el);
   }
 
@@ -426,6 +427,7 @@
     const lad = gexLadderData;
     if (!lad || !lad.spot) {
       gexLadderFit = null;
+      gexLadderView = null;
       host.style.cursor = '';
       host.innerHTML = '<div class="muted" style="padding:16px 0;">No levels in this snapshot.</div>';
       return;
@@ -571,8 +573,56 @@
       parts.push(`<text x="${bandW + 11}" y="${ty + 11}">${r.label}${delta}${r.note ? ' · ' + r.note : ''}</text>`);
     });
 
+    // Crosshair overlay, appended last so it draws above zones and levels;
+    // hidden until a pointer position (here or on a chart) places it.
+    parts.push(`<g id="gx-lad-xh" style="display:none"><line id="gx-lad-xh-ln" x1="0" y1="0" x2="${bandW}" y2="0" stroke="${muted}" stroke-width="1" stroke-dasharray="2 3"/><text id="gx-lad-xh-txt" class="lv" x="4" y="0"></text></g>`);
+
     host.innerHTML = `<svg class="gex-ladder-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gamma regime ladder">${parts.join('')}</svg>`;
     host.style.cursor = z ? 'grab' : '';
+    gexLadderView = { lo: lo, hi: hi, padT: padT, padB: padB, H: H };
+  }
+
+  // One crosshair across all three views: the ladder's y-axis and the
+  // charts' x-axis are the same price line (same denomination server-side),
+  // so hovering any view marks that price on every view.
+  function gexLadderXH(price) {
+    const g = $id('gx-lad-xh');
+    if (!g) return;
+    const vw = gexLadderView;
+    if (price == null || !vw || price < vw.lo || price > vw.hi) {
+      g.style.display = 'none';
+      return;
+    }
+    const y = vw.padT + (vw.hi - price) / (vw.hi - vw.lo) * (vw.H - vw.padT - vw.padB);
+    g.style.display = '';
+    const ln = $id('gx-lad-xh-ln'), tx = $id('gx-lad-xh-txt');
+    ln.setAttribute('y1', y); ln.setAttribute('y2', y);
+    tx.setAttribute('y', Math.max(vw.padT + 9, y - 4));
+    tx.textContent = price.toFixed(2);
+  }
+
+  // Chart hover -> ladder marker (registered as a setCursor hook on both
+  // charts; also fires when the ladder drives the charts, which just
+  // re-places the marker where it already is).
+  function gexChartCursorHook(u) {
+    const l = u.cursor.left;
+    gexLadderXH(l == null || l < 0 ? null : u.posToVal(l, 'x'));
+  }
+
+  // Ladder hover -> chart cursors. BOTH charts are driven explicitly:
+  // programmatic setCursor does not publish to uPlot's cursor-sync bus
+  // (only real mouse events do), so relying on the sync group left the
+  // sibling chart bare. left:-10 is uPlot's own hidden-cursor convention.
+  function gexChartsSetCursor(price) {
+    if (!gexChart || !gexCumChart) return;
+    const sc = gexChart.scales.x;
+    if (price == null || sc.min == null || price < sc.min || price > sc.max) {
+      gexChart.setCursor({ left: -10, top: -10 });
+      gexCumChart.setCursor({ left: -10, top: -10 });
+      return;
+    }
+    gexChart.setCursor({ left: gexChart.valToPos(price, 'x'), top: 1 });
+    gexCumChart.setCursor({ left: gexCumChart.valToPos(price, 'x'), top: 1 });
   }
 
   // The ladder's zoom window drives the charts' x-range, so all three views
@@ -657,6 +707,9 @@
       gexLadderZoom = { lo: lo, hi: lo + newSpan };
       renderLadder();
       gexSyncChartsToLadder();
+      // The anchor price is still under the cursor; keep the crosshair on it.
+      gexLadderXH(p);
+      gexChartsSetCursor(p);
     }, { passive: false });
     host.addEventListener('dblclick', function () {
       if (gexLadderZoom) { gexLadderZoom = null; renderLadder(); gexSyncChartsToLadder(); }
@@ -675,16 +728,35 @@
       host.style.cursor = 'grabbing';
     });
     host.addEventListener('pointermove', function (e) {
-      if (!panFrom || !gexLadderZoom || !gexLadderFit) return;
       const svg = host.querySelector('svg');
       const rect = (svg || host).getBoundingClientRect();
       const inner = Math.max(1, rect.height - 2 * GEX_LADDER_PAD);
-      const span = panFrom.hi - panFrom.lo;
-      let shift = (e.clientY - panFrom.y) * span / inner;
-      shift = Math.min(gexLadderFit.hi - panFrom.hi, Math.max(gexLadderFit.lo - panFrom.lo, shift));
-      gexLadderZoom = { lo: panFrom.lo + shift, hi: panFrom.hi + shift };
-      renderLadder();
-      gexSyncChartsToLadder();
+      // Pan (when zoomed and dragging) shifts the window first, so the
+      // crosshair below lands in the shifted window - the price under the
+      // pointer is then the grabbed price, held steady through the drag.
+      if (panFrom && gexLadderZoom && gexLadderFit) {
+        const span = panFrom.hi - panFrom.lo;
+        let shift = (e.clientY - panFrom.y) * span / inner;
+        shift = Math.min(gexLadderFit.hi - panFrom.hi, Math.max(gexLadderFit.lo - panFrom.lo, shift));
+        gexLadderZoom = { lo: panFrom.lo + shift, hi: panFrom.hi + shift };
+        renderLadder();
+        gexSyncChartsToLadder();
+      }
+      const vw = gexLadderView;
+      if (!vw) return;
+      const frac = (e.clientY - rect.top - GEX_LADDER_PAD) / inner;
+      if (frac < 0 || frac > 1) {
+        gexLadderXH(null);
+        gexChartsSetCursor(null);
+        return;
+      }
+      const p = vw.hi - frac * (vw.hi - vw.lo);
+      gexLadderXH(p);
+      gexChartsSetCursor(p);
+    });
+    host.addEventListener('pointerleave', function () {
+      gexLadderXH(null);
+      gexChartsSetCursor(null);
     });
     const panEnd = function () {
       panFrom = null;
