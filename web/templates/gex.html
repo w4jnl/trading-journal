@@ -45,6 +45,9 @@
   .gex-ladder-svg text { font-size: 10px; fill: var(--fg-muted); }
   .gex-ladder-svg text.lv { font-family: "JetBrains Mono", monospace; font-size: 10.5px; fill: var(--fg); }
   .gex-ladder-svg text.zone { font-size: 10.5px; font-weight: 600; }
+  .gex-ladder-layers { display: flex; gap: 6px; margin: 2px 0 6px; }
+  .gex-ladder-layers button { font-size: 11px; padding: 1px 9px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; }
+  .gex-ladder-layers button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
   [data-theme="dark"] .u-legend { color: var(--fg); }
@@ -139,6 +142,12 @@
     <div class="card-title">Regime ladder · <span id="gx-ladder-denom">{{.View.Ladder.Denom}}</span>
       <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · drag pans · dblclick resets</span>
     </div>
+    <div class="gex-ladder-layers" id="gx-ladder-layers">
+      <button type="button" data-layer="0dte">0DTE</button>
+      <button type="button" data-layer="vol">vol</button>
+      <button type="button" data-layer="magnets">magnets</button>
+      <button type="button" data-layer="em">EM</button>
+    </div>
     <div id="gx-ladder"></div>
   </div>
 </div>
@@ -196,6 +205,12 @@
   let gexLadderZoom = null;
   let gexLadderFit = null;
   let gexLadderView = null; // current render's window + geometry, for the crosshair
+  // Ladder layer chips: which optional level families draw. Persisted so the
+  // preferred density survives reloads. "vol" starts off - it is a second
+  // opinion on the 0DTE walls, the most niche family; the core read (all-book
+  // walls, the flips, spot) is not a layer and always draws.
+  const gexLadderLayers = { '0dte': true, vol: false, magnets: true, em: true };
+  try { Object.assign(gexLadderLayers, JSON.parse(localStorage.getItem('tj-gex-ladder-layers') || '{}')); } catch (e) { /* ignore */ }
   const GEX_LADDER_PAD = 16; // top/bottom padding shared by render + cursor math
   // Which snapshot is on screen right now. The AI read is pinned to THIS
   // moment, so scrubbing must keep it current.
@@ -450,37 +465,41 @@
     // band (dotted). All null on older snapshots, so the ladder degrades to
     // its classic six rows. Sorted by price so the label push-down cascades
     // top to bottom regardless of which levels are present.
+    // Rows carry a family so the layer chips can hide whole groups; entries
+    // without one (all-book walls, the flips, spot) are the core read and
+    // always draw. "vol" = the 0DTE book re-weighted by session volume
+    // (labels kept short: the long form overflows the label column).
     const defs = [
       { v: lad.cw,      label: 'call wall',       color: c.pos,    note: lad.cwGex },
-      { v: lad.cw0,     label: 'call wall 0DTE',  color: c.pos,    dash: true, thin: true, note: lad.cw0Gex },
-      // "vol" = the 0DTE book re-weighted by session volume (labels kept
-      // short: the long form overflows the label column).
-      { v: lad.cwv,     label: 'call wall vol',   color: c.pos,    dotted: true, thin: true, note: lad.cwvGex },
-      { v: lad.gw0,     label: 'gamma wall 0DTE', color: muted,    thin: true, note: lad.gw0Gex },
-      { v: lad.gwv,     label: 'gamma wall vol',  color: muted,    dotted: true, thin: true, note: lad.gwvGex },
-      { v: lad.pw0,     label: 'put wall 0DTE',   color: c.neg,    dash: true, thin: true, note: lad.pw0Gex },
-      { v: lad.pwv,     label: 'put wall vol',    color: c.neg,    dotted: true, thin: true, note: lad.pwvGex },
-      { v: lad.emHigh,  label: 'EM high',         color: muted,    dash: true },
-      { v: lad.em1High, label: 'prior EM high',   color: muted,    dotted: true, thin: true },
+      { v: lad.cw0,     label: 'call wall 0DTE',  color: c.pos,    dash: true, thin: true, note: lad.cw0Gex, family: '0dte' },
+      { v: lad.cwv,     label: 'call wall vol',   color: c.pos,    dotted: true, thin: true, note: lad.cwvGex, family: 'vol' },
+      { v: lad.gw0,     label: 'gamma wall 0DTE', color: muted,    thin: true, note: lad.gw0Gex, family: '0dte' },
+      { v: lad.gwv,     label: 'gamma wall vol',  color: muted,    dotted: true, thin: true, note: lad.gwvGex, family: 'vol' },
+      { v: lad.pw0,     label: 'put wall 0DTE',   color: c.neg,    dash: true, thin: true, note: lad.pw0Gex, family: '0dte' },
+      { v: lad.pwv,     label: 'put wall vol',    color: c.neg,    dotted: true, thin: true, note: lad.pwvGex, family: 'vol' },
+      { v: lad.emHigh,  label: 'EM high',         color: muted,    dash: true, family: 'em' },
+      { v: lad.em1High, label: 'prior EM high',   color: muted,    dotted: true, thin: true, family: 'em' },
       { v: lad.spot,    label: 'spot',            color: c.accent, bold: true },
-      { v: lad.em1Low,  label: 'prior EM low',    color: muted,    dotted: true, thin: true },
-      { v: lad.emLow,   label: 'EM low',          color: muted,    dash: true },
+      { v: lad.em1Low,  label: 'prior EM low',    color: muted,    dotted: true, thin: true, family: 'em' },
+      { v: lad.emLow,   label: 'EM low',          color: muted,    dash: true, family: 'em' },
       { v: lad.flip,    label: 'gamma flip',      color: flipColor, note: 'regime' },
       // The intraday (<=5 DTE) flip: the front-week hedging line, usually
       // far closer to spot than the whole-book flip (engine update 003).
       { v: lad.flipI,   label: 'gamma flip intraday', color: flipColor, dotted: true, thin: true },
-      { v: lad.flip0,   label: 'gamma flip 0DTE', color: flipColor, dash: true, thin: true },
+      { v: lad.flip0,   label: 'gamma flip 0DTE', color: flipColor, dash: true, thin: true, family: '0dte' },
       { v: lad.pw,      label: 'put wall',        color: c.neg,    note: lad.pwGex },
     ];
     (lad.magnets || []).forEach((m) => {
-      defs.push({ v: m.v, label: 'G' + m.n, color: c.accent, thin: true, tick: true, note: m.gex });
+      defs.push({ v: m.v, label: 'G' + m.n, color: c.accent, thin: true, tick: true, note: m.gex, family: 'magnets' });
     });
     // Near magnets (within +/-1% of spot) draw as even shorter ticks than
     // the G's - closer to the label column, mirroring their tighter scope.
     (lad.near || []).forEach((m) => {
-      defs.push({ v: m.v, label: 'N' + m.n, color: c.accent, thin: true, tick: true, tickNear: true, note: m.gex });
+      defs.push({ v: m.v, label: 'N' + m.n, color: c.accent, thin: true, tick: true, tickNear: true, note: m.gex, family: 'magnets' });
     });
-    const rows = defs.filter((r) => r.v != null).sort((a, b) => b.v - a.v);
+    const rows = defs
+      .filter((r) => r.v != null && (!r.family || gexLadderLayers[r.family]))
+      .sort((a, b) => b.v - a.v);
 
     const vals = rows.map((r) => r.v);
     let fitHi = Math.max.apply(null, vals), fitLo = Math.min.apply(null, vals);
@@ -535,19 +554,33 @@
       parts.push(`<text class="zone" x="${bandW / 2}" y="${H / 2}" text-anchor="middle" fill="${tint}">${lad.regime || 'gamma'} — no flip</text>`);
     }
     // Expected-move band edges, drawn as a hairline box around spot (clamped;
-    // dropped when the whole band is outside the window).
-    if (lad.emHigh != null && lad.emLow != null && lad.emHigh >= lo && lad.emLow <= hi) {
+    // dropped when the whole band is outside the window or the layer is off).
+    if (gexLadderLayers.em && lad.emHigh != null && lad.emLow != null && lad.emHigh >= lo && lad.emLow <= hi) {
       const yTop = yClamp(lad.emHigh), yBot = yClamp(lad.emLow);
       if (yBot - yTop > 0) {
         parts.push(`<rect x="1" y="${yTop}" width="${bandW - 2}" height="${yBot - yTop}" fill="none" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>`);
       }
     }
 
-    // Level lines + labels. Each label is two lines tall, so labels for
-    // near-coincident levels (a call wall and an EM edge a few points apart)
-    // are pushed down to clear the one above; the connector line keeps each
-    // label tied to its true position on the band.
-    const labelH = 24;
+    // Labels: near-coincident levels MERGE into one label - real books
+    // overlap heavily (the 0DTE gamma wall often IS the 0DTE call wall), and
+    // a full label per coincident row is what crowded the stack. Every row
+    // still draws its own line; the cluster shares one label naming all of
+    // them. When even the merged stack cannot fit at two lines per label,
+    // labels auto-compact to one line.
+    const clusters = [];
+    shown.forEach((r) => {
+      const yv = y(r.v);
+      const last = clusters[clusters.length - 1];
+      if (last && yv - last.yv < 3) {
+        last.rows.push(r);
+      } else {
+        clusters.push({ yv: yv, rows: [r] });
+      }
+    });
+    const avail = H - padT - padB;
+    const compact = clusters.length * 24 > avail - 8;
+    const labelH = compact ? 13 : 24;
     const placed = [];
     // Culled-level edge markers first, so the push-down keeps real labels
     // clear of them: one line per level pinned at the window edge it left
@@ -569,22 +602,39 @@
       const ey = H - padB - 2 - i * 12;
       parts.push(`<text x="${bandW + 11}" y="${ey}" fill="${r.color}">▼ ${edgeLabel(r)}</text>`);
     });
-    shown.forEach((r) => {
-      const yv = y(r.v);
+    clusters.forEach((cl) => {
+      const yv = cl.yv;
       let ty = yv;
       placed.forEach((p) => { if (ty - p < labelH && p - ty < labelH) ty = p + labelH; });
       placed.push(ty);
-      // Magnets are ticks (right half of the band), not full structure
-      // lines; near magnets are shorter still.
-      const x0 = r.tickNear ? Math.round(bandW * 0.72) : r.tick ? Math.round(bandW * 0.55) : 0;
-      const width = r.bold ? 2 : r.thin ? 1 : 1.2;
-      const dashAttr = r.dotted ? ' stroke-dasharray="1 3"' : r.dash ? ' stroke-dasharray="4 3"' : '';
-      parts.push(`<line x1="${x0}" y1="${yv}" x2="${bandW}" y2="${yv}" stroke="${r.color}" stroke-width="${width}"${dashAttr}/>`);
-      parts.push(`<line x1="${bandW}" y1="${yv}" x2="${bandW + 8}" y2="${ty - 3}" stroke="${r.color}" stroke-width="1" opacity="0.5"/>`);
-      const d = r.v - lad.spot;
-      const delta = r.label === 'spot' ? '' : `  ${d >= 0 ? '+' : ''}${d.toFixed(1)} pts`;
-      parts.push(`<text class="lv" x="${bandW + 11}" y="${ty}" fill="${r.color}">${r.v.toFixed(2)}</text>`);
-      parts.push(`<text x="${bandW + 11}" y="${ty + 11}">${r.label}${delta}${r.note ? ' · ' + r.note : ''}</text>`);
+      // Every row keeps its own line and style. Magnets are ticks (right
+      // half of the band), not full structure lines; near magnets shorter
+      // still.
+      cl.rows.forEach((r) => {
+        const ry = y(r.v);
+        const x0 = r.tickNear ? Math.round(bandW * 0.72) : r.tick ? Math.round(bandW * 0.55) : 0;
+        const width = r.bold ? 2 : r.thin ? 1 : 1.2;
+        const dashAttr = r.dotted ? ' stroke-dasharray="1 3"' : r.dash ? ' stroke-dasharray="4 3"' : '';
+        parts.push(`<line x1="${x0}" y1="${ry}" x2="${bandW}" y2="${ry}" stroke="${r.color}" stroke-width="${width}"${dashAttr}/>`);
+      });
+      // One label for the cluster: spot leads it when present, otherwise the
+      // highest-priced member; names join with " + ". Merged labels drop the
+      // " pts" suffix and the gex notes - the joined names already stretch
+      // the column, and the exact figures live in the table below.
+      const prim = cl.rows.find((r) => r.bold) || cl.rows[0];
+      const merged = cl.rows.length > 1;
+      const names = cl.rows.map((r) => r.label).join(' + ');
+      const notes = merged ? '' : (cl.rows[0].note || '');
+      const d = prim.v - lad.spot;
+      const hasSpot = cl.rows.some((r) => r.label === 'spot');
+      const delta = hasSpot ? '' : `  ${d >= 0 ? '+' : ''}${d.toFixed(1)}${compact || merged ? '' : ' pts'}`;
+      parts.push(`<line x1="${bandW}" y1="${yv}" x2="${bandW + 8}" y2="${ty - 3}" stroke="${prim.color}" stroke-width="1" opacity="0.5"/>`);
+      if (compact) {
+        parts.push(`<text class="lv" x="${bandW + 11}" y="${ty}" fill="${prim.color}">${prim.v.toFixed(2)} ${names}${delta}${notes ? ' · ' + notes : ''}</text>`);
+      } else {
+        parts.push(`<text class="lv" x="${bandW + 11}" y="${ty}" fill="${prim.color}">${prim.v.toFixed(2)}</text>`);
+        parts.push(`<text x="${bandW + 11}" y="${ty + 11}">${names}${delta}${notes ? ' · ' + notes : ''}</text>`);
+      }
     });
 
     // Crosshair overlay, appended last so it draws above zones and levels;
@@ -687,6 +737,26 @@
   gexGuarded(buildCharts);
   renderLadder();
   uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
+
+  // Layer chips: toggle a family, persist, re-render. The fit domain follows
+  // the visible rows, so hiding a far outlier also relaxes the scale.
+  (function () {
+    const wrap = $id('gx-ladder-layers');
+    if (!wrap) return;
+    const sync = () => wrap.querySelectorAll('button[data-layer]').forEach((b) => {
+      b.classList.toggle('on', !!gexLadderLayers[b.dataset.layer]);
+    });
+    sync();
+    wrap.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-layer]');
+      if (!b) return;
+      gexLadderLayers[b.dataset.layer] = !gexLadderLayers[b.dataset.layer];
+      try { localStorage.setItem('tj-gex-ladder-layers', JSON.stringify(gexLadderLayers)); } catch (err) { /* ignore */ }
+      sync();
+      renderLadder();
+      gexSyncChartsToLadder();
+    });
+  })();
 
   // Wheel-zoom on the ladder, anchored at the cursor's price; double-click
   // resets to the auto fit. The listener is non-passive and scoped to the
