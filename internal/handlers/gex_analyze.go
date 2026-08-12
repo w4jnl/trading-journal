@@ -143,6 +143,23 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 		}
 	}
 	dist("gamma flip", flip, flipExtra)
+	// The front-week (<=5 DTE) flip, engine v0.6.0. Emitted only when the
+	// snapshot has it: retained reads of pre-v0.6.0 snapshots should not
+	// gain a "not present" line they never had.
+	var flipI *float64
+	if spotFut != nil {
+		flipI = s.FlipIntraday.Futures
+	} else {
+		flipI = s.FlipIntraday.Index
+	}
+	if flipI != nil {
+		side := "ABOVE"
+		if spot <= *flipI {
+			side = "BELOW"
+		}
+		dist("intraday gamma flip (front week, <=5 DTE)", flipI,
+			fmt.Sprintf(" - spot is %s it; for the session this hedging flip usually matters more than the whole-book flip", side))
+	}
 	cwExtra, pwExtra := "", ""
 	if cwL != nil {
 		cwExtra = ", gamma " + gexFmtB(cwL.Gex)

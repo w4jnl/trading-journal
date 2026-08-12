@@ -88,6 +88,17 @@ type gexLadder struct {
 	Magnets []gexMagnet `json:"magnets"`
 	EM1High *float64    `json:"em1High"`
 	EM1Low  *float64    `json:"em1Low"`
+	// Engine v0.6.0 additions (update 003): the front-week (<=5 DTE) flip,
+	// today's book re-weighted by session volume, and the near magnets
+	// (ranked within +/-1% of spot).
+	FlipI  *float64    `json:"flipI"`
+	CWV    *float64    `json:"cwv"`
+	PWV    *float64    `json:"pwv"`
+	GWV    *float64    `json:"gwv"`
+	CWVGex string      `json:"cwvGex"`
+	PWVGex string      `json:"pwvGex"`
+	GWVGex string      `json:"gwvGex"`
+	Near   []gexMagnet `json:"near"`
 }
 
 // gexMagnet is one ranked gamma magnet (gamma_1..gamma_3) in the ladder's
@@ -373,7 +384,7 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		}
 	}
 
-	v.Levels = make([]gexPageLevel, 0, len(s.Levels)+2)
+	v.Levels = make([]gexPageLevel, 0, len(s.Levels)+3)
 	// The flips lead the ladder: each is a price level like the walls, and
 	// listing it here is what pins its denomination - both columns present,
 	// same level-minus-spot convention as every other row. (The engine
@@ -394,7 +405,10 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		}
 		v.Levels = append(v.Levels, row)
 	}
+	// Whole book, then the front-week (<=5 DTE) book, then today only - the
+	// same nesting order the buckets narrow in.
 	flipRow(s.Flip, "—")
+	flipRow(s.FlipIntraday, "intraday")
 	flipRow(s.Flip0DTE, "0dte")
 	for _, l := range s.Levels {
 		row := gexPageLevel{
@@ -475,9 +489,17 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 	lad.CW0, lad.CW0Gex = pick("call_wall", "0dte")
 	lad.PW0, lad.PW0Gex = pick("put_wall", "0dte")
 	lad.GW0, lad.GW0Gex = pick("gamma_wall", "0dte")
+	lad.CWV, lad.CWVGex = pick("call_wall", "0dte_vol")
+	lad.PWV, lad.PWVGex = pick("put_wall", "0dte_vol")
+	lad.GWV, lad.GWVGex = pick("gamma_wall", "0dte_vol")
 	for i, typ := range []string{"gamma_1", "gamma_2", "gamma_3"} {
 		if v, note := pick(typ, "all"); v != nil {
 			lad.Magnets = append(lad.Magnets, gexMagnet{V: *v, N: i + 1, Gex: note})
+		}
+	}
+	for i, typ := range []string{"gamma_near_1", "gamma_near_2", "gamma_near_3"} {
+		if v, note := pick(typ, "all"); v != nil {
+			lad.Near = append(lad.Near, gexMagnet{V: *v, N: i + 1, Gex: note})
 		}
 	}
 	// The prior-day band carries gex 0.0 by contract - the note would only
@@ -488,9 +510,11 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 	if useFut {
 		lad.Flip = s.Flip.Futures
 		lad.Flip0 = s.Flip0DTE.Futures
+		lad.FlipI = s.FlipIntraday.Futures
 	} else {
 		lad.Flip = s.Flip.Index
 		lad.Flip0 = s.Flip0DTE.Index
+		lad.FlipI = s.FlipIntraday.Index
 	}
 
 	if e := s.ExpectedMove1D; e != nil {
@@ -534,6 +558,8 @@ func gexLevelName(typ string) string {
 		return "Gamma wall"
 	case "gamma_1", "gamma_2", "gamma_3":
 		return "Gamma magnet " + typ[len(typ)-1:]
+	case "gamma_near_1", "gamma_near_2", "gamma_near_3":
+		return "Near magnet " + typ[len(typ)-1:]
 	case "em_1d_min":
 		return "Prior EM low"
 	case "em_1d_max":
