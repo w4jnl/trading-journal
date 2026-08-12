@@ -45,8 +45,10 @@
   .gex-ladder-svg text { font-size: 10px; fill: var(--fg-muted); }
   .gex-ladder-svg text.lv { font-family: "JetBrains Mono", monospace; font-size: 10.5px; fill: var(--fg); }
   .gex-ladder-svg text.zone { font-size: 10.5px; font-weight: 600; }
-  .gex-ladder-layers { display: flex; gap: 6px; margin: 2px 0 6px; }
-  .gex-ladder-layers button { font-size: 11px; padding: 1px 9px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; }
+  /* Layer chips: sized and cased like the card-title small caps beside them,
+     so the toolbar reads as one line of chrome, not a row of form buttons. */
+  .gex-ladder-layers { display: flex; gap: 4px; margin: 0 0 6px; }
+  .gex-ladder-layers button { font-size: 10px; line-height: 15px; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
   .gex-ladder-layers button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
 
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
@@ -143,10 +145,10 @@
       <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · drag pans · dblclick resets</span>
     </div>
     <div class="gex-ladder-layers" id="gx-ladder-layers">
-      <button type="button" data-layer="0dte">0DTE</button>
-      <button type="button" data-layer="vol">vol</button>
-      <button type="button" data-layer="magnets">magnets</button>
-      <button type="button" data-layer="em">EM</button>
+      <button type="button" data-layer="0dte" title="Today's expiring book: its call/put walls, gamma wall, and 0DTE flip">0dte</button>
+      <button type="button" data-layer="vol" title="Today's book re-weighted by session volume instead of open interest — a second opinion on the 0DTE walls">vol</button>
+      <button type="button" data-layer="magnets" title="Ranked gamma magnets: G1–G3 across the whole book, N1–N3 within ±1% of spot">magnets</button>
+      <button type="button" data-layer="em" title="Expected-move bands: today's (spot ± EM, dashed) and the prior session's (close ± its EM, dotted)">em</button>
     </div>
     <div id="gx-ladder"></div>
   </div>
