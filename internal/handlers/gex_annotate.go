@@ -135,6 +135,7 @@ type gexMoment struct {
 	label string // "entry 14:32 ET"
 	snap  *gex.Snapshot
 	flip  *float64 // ticks from trade price to the flip (nil when flip is null)
+	flipI *float64 // ticks to the intraday (<=5 DTE) flip; nil pre-v0.6.0
 	cw    *gex.Level
 	pw    *gex.Level
 	cwT   *float64 // ticks to the call wall (nil when absent / cold basis)
@@ -147,6 +148,7 @@ func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tic
 		label: kind + " " + at.In(gexEastern()).Format("15:04") + " ET",
 		snap:  s,
 		flip:  gexTicks(price, s.Flip.Futures, tick),
+		flipI: gexTicks(price, s.FlipIntraday.Futures, tick),
 		cw:    gexWall(s, "call_wall"),
 		pw:    gexWall(s, "put_wall"),
 		stale: at.Sub(s.AsOf) > gexStaleAfter,
@@ -218,12 +220,12 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 		}
 		return m.snap.Regime.State + " (P" + p + ")"
 	}
-	flipCell := func(m gexMoment, ref *float64) string {
-		if m.flip == nil {
+	flipCell := func(ticks, cur, ref *float64) string {
+		if ticks == nil {
 			return "—"
 		}
-		c := gexSide(m.flip) + " (" + fmt.Sprintf("%+.0f t", *m.flip) + ")"
-		return c + gexDrift(m.snap.Flip.Futures, ref)
+		c := gexSide(ticks) + " (" + fmt.Sprintf("%+.0f t", *ticks) + ")"
+		return c + gexDrift(cur, ref)
 	}
 	wallCell := func(ticks *float64, l *gex.Level, ref *float64) string {
 		if ticks == nil {
@@ -243,7 +245,15 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 	b.WriteString("_Gamma context (GEX) — futures prices_\n\n")
 	b.WriteString("|  | " + en.label + " | " + ex.label + " |\n|---|---|---|\n")
 	b.WriteString("| regime | " + regimeCell(en) + " | " + regimeCell(ex) + " |\n")
-	b.WriteString("| flip " + gexLevelLabel(enSnap.Flip.Futures) + " | " + flipCell(en, nil) + " | " + flipCell(ex, enSnap.Flip.Futures) + " |\n")
+	b.WriteString("| flip " + gexLevelLabel(enSnap.Flip.Futures) + " | " + flipCell(en.flip, en.snap.Flip.Futures, nil) + " | " + flipCell(ex.flip, ex.snap.Flip.Futures, enSnap.Flip.Futures) + " |\n")
+	// The intraday (<=5 DTE) flip is the front-week hedging line - for day
+	// trades usually the more relevant regime boundary, sitting far closer to
+	// spot than the whole-book flip (engine update 003). The row appears only
+	// when a moment has it: pre-v0.6.0 snapshots serve null, and rendering a
+	// dash row into every historical annotation would be noise, not absence.
+	if enSnap.FlipIntraday.Futures != nil || exSnap.FlipIntraday.Futures != nil {
+		b.WriteString("| flip intraday " + gexLevelLabel(enSnap.FlipIntraday.Futures) + " | " + flipCell(en.flipI, en.snap.FlipIntraday.Futures, nil) + " | " + flipCell(ex.flipI, ex.snap.FlipIntraday.Futures, enSnap.FlipIntraday.Futures) + " |\n")
+	}
 	b.WriteString("| call wall " + gexWallLabel(en.cw) + " | " + wallCell(en.cwT, en.cw, nil) + " | " + wallCell(ex.cwT, ex.cw, gexWallFutures(en.cw)) + " |\n")
 	b.WriteString("| put wall " + gexWallLabel(en.pw) + " | " + wallCell(en.pwT, en.pw, nil) + " | " + wallCell(ex.pwT, ex.pw, gexWallFutures(en.pw)) + " |\n")
 
@@ -312,12 +322,18 @@ func gexComment(market string, m gexMoment) string {
 	if side == "" {
 		side = "null"
 	}
+	sideI := gexSide(m.flipI)
+	if sideI == "" {
+		sideI = "null"
+	}
 	return "<!-- " + gexMarker +
 		" market=" + market +
 		" regime=" + m.snap.Regime.State +
 		" pctl=" + num(m.snap.Regime.Percentile20D) +
 		" flip_side=" + side +
 		" dist_flip_ticks=" + ticks(m.flip) +
+		" flip_intraday_side=" + sideI +
+		" dist_flip_intraday_ticks=" + ticks(m.flipI) +
 		" dist_cw_ticks=" + ticks(m.cwT) +
 		" dist_pw_ticks=" + ticks(m.pwT) +
 		" em=" + num(m.snap.ExpectedMove1D) +

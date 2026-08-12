@@ -79,9 +79,14 @@ type Snapshot struct {
 	// Flip0DTE is today's expiring book's zero crossing (engine v0.5.0,
 	// update 002). JSON null - no crossing today, or a pre-v0.5.0 snapshot -
 	// leaves both fields nil.
-	Flip0DTE Flip    `json:"flip_0dte"`
-	Levels   []Level `json:"levels"`
-	Profile  Profile `json:"profile"`
+	Flip0DTE Flip `json:"flip_0dte"`
+	// FlipIntraday is the front-week hedging flip: the zero crossing of the
+	// <=5-calendar-DTE book (engine v0.6.0, update 003). It usually sits far
+	// closer to spot than the whole-book flip, making it the more relevant
+	// regime line for day trades. Null pre-v0.6.0 and on SPX/NDX.
+	FlipIntraday Flip    `json:"flip_intraday"`
+	Levels       []Level `json:"levels"`
+	Profile      Profile `json:"profile"`
 	// NetGexChange1H/1D compare the whole-book net GEX against the same
 	// session's grid ~1h earlier / the prior session's final snapshot. They
 	// are computed at SERVE time relative to the requested moment, so under
@@ -139,12 +144,15 @@ type Flip struct {
 	Futures *float64 `json:"futures"`
 }
 
-// Level is one structural level. Types as of engine v0.5.0: call_wall /
-// put_wall (bucket "all", and again with bucket "0dte" for today's expiring
-// book), gamma_wall (bucket "0dte"), gamma_1..gamma_3 (bucket "all", ranked
-// gamma magnets with the walls excluded), and em_1d_min / em_1d_max (prior
-// session close +/- its expected move, gex 0.0). Consumers must ignore types
-// they do not recognize and match walls on type AND bucket.
+// Level is one structural level. Types as of engine v0.6.0: call_wall /
+// put_wall (bucket "all"; also bucket "0dte" for today's expiring book and
+// "0dte_vol" for today's book weighted by session volume instead of OI),
+// gamma_wall (buckets "0dte" / "0dte_vol"), gamma_1..gamma_3 (bucket "all",
+// ranked gamma magnets with the walls excluded), gamma_near_1..gamma_near_3
+// (bucket "all", magnets ranked within +/-1% of spot, walls and G1-G3
+// excluded), and em_1d_min / em_1d_max (prior session close +/- its expected
+// move, gex 0.0). Consumers must ignore types they do not recognize and
+// match walls on type AND bucket.
 type Level struct {
 	Type    string   `json:"type"`
 	Index   float64  `json:"index"`

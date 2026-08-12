@@ -25,6 +25,7 @@ const snapshotFixture = `{
   "regime": { "state": "positive", "net_gex_at_spot": 74486642363.04909, "percentile_20d": null },
   "flip": { "index": 7437.554700050995, "futures": 7465.788539891167 },
   "flip_0dte": { "index": 7460.0, "futures": 7488.35 },
+  "flip_intraday": { "index": 7470.0, "futures": 7498.39 },
   "levels": [
     { "type": "call_wall", "index": 7530.0, "futures": 7558.584773164092, "gex": 10838901323.0, "bucket": "all" },
     { "type": "put_wall",  "index": 7300.0, "futures": 7327.711665882853, "gex": -3897046844.0, "bucket": "all" },
@@ -102,6 +103,9 @@ func TestSnapshot(t *testing.T) {
 	if s.Flip0DTE.Index == nil || *s.Flip0DTE.Index != 7460.0 {
 		t.Errorf("flip_0dte.index = %v", s.Flip0DTE.Index)
 	}
+	if s.FlipIntraday.Futures == nil || *s.FlipIntraday.Futures != 7498.39 {
+		t.Errorf("flip_intraday.futures = %v", s.FlipIntraday.Futures)
+	}
 	if s.NetGexChange1H == nil || *s.NetGexChange1H != -9.2e9 ||
 		s.NetGexChange1D == nil || *s.NetGexChange1D != 11.3e9 {
 		t.Errorf("net_gex_change 1h/1d = %v/%v", s.NetGexChange1H, s.NetGexChange1D)
@@ -139,6 +143,7 @@ func TestSnapshotNullFields(t *testing.T) {
 	}
 	// Pre-v0.5.0 payload: every update-002 field stays nil, never zero.
 	if s.Flip0DTE.Index != nil || s.Flip0DTE.Futures != nil ||
+		s.FlipIntraday.Index != nil || s.FlipIntraday.Futures != nil ||
 		s.NetGexChange1H != nil || s.NetGexChange1D != nil {
 		t.Errorf("absent v0.5.0 fields not nil: %+v", s)
 	}

@@ -79,10 +79,17 @@ func gexSnapshotJSON(asOf string) string {
 		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null},
 		"flip": {"index": 7437.55, "futures": 7465.788539891167},
 		"flip_0dte": {"index": 7460.0, "futures": 7488.35},
+		"flip_intraday": {"index": 7470.0, "futures": 7498.39},
 		"levels": [
 			{"type": "call_wall", "index": 7510.0, "futures": 7538.54, "gex": 2.1e9, "bucket": "0dte"},
 			{"type": "put_wall", "index": 7450.0, "futures": 7478.31, "gex": -1.2e9, "bucket": "0dte"},
 			{"type": "gamma_wall", "index": 7500.0, "futures": 7528.5, "gex": 1.5e9, "bucket": "0dte"},
+			{"type": "call_wall", "index": 7505.0, "futures": 7533.52, "gex": 1.9e9, "bucket": "0dte_vol"},
+			{"type": "put_wall", "index": 7445.0, "futures": 7473.28, "gex": -1.1e9, "bucket": "0dte_vol"},
+			{"type": "gamma_wall", "index": 7505.0, "futures": 7533.52, "gex": 1.9e9, "bucket": "0dte_vol"},
+			{"type": "gamma_near_1", "index": 7490.0, "futures": 7518.46, "gex": 5.2e9, "bucket": "all"},
+			{"type": "gamma_near_2", "index": 7470.0, "futures": 7498.39, "gex": 3.1e9, "bucket": "all"},
+			{"type": "gamma_near_3", "index": 7510.0, "futures": 7538.54, "gex": 2.9e9, "bucket": "all"},
 			{"type": "call_wall", "index": 7530.0, "futures": 7558.584773164092, "gex": 1.08e10, "bucket": "all"},
 			{"type": "put_wall", "index": 7300.0, "futures": 7327.711665882853, "gex": -3.9e9, "bucket": "all"},
 			{"type": "gamma_1", "index": 7500.0, "futures": 7528.5, "gex": 8.4e9, "bucket": "all"},
@@ -156,10 +163,14 @@ func TestGexAnnotate(t *testing.T) {
 		"entry 15:52 ET", "exit 15:58 ET",
 		"positive (P—)",
 		"flip 7465.79", "above (+177 t)", // (7510-7465.79)/0.25
+		// The front-week flip row (engine v0.6.0): (7510-7498.39)/0.25.
+		"flip intraday 7498.39", "above (+46 t)", "above (+67 t)",
 		"call wall 7558.58", "-194 t", // entry moment
 		"put wall 7327.71", "+729 t",
 		"market=ES", "regime=positive", "pctl=null", "flip_side=above",
-		"dist_flip_ticks=+176.8", "dist_cw_ticks=-194.3", "dist_pw_ticks=+729.2",
+		"dist_flip_ticks=+176.8",
+		"flip_intraday_side=above", "dist_flip_intraday_ticks=+46.4",
+		"dist_cw_ticks=-194.3", "dist_pw_ticks=+729.2",
 		"em=9.7", "stale=false", "<!-- " + gexMarker,
 	} {
 		if !strings.Contains(body, want) {

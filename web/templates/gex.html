@@ -453,19 +453,32 @@
     const defs = [
       { v: lad.cw,      label: 'call wall',       color: c.pos,    note: lad.cwGex },
       { v: lad.cw0,     label: 'call wall 0DTE',  color: c.pos,    dash: true, thin: true, note: lad.cw0Gex },
+      // "vol" = the 0DTE book re-weighted by session volume (labels kept
+      // short: the long form overflows the label column).
+      { v: lad.cwv,     label: 'call wall vol',   color: c.pos,    dotted: true, thin: true, note: lad.cwvGex },
       { v: lad.gw0,     label: 'gamma wall 0DTE', color: muted,    thin: true, note: lad.gw0Gex },
+      { v: lad.gwv,     label: 'gamma wall vol',  color: muted,    dotted: true, thin: true, note: lad.gwvGex },
       { v: lad.pw0,     label: 'put wall 0DTE',   color: c.neg,    dash: true, thin: true, note: lad.pw0Gex },
+      { v: lad.pwv,     label: 'put wall vol',    color: c.neg,    dotted: true, thin: true, note: lad.pwvGex },
       { v: lad.emHigh,  label: 'EM high',         color: muted,    dash: true },
       { v: lad.em1High, label: 'prior EM high',   color: muted,    dotted: true, thin: true },
       { v: lad.spot,    label: 'spot',            color: c.accent, bold: true },
       { v: lad.em1Low,  label: 'prior EM low',    color: muted,    dotted: true, thin: true },
       { v: lad.emLow,   label: 'EM low',          color: muted,    dash: true },
       { v: lad.flip,    label: 'gamma flip',      color: flipColor, note: 'regime' },
+      // The intraday (<=5 DTE) flip: the front-week hedging line, usually
+      // far closer to spot than the whole-book flip (engine update 003).
+      { v: lad.flipI,   label: 'gamma flip intraday', color: flipColor, dotted: true, thin: true },
       { v: lad.flip0,   label: 'gamma flip 0DTE', color: flipColor, dash: true, thin: true },
       { v: lad.pw,      label: 'put wall',        color: c.neg,    note: lad.pwGex },
     ];
     (lad.magnets || []).forEach((m) => {
       defs.push({ v: m.v, label: 'G' + m.n, color: c.accent, thin: true, tick: true, note: m.gex });
+    });
+    // Near magnets (within +/-1% of spot) draw as even shorter ticks than
+    // the G's - closer to the label column, mirroring their tighter scope.
+    (lad.near || []).forEach((m) => {
+      defs.push({ v: m.v, label: 'N' + m.n, color: c.accent, thin: true, tick: true, tickNear: true, note: m.gex });
     });
     const rows = defs.filter((r) => r.v != null).sort((a, b) => b.v - a.v);
 
@@ -561,8 +574,9 @@
       let ty = yv;
       placed.forEach((p) => { if (ty - p < labelH && p - ty < labelH) ty = p + labelH; });
       placed.push(ty);
-      // Magnets are ticks (right half of the band), not full structure lines.
-      const x0 = r.tick ? Math.round(bandW * 0.55) : 0;
+      // Magnets are ticks (right half of the band), not full structure
+      // lines; near magnets are shorter still.
+      const x0 = r.tickNear ? Math.round(bandW * 0.72) : r.tick ? Math.round(bandW * 0.55) : 0;
       const width = r.bold ? 2 : r.thin ? 1 : 1.2;
       const dashAttr = r.dotted ? ' stroke-dasharray="1 3"' : r.dash ? ' stroke-dasharray="4 3"' : '';
       parts.push(`<line x1="${x0}" y1="${yv}" x2="${bandW}" y2="${yv}" stroke="${r.color}" stroke-width="${width}"${dashAttr}/>`);
