@@ -25,6 +25,14 @@
     var el = document.activeElement;
     if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable)) return true;
     if (document.querySelector('.htmx-request')) return true;
+    // Unsaved edits, even unfocused: bulk-edit tables mark rows dirty
+    // (dirty_table.js), and a typed-but-unfocused field differs from its
+    // server-rendered default (journal notes, filter inputs).
+    if (document.querySelector('.row-dirty')) return true;
+    var fields = document.querySelectorAll('textarea, input[type="text"], input[type="number"], input[type="date"]');
+    for (var i = 0; i < fields.length; i++) {
+      if (fields[i].value !== fields[i].defaultValue) return true;
+    }
     return false;
   }
 

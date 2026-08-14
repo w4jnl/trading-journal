@@ -599,7 +599,6 @@ func run() error {
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)
-	mux.HandleFunc("GET /sync/banner", h.SyncBanner)
 	mux.HandleFunc("GET /data/version", h.DataVersion)
 	mux.HandleFunc("GET /oi", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
