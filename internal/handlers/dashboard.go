@@ -107,6 +107,7 @@ var equityTypeOrder = []struct {
 // last-sync panel and the 5 most recent trades.
 func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	isFragment := liveFragment(r)
 	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	h.IbkrSync.MaybeEnqueueUser(userID(ctx))     // throttled IBKR gateway poll; nil-safe
 	tz := h.localTZ()
@@ -162,7 +163,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		h.logger().Warn("dashboard open positions", "err", err)
 	}
 
-	h.renderPage(w, r, "dashboard.html", map[string]any{
+	data := map[string]any{
 		"NavActive":     "dashboard",
 		"OpenPositions": openPositions,
 		"BackHref":      validBackHref(r),
@@ -177,7 +178,12 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		"CurveYs":       curveYs,
 		"CurveTotal":    curveTotal,
 		"CurveHasData":  len(curveXs) > 0,
-	})
+	}
+	if isFragment {
+		h.renderPageFragment(w, r, "dashboard.html", "dash_fragment", data)
+		return
+	}
+	h.renderPage(w, r, "dashboard.html", data)
 }
 
 // dashboardDaily returns one row per trading day in the last `days` days,

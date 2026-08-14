@@ -78,13 +78,7 @@
   </form>
 </section>
 
-{{template "journal_summary" (dict
-  "Summary"      .Summary
-  "Trades"       .Trades
-  "AllowUnlink"  false
-  "EntryID"      0
-  "EmptyMessage" "No trades closed on this day."
-)}}
+{{template "journal_live" .}}
 
 {{if .ChartEnabled}}
 <div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
@@ -120,4 +114,24 @@
                           overflow: hidden; text-overflow: ellipsis; display: -webkit-box;
                           -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
 </style>
+{{end}}
+
+{{/* Live-refresh region: only the day's trade summary derives from trading
+     data. The entry editor, AI panel, replay chart, and recent list stay
+     outside - an update must never touch entry content mid-edit. */}}
+{{define "journal_live"}}
+<div id="journal-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+{{template "journal_summary" (dict
+  "Summary"      .Summary
+  "Trades"       .Trades
+  "AllowUnlink"  false
+  "EntryID"      0
+  "EmptyMessage" "No trades closed on this day."
+)}}
+</div>
+{{end}}
+
+{{define "journal_fragment"}}
+{{template "journal_live" .}}
+{{template "live_refresh_oob" .}}
 {{end}}

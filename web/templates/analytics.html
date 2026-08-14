@@ -17,6 +17,225 @@
   <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades</span>
 </form>
 
+{{template "analytics_live" .}}
+
+
+{{template "trade_sheet" .}}
+
+<style>
+  /* Auto-surfaced findings. Cards inherit sentiment tone via card--{pos,neg,warn,info}. */
+  .insights-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  .insight-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
+  .insight-detail { font-size: 13px; color: var(--fg); line-height: 1.45; }
+  .insight-link {
+    margin-top: auto;
+    font-size: 12px;
+    align-self: flex-start;
+    color: var(--accent);
+  }
+
+  /* Hero / supporting KPI rows replace the old equal-weight 6-tile grid. */
+  .kpi-hero {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 16px;
+    margin-bottom: 16px;
+  }
+  .kpi-hero .card--hero { padding: 18px 20px; }
+  .kpi-supporting {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 800px) {
+    .kpi-hero, .kpi-supporting { grid-template-columns: 1fr; }
+  }
+
+  /* Legacy classes — keep so the page still renders cleanly. */
+  .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
+  .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+  @media (max-width: 800px) {
+    .row-3, .row-2 { grid-template-columns: 1fr; }
+  }
+  .trade-link { text-decoration: none; border-bottom: 1px dashed currentColor; color: inherit; }
+  .trade-link:hover { border-bottom-style: solid; }
+  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
+  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
+  .breakdown-grid h3 { margin-top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; margin-bottom: 8px; }
+  .chart-host { width: 100%; }
+
+  /* Clickable breakdown rows: the symbol/direction tables drill into /trades
+     with the matching filter. Arrow appears on hover for affordance. */
+  .bucket-key { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+  .bucket-key:hover { color: var(--accent); }
+  .bucket-key .bucket-arrow { opacity: 0; transition: opacity var(--t-fast); color: var(--accent); }
+  .bucket-key:hover .bucket-arrow { opacity: 1; }
+
+  .bar-row { display: grid; grid-template-columns: 120px 1fr 40px; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
+  .bar-row .lbl { color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bar-row .bar { height: 10px; border-radius: 999px; background: var(--bg-sunken); }
+  .bar-row .bar.pos { background: var(--pos); }
+  .bar-row .bar.neg { background: var(--neg); }
+  .bar-row .val { text-align: right; color: var(--fg); }
+
+  .blurb { font-size: 12px; color: var(--fg-muted); line-height: 1.5; margin-top: 8px; }
+  .blurb .pair { display: inline-block; margin-right: 12px; }
+  .blurb code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); font-size: 11px; }
+
+  /* uPlot dark-mode tweaks: pick up CSS vars so charts respect theme. */
+  [data-theme="dark"] .u-legend { color: var(--fg); }
+  [data-theme="dark"] .u-axis { color: var(--fg-muted); }
+</style>
+
+{{template "uplot_assets" .}}
+<script>
+  /* Date-range preset behavior comes from the shared "date_presets" partial. */
+
+  // Chart data is rendered into the page as inline JSON by the handler.
+  let chartData = {{.ChartJSON}};
+  // Live-refresh hook: the fragment region ends with a tiny script calling
+  // this with fresh data; the builder then repaints into the swapped hosts.
+  window.__setAnalyticsData = function (d) { chartData = d; buildCharts(); };
+
+  const charts = {};
+
+  function buildCharts() {
+    Object.values(charts).forEach((u) => { if (u) u.destroy(); });
+    const c = uplotHelpers.colors();
+    const noData = '<div class="muted" style="padding:24px; text-align:center;">No data in selection.</div>';
+
+    /* Colors, axes, and money formatting come from uplotHelpers
+       (web/static/js/uplot-helpers.js) - shared with dashboard + trades. */
+    const fmtMoneyFull = uplotHelpers.fmtMoneyFull;
+    const hexToRgba = uplotHelpers.rgba;
+    const commonAxes = () => uplotHelpers.axes(c);
+    const moneyAxes = () => uplotHelpers.moneyAxes(c);
+
+    // Daily Account Balance — actual running equity, anchored per-account.
+    // Falls back to the empty-state message when no selected account has a
+    // balance anchor (the server returns empty balance arrays in that case).
+    (function () {
+      const el = document.querySelector('#chart-balance');
+      if (!el) return;
+      if (!chartData.balDates || chartData.balDates.length === 0) {
+        el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No equity data — set a balance anchor on <a href="/accounts">/accounts</a>.</div>';
+        return;
+      }
+      charts.balance = new uPlot({
+        width: el.clientWidth, height: 220,
+        series: [
+          {},
+          { label: 'Balance', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6, value: (u, v) => fmtMoneyFull(v) },
+        ],
+        axes: moneyAxes(),
+      }, [chartData.balDates, chartData.balance], el);
+    })();
+
+    // Daily Net Cumulative P&L
+    (function () {
+      const el = document.querySelector('#chart-cum');
+      if (!el) return;
+      if (!chartData.dates || chartData.dates.length === 0) { el.innerHTML = noData; return; }
+      charts.cum = new uPlot({
+        width: el.clientWidth, height: 220,
+        series: [
+          {},
+          { label: 'Cumulative', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6, value: (u, v) => fmtMoneyFull(v) },
+        ],
+        axes: moneyAxes(),
+      }, [chartData.dates, chartData.cum], el);
+    })();
+
+    // Net Daily P&L bar chart
+    (function () {
+      const el = document.querySelector('#chart-daily');
+      if (!el) return;
+      if (!chartData.dates || chartData.dates.length === 0) { el.innerHTML = noData; return; }
+      charts.daily = new uPlot({
+        width: el.clientWidth, height: 220,
+        series: [
+          {},
+          {
+            label: 'Net daily',
+            /* Per-bar sign coloring must go through the bars builder's disp
+               option: a series-level stroke/fill callback receives the SERIES
+               index (not the bar index), and uPlot also invokes it during
+               legend init before u.data exists - the old u.data[1][idx]
+               callbacks threw there and killed this chart entirely. */
+            paths: uPlot.paths.bars({ size: [0.7, 16], disp: {
+              stroke: { unit: 3, values: () => chartData.nets.map((v) => v >= 0 ? c.pos : c.neg) },
+              fill:   { unit: 3, values: () => chartData.nets.map((v) => v >= 0 ? hexToRgba(c.pos, 0.6) : hexToRgba(c.neg, 0.6)) },
+            } }),
+            stroke: c.pos, /* legend marker */
+            fill: hexToRgba(c.pos, 0.6),
+          },
+        ],
+        axes: commonAxes(),
+      }, [chartData.dates, chartData.nets], el);
+    })();
+  }
+
+  buildCharts();
+  /* Rebuild on theme change (new token colors) and resize (uPlot sizes are
+     fixed at construction) - shared hook from uplot-helpers.js. */
+  uplotHelpers.rebuildKey('analytics', buildCharts);
+</script>
+{{end}}
+
+{{/* bucket_table renders a Trades / W-L / Net / Best / Worst breakdown.
+
+    Pass a dict with:
+      - Buckets:  []analyticsBucket
+      - LinkBase: optional URL prefix for click-to-filter (empty = plain rows)
+    When LinkBase is non-empty, each row's Key becomes an <a> appended to
+    LinkBase — lets the user drill from analytics into /trades pre-filtered. */}}
+{{define "bucket_table"}}
+{{- $buckets := .Buckets -}}
+{{- $linkBase := .LinkBase -}}
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr><th>Group</th><th class="tabular">Trades</th><th>W/L</th><th class="tabular">Net P&amp;L</th><th class="tabular">Best</th><th class="tabular">Worst</th></tr>
+    </thead>
+    <tbody>
+      {{range $buckets}}
+      <tr>
+        <td>
+          {{if $linkBase}}
+            <a href="{{$linkBase}}{{.Key}}" class="bucket-key" title="Filter trades by {{.Key}}"><code>{{.Key}}</code> <span class="bucket-arrow">→</span></a>
+          {{else}}
+            <code>{{.Key}}</code>
+          {{end}}
+        </td>
+        <td class="tabular num">{{.Trades}}</td>
+        <td><span class="pnl-pos num">{{.Wins}}</span><span class="muted">/</span><span class="pnl-neg num">{{.Losses}}</span></td>
+        <td class="tabular num {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</td>
+        <td class="tabular num pnl-pos">{{printf "%.2f" .Best}}</td>
+        <td class="tabular num pnl-neg">{{printf "%.2f" .Worst}}</td>
+      </tr>
+      {{else}}
+      <tr><td colspan="6" class="muted" style="text-align: center;">no data</td></tr>
+      {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+{{/* Live-refresh region: everything derived from trades (insights, KPIs,
+     equity tables, chart hosts, breakdowns). The filter form, styles, and
+     the chart-builder script stay outside; the region's closing data script
+     re-executes per swap and hands fresh data to the static builder. On the
+     initial render the builder script below defines the hook AFTER this
+     region, so the guard makes the first call a no-op - the builder's own
+     initial build covers it. */}}
+{{define "analytics_live"}}
+<div id="analytics-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
 {{with .Headline}}
 {{if .Trades}}
 
@@ -280,206 +499,11 @@
   </section>
 </div>
 
-{{template "trade_sheet" .}}
-
-<style>
-  /* Auto-surfaced findings. Cards inherit sentiment tone via card--{pos,neg,warn,info}. */
-  .insights-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  .insight-card { display: flex; flex-direction: column; gap: 6px; padding: 12px 14px; }
-  .insight-detail { font-size: 13px; color: var(--fg); line-height: 1.45; }
-  .insight-link {
-    margin-top: auto;
-    font-size: 12px;
-    align-self: flex-start;
-    color: var(--accent);
-  }
-
-  /* Hero / supporting KPI rows replace the old equal-weight 6-tile grid. */
-  .kpi-hero {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 16px;
-    margin-bottom: 16px;
-  }
-  .kpi-hero .card--hero { padding: 18px 20px; }
-  .kpi-supporting {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 20px;
-  }
-  @media (max-width: 800px) {
-    .kpi-hero, .kpi-supporting { grid-template-columns: 1fr; }
-  }
-
-  /* Legacy classes — keep so the page still renders cleanly. */
-  .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-  .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
-  @media (max-width: 800px) {
-    .row-3, .row-2 { grid-template-columns: 1fr; }
-  }
-  .trade-link { text-decoration: none; border-bottom: 1px dashed currentColor; color: inherit; }
-  .trade-link:hover { border-bottom-style: solid; }
-  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
-  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
-  .breakdown-grid h3 { margin-top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; margin-bottom: 8px; }
-  .chart-host { width: 100%; }
-
-  /* Clickable breakdown rows: the symbol/direction tables drill into /trades
-     with the matching filter. Arrow appears on hover for affordance. */
-  .bucket-key { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
-  .bucket-key:hover { color: var(--accent); }
-  .bucket-key .bucket-arrow { opacity: 0; transition: opacity var(--t-fast); color: var(--accent); }
-  .bucket-key:hover .bucket-arrow { opacity: 1; }
-
-  .bar-row { display: grid; grid-template-columns: 120px 1fr 40px; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
-  .bar-row .lbl { color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar-row .bar { height: 10px; border-radius: 999px; background: var(--bg-sunken); }
-  .bar-row .bar.pos { background: var(--pos); }
-  .bar-row .bar.neg { background: var(--neg); }
-  .bar-row .val { text-align: right; color: var(--fg); }
-
-  .blurb { font-size: 12px; color: var(--fg-muted); line-height: 1.5; margin-top: 8px; }
-  .blurb .pair { display: inline-block; margin-right: 12px; }
-  .blurb code { background: var(--bg-sunken); padding: 1px 5px; border-radius: var(--r-sm); font-size: 11px; }
-
-  /* uPlot dark-mode tweaks: pick up CSS vars so charts respect theme. */
-  [data-theme="dark"] .u-legend { color: var(--fg); }
-  [data-theme="dark"] .u-axis { color: var(--fg-muted); }
-</style>
-
-{{template "uplot_assets" .}}
-<script>
-  /* Date-range preset behavior comes from the shared "date_presets" partial. */
-
-  // Chart data is rendered into the page as inline JSON by the handler.
-  const chartData = {{.ChartJSON}};
-
-  const charts = {};
-
-  function buildCharts() {
-    Object.values(charts).forEach((u) => { if (u) u.destroy(); });
-    const c = uplotHelpers.colors();
-    const noData = '<div class="muted" style="padding:24px; text-align:center;">No data in selection.</div>';
-
-    /* Colors, axes, and money formatting come from uplotHelpers
-       (web/static/js/uplot-helpers.js) - shared with dashboard + trades. */
-    const fmtMoneyFull = uplotHelpers.fmtMoneyFull;
-    const hexToRgba = uplotHelpers.rgba;
-    const commonAxes = () => uplotHelpers.axes(c);
-    const moneyAxes = () => uplotHelpers.moneyAxes(c);
-
-    // Daily Account Balance — actual running equity, anchored per-account.
-    // Falls back to the empty-state message when no selected account has a
-    // balance anchor (the server returns empty balance arrays in that case).
-    (function () {
-      const el = document.querySelector('#chart-balance');
-      if (!el) return;
-      if (!chartData.balDates || chartData.balDates.length === 0) {
-        el.innerHTML = '<div class="muted" style="padding:24px; text-align:center;">No equity data — set a balance anchor on <a href="/accounts">/accounts</a>.</div>';
-        return;
-      }
-      charts.balance = new uPlot({
-        width: el.clientWidth, height: 220,
-        series: [
-          {},
-          { label: 'Balance', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6, value: (u, v) => fmtMoneyFull(v) },
-        ],
-        axes: moneyAxes(),
-      }, [chartData.balDates, chartData.balance], el);
-    })();
-
-    // Daily Net Cumulative P&L
-    (function () {
-      const el = document.querySelector('#chart-cum');
-      if (!el) return;
-      if (!chartData.dates || chartData.dates.length === 0) { el.innerHTML = noData; return; }
-      charts.cum = new uPlot({
-        width: el.clientWidth, height: 220,
-        series: [
-          {},
-          { label: 'Cumulative', stroke: c.accent, fill: hexToRgba(c.accent, 0.10), width: 1.6, value: (u, v) => fmtMoneyFull(v) },
-        ],
-        axes: moneyAxes(),
-      }, [chartData.dates, chartData.cum], el);
-    })();
-
-    // Net Daily P&L bar chart
-    (function () {
-      const el = document.querySelector('#chart-daily');
-      if (!el) return;
-      if (!chartData.dates || chartData.dates.length === 0) { el.innerHTML = noData; return; }
-      charts.daily = new uPlot({
-        width: el.clientWidth, height: 220,
-        series: [
-          {},
-          {
-            label: 'Net daily',
-            /* Per-bar sign coloring must go through the bars builder's disp
-               option: a series-level stroke/fill callback receives the SERIES
-               index (not the bar index), and uPlot also invokes it during
-               legend init before u.data exists - the old u.data[1][idx]
-               callbacks threw there and killed this chart entirely. */
-            paths: uPlot.paths.bars({ size: [0.7, 16], disp: {
-              stroke: { unit: 3, values: () => chartData.nets.map((v) => v >= 0 ? c.pos : c.neg) },
-              fill:   { unit: 3, values: () => chartData.nets.map((v) => v >= 0 ? hexToRgba(c.pos, 0.6) : hexToRgba(c.neg, 0.6)) },
-            } }),
-            stroke: c.pos, /* legend marker */
-            fill: hexToRgba(c.pos, 0.6),
-          },
-        ],
-        axes: commonAxes(),
-      }, [chartData.dates, chartData.nets], el);
-    })();
-  }
-
-  buildCharts();
-  /* Rebuild on theme change (new token colors) and resize (uPlot sizes are
-     fixed at construction) - shared hook from uplot-helpers.js. */
-  uplotHelpers.onRebuild(buildCharts);
-</script>
+<script>if (window.__setAnalyticsData) window.__setAnalyticsData({{.ChartJSON}});</script>
+</div>
 {{end}}
 
-{{/* bucket_table renders a Trades / W-L / Net / Best / Worst breakdown.
-
-    Pass a dict with:
-      - Buckets:  []analyticsBucket
-      - LinkBase: optional URL prefix for click-to-filter (empty = plain rows)
-    When LinkBase is non-empty, each row's Key becomes an <a> appended to
-    LinkBase — lets the user drill from analytics into /trades pre-filtered. */}}
-{{define "bucket_table"}}
-{{- $buckets := .Buckets -}}
-{{- $linkBase := .LinkBase -}}
-<div class="table-scroll">
-  <table>
-    <thead>
-      <tr><th>Group</th><th class="tabular">Trades</th><th>W/L</th><th class="tabular">Net P&amp;L</th><th class="tabular">Best</th><th class="tabular">Worst</th></tr>
-    </thead>
-    <tbody>
-      {{range $buckets}}
-      <tr>
-        <td>
-          {{if $linkBase}}
-            <a href="{{$linkBase}}{{.Key}}" class="bucket-key" title="Filter trades by {{.Key}}"><code>{{.Key}}</code> <span class="bucket-arrow">→</span></a>
-          {{else}}
-            <code>{{.Key}}</code>
-          {{end}}
-        </td>
-        <td class="tabular num">{{.Trades}}</td>
-        <td><span class="pnl-pos num">{{.Wins}}</span><span class="muted">/</span><span class="pnl-neg num">{{.Losses}}</span></td>
-        <td class="tabular num {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</td>
-        <td class="tabular num pnl-pos">{{printf "%.2f" .Best}}</td>
-        <td class="tabular num pnl-neg">{{printf "%.2f" .Worst}}</td>
-      </tr>
-      {{else}}
-      <tr><td colspan="6" class="muted" style="text-align: center;">no data</td></tr>
-      {{end}}
-    </tbody>
-  </table>
-</div>
+{{define "analytics_fragment"}}
+{{template "analytics_live" .}}
+{{template "live_refresh_oob" .}}
 {{end}}

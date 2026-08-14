@@ -3,3 +3,7 @@
      the page was RENDERED with (injected by renderPage); the script compares
      it against GET /data/version and reloads on any difference. */}}
 {{define "live_refresh"}}<div id="live-refresh" data-version="{{.DataVersion}}" hidden></div>{{end}}
+
+{{/* OOB variant closing every fragment bundle: swapping the marker in with
+     the fresh version is what makes the client's compare converge. */}}
+{{define "live_refresh_oob"}}<div id="live-refresh" data-version="{{.DataVersion}}" hx-swap-oob="outerHTML" hidden></div>{{end}}

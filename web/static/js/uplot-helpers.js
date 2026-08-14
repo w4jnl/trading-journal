@@ -64,10 +64,32 @@
 
   // Rebuild hook: charts re-render on theme toggle (new token colors) and on
   // resize (uPlot sizes are fixed at construction).
-  function onRebuild(fn) {
-    window.addEventListener("themechange", function () { setTimeout(fn, 50); });
-    window.addEventListener("resize", function () { setTimeout(fn, 50); });
+  //
+  // Two registration styles:
+  //  - onRebuild(fn): append-only, for scripts that run exactly once per full
+  //    page load (e.g. the gex page).
+  //  - rebuildKey(key, fn): keyed and idempotent - re-registering the same
+  //    key REPLACES the previous fn. Required for scripts inside live-refresh
+  //    fragment regions, which re-execute on every swap: without the key each
+  //    swap would stack another listener whose stale closure rebuilds a
+  //    duplicate chart into the freshly swapped host.
+  var rebuilders = [];   // anonymous, append-only
+  var keyed = {};        // key -> latest fn
+  var hooked = false;
+  function rebuildAll() {
+    setTimeout(function () {
+      rebuilders.forEach(function (fn) { fn(); });
+      Object.keys(keyed).forEach(function (k) { keyed[k](); });
+    }, 50);
   }
+  function hook() {
+    if (hooked) return;
+    hooked = true;
+    window.addEventListener("themechange", rebuildAll);
+    window.addEventListener("resize", rebuildAll);
+  }
+  function onRebuild(fn) { hook(); rebuilders.push(fn); }
+  function rebuildKey(key, fn) { hook(); keyed[key] = fn; }
 
   // curve renders the shared cumulative-P&L line (dashboard hero + trades
   // performance chart): stroke green/red by final total, soft fill, x is
@@ -99,7 +121,7 @@
       }, [data.xs, data.ys], el);
     }
     build();
-    onRebuild(build);
+    rebuildKey("curve:" + elId, build); // keyed: safe under fragment re-runs
   }
 
   window.uplotHelpers = {
@@ -110,6 +132,7 @@
     axes: axes,
     moneyAxes: moneyAxes,
     onRebuild: onRebuild,
+    rebuildKey: rebuildKey,
     curve: curve,
   };
 })();

@@ -57,6 +57,7 @@ type analyticsBucket struct {
 // trader the numbers they need; equity curve is a later addition.
 func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	isFragment := liveFragment(r)
 	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	h.IbkrSync.MaybeEnqueueUser(userID(ctx))     // throttled IBKR gateway poll; nil-safe
 	tz := h.localTZ()
@@ -157,7 +158,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		formTo = to.AddDate(0, 0, -1).Format("2006-01-02")
 	}
 
-	h.renderPage(w, r, "analytics.html", map[string]any{
+	data := map[string]any{
 		"NavActive":        "analytics",
 		"BackHref":         validBackHref(r),
 		"Headline":         headline,
@@ -178,7 +179,12 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"EquityByType":     equityByType,
 		"EquityIncluded":   balIncluded,
 		"EquityExcluded":   balExcluded,
-	})
+	}
+	if isFragment {
+		h.renderPageFragment(w, r, "analytics.html", "analytics_fragment", data)
+		return
+	}
+	h.renderPage(w, r, "analytics.html", data)
 }
 
 // balanceSeriesForFilter builds a per-day running-equity series across the

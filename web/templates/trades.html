@@ -3,26 +3,11 @@
 {{define "content"}}
 {{template "back_button" .}}
 {{template "live_refresh" .}}
+{{template "uplot_assets" .}}
 
 <h1>Trades</h1>
 
-{{if .ChartTitle}}
-<div class="card card--compact mb-16">
-  <div class="label" style="margin-bottom: 8px;">{{.ChartTitle}}</div>
-  <div id="perf-chart" data-total="{{.ChartTotal}}" style="height: 240px; width: 100%;"></div>
-</div>
-{{template "uplot_assets" .}}
-<script>
-  /* Inline data emitted by the Go handler. Both arrays are aligned and start
-     with a (firstExitTime - 1min, 0) baseline so the curve rises from zero. */
-  window.__perfChart = {
-    xs: [{{range $i, $v := .ChartXs}}{{if $i}},{{end}}{{$v}}{{end}}],
-    ys: [{{range $i, $v := .ChartYs}}{{if $i}},{{end}}{{$v}}{{end}}],
-    total: {{.ChartTotal}},
-  };
-  uplotHelpers.curve('perf-chart', window.__perfChart, { moneyAxis: true });
-</script>
-{{end}}
+{{template "trades_chart_live" .}}
 
 <form method="get" action="/trades" class="filter-row">
   {{template "account_filter" .}}
@@ -73,76 +58,8 @@
   <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 
-<div class="muted retired-toggle-row" style="margin-bottom:8px;">
-  <span><span class="num">{{.Total}}</span> closed trades.</span>
-  {{if .RetiredAuto}}
-    <span class="retired-toggle-note">Retired accounts included because the filter targets them.</span>
-  {{else if .ShowRetired}}
-    <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Hide retired accounts</a>
-  {{else if .RetiredHidden}}
-    <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Show <span class="num">{{.RetiredHidden}}</span> trade{{if ne .RetiredHidden 1}}s{{end}} from retired accounts</a>
-  {{end}}
-</div>
+{{template "trades_table_live" .}}
 
-<div class="table-scroll">
-  <table>
-    <thead>
-      <tr>
-        <th class="col-sel"><input type="checkbox" id="sel-all" title="Select all on this page"></th>
-        <th></th>
-        <th>Entry time</th>
-        <th>Account</th>
-        <th>Symbol</th>
-        <th>Dir</th>
-        <th>Horizon</th>
-        <th class="tabular">Qty</th>
-        <th class="tabular">Entry</th>
-        <th class="tabular">Exit</th>
-        <th class="tabular">Gross P&amp;L</th>
-        <th class="tabular">Comm</th>
-        <th class="tabular">Net P&amp;L</th>
-        <th class="tabular" title="Account balance after this trade">Bal after</th>
-      </tr>
-    </thead>
-    <tbody>
-    {{range .Trades}}
-      <tr class="trade-row{{if .AccountRetired}} trade-row--retired{{end}}"
-          data-trade-id="{{.ID}}"
-          hx-get="/trades/{{.ID}}"
-          hx-target="#trade-sheet-content"
-          hx-swap="innerHTML"
-          hx-indicator="closest tr">
-        <td class="col-sel" onclick="event.stopPropagation();">
-          <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
-        </td>
-        <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
-          <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
-        </td>
-        <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
-        <td>{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
-        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
-        <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
-        <td>{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
-        <td class="tabular num">{{.Qty}}</td>
-        <td class="tabular num">{{printf "%.2f" .EntryPrice}}</td>
-        <td class="tabular num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
-        <td class="tabular num">{{pnlClass .GrossPnl}}</td>
-        <td class="tabular num muted">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
-        <td class="tabular num">{{pnlChip .NetPnl}}</td>
-        <td class="tabular num">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
-      </tr>
-    {{else}}
-      <tr><td colspan="14" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
-    {{end}}
-    </tbody>
-  </table>
-</div>
-
-<div class="pager">
-  <a href="{{.PrevPage}}" class="{{if not .PrevPage}}disabled{{end}}">‹ Prev</a>
-  <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
-  <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
-</div>
 
 <!-- Sticky selection action bar — appears when ≥1 trade is ticked. The form
      POSTs the selected IDs to /journal/group/new which creates the entry and
@@ -364,4 +281,111 @@
   .trade-row--retired { opacity: 0.58; }
   .trade-row--retired:hover { opacity: 1; }
 </style>
+{{end}}
+
+{{/* Live-refresh regions. The filter form sits between them and stays
+     untouched (it holds the user's in-progress picker state), as do the
+     selection bar and trade sheet below. The chart's inline script re-runs
+     per swap; uplotHelpers.curve registers under a stable key so re-runs
+     replace the chart instead of stacking listeners. */}}
+{{define "trades_chart_live"}}
+<div id="trades-chart-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+{{if .ChartTitle}}
+<div class="card card--compact mb-16">
+  <div class="label" style="margin-bottom: 8px;">{{.ChartTitle}}</div>
+  <div id="perf-chart" data-total="{{.ChartTotal}}" style="height: 240px; width: 100%;"></div>
+</div>
+<script>
+  /* Inline data emitted by the Go handler. Both arrays are aligned and start
+     with a (firstExitTime - 1min, 0) baseline so the curve rises from zero. */
+  window.__perfChart = {
+    xs: [{{range $i, $v := .ChartXs}}{{if $i}},{{end}}{{$v}}{{end}}],
+    ys: [{{range $i, $v := .ChartYs}}{{if $i}},{{end}}{{$v}}{{end}}],
+    total: {{.ChartTotal}},
+  };
+  uplotHelpers.curve('perf-chart', window.__perfChart, { moneyAxis: true });
+</script>
+{{end}}
+</div>
+{{end}}
+
+{{define "trades_table_live"}}
+<div id="trades-table-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+<div class="muted retired-toggle-row" style="margin-bottom:8px;">
+  <span><span class="num">{{.Total}}</span> closed trades.</span>
+  {{if .RetiredAuto}}
+    <span class="retired-toggle-note">Retired accounts included because the filter targets them.</span>
+  {{else if .ShowRetired}}
+    <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Hide retired accounts</a>
+  {{else if .RetiredHidden}}
+    <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Show <span class="num">{{.RetiredHidden}}</span> trade{{if ne .RetiredHidden 1}}s{{end}} from retired accounts</a>
+  {{end}}
+</div>
+
+<div class="table-scroll">
+  <table>
+    <thead>
+      <tr>
+        <th class="col-sel"><input type="checkbox" id="sel-all" title="Select all on this page"></th>
+        <th></th>
+        <th>Entry time</th>
+        <th>Account</th>
+        <th>Symbol</th>
+        <th>Dir</th>
+        <th>Horizon</th>
+        <th class="tabular">Qty</th>
+        <th class="tabular">Entry</th>
+        <th class="tabular">Exit</th>
+        <th class="tabular">Gross P&amp;L</th>
+        <th class="tabular">Comm</th>
+        <th class="tabular">Net P&amp;L</th>
+        <th class="tabular" title="Account balance after this trade">Bal after</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Trades}}
+      <tr class="trade-row{{if .AccountRetired}} trade-row--retired{{end}}"
+          data-trade-id="{{.ID}}"
+          hx-get="/trades/{{.ID}}"
+          hx-target="#trade-sheet-content"
+          hx-swap="innerHTML"
+          hx-indicator="closest tr">
+        <td class="col-sel" onclick="event.stopPropagation();">
+          <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
+        </td>
+        <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
+          <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
+        </td>
+        <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
+        <td>{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
+        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+        <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td>{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
+        <td class="tabular num">{{.Qty}}</td>
+        <td class="tabular num">{{printf "%.2f" .EntryPrice}}</td>
+        <td class="tabular num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
+        <td class="tabular num">{{pnlClass .GrossPnl}}</td>
+        <td class="tabular num muted">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+        <td class="tabular num">{{pnlChip .NetPnl}}</td>
+        <td class="tabular num">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+    {{else}}
+      <tr><td colspan="14" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+
+<div class="pager">
+  <a href="{{.PrevPage}}" class="{{if not .PrevPage}}disabled{{end}}">‹ Prev</a>
+  <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
+  <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
+</div>
+</div>
+{{end}}
+
+{{define "trades_fragment"}}
+{{template "trades_chart_live" .}}
+{{template "trades_table_live" .}}
+{{template "live_refresh_oob" .}}
 {{end}}

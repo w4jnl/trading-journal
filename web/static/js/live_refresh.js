@@ -1,22 +1,31 @@
 // Live refresh: pages that render the #live-refresh marker poll
-// GET /data/version every 10s and reload when the server's data version
-// differs from the one the page was rendered with. The compare is strict
-// INEQUALITY, never "greater than": versions are process-local and restart
-// at zero, so a post-deploy page must still refresh once.
+// GET /data/version every 10s and, when the server's data version differs
+// from the marker's, fetch the SAME URL with fragment=1. The server answers
+// with an out-of-band htmx bundle - each dynamic region re-rendered with
+// hx-swap-oob plus a refreshed marker - so only the data regions repaint:
+// no full reload, no flash, no scroll jump, and static chrome (nav, filter
+// forms, style blocks) is never touched.
 //
-// A reload is only automatic when the page is idle; mid-interaction (open
-// trade sheet, row selection, open picker, focused field, in-flight htmx
-// request) it shows a click-to-refresh toast instead and tries again on the
-// next poll. URL query strings carry all filter/pagination state on these
-// pages, so location.reload() never loses where you were.
+// The version compare is strict INEQUALITY, never "greater than": versions
+// are process-local and restart at zero, so a post-deploy page must still
+// refresh once. The marker is re-read from the DOM on every check because
+// the update swaps it.
+//
+// Updates only apply when the page is idle; mid-interaction (open trade
+// sheet, row selection, open picker, focused field, unsaved edits, in-flight
+// htmx request) they defer to a click-to-refresh toast, and the next idle
+// poll applies automatically.
 (function () {
   'use strict';
 
-  var marker = document.getElementById('live-refresh');
-  if (!marker || !/^\d+$/.test(marker.dataset.version || '')) return;
+  if (!document.getElementById('live-refresh')) return;
 
-  var renderedVersion = marker.dataset.version;
-  var notifiedVersion = null;
+  var toastShownFor = null;
+
+  function version() {
+    var m = document.getElementById('live-refresh');
+    return m && /^\d+$/.test(m.dataset.version || '') ? m.dataset.version : null;
+  }
 
   function busy() {
     if (document.querySelector('#trade-sheet-backdrop.show')) return true;
@@ -36,32 +45,53 @@
     return false;
   }
 
+  function apply() {
+    if (!window.htmx) { location.reload(); return; }
+    var url = location.pathname + location.search + (location.search ? '&' : '?') + 'fragment=1';
+    // swap:'none' - everything in the response is hx-swap-oob and lands by
+    // element id, including the refreshed #live-refresh marker. The explicit
+    // target is required: htmx.ajax without one throws synchronously (2.0.3)
+    // even though swap:'none' never uses it.
+    try {
+      htmx.ajax('GET', url, { target: 'body', swap: 'none' }).catch(function () {
+        /* transient trouble: marker unchanged, so the next poll retries */
+      });
+    } catch (e) {
+      // A synchronous throw is a programming/environment error, not transient
+      // network trouble - fall back to the one action that always works.
+      location.reload();
+    }
+  }
+
   function notify(v) {
-    if (notifiedVersion === v) return; // one toast per version
-    notifiedVersion = v;
+    if (toastShownFor === v) return; // one toast per version
+    toastShownFor = v;
     if (typeof window.toast !== 'function') return;
     var t = window.toast('New data available — click to refresh', { kind: 'info', duration: 0 });
     if (t && t.addEventListener) {
       t.style.cursor = 'pointer';
-      t.addEventListener('click', function () { location.reload(); });
+      t.addEventListener('click', function () {
+        t.remove();
+        apply();
+      });
     }
   }
 
   function check() {
     if (document.hidden) return;
+    var mine = version();
+    if (mine == null) return;
     fetch('/data/version', { headers: { Accept: 'application/json' } })
       .then(function (r) { return r.ok ? r.json() : null; })
       .then(function (d) {
         if (!d || d.v == null) return;
         var v = String(d.v);
-        if (v === renderedVersion) return;
+        if (v === version()) return; // re-read: an update may just have landed
         if (busy()) {
-          // The compare stays against the RENDERED version, so even after a
-          // dismissed toast the next idle poll still auto-reloads.
           notify(v);
           return;
         }
-        location.reload();
+        apply();
       })
       .catch(function () { /* transient network trouble: next poll retries */ });
   }

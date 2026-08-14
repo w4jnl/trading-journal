@@ -54,6 +54,7 @@ type weekTotal struct {
 // Query params: month=YYYY-MM (default current), account_id (default all).
 func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	isFragment := liveFragment(r)
 	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	h.IbkrSync.MaybeEnqueueUser(userID(ctx))     // throttled IBKR gateway poll; nil-safe
 	tz := h.localTZ()
@@ -336,7 +337,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 	filterQS := template.URL(filterOnly.Encode())
 
-	h.renderPage(w, r, "calendar.html", map[string]any{
+	data := map[string]any{
 		"NavActive":        "calendar",
 		"BackHref":         validBackHref(r),
 		"MonthLabel":       monthStart.Format("January 2006"),
@@ -356,7 +357,12 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		"FilterCount":      accountFilt.SelectedCount,
 		"FilterQS":         filterQS,
 		"CalendarBack":     calendarBack,
-	})
+	}
+	if isFragment {
+		h.renderPageFragment(w, r, "calendar.html", "cal_fragment", data)
+		return
+	}
+	h.renderPage(w, r, "calendar.html", data)
 }
 
 func parseMonth(s string, tz *time.Location) (time.Time, error) {
