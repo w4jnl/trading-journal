@@ -361,6 +361,11 @@ func (h *Handlers) CommissionsBulkSave(w http.ResponseWriter, r *http.Request) {
 			h.logger().Warn("rebuild after instrument change", "symbol", sym, "err", err)
 		}
 	}
+	// Commission/instrument specs are global reference data - every user's
+	// derived trades may have changed.
+	if len(rebuildSymbols) > 0 {
+		h.LiveData.BumpAll()
+	}
 
 	http.Redirect(w, r, "/commissions?flash=saved", http.StatusSeeOther)
 }
@@ -408,6 +413,7 @@ func (h *Handlers) CommissionsRateCreate(w http.ResponseWriter, r *http.Request)
 	if err := h.ImportSvc.RebuildTradesForCommissionCell(ctx, firm, ac, sc); err != nil {
 		h.logger().Warn("rebuild after rate create", "err", err)
 	}
+	h.LiveData.BumpAll()
 	h.redirectCommissions(w, r, rateKey(ac, firm, sc), nil)
 }
 
@@ -437,6 +443,7 @@ func (h *Handlers) CommissionsRateDelete(w http.ResponseWriter, r *http.Request)
 		if err := h.ImportSvc.RebuildTradesForCommissionCell(ctx, firm, ac, sc); err != nil {
 			h.logger().Warn("rebuild after rate delete", "err", err)
 		}
+		h.LiveData.BumpAll()
 	}
 	h.redirectCommissions(w, r, rateKey(ac, firm, sc), nil)
 }

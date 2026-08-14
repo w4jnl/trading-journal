@@ -219,7 +219,7 @@
          title="{{if .OpenPositionCount}}{{.OpenPositionCount}} open position(s){{else}}Flat - reconcile executions{{end}}">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16"/><path d="M4 12h16"/><path d="M4 17h10"/><circle cx="18.5" cy="17.5" r="3"/></svg>
         Reconcile
-        {{if .OpenPositionCount}}<span class="nav-badge" aria-label="{{.OpenPositionCount}} open positions">{{.OpenPositionCount}}</span>{{end}}
+        {{template "nav_open_badge" .}}
       </a>
       <a href="/admin/users" class="sidebar-link {{if eq .NavActive "admin_users"}}active{{end}}">
         <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="9" cy="8" r="3.5"/><path d="M2 21 C 2 16 5 14 9 14 C 13 14 16 16 16 21"/><circle cx="17" cy="10" r="2.5"/><path d="M14 21 C 14 17.5 16 16 18 16 C 20 16 22 17.5 22 21"/></svg>
@@ -326,6 +326,7 @@
   </script>
   <script src="/static/js/toast.js" defer></script>
   <script src="/static/js/app_feedback.js" defer></script>
+  <script src="/static/js/live_refresh.js" defer></script>
   <script src="/static/js/dirty_table.js" defer></script>
   <script src="/static/js/journal_editor.js" defer></script>
   <script src="/static/js/journal_view.js" defer></script>

@@ -445,6 +445,9 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 				"account_id", id, "err", err)
 		}
 	}
+	if len(firmChanged) > 0 {
+		h.LiveData.Bump(userID(ctx))
+	}
 
 	dest := "/accounts?flash=saved"
 	if n := h.retryEmailFillsFor(ctx, aliasRefs...); n > 0 {
@@ -704,6 +707,7 @@ func (h *Handlers) AccountsReassign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.LiveData.Bump(userID(ctx))
 	flash := fmt.Sprintf("moved%%3D%d", tradesMoved) // moved=<n>
 	http.Redirect(w, r, "/accounts?flash="+flash, http.StatusSeeOther)
 }
@@ -769,6 +773,7 @@ func (h *Handlers) AccountsDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.LiveData.Bump(userID(ctx))
 	flash := "deleted=" + url.QueryEscape(acct.Name)
 	http.Redirect(w, r, "/accounts?flash="+url.QueryEscape(flash), http.StatusSeeOther)
 }
@@ -792,6 +797,9 @@ func (h *Handlers) AccountsRecomputeAll(w http.ResponseWriter, r *http.Request) 
 			continue
 		}
 		rebuilt++
+	}
+	if rebuilt > 0 {
+		h.LiveData.Bump(userID(ctx))
 	}
 	flash := fmt.Sprintf("recomputed=%d", rebuilt)
 	if failed > 0 {
@@ -864,6 +872,8 @@ func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.recomputeAffectedTradesAfterFirmChange(ctx, id); err != nil {
 		h.logger().Warn("recompute trades after account edit failed", "account_id", id, "err", err)
+	} else {
+		h.LiveData.Bump(userID(ctx))
 	}
 
 	h.renderPartial(w, "_account_row.html", "account_row", map[string]any{

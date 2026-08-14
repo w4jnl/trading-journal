@@ -204,6 +204,10 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 		return "", fmt.Errorf("commit: %w", err)
 	}
 	s.enqueuePrefetch(ctx, acct.ID)
+	// Reaching this commit means the fill was inserted or updated (every
+	// skip path returns earlier), so the bump is naturally changes-only.
+	// Attributed to the resolved account OWNER, same as the builder above.
+	s.bumpVersion(acct.UserID)
 	return action, nil
 }
 

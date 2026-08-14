@@ -500,6 +500,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 // specific YYYY-MM-DD.
 func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	isFragment := liveFragment(r)
 
 	dateStr := r.PathValue("date")
 	if dateStr == "" {
@@ -579,7 +580,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.renderPage(w, r, "journal.html", map[string]any{
+	data := map[string]any{
 		"NavActive":        "journal",
 		"BackHref":         backHref,
 		"Date":             dateStr,
@@ -602,7 +603,12 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(entry.StrategyID),
 		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
-	})
+	}
+	if isFragment {
+		h.renderPageFragment(w, r, "journal.html", "journal_fragment", data)
+		return
+	}
+	h.renderPage(w, r, "journal.html", data)
 }
 
 // parseMood reads the form value 1-5 for mood, returning nil for invalid/empty.

@@ -73,6 +73,7 @@ type tradeRow struct {
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
 func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	isFragment := liveFragment(r)                // must precede parseTradeFilters/pageRef: strips the flag from the URL
 	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	h.IbkrSync.MaybeEnqueueUser(userID(ctx))     // throttled IBKR gateway poll; nil-safe
 	filters, err := h.parseTradeFilters(r)
@@ -170,7 +171,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	h.renderPage(w, r, "trades.html", map[string]any{
+	data := map[string]any{
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
 		"Trades":           rows,
@@ -195,7 +196,12 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"RetiredHidden":    retiredHidden,
 		"RetiredQuery":     retiredToggleQuery(r, !filters.IncludeRetired),
 		"GroupOptions":     groupOptions,
-	})
+	}
+	if isFragment {
+		h.renderPageFragment(w, r, "trades.html", "trades_fragment", data)
+		return
+	}
+	h.renderPage(w, r, "trades.html", data)
 }
 
 // groupOption is one row in the "Add to existing group" picker on

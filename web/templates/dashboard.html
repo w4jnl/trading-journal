@@ -2,8 +2,73 @@
 
 {{define "content"}}
 {{template "back_button" .}}
-{{template "sync_banner_bootstrap" .}}
+{{template "live_refresh" .}}
+{{template "uplot_assets" .}}
+{{template "dash_live" .}}
 
+
+<style>
+  /* Hero row spacing under H1 */
+  .dash-hero { margin-bottom: 24px; }
+  .dash-hero__today {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .dash-today__pnl { display: flex; }
+  .dash-today__sub { font-size: 12px; }
+  .dash-today__bw {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-top: auto;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+  }
+
+  /* Stat strip — 5 tiles auto-fitting to the row. Each tile is a compact
+     card with a label, a primary value, and (when applicable) a sparkline. */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+  @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+  @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
+
+  .stat-tile {
+    padding: 12px 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .stat-tile .label   { margin-bottom: 2px; }
+  .stat-tile .spark   { margin-top: 6px; width: 100%; height: 20px; opacity: 0.85; }
+  .stat-tile .spark--pos    { color: var(--pos); }
+  .stat-tile .spark--neg    { color: var(--neg); }
+  .stat-tile .spark--accent { color: var(--accent); }
+
+  /* Equity breakdown — same look as before, slightly polished. */
+  {{/* table.equity-breakdown lives in app.css (shared with analytics). */}}
+
+  /* Recent + imports section spacing */
+  .grid-12 + .grid-12 { margin-top: 24px; }
+  .sync-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .sync-list li { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+  .sync-list li:last-child { padding-bottom: 0; border-bottom: 0; }
+</style>
+{{end}}
+
+{{/* The dashboard's dynamic region, shared verbatim between the full page
+     and the live-refresh fragment bundle. Everything inside derives from
+     trading data; chrome (nav, uplot assets, styles) stays outside so an
+     update only repaints what changed. The inline curve script re-executes
+     per swap - uplotHelpers.curve registers its rebuild hook under a stable
+     key, so re-runs replace rather than stack. */}}
+{{define "dash_live"}}
+<div id="dash-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
 <h1>Dashboard <span class="muted" style="font-weight:400;">· {{.DateLabel}}</span></h1>
 
 {{if .IsStale}}
@@ -21,7 +86,6 @@
     </div>
     {{if .CurveHasData}}
       <div id="dash-curve" data-total="{{.CurveTotal}}" style="height: 220px; width: 100%;"></div>
-      {{template "uplot_assets" .}}
       <script>
         window.__dashCurve = {
           xs: [{{range $i, $v := .CurveXs}}{{if $i}},{{end}}{{$v}}{{end}}],
@@ -220,57 +284,13 @@
     </div>
   </aside>
 </div>
+</div>
+{{end}}
 
-<style>
-  /* Hero row spacing under H1 */
-  .dash-hero { margin-bottom: 24px; }
-  .dash-hero__today {
-    display: flex;
-    flex-direction: column;
-    gap: 14px;
-  }
-  .dash-today__pnl { display: flex; }
-  .dash-today__sub { font-size: 12px; }
-  .dash-today__bw {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 16px;
-    margin-top: auto;
-    padding-top: 12px;
-    border-top: 1px solid var(--border);
-  }
-
-  /* Stat strip — 5 tiles auto-fitting to the row. Each tile is a compact
-     card with a label, a primary value, and (when applicable) a sparkline. */
-  .stat-strip {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: 12px;
-    margin-bottom: 24px;
-  }
-  @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-  @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
-
-  .stat-tile {
-    padding: 12px 14px;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-  }
-  .stat-tile .label   { margin-bottom: 2px; }
-  .stat-tile .spark   { margin-top: 6px; width: 100%; height: 20px; opacity: 0.85; }
-  .stat-tile .spark--pos    { color: var(--pos); }
-  .stat-tile .spark--neg    { color: var(--neg); }
-  .stat-tile .spark--accent { color: var(--accent); }
-
-  /* Equity breakdown — same look as before, slightly polished. */
-  {{/* table.equity-breakdown lives in app.css (shared with analytics). */}}
-
-  /* Recent + imports section spacing */
-  .grid-12 + .grid-12 { margin-top: 24px; }
-  .sync-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .sync-list li { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-  .sync-list li:last-child { padding-bottom: 0; border-bottom: 0; }
-</style>
+{{/* Out-of-band bundle for live refresh: the region plus the refreshed
+     version marker (the marker swap is what converges the client compare). */}}
+{{define "dash_fragment"}}
+{{template "dash_live" .}}
+{{template "live_refresh_oob" .}}
+{{template "nav_open_badge_oob" .}}
 {{end}}
