@@ -1,0 +1,7 @@
+{{/* Sidebar open-position badge on the Reconcile link. Wrapped in a stable
+     span so live-refresh fragment bundles can OOB-swap it: it is the one
+     piece of data-derived chrome OUTSIDE every page region, and without the
+     swap it stays stale until navigation. */}}
+{{define "nav_open_badge_inner"}}{{if .OpenPositionCount}}<span class="nav-badge" aria-label="{{.OpenPositionCount}} open positions">{{.OpenPositionCount}}</span>{{end}}{{end}}
+{{define "nav_open_badge"}}<span id="nav-open-badge">{{template "nav_open_badge_inner" .}}</span>{{end}}
+{{define "nav_open_badge_oob"}}<span id="nav-open-badge" hx-swap-oob="outerHTML">{{template "nav_open_badge_inner" .}}</span>{{end}}

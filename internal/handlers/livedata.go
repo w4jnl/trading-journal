@@ -40,6 +40,13 @@ func (h *Handlers) renderPageFragment(w http.ResponseWriter, r *http.Request, pa
 	data["OOB"] = true
 	if u := auth.UserFrom(r.Context()); u != nil {
 		data["DataVersion"] = h.LiveData.Version(u.ID)
+		// The bundle also OOB-swaps the sidebar open-position badge - the one
+		// data-derived piece of chrome outside every page region.
+		if _, exists := data["OpenPositionCount"]; !exists {
+			if n, err := h.Queries.CountOpenPositions(r.Context(), u.ID); err == nil {
+				data["OpenPositionCount"] = n
+			}
+		}
 	}
 	t, err := h.parsedPage(page)
 	if err != nil {

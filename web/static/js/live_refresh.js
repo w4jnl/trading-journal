@@ -88,9 +88,11 @@
         var v = String(d.v);
         if (v === version()) return; // re-read: an update may just have landed
         if (busy()) {
+          if (window.console && console.debug) console.debug('live-refresh: update to v' + v + ' deferred (page busy) - toast shown');
           notify(v);
           return;
         }
+        if (window.console && console.debug) console.debug('live-refresh: applying update to v' + v);
         apply();
       })
       .catch(function () { /* transient network trouble: next poll retries */ });
