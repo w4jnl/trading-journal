@@ -48,6 +48,11 @@ type ImportService struct {
 	// import, so trade-replay charts render instantly on first view. Nil
 	// disables prefetch (charts then fall back to their on-view load button).
 	Prefetch BarPrefetcher
+
+	// Versions receives a post-commit "this user's data changed" signal for
+	// every ingest path, powering the pages' live refresh. Nil disables the
+	// signal (pages then only refresh manually).
+	Versions DataVersionBumper
 }
 
 // BarPrefetcher warms the historical-bar cache for an account's recent trades
@@ -55,6 +60,22 @@ type ImportService struct {
 // (rather than imported) so the importer takes no dependency on marketdata.
 type BarPrefetcher interface {
 	EnqueueAccount(ctx context.Context, accountID int64)
+}
+
+// DataVersionBumper records that a user's trading data changed, AFTER the
+// change committed. Implemented by internal/livedata.Notifier; defined here
+// so the importer takes no dependency on the web layer's notifier package.
+type DataVersionBumper interface {
+	Bump(userID int64)
+}
+
+// bumpVersion publishes a post-commit change signal; a no-op when no
+// notifier is wired. Must only be called after the mutating transaction has
+// committed - a bump for a rolled-back tx would trigger a phantom refresh.
+func (s *ImportService) bumpVersion(userID int64) {
+	if s.Versions != nil {
+		s.Versions.Bump(userID)
+	}
 }
 
 // enqueuePrefetch fires a best-effort, non-blocking prefetch for each distinct
@@ -450,6 +471,7 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 		accountIDs = append(accountIDs, k.AccountID)
 	}
 	s.enqueuePrefetch(ctx, accountIDs...)
+	s.bumpVersion(s.effectiveUserID(ctx))
 	return nil
 }
 
@@ -644,6 +666,7 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 		return fmt.Errorf("commit: %w", err)
 	}
 	s.enqueuePrefetch(ctx, accountID)
+	s.bumpVersion(s.effectiveUserID(ctx))
 	return nil
 }
 

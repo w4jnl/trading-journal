@@ -27,6 +27,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/handlers"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/livedata"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/mwmail"
@@ -405,6 +406,11 @@ func run() error {
 		return fmt.Errorf("unknown auth.mode %q", cfg.Auth.Mode)
 	}
 
+	// Live-refresh notifier: mutation paths bump it post-commit, open pages
+	// poll it via GET /data/version. Always constructed (no typed-nil hazard;
+	// its methods are nil-safe anyway).
+	liveData := livedata.NewNotifier()
+
 	importSvc := &importer.ImportService{
 		DB:           conn,
 		Queries:      queries,
@@ -412,6 +418,7 @@ func run() error {
 		FailedDir:    failed,
 		Timezone:     tz,
 		UserID:       bootstrapUserID,
+		Versions:     liveData,
 	}
 	// Assign the concrete prefetcher only when non-nil, so the interface field
 	// doesn't end up holding a typed-nil (which would read as != nil).
@@ -467,6 +474,7 @@ func run() error {
 	}
 
 	h := &handlers.Handlers{
+		LiveData:         liveData,
 		Templates:        web.TemplatesFS,
 		DB:               conn,
 		ImportSvc:        importSvc,
@@ -592,6 +600,7 @@ func run() error {
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)
 	mux.HandleFunc("GET /sync/banner", h.SyncBanner)
+	mux.HandleFunc("GET /data/version", h.DataVersion)
 	mux.HandleFunc("GET /oi", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/file/{name}", h.OIDashboardFile)

@@ -1,0 +1,5 @@
+{{/* Live-refresh marker: pages that include this opt in to the poll-driven
+     auto refresh in live_refresh.js. data-version carries the data version
+     the page was RENDERED with (injected by renderPage); the script compares
+     it against GET /data/version and reloads on any difference. */}}
+{{define "live_refresh"}}<div id="live-refresh" data-version="{{.DataVersion}}" hidden></div>{{end}}

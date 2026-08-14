@@ -383,6 +383,9 @@ func (h *Handlers) AdminTransactionsBulkSave(w http.ResponseWriter, r *http.Requ
 			h.logger().Warn("reconcile bulk rebuild", "account", k.accountID, "symbol", k.symbol, "err", err)
 		}
 	}
+	if changed > 0 {
+		h.LiveData.Bump(uid)
+	}
 	msg := "no changes"
 	if changed > 0 {
 		msg = fmt.Sprintf("saved %d change(s)", changed)
@@ -399,6 +402,7 @@ func (h *Handlers) rebuildAndRedirect(w http.ResponseWriter, r *http.Request, ui
 		h.serverError(w, fmt.Errorf("rebuild trades: %w", err))
 		return
 	}
+	h.LiveData.Bump(uid)
 	net := h.netPosition(ctx, accountID, symbol)
 	status := "flat"
 	if net != 0 {

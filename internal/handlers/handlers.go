@@ -24,6 +24,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/livedata"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
@@ -95,6 +96,13 @@ type Handlers struct {
 	// be attributed to any account.
 	MWEmailArchiveDir string
 
+	// LiveData is the per-user data-version notifier behind the pages' live
+	// refresh: mutation paths bump it post-commit, GET /data/version serves
+	// it, and renderPage stamps the current version into pages that opt in.
+	// Nil-safe (Version() on nil returns 0), so tests building bare Handlers
+	// keep working; main always wires a real one.
+	LiveData *livedata.Notifier
+
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys
 	// distinguish page renders ("page:<name>") from partial renders
@@ -135,6 +143,14 @@ func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page strin
 					if n, err := h.Queries.CountOpenPositions(r.Context(), u.ID); err == nil {
 						m["OpenPositionCount"] = n
 					}
+				}
+			}
+			// Current data version for the live-refresh marker, keyed on the
+			// EFFECTIVE user so an admin acting-as follows the target user's
+			// data stream. Pages that don't render the marker just ignore it.
+			if _, exists := m["DataVersion"]; !exists {
+				if u := auth.UserFrom(r.Context()); u != nil {
+					m["DataVersion"] = h.LiveData.Version(u.ID)
 				}
 			}
 		}
