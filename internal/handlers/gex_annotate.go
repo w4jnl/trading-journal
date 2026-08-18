@@ -218,7 +218,15 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 		if v := m.snap.Regime.Percentile20D; v != nil {
 			p = strconv.FormatFloat(*v, 'f', 0, 64)
 		}
-		return m.snap.Regime.State + " (P" + p + ")"
+		c := m.snap.Regime.State + " (P" + p + ")"
+		// The front-week reading is quoted when it DISAGREES - that is the
+		// session context that explains behavior (engine update 004);
+		// agreement would just repeat the state. The machine comment always
+		// carries it either way.
+		if is := m.snap.Regime.IntradayState; is != "" && is != m.snap.Regime.State {
+			c += " · intraday " + is
+		}
+		return c
 	}
 	flipCell := func(ticks, cur, ref *float64) string {
 		if ticks == nil {
@@ -322,6 +330,10 @@ func gexComment(market string, m gexMoment) string {
 	if side == "" {
 		side = "null"
 	}
+	intra := m.snap.Regime.IntradayState
+	if intra == "" {
+		intra = "null"
+	}
 	sideI := gexSide(m.flipI)
 	if sideI == "" {
 		sideI = "null"
@@ -329,6 +341,7 @@ func gexComment(market string, m gexMoment) string {
 	return "<!-- " + gexMarker +
 		" market=" + market +
 		" regime=" + m.snap.Regime.State +
+		" intraday_regime=" + intra +
 		" pctl=" + num(m.snap.Regime.Percentile20D) +
 		" flip_side=" + side +
 		" dist_flip_ticks=" + ticks(m.flip) +

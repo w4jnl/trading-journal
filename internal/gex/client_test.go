@@ -22,7 +22,7 @@ const snapshotFixture = `{
     "ratio": 1.0037961186140893, "source": "mw_marks",
     "paired_at": "2026-07-31T19:34:39Z", "age_seconds": 921
   },
-  "regime": { "state": "positive", "net_gex_at_spot": 74486642363.04909, "percentile_20d": null },
+  "regime": { "state": "positive", "net_gex_at_spot": 74486642363.04909, "percentile_20d": null, "intraday_state": "negative" },
   "flip": { "index": 7437.554700050995, "futures": 7465.788539891167 },
   "flip_0dte": { "index": 7460.0, "futures": 7488.35 },
   "flip_intraday": { "index": 7470.0, "futures": 7498.39 },
@@ -91,6 +91,9 @@ func TestSnapshot(t *testing.T) {
 	if s.Regime.Percentile20D != nil {
 		t.Errorf("percentile = %v, want nil (engine null)", *s.Regime.Percentile20D)
 	}
+	if s.Regime.IntradayState != "negative" {
+		t.Errorf("intraday_state = %q", s.Regime.IntradayState)
+	}
 	if s.Flip.Futures == nil || *s.Flip.Futures != 7465.788539891167 {
 		t.Errorf("flip.futures = %v", s.Flip.Futures)
 	}
@@ -149,6 +152,9 @@ func TestSnapshotNullFields(t *testing.T) {
 	}
 	if s.Regime.Percentile20D == nil || *s.Regime.Percentile20D != 37.5 {
 		t.Errorf("percentile = %v", s.Regime.Percentile20D)
+	}
+	if s.Regime.IntradayState != "" {
+		t.Errorf("absent intraday_state = %q, want empty", s.Regime.IntradayState)
 	}
 }
 

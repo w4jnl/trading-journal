@@ -114,6 +114,15 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 	if total, ok := s.Regime.Total(); ok {
 		line("total net gamma across the whole book: %s", gexFmtB(total))
 	}
+	// Front-week regime (engine v0.6.1): emitted only when the snapshot has
+	// it, so retained reads of older snapshots stay byte-identical.
+	if is := s.Regime.IntradayState; is != "" {
+		if is != s.Regime.State {
+			line("front-week (<=5 DTE) regime: %s - DISAGREES with the whole-book regime above; spot sits between the intraday and whole-book flips, and for the session the front-week reading usually dominates behavior", is)
+		} else {
+			line("front-week (<=5 DTE) regime: %s (agrees with the whole book)", is)
+		}
+	}
 	line("spot: %.2f", spot)
 	if em > 0 {
 		line("expected move (1 session, 1 standard deviation): %.1f points", em)

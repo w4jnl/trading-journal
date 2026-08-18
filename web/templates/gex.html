@@ -104,6 +104,9 @@
   <div class="card stat-tile">
     <div class="label">Regime</div>
     <div class="num--lg {{.View.RegimeClass}}" id="gx-regime">{{.View.Regime}}</div>
+    {{/* Front-week reading, shown only when it disagrees with the book -
+         empty otherwise (server decides, update 004). */}}
+    <div class="sub {{.View.RegimeIntraClass}}" id="gx-regime-intra">{{.View.RegimeIntra}}</div>
     <div class="sub" id="gx-pctl">20d percentile: P{{.View.Pctl}}</div>
   </div>
   <div class="card stat-tile">
@@ -882,6 +885,9 @@
     const regime = $id('gx-regime');
     regime.textContent = v.regime;
     regime.className = 'num--lg ' + (v.regimeClass || '');
+    var ri = $id('gx-regime-intra');
+    ri.textContent = v.regimeIntra || '';
+    ri.className = 'sub ' + (v.regimeIntraClass || '');
     $id('gx-pctl').textContent = '20d percentile: P' + v.pctl;
     $id('gx-netgex').textContent = v.netGex;
     $id('gx-netgexsub').textContent = v.netGexSub || '';

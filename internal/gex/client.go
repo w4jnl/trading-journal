@@ -123,6 +123,13 @@ type Regime struct {
 	NetGexTotal   *float64 `json:"net_gex_total"`
 	NetGexAtSpot  *float64 `json:"net_gex_at_spot"`
 	Percentile20D *float64 `json:"percentile_20d"`
+	// IntradayState is the front-week regime - spot vs flip_intraday, derived
+	// ENGINE-side at serve time (engine v0.6.1, update 004), so it stays
+	// consistent with the repriced spot and is correct as-of-then under ?at=.
+	// "positive" | "negative"; "" when null (pre-v0.6.1 or SPX/NDX). It
+	// disagrees with State exactly when spot sits between the two flips -
+	// the front-week book often turns negative while the whole book is long.
+	IntradayState string `json:"intraday_state"`
 }
 
 // Total returns the whole-book net gamma, preferring the current field name
