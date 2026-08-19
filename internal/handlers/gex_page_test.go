@@ -82,6 +82,7 @@ func TestGEXPage(t *testing.T) {
 		`<td class="muted">intraday</td>`,           // front-week flip row's bucket
 		`<td class="muted">0dte_vol</td>`,           // vol-weighted wall rows
 		`"flipI":7498.39`,                           // ladder: intraday flip
+		`"intraState":"negative"`,                   // ladder: engine-published INTRA column state
 		`"cwv":7533.52`,                             // ladder: vol-weighted call wall
 		`"near":[{"v":7518.46,"n":1,"gex":"+5.2B"}`, // ladder: N1 leads the near list
 	} {

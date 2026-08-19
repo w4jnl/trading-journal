@@ -91,14 +91,17 @@ type gexLadder struct {
 	// Engine v0.6.0 additions (update 003): the front-week (<=5 DTE) flip,
 	// today's book re-weighted by session volume, and the near magnets
 	// (ranked within +/-1% of spot).
-	FlipI  *float64    `json:"flipI"`
-	CWV    *float64    `json:"cwv"`
-	PWV    *float64    `json:"pwv"`
-	GWV    *float64    `json:"gwv"`
-	CWVGex string      `json:"cwvGex"`
-	PWVGex string      `json:"pwvGex"`
-	GWVGex string      `json:"gwvGex"`
-	Near   []gexMagnet `json:"near"`
+	// IntraState mirrors the engine's regime.intraday_state verbatim for the
+	// ladder's now-pill (the INTRA column state is published, never derived).
+	IntraState string      `json:"intraState"`
+	FlipI      *float64    `json:"flipI"`
+	CWV        *float64    `json:"cwv"`
+	PWV        *float64    `json:"pwv"`
+	GWV        *float64    `json:"gwv"`
+	CWVGex     string      `json:"cwvGex"`
+	PWVGex     string      `json:"pwvGex"`
+	GWVGex     string      `json:"gwvGex"`
+	Near       []gexMagnet `json:"near"`
 }
 
 // gexMagnet is one ranked gamma magnet (gamma_1..gamma_3) in the ladder's
@@ -521,6 +524,7 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 	lad.EM1High, _ = pick("em_1d_max", "all")
 	lad.EM1Low, _ = pick("em_1d_min", "all")
 
+	lad.IntraState = s.Regime.IntradayState
 	if useFut {
 		lad.Flip = s.Flip.Futures
 		lad.Flip0 = s.Flip0DTE.Futures
