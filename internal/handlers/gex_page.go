@@ -55,8 +55,12 @@ type gexChart struct {
 	Gex     []float64 `json:"gex"`
 	Spot    float64   `json:"spot"`
 	Flip    *float64  `json:"flip"`
-	CW      *float64  `json:"cw"`
-	PW      *float64  `json:"pw"`
+	// FlipI / Flip0 are the front-week and 0DTE flips (same denomination
+	// rules as Flip), drawn as reference lines on both profile charts.
+	FlipI *float64 `json:"flipI"`
+	Flip0 *float64 `json:"flip0"`
+	CW    *float64 `json:"cw"`
+	PW    *float64 `json:"pw"`
 }
 
 // gexLadder is the numeric model behind the vertical regime-ladder panel:
@@ -603,6 +607,8 @@ func gexBuildChart(s *gex.Snapshot, spotFut *float64) gexChart {
 		Gex:     s.Profile.NetGex,
 		Spot:    s.SpotIndex,
 		Flip:    s.Flip.Index,
+		FlipI:   s.FlipIntraday.Index,
+		Flip0:   s.Flip0DTE.Index,
 	}
 	cw, pw := gexWall(s, "call_wall"), gexWall(s, "put_wall")
 	if cw != nil {
@@ -630,11 +636,15 @@ func gexBuildChart(s *gex.Snapshot, spotFut *float64) gexChart {
 		f := index * fc.Ratio
 		return &f
 	}
-	if s.Flip.Index != nil {
-		ch.Flip = scaled(s.Flip.Futures, *s.Flip.Index)
-	} else {
-		ch.Flip = s.Flip.Futures
+	flipFut := func(fl gex.Flip) *float64 {
+		if fl.Index != nil {
+			return scaled(fl.Futures, *fl.Index)
+		}
+		return fl.Futures
 	}
+	ch.Flip = flipFut(s.Flip)
+	ch.FlipI = flipFut(s.FlipIntraday)
+	ch.Flip0 = flipFut(s.Flip0DTE)
 	if cw != nil {
 		ch.CW = scaled(cw.Futures, cw.Index)
 	}

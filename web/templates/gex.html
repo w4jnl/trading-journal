@@ -290,10 +290,14 @@
     const c = uplotHelpers.colors();
     const flipColor = getComputedStyle(document.documentElement).getPropertyValue('--group').trim() || '#7c3aed';
     const marks = [
-      { key: 'spot', color: c.accent, dash: [],      label: 'spot' },
-      { key: 'flip', color: flipColor, dash: [6, 4], label: 'flip' },
-      { key: 'cw',   color: c.pos,     dash: [6, 4], label: 'CW' },
-      { key: 'pw',   color: c.neg,     dash: [6, 4], label: 'PW' },
+      { key: 'spot',  color: c.accent,  dash: [],      label: 'spot' },
+      { key: 'flip',  color: flipColor, dash: [6, 4],  label: 'flip' },
+      // Front-week and 0DTE flips (dash patterns tell them apart; all three
+      // share the flip color, mirroring the ladder's flip family).
+      { key: 'flipI', color: flipColor, dash: [1, 3],  label: 'intra' },
+      { key: 'flip0', color: flipColor, dash: [3, 3],  label: '0dte' },
+      { key: 'cw',    color: c.pos,     dash: [6, 4],  label: 'CW' },
+      { key: 'pw',    color: c.neg,     dash: [6, 4],  label: 'PW' },
     ];
     const ctx = u.ctx;
     const dpr = window.devicePixelRatio || 1;

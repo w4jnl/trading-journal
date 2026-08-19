@@ -78,13 +78,14 @@ func TestGEXPage(t *testing.T) {
 		`"em1High":7548.29`,            // ladder: prior EM band (futures denom)
 		`"magnets":[{"v":7528.5,"n":1,"gex":"+8.4B"}`, // ladder: G1 leads the magnet list
 		// Engine v0.6.0 surface (update 003):
-		"Near magnet 1",                             // near-magnet row label in the table
-		`<td class="muted">intraday</td>`,           // front-week flip row's bucket
-		`<td class="muted">0dte_vol</td>`,           // vol-weighted wall rows
-		`"flipI":7498.39`,                           // ladder: intraday flip
-		`"intraState":"negative"`,                   // ladder: engine-published INTRA column state
-		`"cwv":7533.52`,                             // ladder: vol-weighted call wall
-		`"near":[{"v":7518.46,"n":1,"gex":"+5.2B"}`, // ladder: N1 leads the near list
+		"Near magnet 1",                                // near-magnet row label in the table
+		`<td class="muted">intraday</td>`,              // front-week flip row's bucket
+		`<td class="muted">0dte_vol</td>`,              // vol-weighted wall rows
+		`"flipI":7498.39`,                              // ladder: intraday flip
+		`"intraState":"negative"`,                      // ladder: engine-published INTRA column state
+		`"flipI":7498.39,"flip0":7488.35,"cw":7558.58`, // chart blob: all three flips as reference lines (futures denom)
+		`"cwv":7533.52`,                                // ladder: vol-weighted call wall
+		`"near":[{"v":7518.46,"n":1,"gex":"+5.2B"}`,    // ladder: N1 leads the near list
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
