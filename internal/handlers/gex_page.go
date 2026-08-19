@@ -113,24 +113,29 @@ type gexMagnet struct {
 // by the HTML render and the GEXData JSON endpoint so the scrub JS can
 // repaint the exact same fields the server rendered.
 type gexView struct {
-	AsOfET      string         `json:"asOfET"`
-	Stale       bool           `json:"stale"` // as_of lags the viewed moment (prior-session close)
-	Regime      string         `json:"regime"`
-	RegimeClass string         `json:"regimeClass"`
-	Pctl        string         `json:"pctl"`
-	NetGex      string         `json:"netGex"`
-	NetGexSub   string         `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
-	SpotIndex   string         `json:"spotIndex"`
-	SpotFutures string         `json:"spotFutures"`
-	ConvLine    string         `json:"convLine"`
-	FlipFutures string         `json:"flipFutures"`
-	FlipIndex   string         `json:"flipIndex"`
-	FlipSub     string         `json:"flipSub"`
-	EM          string         `json:"em"`
-	Levels      []gexPageLevel `json:"levels"`
-	Chart       gexChart       `json:"chart"`
-	Ladder      gexLadder      `json:"ladder"`
-	HasProfile  bool           `json:"hasProfile"`
+	AsOfET      string `json:"asOfET"`
+	Stale       bool   `json:"stale"` // as_of lags the viewed moment (prior-session close)
+	Regime      string `json:"regime"`
+	RegimeClass string `json:"regimeClass"`
+	// RegimeIntra carries the front-week reading ONLY when it disagrees with
+	// the whole-book state ("intraday negative") - agreement renders nothing,
+	// so the tile stays quiet in the common case (engine update 004).
+	RegimeIntra      string         `json:"regimeIntra"`
+	RegimeIntraClass string         `json:"regimeIntraClass"`
+	Pctl             string         `json:"pctl"`
+	NetGex           string         `json:"netGex"`
+	NetGexSub        string         `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
+	SpotIndex        string         `json:"spotIndex"`
+	SpotFutures      string         `json:"spotFutures"`
+	ConvLine         string         `json:"convLine"`
+	FlipFutures      string         `json:"flipFutures"`
+	FlipIndex        string         `json:"flipIndex"`
+	FlipSub          string         `json:"flipSub"`
+	EM               string         `json:"em"`
+	Levels           []gexPageLevel `json:"levels"`
+	Chart            gexChart       `json:"chart"`
+	Ladder           gexLadder      `json:"ladder"`
+	HasProfile       bool           `json:"hasProfile"`
 	// AsOfParam identifies the snapshot for the AI-read endpoint, as
 	// RFC3339Nano. It must keep SUB-SECOND precision: as_of lands a fraction
 	// of a second past its grid mark (19:00:02.501055Z), so a value truncated
@@ -328,6 +333,15 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		v.RegimeClass = "pnl-pos"
 	case "negative":
 		v.RegimeClass = "pnl-neg"
+	}
+	if is := s.Regime.IntradayState; is != "" && is != s.Regime.State {
+		v.RegimeIntra = "intraday " + is
+		switch is {
+		case "positive":
+			v.RegimeIntraClass = "pnl-pos"
+		case "negative":
+			v.RegimeIntraClass = "pnl-neg"
+		}
 	}
 	if total, ok := s.Regime.Total(); ok {
 		v.NetGex = gexFmtB(total)

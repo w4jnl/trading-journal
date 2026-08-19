@@ -66,14 +66,16 @@ func TestGEXPage(t *testing.T) {
 		`"strikes":[7327.74,7558.614`, // futures-scaled strike axis (index x 1.0038)
 		"ET",                          // as-of label
 		// Engine v0.5.0 surface (update 002):
-		"1h -9.2B",                    // net GEX change sub-line on the tile
-		"Gamma wall",                  // 0DTE wall row label
-		"Gamma magnet 1",              // ranked magnet row label
-		"Prior EM low",                // prior-session EM band row label
-		`<td class="muted">0dte</td>`, // 0DTE bucket column
-		`"flip0":7488.35`,             // ladder: 0DTE flip
-		`"gw0":7528.5`,                // ladder: 0DTE gamma wall
-		`"em1High":7548.29`,           // ladder: prior EM band (futures denom)
+		"1h -9.2B",                     // net GEX change sub-line on the tile
+		"intraday negative",            // front-week regime shown when it disagrees (update 004)
+		`"regimeIntraClass":"pnl-neg"`, // scrub JSON carries the tint too
+		"Gamma wall",                   // 0DTE wall row label
+		"Gamma magnet 1",               // ranked magnet row label
+		"Prior EM low",                 // prior-session EM band row label
+		`<td class="muted">0dte</td>`,  // 0DTE bucket column
+		`"flip0":7488.35`,              // ladder: 0DTE flip
+		`"gw0":7528.5`,                 // ladder: 0DTE gamma wall
+		`"em1High":7548.29`,            // ladder: prior EM band (futures denom)
 		`"magnets":[{"v":7528.5,"n":1,"gex":"+8.4B"}`, // ladder: G1 leads the magnet list
 		// Engine v0.6.0 surface (update 003):
 		"Near magnet 1",                             // near-magnet row label in the table

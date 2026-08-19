@@ -76,7 +76,7 @@ func gexSnapshotJSON(asOf string) string {
 	return fmt.Sprintf(`{
 		"market": "ES", "as_of": %q, "spot_index": 7494.55,
 		"futures_conversion": {"ratio": 1.0038, "source": "mw_marks", "paired_at": "2026-07-31T19:34:39Z"},
-		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null},
+		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null, "intraday_state": "negative"},
 		"flip": {"index": 7437.55, "futures": 7465.788539891167},
 		"flip_0dte": {"index": 7460.0, "futures": 7488.35},
 		"flip_intraday": {"index": 7470.0, "futures": 7498.39},
@@ -161,14 +161,15 @@ func TestGexAnnotate(t *testing.T) {
 	}
 	for _, want := range []string{
 		"entry 15:52 ET", "exit 15:58 ET",
-		"positive (P—)",
-		"flip 7465.79", "above (+177 t)", // (7510-7465.79)/0.25
+		"positive (P—) · intraday negative", // dual reading when the books disagree (update 004)
+		"flip 7465.79", "above (+177 t)",    // (7510-7465.79)/0.25
 		// The front-week flip row (engine v0.6.0): (7510-7498.39)/0.25.
 		"flip intraday 7498.39", "above (+46 t)", "above (+67 t)",
 		"call wall 7558.58", "-194 t", // entry moment
 		"put wall 7327.71", "+729 t",
 		"market=ES", "regime=positive", "pctl=null", "flip_side=above",
 		"dist_flip_ticks=+176.8",
+		"intraday_regime=negative",
 		"flip_intraday_side=above", "dist_flip_intraday_ticks=+46.4",
 		"dist_cw_ticks=-194.3", "dist_pw_ticks=+729.2",
 		"em=9.7", "stale=false", "<!-- " + gexMarker,
