@@ -20,6 +20,10 @@
   .gxe-chip .num { font-size: 10px; }
   .gxe-chip--pos .num { color: var(--pos); }
   .gxe-chip--neg .num { color: var(--neg); }
+  button.gxe-chip--live { opacity: 1; cursor: pointer; background: none; text-align: left; font: inherit; }
+  button.gxe-chip--live:hover { border-color: var(--accent); }
+  button.gxe-chip--live.on { border-color: var(--accent); background: var(--accent-soft); }
+  .gxe-chip--locked { opacity: 0.45; border-style: dashed; }
 
   #gxe-chart { height: 700px; min-height: 480px; user-select: none; }
   .gxe-svg { width: 100%; display: block; }
@@ -62,13 +66,21 @@
     <button type="button" data-prof="0dte_vol" title="Today's book re-weighted by session volume">0DTE·vol</button>
   </div>
   <div class="gxe-divider"></div>
-  <div class="gxe-expiries">
+  <div class="gxe-expiries" id="gxe-expiries">
     {{range .Expiries}}
-    <span class="gxe-chip {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" title="per-expiry filtering needs engine support (net GEX rolling off {{.Date}})">
+    {{if eq .DTE 0}}
+    <button type="button" class="gxe-chip gxe-chip--live {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" data-chip-prof="0dte" title="Today's expiry = the 0DTE profile — click to filter">
+      <b>{{.Label}} · {{.DTE}}d</b>
+      <span class="num">{{.Net}}</span> <span style="opacity:.7">{{.Pct}}</span>
+    </button>
+    {{else}}
+    <span class="gxe-chip gxe-chip--locked {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" title="Not selectable yet — per-expiry strike filtering needs engine support (this expiry rolls off {{.Net}})">
       <b>{{.Label}} · {{.DTE}}d</b>
       <span class="num">{{.Net}}</span> <span style="opacity:.7">{{.Pct}}</span>
     </span>
     {{end}}
+    {{end}}
+    <span class="muted" style="flex: 0 0 auto; font-size: 10px; align-self: center;">date filters need engine support</span>
   </div>
 </div>
 
@@ -257,6 +269,10 @@
       const txt = 'spot ' + gexExpoInit.spot.toFixed(2);
       const pw2 = txt.length * 6.1 + 14;
       const py = Math.max(padT + 8, Math.min(H - padB - 8, sy));
+      // Solid backing first: the pill sits ON the spot line (and often near
+      // dashed levels), and a translucent fill let them strike the text.
+      const bg = cv('--bg-elev', '#ffffff');
+      parts.push(`<rect x="${x0 + 4}" y="${py - 8}" width="${pw2}" height="16" rx="8" fill="${bg}"/>`);
       parts.push(`<rect x="${x0 + 4}" y="${py - 8}" width="${pw2}" height="16" rx="8" fill="${rgbaBar(accent, 0.12)}" stroke="${accent}" stroke-width="1"/>`);
       parts.push(`<text class="num" x="${x0 + 11}" y="${py + 3.5}" fill="${accent}">${txt}</text>`);
     }
@@ -346,22 +362,30 @@
 
   // Profile filter chips: all three profiles ship in the blob, so switching
   // is instant. Zoom carries over when it still intersects the new profile's
-  // range; otherwise re-seed around spot.
+  // range; otherwise re-seed around spot. Today's expiry chip doubles as a
+  // 0DTE selector (today's expiry IS the 0DTE profile); the future-date
+  // chips stay informational until the engine can filter by expiry.
   (function () {
     const wrap = document.getElementById('gxe-filters');
     if (!wrap) return;
-    wrap.addEventListener('click', function (e) {
-      const b = e.target.closest('button[data-prof]');
-      if (!b || !gexExpoInit.profiles[b.dataset.prof]) return;
-      gexExpoKey = b.dataset.prof;
-      wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x === b));
+    const liveChip = document.querySelector('#gxe-expiries button[data-chip-prof]');
+    function select(key) {
+      if (!gexExpoInit.profiles[key]) return;
+      gexExpoKey = key;
+      wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.prof === key));
+      if (liveChip) liveChip.classList.toggle('on', key === '0dte' || key === '0dte_vol');
       const p = gexExpoProfile();
       if (p && p.strikes.length && gexExpoZoom) {
         const flo = p.strikes[0], fhi = p.strikes[p.strikes.length - 1];
         if (gexExpoZoom.hi < flo || gexExpoZoom.lo > fhi) gexExpoSeedZoom();
       }
       renderExpo();
+    }
+    wrap.addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-prof]');
+      if (b) select(b.dataset.prof);
     });
+    if (liveChip) liveChip.addEventListener('click', function () { select(liveChip.dataset.chipProf); });
   })();
 
   // Live-latest only: no scrub here; self-reload keeps it fresh (slower
