@@ -75,10 +75,10 @@
   <div class="gxe-divider"></div>
   <div class="gxe-expiries" id="gxe-expiries">
     {{if .SupportsExpiry}}
-    {{/* Engine v0.7.0+: every chip is a real expiry filter (blend slice,
-         repriced live). Clicking the active chip clears the filter. */}}
+    {{/* Engine v0.7.0+: chips are a multi-select expiry filter (combined
+         blend slice, repriced live). Each click toggles that date. */}}
     {{range .Expiries}}
-    <button type="button" class="gxe-chip gxe-chip--live {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" data-chip-exp="{{.Date}}" title="Filter strikes to the {{.Label}} expiry — {{.Net}} rolls off ({{.Pct}} of decay); click again to clear">
+    <button type="button" class="gxe-chip gxe-chip--live {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" data-chip-exp="{{.Date}}" title="Toggle the {{.Label}} expiry in the filter — {{.Net}} rolls off ({{.Pct}} of decay); select several days to combine them">
       <b>{{.Label}} · {{.DTE}}d</b>
       <span class="gxe-chip-nums"><span class="num">{{.Net}}</span><span class="gxe-pct">{{.Pct}}</span></span>
     </button>
@@ -124,7 +124,11 @@
   // slice from /gex/exposure/data. Levels + regime always come from the
   // page-load blob (the data endpoint doesn't carry them).
   let gexExpoData = gexExpoInit;
-  let gexExpoExpiry = null; // ISO date of the active expiry filter, or null
+  // Multi-select expiry filter: gexExpoSel is what the chips show
+  // (optimistic, updated on click), gexExpoApplied is the set the ACTIVE
+  // blob was fetched for - they differ only while a fetch is in flight.
+  let gexExpoSel = [];     // ISO dates, chip-strip order
+  let gexExpoApplied = []; // set matching gexExpoData; [] = whole book
   let gexExpoKey = 'all';
   let gexExpoZoom = null;  // {lo, hi} price window; null = auto fit
   let gexExpoFit = null;   // full strike range of the ACTIVE profile
@@ -291,7 +295,9 @@
       pw:    { color: neg, dash: '6 4' },
       gw:    { color: muted, dash: '4 3' },
     };
-    const levelFam = gexExpoExpiry ? (gexExpoExpiry === gexExpoInit.today ? '0dte' : 'all') : gexExpoKey;
+    const levelFam = gexExpoApplied.length
+      ? (gexExpoApplied.length === 1 && gexExpoApplied[0] === gexExpoInit.today ? '0dte' : 'all')
+      : gexExpoKey;
     const levels = gexExpoData.denom === gexExpoInit.denom ? (gexExpoInit.levels || []) : [];
     levels.forEach((l) => {
       if (l.family !== levelFam) return;
@@ -416,11 +422,14 @@
   })();
 
   // Profile buttons + expiry chips. The three profile views ship in the
-  // page blob (instant switch); expiry chips fetch their slice from
-  // /gex/exposure/data (engine v0.7.0+) and re-render in place, with the
-  // selection mirrored into the URL so reloads and deep links restore it.
-  // Picking a profile clears the expiry filter and vice versa. Against an
-  // older engine only today's chip is live (data-chip-prof fallback).
+  // page blob (instant switch); expiry chips are a MULTI-SELECT filter -
+  // each click toggles that date in the set and fetches the combined
+  // slice from /gex/exposure/data (engine v0.7.0+, comma-separated), with
+  // the set mirrored into the URL so reloads and deep links restore it.
+  // Chips highlight optimistically and roll back if the fetch fails;
+  // clearing the last date (or picking a profile) restores the page blob
+  // without a fetch. Against an older engine only today's chip is live
+  // (data-chip-prof fallback).
   (function () {
     const wrap = document.getElementById('gxe-filters');
     if (!wrap) return;
@@ -439,17 +448,18 @@
       if (el) el.textContent = v;
     }
     function syncChrome() {
-      wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', !gexExpoExpiry && x.dataset.prof === gexExpoKey));
-      if (strip) strip.querySelectorAll('button[data-chip-exp]').forEach((x) => x.classList.toggle('on', x.dataset.chipExp === gexExpoExpiry));
+      wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', !gexExpoSel.length && x.dataset.prof === gexExpoKey));
+      if (strip) strip.querySelectorAll('button[data-chip-exp]').forEach((x) => x.classList.toggle('on', gexExpoSel.indexOf(x.dataset.chipExp) !== -1));
       if (legacyChip) legacyChip.classList.toggle('on', gexExpoKey === '0dte' || gexExpoKey === '0dte_vol');
       setText('gxe-denom', gexExpoData.denom);
       setText('gxe-asof', gexExpoData.asOfET);
       setText('gxe-nettotal', gexExpoData.netTotal);
-      setText('gxe-filternote', gexExpoExpiry ? ' · expiry ' + gexExpoExpiry + ' only' : '');
+      const n = gexExpoApplied.length;
+      setText('gxe-filternote', n ? (n === 1 ? ' · expiry ' + gexExpoApplied[0] + ' only' : ' · ' + n + ' expiries: ' + gexExpoApplied.join(', ')) : '');
     }
     function syncURL() {
       const sp = new URLSearchParams(location.search);
-      if (gexExpoExpiry) sp.set('expiry', gexExpoExpiry); else sp.delete('expiry');
+      if (gexExpoSel.length) sp.set('expiry', gexExpoSel.join(',')); else sp.delete('expiry');
       const qs = sp.toString();
       history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
     }
@@ -460,21 +470,28 @@
         if (gexExpoZoom.hi < flo || gexExpoZoom.lo > fhi) gexExpoSeedZoom();
       }
     }
-    function selectProfile(key) {
-      if (!gexExpoInit.profiles[key]) return;
+    function applyWholeBook(key) {
       fetchSeq++; // invalidate any in-flight chip fetch
-      gexExpoExpiry = null;
+      gexExpoSel = [];
+      gexExpoApplied = [];
       gexExpoData = gexExpoInit;
       gexExpoKey = key;
       setNote('');
       syncURL(); syncChrome(); carryZoom(); renderExpo();
     }
-    function selectExpiry(date) {
-      if (date === gexExpoExpiry) { selectProfile('all'); return; } // toggle off
+    function selectProfile(key) {
+      if (!gexExpoInit.profiles[key]) return;
+      applyWholeBook(key);
+    }
+    // Fetch the combined slice for the CURRENT selection. Chips already
+    // show the optimistic state; on failure they roll back to the set the
+    // rendered blob belongs to.
+    function fetchSelection() {
+      const sel = gexExpoSel.slice();
       const seq = ++fetchSeq;
-      setNote('loading ' + date + ' slice…');
+      setNote('loading ' + sel.join(' + ') + ' slice…');
       const sp = new URLSearchParams(location.search);
-      let u = '/gex/exposure/data/' + GEX_EXPO_MARKET + '?expiry=' + encodeURIComponent(date);
+      let u = '/gex/exposure/data/' + GEX_EXPO_MARKET + '?expiry=' + encodeURIComponent(sel.join(','));
       if (sp.get('at')) u += '&at=' + encodeURIComponent(sp.get('at'));
       fetch(u)
         .then((r) => r.json().then((j) => ({ ok: r.ok, j: j })))
@@ -482,18 +499,37 @@
           if (seq !== fetchSeq) return; // superseded by a newer selection
           if (!res.ok || !res.j.profiles) {
             setNote(res.j && res.j.error ? res.j.error : 'expiry fetch failed');
+            gexExpoSel = gexExpoApplied.slice(); // roll back the chips
             syncChrome();
             return;
           }
           gexExpoData = res.j;
-          gexExpoExpiry = date;
+          gexExpoApplied = sel;
           gexExpoKey = 'all'; // filtered responses carry the blend slice only
           setNote('');
           syncURL(); syncChrome(); carryZoom(); renderExpo();
         })
         .catch(function () {
-          if (seq === fetchSeq) { setNote('expiry fetch failed'); syncChrome(); }
+          if (seq === fetchSeq) {
+            setNote('expiry fetch failed');
+            gexExpoSel = gexExpoApplied.slice();
+            syncChrome();
+          }
         });
+    }
+    function toggleExpiry(date) {
+      const i = gexExpoSel.indexOf(date);
+      if (i === -1) {
+        // Keep chip-strip (= date) order so the URL and note read naturally.
+        gexExpoSel.push(date);
+        gexExpoSel.sort();
+      } else {
+        gexExpoSel.splice(i, 1);
+      }
+      syncChrome(); // optimistic highlight before the fetch lands
+      if (!gexExpoSel.length) { applyWholeBook('all'); return; }
+      syncURL();
+      fetchSelection();
     }
 
     wrap.addEventListener('click', function (e) {
@@ -502,18 +538,25 @@
     });
     if (strip) strip.addEventListener('click', function (e) {
       const b = e.target.closest('button[data-chip-exp]');
-      if (b) selectExpiry(b.dataset.chipExp);
+      if (b) toggleExpiry(b.dataset.chipExp);
     });
     if (legacyChip) legacyChip.addEventListener('click', function () {
       const key = legacyChip.dataset.chipProf;
       selectProfile(gexExpoKey === key ? 'all' : key);
     });
 
-    // Deep link / reload restore: ?expiry= re-runs the chip fetch on init
-    // (only for a date the strip actually offers).
-    const want = new URLSearchParams(location.search).get('expiry');
-    if (want && gexExpoInit.supportsExpiry && strip && strip.querySelector('button[data-chip-exp="' + want.replace(/[^0-9-]/g, '') + '"]')) {
-      selectExpiry(want);
+    // Deep link / reload restore: ?expiry= (comma-separated) re-runs the
+    // combined fetch on init, keeping only dates the strip actually offers.
+    if (gexExpoInit.supportsExpiry && strip) {
+      const want = (new URLSearchParams(location.search).get('expiry') || '')
+        .split(',')
+        .map((d) => d.trim().replace(/[^0-9-]/g, ''))
+        .filter((d) => d && strip.querySelector('button[data-chip-exp="' + d + '"]'));
+      if (want.length) {
+        gexExpoSel = Array.from(new Set(want)).sort();
+        syncChrome();
+        fetchSelection();
+      }
     }
   })();
 

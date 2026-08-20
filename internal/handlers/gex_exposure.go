@@ -103,16 +103,32 @@ func gexExpoAt(r *http.Request, tz *time.Location) (at time.Time, atParam string
 	return t.Add(59 * time.Second), atParam
 }
 
-// gexExpoExpiryParam validates ?expiry= (single ISO date; empty = whole book).
-func gexExpoExpiryParam(r *http.Request) string {
-	v := strings.TrimSpace(r.URL.Query().Get("expiry"))
-	if v == "" {
-		return ""
+// gexExpoExpiriesParam validates ?expiry= - a comma-separated set of ISO
+// dates (multi-select chips). Returns the deduped set in request order;
+// ok=false when any member is malformed (callers must not degrade a bad
+// filter to the whole book).
+func gexExpoExpiriesParam(r *http.Request) ([]string, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("expiry"))
+	if raw == "" {
+		return nil, true
 	}
-	if _, err := time.Parse("2006-01-02", v); err != nil {
-		return ""
+	parts := strings.Split(raw, ",")
+	out := make([]string, 0, len(parts))
+	seen := make(map[string]bool, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		if _, err := time.Parse("2006-01-02", p); err != nil {
+			return nil, false
+		}
+		if !seen[p] {
+			seen[p] = true
+			out = append(out, p)
+		}
 	}
-	return v
+	return out, true
 }
 
 // GEXExposurePage renders /gex/exposure and /gex/exposure/{market}. It
@@ -145,8 +161,8 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	if atParam != "" {
 		qs.Set("at", atParam)
 	}
-	if exp := gexExpoExpiryParam(r); exp != "" {
-		qs.Set("expiry", exp)
+	if exps, ok := gexExpoExpiriesParam(r); ok && len(exps) > 0 {
+		qs.Set("expiry", strings.Join(exps, ","))
 	}
 	if len(qs) > 0 {
 		data["QuerySuffix"] = "?" + qs.Encode()
@@ -211,14 +227,12 @@ func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 	}
 	// A malformed expiry must NOT silently degrade to the whole book -
 	// that is the exact silent-param hazard ask-001 had the engine fix.
-	if raw := strings.TrimSpace(r.URL.Query().Get("expiry")); raw != "" {
-		exp := gexExpoExpiryParam(r)
-		if exp == "" {
-			writeErr(http.StatusBadRequest, "invalid expiry date; expected YYYY-MM-DD")
-			return
-		}
-		q.Expiries = []string{exp}
+	exps, ok := gexExpoExpiriesParam(r)
+	if !ok {
+		writeErr(http.StatusBadRequest, "invalid expiry date; expected YYYY-MM-DD (comma-separated for a set)")
+		return
 	}
+	q.Expiries = exps
 	pd, err := h.GEX.ProfileDetail(r.Context(), market, q)
 	switch {
 	case errors.Is(err, gex.ErrNoExpiryData):

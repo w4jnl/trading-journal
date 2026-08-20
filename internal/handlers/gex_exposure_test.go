@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -82,16 +83,23 @@ func gexProfileJSONV070(filter string) string {
 }
 
 // gexExpoEngineV070 fakes a v0.7.0 engine: ?expiry= is honored and echoed.
-func gexExpoEngineV070(t *testing.T) *httptest.Server {
+// The second return reads the last /v1/profile query the engine received.
+func gexExpoEngineV070(t *testing.T) (*httptest.Server, func() string) {
 	t.Helper()
-	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var mu sync.Mutex
+	var lastQ string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasPrefix(r.URL.Path, "/v1/profile/") {
+			mu.Lock()
+			lastQ = r.URL.RawQuery
+			mu.Unlock()
 			fmt.Fprint(w, gexProfileJSONV070(r.URL.Query().Get("expiry")))
 			return
 		}
 		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02.722581Z"))
 	}))
+	return srv, func() string { mu.Lock(); defer mu.Unlock(); return lastQ }
 }
 
 // gexExpoGet routes through a mux carrying ALL gex routes, proving the
@@ -159,7 +167,7 @@ func TestGEXExposurePage(t *testing.T) {
 // advertises the capability, and denomination comes from the payload itself.
 func TestGEXExposurePageV070(t *testing.T) {
 	db := gexTestDB(t)
-	srv := gexExpoEngineV070(t)
+	srv, _ := gexExpoEngineV070(t)
 	defer srv.Close()
 	c, _ := gex.New(gex.Options{BaseURL: srv.URL, APIKey: "test"})
 	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
@@ -185,10 +193,15 @@ func TestGEXExposurePageV070(t *testing.T) {
 		}
 	}
 
-	// Market-switch links carry the moment + filter.
+	// Market-switch links carry the moment + filter, including a
+	// multi-select set (deduped, order preserved).
 	rec = gexExpoGet(t, h, "/gex/exposure?at=2026-07-31T15:50&expiry=2026-08-21")
 	if body := rec.Body.String(); !strings.Contains(body, `href="/gex/exposure/NQ?at=2026-07-31T15%3A50&amp;expiry=2026-08-21"`) {
 		t.Errorf("QuerySuffix missing from market links")
+	}
+	rec = gexExpoGet(t, h, "/gex/exposure?expiry=2026-08-21,2026-08-24,2026-08-21")
+	if body := rec.Body.String(); !strings.Contains(body, `href="/gex/exposure/NQ?expiry=2026-08-21%2C2026-08-24"`) {
+		t.Errorf("multi-expiry QuerySuffix wrong")
 	}
 }
 
@@ -197,7 +210,7 @@ func TestGEXExposurePageV070(t *testing.T) {
 // error contract onto useful statuses.
 func TestGEXExposureData(t *testing.T) {
 	db := gexTestDB(t)
-	srv := gexExpoEngineV070(t)
+	srv, srvQuery := gexExpoEngineV070(t)
 	defer srv.Close()
 	c, _ := gex.New(gex.Options{BaseURL: srv.URL, APIKey: "test"})
 	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
@@ -238,9 +251,22 @@ func TestGEXExposureData(t *testing.T) {
 	if rec := gexExpoGet(t, h, "/gex/exposure/data/CL?expiry=2026-08-21"); rec.Code != http.StatusNotFound {
 		t.Errorf("junk market = %d", rec.Code)
 	}
-	// A malformed expiry 400s instead of silently serving the whole book.
+	// A malformed expiry 400s instead of silently serving the whole book -
+	// including one bad member of an otherwise valid set.
 	if rec := gexExpoGet(t, h, "/gex/exposure/data/ES?expiry=notadate"); rec.Code != http.StatusBadRequest {
 		t.Errorf("malformed expiry = %d", rec.Code)
+	}
+	if rec := gexExpoGet(t, h, "/gex/exposure/data/ES?expiry=2026-08-21,zzz"); rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed set member = %d", rec.Code)
+	}
+
+	// Multi-select: the comma-joined set reaches the engine verbatim.
+	rec = gexExpoGet(t, h, "/gex/exposure/data/ES?expiry=2026-08-21,2026-09-18")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("multi = %d: %s", rec.Code, rec.Body.String())
+	}
+	if got := srvQuery(); got != "expiry=2026-08-21%2C2026-09-18" && got != "expiry=2026-08-21,2026-09-18" {
+		t.Errorf("engine query = %q", got)
 	}
 
 	// A legacy engine silently ignores ?expiry= - the client sentinel must
