@@ -95,12 +95,44 @@ type gexExpo struct {
 	Ratio     float64 `json:"ratio"`
 	IndexName string  `json:"indexName"`
 	// BucketIndex is the served grid in raw INDEX points (BucketWidth is
-	// futures-scaled); BucketBase/BucketOpts drive the width control -
-	// the page-load width and its engine-valid coarser multiples (x1 x2
-	// x5 x10, capped at the engine's 100-point limit).
-	BucketIndex float64 `json:"bucketIndex"`
-	BucketBase  int     `json:"bucketBase"`
-	BucketOpts  []int   `json:"bucketOpts"`
+	// futures-scaled); BucketBase/BucketOpts drive the width control: the
+	// canonical 5-10-25-50 ladder, each width flagged servable or not
+	// (finer than the stored grid, or not an integer multiple of it).
+	// Unservable widths render disabled rather than hidden, so the
+	// control reads the same every day - today's pre-v0.8.0 snapshots
+	// gray out 5 and 25; tomorrow's 5-point grid enables everything.
+	BucketIndex float64            `json:"bucketIndex"`
+	BucketBase  int                `json:"bucketBase"`
+	BucketOpts  []gexExpoBucketOpt `json:"bucketOpts"`
+}
+
+// gexExpoBucketOpt is one width in the bucket control.
+type gexExpoBucketOpt struct {
+	W  int  `json:"w"`
+	Ok bool `json:"ok"`
+}
+
+// gexBucketOpts builds the canonical 5-10-25-50 width ladder for a stored
+// base width: a width is servable when it IS the base or a coarser integer
+// multiple of it (the engine's ?bucket= contract). A base outside the
+// ladder (unexpected) is prepended so the native grid is always offered.
+func gexBucketOpts(base int) []gexExpoBucketOpt {
+	if base <= 0 {
+		return nil
+	}
+	canon := []int{5, 10, 25, 50}
+	opts := make([]gexExpoBucketOpt, 0, len(canon)+1)
+	seen := false
+	for _, w := range canon {
+		if w == base {
+			seen = true
+		}
+		opts = append(opts, gexExpoBucketOpt{W: w, Ok: w == base || (w > base && w%base == 0)})
+	}
+	if !seen {
+		opts = append([]gexExpoBucketOpt{{W: base, Ok: true}}, opts...)
+	}
+	return opts
 }
 
 // gexExpoAt parses the shared ?at= page param (datetime-local format in the
@@ -321,13 +353,7 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 	}
 	e.BucketIndex = pd.BucketWidth
 	e.BucketBase = int(math.Round(pd.BucketWidth))
-	if e.BucketBase > 0 {
-		for _, m := range []int{1, 2, 5, 10} {
-			if w := e.BucketBase * m; w <= 100 {
-				e.BucketOpts = append(e.BucketOpts, w)
-			}
-		}
-	}
+	e.BucketOpts = gexBucketOpts(e.BucketBase)
 
 	// Denomination: identical futures-first rule as the overview charts.
 	// The profile payload's own futures fields (engine v0.7.0+) win, so the

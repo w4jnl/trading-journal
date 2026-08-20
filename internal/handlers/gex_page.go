@@ -61,6 +61,13 @@ type gexChart struct {
 	Flip0 *float64 `json:"flip0"`
 	CW    *float64 `json:"cw"`
 	PW    *float64 `json:"pw"`
+	// NativeW is the snapshot profile's own strike spacing in INDEX
+	// points, Ratio the futures conversion behind Strikes (0 when index-
+	// denominated). Together they let the client re-bin the profile into
+	// the canonical coarser widths (net GEX sums exactly) - the snapshot
+	// endpoint has no ?bucket=, so aggregation is client-side.
+	NativeW float64 `json:"nativeW"`
+	Ratio   float64 `json:"ratio"`
 }
 
 // gexLadder is the numeric model behind the vertical regime-ladder panel:
@@ -611,6 +618,14 @@ func gexBuildChart(s *gex.Snapshot, spotFut *float64) gexChart {
 		FlipI:   s.FlipIntraday.Index,
 		Flip0:   s.Flip0DTE.Index,
 	}
+	// Native strike spacing: the smallest gap between adjacent strikes
+	// (the profile can have holes - empty buckets are never stored - so
+	// the minimum is the grid, not the average).
+	for i := 1; i < len(s.Profile.StrikesIndex); i++ {
+		if d := s.Profile.StrikesIndex[i] - s.Profile.StrikesIndex[i-1]; d > 0 && (ch.NativeW == 0 || d < ch.NativeW) {
+			ch.NativeW = d
+		}
+	}
 	cw, pw := gexWall(s, "call_wall"), gexWall(s, "put_wall")
 	if cw != nil {
 		ch.CW = &cw.Index
@@ -625,6 +640,7 @@ func gexBuildChart(s *gex.Snapshot, spotFut *float64) gexChart {
 
 	ch.Denom = "futures"
 	ch.Spot = *spotFut
+	ch.Ratio = fc.Ratio
 	strikes := make([]float64, len(s.Profile.StrikesIndex))
 	for i, v := range s.Profile.StrikesIndex {
 		strikes[i] = v * fc.Ratio

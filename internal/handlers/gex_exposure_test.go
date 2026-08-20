@@ -198,10 +198,11 @@ func TestGEXExposurePageV070(t *testing.T) {
 		`"indexName":"SPX"`,
 		`id="gxe-denom-seg"`, // FUT <-> SPX display toggle
 		`>SPX</button>`,
-		`id="gxe-bucket-seg"`, // bucket width control
-		`"bucketOpts":[10,20,50,100]`,
-		`data-bw="10" class="on"`, // native grid pre-selected
-		`data-bw="100"`,
+		`id="gxe-bucket-seg"`, // bucket width control: canonical 5-10-25-50
+		`"bucketOpts":[{"w":5,"ok":false},{"w":10,"ok":true},{"w":25,"ok":false},{"w":50,"ok":true}]`,
+		`data-bw="10" class="on"`,        // native grid pre-selected
+		`data-bw="50"`,                   // coarser multiple servable
+		`<button type="button" disabled`, // 5/25 offered but grayed on a 10-pt snapshot
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
@@ -370,6 +371,33 @@ func TestGEXExposureNoProfile(t *testing.T) {
 	}
 	if strings.Contains(body, "const gexExpoInit") {
 		t.Errorf("blob rendered despite missing profile")
+	}
+}
+
+// The canonical width ladder: servable = base or a coarser multiple.
+func TestGexBucketOpts(t *testing.T) {
+	flat := func(opts []gexExpoBucketOpt) string {
+		var b strings.Builder
+		for _, o := range opts {
+			fmt.Fprintf(&b, "%d:%v ", o.W, o.Ok)
+		}
+		return strings.TrimSpace(b.String())
+	}
+	for _, tc := range []struct {
+		base int
+		want string
+	}{
+		{5, "5:true 10:true 25:true 50:true"},
+		{10, "5:false 10:true 25:false 50:true"},
+		{25, "5:false 10:false 25:true 50:true"},
+		{20, "20:true 5:false 10:false 25:false 50:false"}, // odd base still offered
+	} {
+		if got := flat(gexBucketOpts(tc.base)); got != tc.want {
+			t.Errorf("base %d: %q, want %q", tc.base, got, tc.want)
+		}
+	}
+	if gexBucketOpts(0) != nil {
+		t.Errorf("base 0 should yield no options")
 	}
 }
 

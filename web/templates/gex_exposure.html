@@ -13,6 +13,7 @@
   .gxe-filters { display: flex; gap: 4px; flex: 0 0 auto; }
   .gxe-filters button { font-size: 10px; line-height: 15px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
   .gxe-filters button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .gxe-filters button:disabled { opacity: 0.4; cursor: default; border-style: dashed; }
   .gxe-divider { width: 1px; align-self: stretch; background: var(--border); flex: 0 0 auto; }
   .gxe-expiries { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
   .gxe-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; font-size: 11px; white-space: nowrap; border-radius: var(--r-sm); }
@@ -34,7 +35,14 @@
 
   #gxe-chart { height: 700px; min-height: 480px; user-select: none; } /* JS stretches to the viewport bottom */
   .gxe-svg { width: 100%; display: block; }
-  .gxe-svg text { font-size: 10px; fill: var(--fg-muted); }
+  /* Halo behind every label (paint-order strokes UNDER the fill): axis
+     ticks, bar values, level labels and the spot pill stay readable when
+     they cross bars, dashed lines, or each other. */
+  .gxe-svg text { font-size: 10px; fill: var(--fg-muted); paint-order: stroke; stroke: var(--bg-elev); stroke-width: 2px; stroke-linejoin: round; }
+  /* Labels flipped INSIDE a bar drop the halo (a colored outline inside a
+     colored bar reads as smudge) and use the theme text color instead -
+     legible on the translucent bar fill in both themes. */
+  .gxe-svg text.inbar { stroke: none; fill: var(--fg); }
   .gxe-svg text.num { font-family: "JetBrains Mono", monospace; }
   .gxe-svg text.colhead { font-size: 9px; font-weight: 600; letter-spacing: 0.08em; fill: var(--fg-muted); }
   .gxe-svg g.gxe-band rect.bg { fill: transparent; }
@@ -115,7 +123,7 @@
     {{if and .SupportsExpiry (gt (len .BucketOpts) 1)}}
     {{$base := .BucketBase}}
     <span class="gxe-filters" id="gxe-bucket-seg" style="float: right; margin: 0 12px 0 0;">
-      {{range .BucketOpts}}<button type="button" data-bw="{{.}}" {{if eq . $base}}class="on" {{end}}title="Aggregate strikes into {{.}}-point index buckets{{if eq . $base}} (native grid){{end}}">{{.}}</button>{{end}}
+      {{range .BucketOpts}}{{if .Ok}}<button type="button" data-bw="{{.W}}" {{if eq .W $base}}class="on" {{end}}title="Aggregate strikes into {{.W}}-point index buckets{{if eq .W $base}} (native grid){{end}}">{{.W}}</button>{{else}}<button type="button" disabled title="{{.W}}-point buckets need a snapshot stored on a compatible finer grid — 5-point ES storage starts with the first engine v0.8.0 session">{{.W}}</button>{{end}}{{end}}
     </span>
     {{end}}
   </div>
@@ -318,8 +326,18 @@
       const len = Math.abs(v) * netScale;
       if (len < 12) continue;
       const color = v >= 0 ? pos : neg;
-      const tx = v >= 0 ? Math.min(x1 - 2, xZero + len + 4) : Math.max(x0 + 2, xZero - len - 4);
-      parts.push(`<text class="num" x="${tx}" y="${cy + 3.5}" text-anchor="${v >= 0 ? 'start' : 'end'}" fill="${color}" font-size="9.5">${fmtB(v)}</text>`);
+      // Labels sit at the bar tip, outside the bar - but a bar reaching
+      // the plot edge would push its label into the price gutter (left)
+      // or the CALL/PUT columns (right), colliding with axis text. Flip
+      // such labels INSIDE the bar tip; the text halo keeps them legible.
+      const txt = fmtB(v);
+      const est = txt.length * 5.8;
+      let anchor = v >= 0 ? 'start' : 'end';
+      let tx = v >= 0 ? xZero + len + 4 : xZero - len - 4;
+      let inbar = false;
+      if (v < 0 && tx - est < x0) { tx = Math.max(x0 + 2, xZero - len) + 4; anchor = 'start'; inbar = true; }
+      else if (v >= 0 && tx + est > x1) { tx = Math.min(x1 - 2, xZero + len) - 4; anchor = 'end'; inbar = true; }
+      parts.push(`<text class="num${inbar ? ' inbar' : ''}" x="${tx}" y="${cy + 3.5}" text-anchor="${anchor}" fill="${color}" font-size="9.5">${txt}</text>`);
     }
 
     // Level lines + push-down labels. They always come from the page-load

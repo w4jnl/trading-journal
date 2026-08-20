@@ -51,6 +51,7 @@
   .gex-ladder-layers { display: flex; gap: 4px; margin: 0 0 6px; }
   .gex-ladder-layers button { font-size: 10px; line-height: 15px; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
   .gex-ladder-layers button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .gex-ladder-layers button:disabled { opacity: 0.4; cursor: default; border-style: dashed; }
 
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
   [data-theme="dark"] .u-legend { color: var(--fg); }
@@ -137,6 +138,7 @@
   <div class="card">
     <div class="card-title">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span>
       <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">drag-select zooms all views · dblclick resets</span>
+      <span class="gex-ladder-layers" id="gx-bin-seg" style="float: right; display: inline-flex; margin: 0 12px 0 0;"></span>
     </div>
     <!-- Hosts are taller than their charts: uPlot renders its legend as a
          sibling below the canvas, and a tight host lets it spill into the
@@ -267,6 +269,76 @@
     let run = 0;
     return gexData.gex.map((v) => (run += v));
   }
+
+  // Profile bin control: the canonical 5/10/25/50-point widths, re-binned
+  // CLIENT-side by summing net GEX into coarser index-space buckets (exact -
+  // GEX is additive; the snapshot endpoint has no ?bucket=). Widths finer
+  // than the snapshot's native grid, or not integer multiples of it, render
+  // disabled. The choice sticks per market for the session. The cumulative
+  // chart always stays native - a finer running sum is strictly better.
+  let gexBin = 0; // 0 = native grid
+  try { gexBin = parseInt(sessionStorage.getItem('gxBin-' + {{.Market}}) || '0', 10) || 0; } catch (e) { /* private mode */ }
+  let gexProfActive = { strikes: [], gex: [] }; // ACTIVE profile arrays (binned or native)
+
+  function gexProfSeries() {
+    const nw = Math.round(gexData.nativeW || 0);
+    const r = gexData.ratio || 1;
+    if (!gexBin || !nw || gexBin <= nw || gexBin % nw !== 0) {
+      gexProfActive = { strikes: gexData.strikes, gex: gexData.gex };
+      return gexProfActive;
+    }
+    const bins = new Map();
+    for (let i = 0; i < gexData.strikes.length; i++) {
+      const k = Math.round(gexData.strikes[i] / r / gexBin) * gexBin;
+      bins.set(k, (bins.get(k) || 0) + gexData.gex[i]);
+    }
+    const ks = Array.from(bins.keys()).sort((a, b) => a - b);
+    gexProfActive = { strikes: ks.map((k) => k * r), gex: ks.map((k) => bins.get(k)) };
+    return gexProfActive;
+  }
+
+  function gexSyncBinSeg() {
+    const seg = document.getElementById('gx-bin-seg');
+    if (!seg) return;
+    const nw = Math.round((gexData && gexData.nativeW) || 0);
+    // Hide on degenerate grids (sparse test/legacy profiles): a native
+    // width beyond the canonical ladder has nothing to offer.
+    if (!nw || nw > 50) { seg.style.display = 'none'; return; }
+    seg.style.display = 'inline-flex';
+    const act = (gexBin > nw && gexBin % nw === 0) ? gexBin : nw;
+    let html = '';
+    [5, 10, 25, 50].forEach(function (w) {
+      const ok = w === nw || (w > nw && w % nw === 0);
+      if (ok) {
+        html += '<button type="button" data-bin="' + w + '"' + (w === act ? ' class="on"' : '') +
+          ' title="' + w + '-point index buckets' + (w === nw ? ' (native grid)' : '') + '">' + w + '</button>';
+      } else {
+        html += '<button type="button" disabled title="' + w + '-point buckets need a snapshot stored on a compatible finer grid — 5-point storage starts with engine v0.8.0 data">' + w + '</button>';
+      }
+    });
+    seg.innerHTML = html;
+  }
+
+  (function () {
+    const seg = document.getElementById('gx-bin-seg');
+    if (!seg) return;
+    seg.addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-bin]');
+      if (!b) return;
+      const w = parseInt(b.dataset.bin, 10);
+      const nw = Math.round((gexData && gexData.nativeW) || 0);
+      gexBin = w === nw ? 0 : w;
+      try { sessionStorage.setItem('gxBin-' + {{.Market}}, String(gexBin)); } catch (err) { /* ignore */ }
+      gexSyncBinSeg();
+      gexGuarded(() => {
+        if (gexChart) {
+          const pp = gexProfSeries();
+          gexChart.setData([pp.strikes, pp.gex]);
+        }
+      });
+      gexSyncChartsToLadder(); // setData resets x to auto; reapply the window
+    });
+  })();
 
   function buildCharts() {
     buildProfile();
@@ -422,8 +494,8 @@
           paths: uPlot.paths.bars({
             size: [0.9, 10],
             disp: {
-              stroke: { unit: 3, values: () => gexData.gex.map((v) => v >= 0 ? c.pos : c.neg) },
-              fill:   { unit: 3, values: () => gexData.gex.map((v) => v >= 0 ? rgba(c.pos, 0.55) : rgba(c.neg, 0.55)) },
+              stroke: { unit: 3, values: () => gexProfActive.gex.map((v) => v >= 0 ? c.pos : c.neg) },
+              fill:   { unit: 3, values: () => gexProfActive.gex.map((v) => v >= 0 ? rgba(c.pos, 0.55) : rgba(c.neg, 0.55)) },
             },
           }),
           stroke: c.pos, /* legend marker */
@@ -439,7 +511,7 @@
         },
       ],
       hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook], setCursor: [gexChartCursorHook] },
-    }, [gexData.strikes, gexData.gex], el);
+    }, [gexProfSeries().strikes, gexProfActive.gex], el);
   }
 
   // Regime ladder: the price structure read vertically, in one denomination.
@@ -738,6 +810,7 @@
     gexSyncChartsToLadder();
   }
 
+  gexSyncBinSeg();
   gexGuarded(buildCharts);
   renderLadder();
   uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
@@ -950,9 +1023,11 @@
     gexLadderData = v.ladder;
     $id('gx-ladder-denom').textContent = (v.ladder && v.ladder.denom) || '';
     renderLadder();
+    gexSyncBinSeg();
     gexGuarded(() => {
       if (gexChart && gexCumChart && v.hasProfile) {
-        gexChart.setData([gexData.strikes, gexData.gex]);
+        const pp = gexProfSeries();
+        gexChart.setData([pp.strikes, pp.gex]);
         gexCumChart.setData([gexData.strikes, gexCumulative()]);
       } else {
         buildCharts();
