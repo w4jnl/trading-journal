@@ -106,6 +106,12 @@
 <div class="card mb-16">
   <div class="card-title">Net GEX exposure — {{$.Market}} · <span id="gxe-denom">{{.Denom}}</span> strikes · as of <span id="gxe-asof">{{.AsOfET}}</span>{{if .OIDate}} · OI {{.OIDate}}{{end}}<span id="gxe-filternote"></span>
     <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · drag pans · dblclick resets</span>
+    {{if .Ratio}}
+    <span class="gxe-filters" id="gxe-denom-seg" style="float: right; margin: 0 12px 0 0;">
+      <button type="button" data-dn="fut" class="on" title="Futures points — the price you trade">FUT</button>
+      <button type="button" data-dn="idx" title="Index strikes ({{.IndexName}}) — what the option chain and MenthorQ show">{{.IndexName}}</button>
+    </span>
+    {{end}}
   </div>
   {{if $.LevelsNote}}<div class="muted" style="font-size: 12px; margin-bottom: 6px;">{{$.LevelsNote}}</div>{{end}}
   <div id="gxe-note" class="muted" style="font-size: 12px; margin-bottom: 6px; display: none;"></div>
@@ -130,21 +136,34 @@
   let gexExpoSel = [];     // ISO dates, chip-strip order
   let gexExpoApplied = []; // set matching gexExpoData; [] = whole book
   let gexExpoKey = 'all';
-  let gexExpoZoom = null;  // {lo, hi} price window; null = auto fit
+  let gexExpoZoom = null;  // {lo, hi} price window, in DISPLAY units; null = auto fit
   let gexExpoFit = null;   // full strike range of the ACTIVE profile
   let gexExpoView = null;  // {lo, hi, padT, padB, H} written by every render
   const GEX_EXPO_PAD = 16;
+  // Index display mode: divide every price by the blob's ratio so strikes
+  // read as the engine published them (SPX/NDX) - the denomination MenthorQ
+  // and the option chain use. Persisted; ignored when the blob is
+  // index-denominated anyway (ratio 0).
+  let gexExpoIdxMode = false;
+  try { gexExpoIdxMode = localStorage.getItem('gxeDenomIdx') === '1'; } catch (e) { /* private mode */ }
 
   function gexExpoProfile() { return gexExpoData.profiles[gexExpoKey] || null; }
+  // Divisor from blob units (futures when ratio > 0) to display units.
+  function gexExpoDiv() {
+    const r = gexExpoData.ratio || 0;
+    return (gexExpoIdxMode && r > 0) ? r : 1;
+  }
 
   // Landing view: spot +/- 15 buckets (MenthorQ-like), clamped to the fit.
   // Wheel-out / dblclick reach the full strike range.
   function gexExpoSeedZoom() {
     const p = gexExpoProfile();
     if (!p || !p.strikes.length) { gexExpoZoom = null; return; }
-    const bw = gexExpoData.bucketWidth || 1;
-    const lo = Math.max(p.strikes[0] - bw / 2, gexExpoData.spot - 15 * bw);
-    const hi = Math.min(p.strikes[p.strikes.length - 1] + bw / 2, gexExpoData.spot + 15 * bw);
+    const dv = gexExpoDiv();
+    const bw = (gexExpoData.bucketWidth || 1) / dv;
+    const spot = gexExpoData.spot / dv;
+    const lo = Math.max(p.strikes[0] / dv - bw / 2, spot - 15 * bw);
+    const hi = Math.min(p.strikes[p.strikes.length - 1] / dv + bw / 2, spot + 15 * bw);
     gexExpoZoom = hi > lo ? { lo: lo, hi: hi } : null;
   }
 
@@ -173,8 +192,21 @@
     const W = Math.max(480, host.clientWidth || 900);
     const H = Math.max(480, host.clientHeight || 700);
     const padT = GEX_EXPO_PAD + 14, padB = GEX_EXPO_PAD;
-    const bw = gexExpoData.bucketWidth || 1;
-    const spot = gexExpoData.spot;
+    // dv converts blob prices to display units (1 in futures mode, the
+    // ratio in index mode); K() is the display strike for row i. GEX
+    // magnitudes are denomination-free - only the price axis converts.
+    const dv = gexExpoDiv();
+    const ratio = gexExpoData.ratio || 0;
+    const idxName = gexExpoInit.indexName || 'index';
+    const K = (i) => p.strikes[i] / dv;
+    const bw = (gexExpoData.bucketWidth || 1) / dv;
+    const spot = gexExpoData.spot / dv;
+    // Counterpart readout for tooltips: the OTHER denomination, so MQ /
+    // option-chain cross-reference never needs arithmetic.
+    const alt = (v) => {
+      if (!ratio) return '';
+      return gexExpoIdxMode ? ' · fut ' + (v * ratio).toFixed(2) : ' · ' + idxName + ' ' + (v / ratio).toFixed(1);
+    };
     // Right columns render OI (contract counts) when the engine serves it;
     // the GEX split then lives in the tooltip only.
     const useOI = !!(p.callOi && p.putOi && p.callOi.length === p.strikes.length);
@@ -183,7 +215,7 @@
     const fmtSide = useOI ? ((v) => Math.abs(v).toLocaleString()) : fmtB;
 
     // Fit spans the profile's strikes plus half a bucket each side.
-    const fitLo = p.strikes[0] - bw / 2, fitHi = p.strikes[p.strikes.length - 1] + bw / 2;
+    const fitLo = K(0) - bw / 2, fitHi = K(p.strikes.length - 1) + bw / 2;
     gexExpoFit = { lo: fitLo, hi: fitHi };
     const z = gexExpoZoom;
     const lo = z ? z.lo : fitLo, hi = z ? z.hi : fitHi;
@@ -200,7 +232,7 @@
     const vis = [];
     let maxNet = 0, maxSide = 0;
     for (let i = 0; i < p.strikes.length; i++) {
-      const s = p.strikes[i];
+      const s = K(i);
       if (s + bw / 2 < lo || s - bw / 2 > hi) continue;
       vis.push(i);
       maxNet = Math.max(maxNet, Math.abs(p.net[i]));
@@ -241,7 +273,7 @@
       return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`;
     };
     vis.forEach((i) => {
-      const s = p.strikes[i], v = p.net[i];
+      const s = K(i), v = p.net[i];
       const yTop = Math.max(padT, y(s + bw / 2));
       const yBot = Math.min(H - padB, y(s - bw / 2));
       let hRow = yBot - yTop;
@@ -252,7 +284,7 @@
       const len = Math.abs(v) * netScale;
       const bx = v >= 0 ? xZero : xZero - len;
       const d = s - spot;
-      let tip = `${s.toFixed(2)} · net ${fmtB(v)} · call ${fmtB(p.call[i])} · put ${fmtB(p.put[i])}`;
+      let tip = `${s.toFixed(2)}${alt(s)} · net ${fmtB(v)} · call ${fmtB(p.call[i])} · put ${fmtB(p.put[i])}`;
       if (useOI) tip += ` · OI ${fmtSide(p.callOi[i])}c/${fmtSide(p.putOi[i])}p`;
       tip += ` · ${d >= 0 ? '+' : ''}${d.toFixed(1)} pts from spot`;
       let band = `<g class="gxe-band"><rect class="bg" x="0" y="${yTop}" width="${W}" height="${hRow}"></rect>`;
@@ -269,7 +301,7 @@
     const kept = [];
     for (const i of byMag) {
       if (kept.length >= 8) break;
-      const cy = (y(p.strikes[i] + bw / 2) + y(p.strikes[i] - bw / 2)) / 2;
+      const cy = (y(K(i) + bw / 2) + y(K(i) - bw / 2)) / 2;
       if (kept.some((k) => Math.abs(k - cy) < 11)) continue;
       kept.push(cy);
       const v = p.net[i];
@@ -301,15 +333,16 @@
     const levels = gexExpoData.denom === gexExpoInit.denom ? (gexExpoInit.levels || []) : [];
     levels.forEach((l) => {
       if (l.family !== levelFam) return;
-      if (l.v < lo || l.v > hi) return;
+      const lv = l.v / dv;
+      if (lv < lo || lv > hi) return;
       const st = styles[l.kind] || styles.gw;
-      const yy = y(l.v);
+      const yy = y(lv);
       parts.push(`<line x1="${x0}" y1="${yy}" x2="${W - 2}" y2="${yy}" stroke="${st.color}" stroke-width="1.1" stroke-dasharray="${st.dash}"/>`);
       let ty = yy - 3;
       placed.forEach((pp) => { if (Math.abs(ty - pp) < 11) ty = pp - 11; });
       placed.push(ty);
-      const d = l.v - spot;
-      parts.push(`<text class="num" x="${W - 4}" y="${ty}" text-anchor="end" fill="${st.color}">${l.label}${l.gex ? ' ' + l.gex : ''} · ${l.v.toFixed(2)}<title>${d >= 0 ? '+' : ''}${d.toFixed(1)} pts from spot</title></text>`);
+      const d = lv - spot;
+      parts.push(`<text class="num" x="${W - 4}" y="${ty}" text-anchor="end" fill="${st.color}">${l.label}${l.gex ? ' ' + l.gex : ''} · ${lv.toFixed(2)}<title>${d >= 0 ? '+' : ''}${d.toFixed(1)} pts from spot${alt(lv)}</title></text>`);
     });
 
     // Spot line + pill (clamped to the window edge when panned away).
@@ -324,15 +357,15 @@
       const bg = cv('--bg-elev', '#ffffff');
       parts.push(`<rect x="${x0 + 4}" y="${py - 8}" width="${pw2}" height="16" rx="8" fill="${bg}"/>`);
       parts.push(`<rect x="${x0 + 4}" y="${py - 8}" width="${pw2}" height="16" rx="8" fill="${rgbaBar(accent, 0.12)}" stroke="${accent}" stroke-width="1"/>`);
-      parts.push(`<text class="num" x="${x0 + 11}" y="${py + 3.5}" fill="${accent}">${txt}</text>`);
+      parts.push(`<text class="num" x="${x0 + 11}" y="${py + 3.5}" fill="${accent}">${txt}<title>${alt(spot) ? alt(spot).slice(3) : ''}</title></text>`);
     }
 
     // Edge counts when zoomed: how many strikes sit outside the window.
     if (z) {
       let up = 0, down = 0;
       for (let i = 0; i < p.strikes.length; i++) {
-        if (p.strikes[i] - bw / 2 > hi) up++;
-        else if (p.strikes[i] + bw / 2 < lo) down++;
+        if (K(i) - bw / 2 > hi) up++;
+        else if (K(i) + bw / 2 < lo) down++;
       }
       const sfx = (n) => n === 1 ? 'strike' : 'strikes';
       if (up) parts.push(`<text x="${xZero}" y="${padT + 10}" text-anchor="middle">▲ ${up} ${sfx(up)} above</text>`);
@@ -436,6 +469,7 @@
     const strip = document.getElementById('gxe-expiries');
     const note = document.getElementById('gxe-note');
     const legacyChip = strip ? strip.querySelector('button[data-chip-prof]') : null;
+    const dseg = document.getElementById('gxe-denom-seg');
     let fetchSeq = 0;
 
     function setNote(msg) {
@@ -451,7 +485,15 @@
       wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', !gexExpoSel.length && x.dataset.prof === gexExpoKey));
       if (strip) strip.querySelectorAll('button[data-chip-exp]').forEach((x) => x.classList.toggle('on', gexExpoSel.indexOf(x.dataset.chipExp) !== -1));
       if (legacyChip) legacyChip.classList.toggle('on', gexExpoKey === '0dte' || gexExpoKey === '0dte_vol');
-      setText('gxe-denom', gexExpoData.denom);
+      // Denomination readout + toggle: index mode only exists while the
+      // active blob carries a ratio (a fetched slice could lose the basis).
+      const r = gexExpoData.ratio || 0;
+      const idxOn = gexExpoIdxMode && r > 0;
+      if (dseg) {
+        dseg.style.display = r > 0 ? '' : 'none';
+        dseg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.dn === 'idx') === idxOn));
+      }
+      setText('gxe-denom', idxOn ? (gexExpoInit.indexName || 'index') : gexExpoData.denom);
       setText('gxe-asof', gexExpoData.asOfET);
       setText('gxe-nettotal', gexExpoData.netTotal);
       const n = gexExpoApplied.length;
@@ -466,7 +508,8 @@
     function carryZoom() {
       const p = gexExpoProfile();
       if (p && p.strikes.length && gexExpoZoom) {
-        const flo = p.strikes[0], fhi = p.strikes[p.strikes.length - 1];
+        const dv = gexExpoDiv();
+        const flo = p.strikes[0] / dv, fhi = p.strikes[p.strikes.length - 1] / dv;
         if (gexExpoZoom.hi < flo || gexExpoZoom.lo > fhi) gexExpoSeedZoom();
       }
     }
@@ -544,6 +587,23 @@
       const key = legacyChip.dataset.chipProf;
       selectProfile(gexExpoKey === key ? 'all' : key);
     });
+    // FUT <-> index toggle: pure display-unit change - the zoom window
+    // converts along so the viewed slice of the book stays put.
+    if (dseg) dseg.addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-dn]');
+      if (!b) return;
+      const want = b.dataset.dn === 'idx';
+      if (want === gexExpoIdxMode) return;
+      const dOld = gexExpoDiv();
+      gexExpoIdxMode = want;
+      try { localStorage.setItem('gxeDenomIdx', want ? '1' : '0'); } catch (err) { /* private mode */ }
+      const dNew = gexExpoDiv();
+      if (gexExpoZoom && dOld !== dNew) {
+        gexExpoZoom = { lo: gexExpoZoom.lo * dOld / dNew, hi: gexExpoZoom.hi * dOld / dNew };
+      }
+      syncChrome(); renderExpo();
+    });
+    syncChrome(); // reflect a persisted index-mode choice on load
 
     // Deep link / reload restore: ?expiry= (comma-separated) re-runs the
     // combined fetch on init, keeping only dates the strip actually offers.

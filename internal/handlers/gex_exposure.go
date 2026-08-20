@@ -86,6 +86,13 @@ type gexExpo struct {
 	// trading-TZ date whose filter shows the 0DTE level family.
 	SupportsExpiry bool   `json:"supportsExpiry"`
 	Today          string `json:"today"`
+	// Ratio is the futures/index conversion behind a futures-denominated
+	// blob (0 when Denom is "index"). The client divides by it for the
+	// index-strike display mode - the exact inverse of the scaling here,
+	// so index strikes come back as the engine published them. IndexName
+	// labels that mode ("SPX"/"NDX", from the payload's sources).
+	Ratio     float64 `json:"ratio"`
+	IndexName string  `json:"indexName"`
 }
 
 // gexExpoAt parses the shared ?at= page param (datetime-local format in the
@@ -271,6 +278,10 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 
 	e.SupportsExpiry = pd.SupportsExpiry
 	e.Today = now.In(tz).Format("2006-01-02")
+	e.IndexName = "index"
+	if len(pd.Sources) > 0 && pd.Sources[0] != "" {
+		e.IndexName = pd.Sources[0]
+	}
 
 	// Denomination: identical futures-first rule as the overview charts.
 	// The profile payload's own futures fields (engine v0.7.0+) win, so the
@@ -292,6 +303,9 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 			ratio = s.FuturesConversion.Ratio
 			e.BucketWidth = pd.BucketWidth * ratio
 		}
+	}
+	if e.Denom == "futures" {
+		e.Ratio = ratio
 	}
 
 	scale := func(src []float64) []float64 {

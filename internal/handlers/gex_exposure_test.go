@@ -182,6 +182,10 @@ func TestGEXExposurePageV070(t *testing.T) {
 		`"supportsExpiry":true`,
 		`"callOi":[1000,7000,12000]`,
 		`"denom":"futures"`,
+		`"ratio":1.0038`,
+		`"indexName":"SPX"`,
+		`id="gxe-denom-seg"`, // FUT <-> SPX display toggle
+		`>SPX</button>`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
@@ -398,6 +402,11 @@ func TestGexBuildExpo(t *testing.T) {
 	e3 := gexBuildExpo(pd, nil, now, tz)
 	if e3.Denom != "futures" || e3.Spot != pdFut || e3.Profiles["all"].Strikes[0] != 7300*1.004 {
 		t.Errorf("payload denomination: denom=%q spot=%v strike=%v", e3.Denom, e3.Spot, e3.Profiles["all"].Strikes[0])
+	}
+	// The blob exposes the ratio (index display mode divides by it) only
+	// when futures-denominated; e2 above is index-denominated.
+	if e3.Ratio != 1.004 || e2.Ratio != 0 || e3.IndexName != "index" {
+		t.Errorf("ratio/indexName: %v / %v / %q", e3.Ratio, e2.Ratio, e3.IndexName)
 	}
 	if !e3.SupportsExpiry || e3.Profiles["all"].CallOI[1] != 200 || e3.Profiles["all"].PutOI[0] != 300 {
 		t.Errorf("caps/OI: %v %v %v", e3.SupportsExpiry, e3.Profiles["all"].CallOI, e3.Profiles["all"].PutOI)
