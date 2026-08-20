@@ -61,6 +61,7 @@
 
 <div class="gex-toolbar">
   <h1 style="margin: 0;">Gamma (GEX)</h1>
+  {{template "gex_tabs" .}}
   <div class="gex-seg">
     <a href="/gex{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/NQ{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>

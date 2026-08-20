@@ -25,6 +25,10 @@ import (
 var (
 	ErrUnauthorized = errors.New("gex: unauthorized (check gex.api_key / TJ_GEX_API_KEY)")
 	ErrNoSnapshot   = errors.New("gex: no snapshot at or before requested time")
+	// ErrNoProfile is the profile endpoint's 404: an engine build that
+	// predates GET /v1/profile. The Exposure page degrades to an
+	// explanatory empty state rather than erroring.
+	ErrNoProfile = errors.New("gex: profile endpoint unavailable (engine too old?)")
 )
 
 // Options configures a Client.
@@ -215,4 +219,70 @@ func (c *Client) Snapshot(ctx context.Context, market string, at time.Time) (*Sn
 		return nil, fmt.Errorf("gex: decode snapshot: %w", err)
 	}
 	return &s, nil
+}
+
+// ProfileSet is one per-strike GEX profile. Strikes are INDEX-denominated
+// (this endpoint carries no futures conversion; consumers denominate via the
+// snapshot). call_gex/put_gex are the signed per-strike components whose sum
+// is net_gex.
+type ProfileSet struct {
+	StrikesIndex []float64 `json:"strikes_index"`
+	NetGex       []float64 `json:"net_gex"`
+	CallGex      []float64 `json:"call_gex"`
+	PutGex       []float64 `json:"put_gex"`
+}
+
+// ProfileDetail is GET /v1/profile/{market}: the full per-strike profile
+// set (index|etf|blend|0dte|0dte_vol) plus expiry_decay - net GEX rolling
+// off per expiry date. LIVE-LATEST ONLY: the endpoint silently ignores
+// ?at= and ?expiry= today (verified empirically), so neither is sent;
+// historical and per-expiry views are engine asks, not client options.
+type ProfileDetail struct {
+	Market      string                `json:"market"`
+	AsOf        time.Time             `json:"as_of"`
+	OIDate      string                `json:"oi_date"`
+	SpotIndex   float64               `json:"spot_index"`
+	BucketWidth float64               `json:"bucket_width"`
+	Sources     []string              `json:"sources"`
+	Profiles    map[string]ProfileSet `json:"profiles"`
+	ExpiryDecay map[string]float64    `json:"expiry_decay"`
+}
+
+// ProfileDetail fetches the latest full profile set for market ("ES"/"NQ").
+func (c *Client) ProfileDetail(ctx context.Context, market string) (*ProfileDetail, error) {
+	u := c.baseURL + "/v1/profile/" + url.PathEscape(market)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gex: build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gex request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusNotFound:
+		return nil, ErrNoProfile
+	default:
+		snippet := body
+		if len(snippet) > 256 {
+			snippet = snippet[:256]
+		}
+		return nil, fmt.Errorf("gex: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+
+	var pd ProfileDetail
+	if err := json.Unmarshal(body, &pd); err != nil {
+		return nil, fmt.Errorf("gex: decode profile: %w", err)
+	}
+	return &pd, nil
 }

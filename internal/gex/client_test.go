@@ -294,3 +294,75 @@ func TestNewValidation(t *testing.T) {
 		t.Errorf("default timeout = %v, want 5s", c.http.Timeout)
 	}
 }
+
+// profileFixture is an abridged live-shape /v1/profile response.
+const profileFixture = `{
+  "market": "ES", "as_of": "2026-07-31T19:50:02.722581Z", "oi_date": "2026-07-31",
+  "spot_index": 7494.5498, "bucket_width": 10.0, "sources": ["SPX", "SPY"],
+  "profiles": {
+    "blend": {"strikes_index": [7300.0, 7530.0], "net_gex": [-3.9e9, 1.08e10], "call_gex": [1.0e9, 1.2e10], "put_gex": [-4.9e9, -1.2e9]},
+    "0dte":  {"strikes_index": [7450.0], "net_gex": [1.1e9], "call_gex": [1.5e9], "put_gex": [-0.4e9]}
+  },
+  "expiry_decay": {"2026-07-31": -6.0e9, "2026-08-21": 4.0e9}
+}`
+
+func TestProfileDetail(t *testing.T) {
+	var gotPath, gotAuth string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+		_, _ = w.Write([]byte(profileFixture))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{BaseURL: srv.URL, APIKey: "sekrit"})
+	pd, err := c.ProfileDetail(context.Background(), "ES")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotPath != "/v1/profile/ES" || gotAuth != "Bearer sekrit" {
+		t.Errorf("path/auth = %q / %q", gotPath, gotAuth)
+	}
+	if !pd.AsOf.Equal(time.Date(2026, 7, 31, 19, 50, 2, 722581000, time.UTC)) {
+		t.Errorf("as_of = %v", pd.AsOf)
+	}
+	if pd.BucketWidth != 10.0 || pd.OIDate != "2026-07-31" {
+		t.Errorf("bucket/oi = %v / %q", pd.BucketWidth, pd.OIDate)
+	}
+	b, ok := pd.Profiles["blend"]
+	if !ok || len(b.StrikesIndex) != 2 || b.CallGex[1] != 1.2e10 || b.PutGex[0] != -4.9e9 {
+		t.Errorf("blend = %+v", b)
+	}
+	if _, ok := pd.Profiles["0dte"]; !ok {
+		t.Errorf("0dte profile missing")
+	}
+	if pd.ExpiryDecay["2026-08-21"] != 4.0e9 {
+		t.Errorf("decay = %v", pd.ExpiryDecay)
+	}
+}
+
+func TestProfileDetailErrors(t *testing.T) {
+	for _, tc := range []struct {
+		status int
+		want   error
+	}{
+		{http.StatusUnauthorized, ErrUnauthorized},
+		{http.StatusNotFound, ErrNoProfile},
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			http.Error(w, "no", tc.status)
+		}))
+		c, _ := New(Options{BaseURL: srv.URL})
+		if _, err := c.ProfileDetail(context.Background(), "ES"); !errors.Is(err, tc.want) {
+			t.Errorf("status %d -> %v, want %v", tc.status, err, tc.want)
+		}
+		srv.Close()
+	}
+	// Non-sentinel statuses surface a snippet error.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "boom", http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+	c, _ := New(Options{BaseURL: srv.URL})
+	if _, err := c.ProfileDetail(context.Background(), "ES"); err == nil || !strings.Contains(err.Error(), "500") {
+		t.Errorf("500 -> %v", err)
+	}
+}

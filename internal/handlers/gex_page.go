@@ -202,6 +202,7 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	data := map[string]any{
 		"NavActive": "gex",
 		"BackHref":  validBackHref(r),
+		"GexTab":    "overview",
 		"Market":    market,
 		"AtParam":   atParam,
 		"AtValue":   at.In(tz).Format(gexPageMoment), // picker prefill

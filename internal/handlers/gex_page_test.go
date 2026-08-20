@@ -65,6 +65,7 @@ func TestGEXPage(t *testing.T) {
 		`const gexData`,               // chart blob
 		`"strikes":[7327.74,7558.614`, // futures-scaled strike axis (index x 1.0038)
 		"ET",                          // as-of label
+		`class="active">Overview`,     // tabs partial, Overview active here
 		// Engine v0.5.0 surface (update 002):
 		"1h -9.2B",                     // net GEX change sub-line on the tile
 		"intraday negative",            // front-week regime shown when it disagrees (update 004)

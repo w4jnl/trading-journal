@@ -1,0 +1,9 @@
+{{/* Overview | Exposure tab switch, shared by both /gex pages. Preserves the
+     market only - the Overview link deliberately drops ?at= (the Exposure
+     tab is live-latest-only, so returning to overview-latest is correct). */}}
+{{define "gex_tabs"}}
+<div class="gex-seg">
+  <a href="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
+  <a href="/gex/exposure{{if ne .Market "ES"}}/{{.Market}}{{end}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
+</div>
+{{end}}
