@@ -94,7 +94,19 @@ func gexExpoEngineV070(t *testing.T) (*httptest.Server, func() string) {
 			mu.Lock()
 			lastQ = r.URL.RawQuery
 			mu.Unlock()
-			fmt.Fprint(w, gexProfileJSONV070(r.URL.Query().Get("expiry")))
+			doc := gexProfileJSONV070(r.URL.Query().Get("expiry"))
+			// v0.8.0 ?bucket=: multiples of the stored width 10 up to 100
+			// re-aggregate (the fake just relabels the width - enough for
+			// contract tests); anything else 422s like the real engine.
+			if b := r.URL.Query().Get("bucket"); b != "" {
+				var n int
+				if _, err := fmt.Sscanf(b, "%d", &n); err != nil || n < 10 || n > 100 || n%10 != 0 {
+					http.Error(w, `{"detail":"bucket must be a multiple of this snapshot's stored width 10, at most 100"}`, http.StatusUnprocessableEntity)
+					return
+				}
+				doc = strings.Replace(doc, `"bucket_width": 10.0`, fmt.Sprintf(`"bucket_width": %d.0`, n), 1)
+			}
+			fmt.Fprint(w, doc)
 			return
 		}
 		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02.722581Z"))
@@ -186,6 +198,10 @@ func TestGEXExposurePageV070(t *testing.T) {
 		`"indexName":"SPX"`,
 		`id="gxe-denom-seg"`, // FUT <-> SPX display toggle
 		`>SPX</button>`,
+		`id="gxe-bucket-seg"`, // bucket width control
+		`"bucketOpts":[10,20,50,100]`,
+		`data-bw="10" class="on"`, // native grid pre-selected
+		`data-bw="100"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
@@ -273,6 +289,38 @@ func TestGEXExposureData(t *testing.T) {
 		t.Errorf("engine query = %q", got)
 	}
 
+	// Bucket re-aggregation: forwarded, and the blob reports the served
+	// grid (bucketIndex raw, bucketWidth futures-scaled).
+	rec = gexExpoGet(t, h, "/gex/exposure/data/ES?bucket=20")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("bucket = %d: %s", rec.Code, rec.Body.String())
+	}
+	var bblob struct {
+		BucketIndex float64 `json:"bucketIndex"`
+		BucketWidth float64 `json:"bucketWidth"`
+		Profiles    map[string]json.RawMessage
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &bblob); err != nil {
+		t.Fatal(err)
+	}
+	if bblob.BucketIndex != 20 || bblob.BucketWidth != 20*1.0038 || len(bblob.Profiles) != 3 {
+		t.Errorf("bucket blob: idx=%v w=%v profiles=%d", bblob.BucketIndex, bblob.BucketWidth, len(bblob.Profiles))
+	}
+	if !strings.Contains(srvQuery(), "bucket=20") {
+		t.Errorf("bucket not forwarded: %q", srvQuery())
+	}
+	// Composes with expiry; engine-invalid widths map to 422 with the
+	// engine's detail; junk 400s before touching the engine.
+	if rec := gexExpoGet(t, h, "/gex/exposure/data/ES?expiry=2026-08-21&bucket=20"); rec.Code != http.StatusOK {
+		t.Errorf("expiry+bucket = %d", rec.Code)
+	}
+	if rec := gexExpoGet(t, h, "/gex/exposure/data/ES?bucket=7"); rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "stored width") {
+		t.Errorf("bucket=7 = %d: %s", rec.Code, rec.Body.String())
+	}
+	if rec := gexExpoGet(t, h, "/gex/exposure/data/ES?bucket=abc"); rec.Code != http.StatusBadRequest {
+		t.Errorf("bucket=abc = %d", rec.Code)
+	}
+
 	// A legacy engine silently ignores ?expiry= - the client sentinel must
 	// surface as a 422, never as unfiltered-data-presented-as-filtered.
 	legacy := gexExpoEngine(t, http.StatusOK)
@@ -282,6 +330,12 @@ func TestGEXExposureData(t *testing.T) {
 	rec = gexExpoGet(t, lh, "/gex/exposure/data/ES?expiry=2026-08-21")
 	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "v0.7.0") {
 		t.Errorf("legacy engine = %d: %s", rec.Code, rec.Body.String())
+	}
+	// A pre-v0.7.0 engine silently ignores ?bucket=: the served-width
+	// mismatch surfaces as 422, never as mislabeled data.
+	rec = gexExpoGet(t, lh, "/gex/exposure/data/ES?bucket=20")
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Errorf("legacy bucket = %d: %s", rec.Code, rec.Body.String())
 	}
 
 	// The engine's per-expiry 404 becomes a friendly JSON 404.

@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,6 +38,12 @@ var (
 	// ErrExpiryUnsupported means ?expiry= was requested but the engine
 	// predates v0.7.0 and would have silently served the whole book.
 	ErrExpiryUnsupported = errors.New("gex: engine does not support expiry filtering (needs v0.7.0+)")
+	// ErrBadBucket covers every way ?bucket= can fail: the engine's 422
+	// (not a multiple of the stored width / over 100 / finer than a
+	// pre-v0.8.0 snapshot's grid), a v0.7.0 engine 422-ing it as an
+	// unknown param, and an older engine silently ignoring it (detected
+	// by the served width disagreeing with the request).
+	ErrBadBucket = errors.New("gex: bucket width not servable")
 )
 
 // Options configures a Client.
@@ -272,10 +280,15 @@ type ProfileDetail struct {
 	SupportsExpiry bool     `json:"-"`
 }
 
-// ProfileQuery narrows a ProfileDetail request. Zero value = live whole book.
+// ProfileQuery narrows a ProfileDetail request. Zero value = live whole book
+// at the snapshot's stored grid.
 type ProfileQuery struct {
 	At       time.Time // at-or-before snapshot; zero = live
 	Expiries []string  // ISO dates; the engine accepts comma-separated sets
+	// Bucket re-aggregates strikes into this width (index points). Engine
+	// v0.8.0+: any integer multiple of the stored width, at most 100;
+	// 0 = the stored default.
+	Bucket int
 }
 
 // ProfileDetail fetches the profile set for market ("ES"/"NQ").
@@ -287,6 +300,9 @@ func (c *Client) ProfileDetail(ctx context.Context, market string, q ProfileQuer
 	}
 	if len(q.Expiries) > 0 {
 		vals.Set("expiry", strings.Join(q.Expiries, ","))
+	}
+	if q.Bucket > 0 {
+		vals.Set("bucket", strconv.Itoa(q.Bucket))
 	}
 	if len(vals) > 0 {
 		u += "?" + vals.Encode()
@@ -326,12 +342,23 @@ func (c *Client) ProfileDetail(ctx context.Context, market string, q ProfileQuer
 		if len(snippet) > 256 {
 			snippet = snippet[:256]
 		}
+		// The engine 422s a bad ?bucket= naming it (v0.8.0 validation, or
+		// v0.7.0's unknown-param rejection) - map both to the sentinel so
+		// the UI can revert the control instead of flashing a raw error.
+		if q.Bucket > 0 && resp.StatusCode == http.StatusUnprocessableEntity && strings.Contains(string(body), "bucket") {
+			return nil, fmt.Errorf("%w: %s", ErrBadBucket, strings.TrimSpace(string(snippet)))
+		}
 		return nil, fmt.Errorf("gex: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
 	}
 
 	var pd ProfileDetail
 	if err := json.Unmarshal(body, &pd); err != nil {
 		return nil, fmt.Errorf("gex: decode profile: %w", err)
+	}
+	// A pre-v0.7.0 engine silently ignores ?bucket= and serves its fixed
+	// grid; the payload's authoritative bucket_width exposes that.
+	if q.Bucket > 0 && math.Abs(pd.BucketWidth-float64(q.Bucket)) > 1e-6 {
+		return nil, fmt.Errorf("%w: engine served width %g", ErrBadBucket, pd.BucketWidth)
 	}
 	var probe struct {
 		ExpiryFilter json.RawMessage `json:"expiry_filter"`

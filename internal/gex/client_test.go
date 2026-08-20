@@ -406,6 +406,34 @@ func TestProfileDetailV070(t *testing.T) {
 	}
 }
 
+func TestProfileDetailBucket(t *testing.T) {
+	// The served bucket_width must echo the request: a match succeeds, a
+	// mismatch (an old engine silently ignoring ?bucket=) is ErrBadBucket,
+	// and the engine's explicit 422 maps to the same sentinel.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("bucket") {
+		case "20":
+			_, _ = w.Write([]byte(strings.Replace(profileFixtureV070, `"bucket_width": 10.0`, `"bucket_width": 20.0`, 1)))
+		case "7":
+			http.Error(w, `{"detail":"bucket must be a multiple of this snapshot's stored width 10, at most 100"}`, http.StatusUnprocessableEntity)
+		default:
+			_, _ = w.Write([]byte(profileFixtureV070)) // ignores the param
+		}
+	}))
+	defer srv.Close()
+	c, _ := New(Options{BaseURL: srv.URL})
+	pd, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{Bucket: 20, Expiries: []string{"2026-08-21"}})
+	if err != nil || pd.BucketWidth != 20 {
+		t.Fatalf("bucket=20 -> %v / width %v", err, pd)
+	}
+	if _, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{Bucket: 7}); !errors.Is(err, ErrBadBucket) || !strings.Contains(err.Error(), "stored width") {
+		t.Errorf("engine 422 -> %v, want ErrBadBucket with detail", err)
+	}
+	if _, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{Bucket: 50}); !errors.Is(err, ErrBadBucket) {
+		t.Errorf("silently ignored bucket -> %v, want ErrBadBucket", err)
+	}
+}
+
 func TestProfileDetailErrors(t *testing.T) {
 	// The engine's three 404s share the endpoint; the detail string is the
 	// discriminator (verified against v0.7.0).

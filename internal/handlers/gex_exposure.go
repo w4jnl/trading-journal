@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -93,6 +94,13 @@ type gexExpo struct {
 	// labels that mode ("SPX"/"NDX", from the payload's sources).
 	Ratio     float64 `json:"ratio"`
 	IndexName string  `json:"indexName"`
+	// BucketIndex is the served grid in raw INDEX points (BucketWidth is
+	// futures-scaled); BucketBase/BucketOpts drive the width control -
+	// the page-load width and its engine-valid coarser multiples (x1 x2
+	// x5 x10, capped at the engine's 100-point limit).
+	BucketIndex float64 `json:"bucketIndex"`
+	BucketBase  int     `json:"bucketBase"`
+	BucketOpts  []int   `json:"bucketOpts"`
 }
 
 // gexExpoAt parses the shared ?at= page param (datetime-local format in the
@@ -138,6 +146,21 @@ func gexExpoExpiriesParam(r *http.Request) ([]string, bool) {
 	return out, true
 }
 
+// gexExpoBucketParam validates ?bucket= (index points; 0 = stored default).
+// The engine owns the real constraints (multiple of stored width, <= 100);
+// this only rejects non-numeric junk. ok=false on malformed input.
+func gexExpoBucketParam(r *http.Request) (int, bool) {
+	raw := strings.TrimSpace(r.URL.Query().Get("bucket"))
+	if raw == "" {
+		return 0, true
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n <= 0 || n > 1000 {
+		return 0, false
+	}
+	return n, true
+}
+
 // GEXExposurePage renders /gex/exposure and /gex/exposure/{market}. It
 // always fetches the UNFILTERED book (the chip strip and profile buttons
 // need it); a valid ?expiry= is handed to the client, which re-runs the
@@ -170,6 +193,9 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if exps, ok := gexExpoExpiriesParam(r); ok && len(exps) > 0 {
 		qs.Set("expiry", strings.Join(exps, ","))
+	}
+	if b, ok := gexExpoBucketParam(r); ok && b > 0 {
+		qs.Set("bucket", strconv.Itoa(b))
 	}
 	if len(qs) > 0 {
 		data["QuerySuffix"] = "?" + qs.Encode()
@@ -232,14 +258,20 @@ func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 	}
-	// A malformed expiry must NOT silently degrade to the whole book -
-	// that is the exact silent-param hazard ask-001 had the engine fix.
+	// Malformed narrowing params must NOT silently degrade to the whole
+	// book - the exact silent-param hazard ask-001 had the engine fix.
 	exps, ok := gexExpoExpiriesParam(r)
 	if !ok {
 		writeErr(http.StatusBadRequest, "invalid expiry date; expected YYYY-MM-DD (comma-separated for a set)")
 		return
 	}
 	q.Expiries = exps
+	bucket, ok := gexExpoBucketParam(r)
+	if !ok {
+		writeErr(http.StatusBadRequest, "invalid bucket; expected a positive integer (index points)")
+		return
+	}
+	q.Bucket = bucket
 	pd, err := h.GEX.ProfileDetail(r.Context(), market, q)
 	switch {
 	case errors.Is(err, gex.ErrNoExpiryData):
@@ -250,6 +282,11 @@ func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 		return
 	case errors.Is(err, gex.ErrExpiryUnsupported):
 		writeErr(http.StatusUnprocessableEntity, "the engine predates v0.7.0 — expiry filtering needs an engine upgrade/restart")
+		return
+	case errors.Is(err, gex.ErrBadBucket):
+		// Carries the engine's own detail (not a multiple / over 100 /
+		// finer than this snapshot's stored grid / engine too old).
+		writeErr(http.StatusUnprocessableEntity, err.Error())
 		return
 	case err != nil:
 		h.logger().Warn("gex exposure data: profile fetch failed", "market", market, "err", err)
@@ -281,6 +318,15 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 	e.IndexName = "index"
 	if len(pd.Sources) > 0 && pd.Sources[0] != "" {
 		e.IndexName = pd.Sources[0]
+	}
+	e.BucketIndex = pd.BucketWidth
+	e.BucketBase = int(math.Round(pd.BucketWidth))
+	if e.BucketBase > 0 {
+		for _, m := range []int{1, 2, 5, 10} {
+			if w := e.BucketBase * m; w <= 100 {
+				e.BucketOpts = append(e.BucketOpts, w)
+			}
+		}
 	}
 
 	// Denomination: identical futures-first rule as the overview charts.

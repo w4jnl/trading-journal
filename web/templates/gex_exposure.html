@@ -112,6 +112,12 @@
       <button type="button" data-dn="idx" title="Index strikes ({{.IndexName}}) — what the option chain and MenthorQ show">{{.IndexName}}</button>
     </span>
     {{end}}
+    {{if and .SupportsExpiry (gt (len .BucketOpts) 1)}}
+    {{$base := .BucketBase}}
+    <span class="gxe-filters" id="gxe-bucket-seg" style="float: right; margin: 0 12px 0 0;">
+      {{range .BucketOpts}}<button type="button" data-bw="{{.}}" {{if eq . $base}}class="on" {{end}}title="Aggregate strikes into {{.}}-point index buckets{{if eq . $base}} (native grid){{end}}">{{.}}</button>{{end}}
+    </span>
+    {{end}}
   </div>
   {{if $.LevelsNote}}<div class="muted" style="font-size: 12px; margin-bottom: 6px;">{{$.LevelsNote}}</div>{{end}}
   <div id="gxe-note" class="muted" style="font-size: 12px; margin-bottom: 6px; display: none;"></div>
@@ -135,6 +141,10 @@
   // blob was fetched for - they differ only while a fetch is in flight.
   let gexExpoSel = [];     // ISO dates, chip-strip order
   let gexExpoApplied = []; // set matching gexExpoData; [] = whole book
+  // Bucket width control (index points): 0 = the page-load native grid,
+  // else an engine-valid coarser multiple. Same optimistic/applied split.
+  let gexExpoBucket = 0;
+  let gexExpoAppliedBucket = 0;
   let gexExpoKey = 'all';
   let gexExpoZoom = null;  // {lo, hi} price window, in DISPLAY units; null = auto fit
   let gexExpoFit = null;   // full strike range of the ACTIVE profile
@@ -455,14 +465,14 @@
   })();
 
   // Profile buttons + expiry chips. The three profile views ship in the
-  // page blob (instant switch); expiry chips are a MULTI-SELECT filter -
-  // each click toggles that date in the set and fetches the combined
-  // slice from /gex/exposure/data (engine v0.7.0+, comma-separated), with
-  // the set mirrored into the URL so reloads and deep links restore it.
-  // Chips highlight optimistically and roll back if the fetch fails;
-  // clearing the last date (or picking a profile) restores the page blob
-  // without a fetch. Against an older engine only today's chip is live
-  // (data-chip-prof fallback).
+  // page blob (instant switch); expiry chips are a MULTI-SELECT filter and
+  // the bucket seg re-aggregates the grid (engine v0.8.0 ?bucket=) - both
+  // fetch from /gex/exposure/data and compose with each other and ?at=,
+  // with the state mirrored into the URL so reloads and deep links restore
+  // it. Controls highlight optimistically and roll back if the fetch
+  // fails; the all-default state restores the page blob without a fetch.
+  // Against an older engine only today's chip is live (data-chip-prof
+  // fallback) and the bucket seg is not rendered.
   (function () {
     const wrap = document.getElementById('gxe-filters');
     if (!wrap) return;
@@ -470,6 +480,7 @@
     const note = document.getElementById('gxe-note');
     const legacyChip = strip ? strip.querySelector('button[data-chip-prof]') : null;
     const dseg = document.getElementById('gxe-denom-seg');
+    const bseg = document.getElementById('gxe-bucket-seg');
     let fetchSeq = 0;
 
     function setNote(msg) {
@@ -496,12 +507,19 @@
       setText('gxe-denom', idxOn ? (gexExpoInit.indexName || 'index') : gexExpoData.denom);
       setText('gxe-asof', gexExpoData.asOfET);
       setText('gxe-nettotal', gexExpoData.netTotal);
+      // Bucket seg: active = the width the ACTIVE blob was served at
+      // (authoritative bucketIndex, not the optimistic request).
+      if (bseg) {
+        const wIdx = Math.round(gexExpoData.bucketIndex || 0);
+        bseg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', parseInt(b.dataset.bw, 10) === wIdx));
+      }
       const n = gexExpoApplied.length;
       setText('gxe-filternote', n ? (n === 1 ? ' · expiry ' + gexExpoApplied[0] + ' only' : ' · ' + n + ' expiries: ' + gexExpoApplied.join(', ')) : '');
     }
     function syncURL() {
       const sp = new URLSearchParams(location.search);
       if (gexExpoSel.length) sp.set('expiry', gexExpoSel.join(',')); else sp.delete('expiry');
+      if (gexExpoBucket) sp.set('bucket', String(gexExpoBucket)); else sp.delete('bucket');
       const qs = sp.toString();
       history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
     }
@@ -513,66 +531,90 @@
         if (gexExpoZoom.hi < flo || gexExpoZoom.lo > fhi) gexExpoSeedZoom();
       }
     }
-    function applyWholeBook(key) {
-      fetchSeq++; // invalidate any in-flight chip fetch
-      gexExpoSel = [];
-      gexExpoApplied = [];
-      gexExpoData = gexExpoInit;
-      gexExpoKey = key;
-      setNote('');
-      syncURL(); syncChrome(); carryZoom(); renderExpo();
-    }
-    function selectProfile(key) {
-      if (!gexExpoInit.profiles[key]) return;
-      applyWholeBook(key);
-    }
-    // Fetch the combined slice for the CURRENT selection. Chips already
-    // show the optimistic state; on failure they roll back to the set the
-    // rendered blob belongs to.
-    function fetchSelection() {
+    // Fetch the blob for the CURRENT (sel, bucket) state. Controls already
+    // show the optimistic state; on failure they roll back to the state
+    // the rendered blob belongs to.
+    function refetch() {
       const sel = gexExpoSel.slice();
+      const bkt = gexExpoBucket;
       const seq = ++fetchSeq;
-      setNote('loading ' + sel.join(' + ') + ' slice…');
+      const what = [];
+      if (sel.length) what.push(sel.join(' + ') + ' slice');
+      if (bkt) what.push(bkt + '-pt buckets');
+      setNote('loading ' + what.join(', ') + '…');
       const sp = new URLSearchParams(location.search);
-      let u = '/gex/exposure/data/' + GEX_EXPO_MARKET + '?expiry=' + encodeURIComponent(sel.join(','));
-      if (sp.get('at')) u += '&at=' + encodeURIComponent(sp.get('at'));
-      fetch(u)
+      const qp = [];
+      if (sel.length) qp.push('expiry=' + encodeURIComponent(sel.join(',')));
+      if (bkt) qp.push('bucket=' + bkt);
+      if (sp.get('at')) qp.push('at=' + encodeURIComponent(sp.get('at')));
+      fetch('/gex/exposure/data/' + GEX_EXPO_MARKET + '?' + qp.join('&'))
         .then((r) => r.json().then((j) => ({ ok: r.ok, j: j })))
         .then((res) => {
           if (seq !== fetchSeq) return; // superseded by a newer selection
           if (!res.ok || !res.j.profiles) {
-            setNote(res.j && res.j.error ? res.j.error : 'expiry fetch failed');
-            gexExpoSel = gexExpoApplied.slice(); // roll back the chips
+            setNote(res.j && res.j.error ? res.j.error : 'fetch failed');
+            gexExpoSel = gexExpoApplied.slice(); // roll back the controls
+            gexExpoBucket = gexExpoAppliedBucket;
             syncChrome();
             return;
           }
           gexExpoData = res.j;
           gexExpoApplied = sel;
-          gexExpoKey = 'all'; // filtered responses carry the blend slice only
+          gexExpoAppliedBucket = bkt;
+          if (sel.length) gexExpoKey = 'all'; // filtered = blend slice only
+          else if (!res.j.profiles[gexExpoKey]) gexExpoKey = 'all';
           setNote('');
           syncURL(); syncChrome(); carryZoom(); renderExpo();
         })
         .catch(function () {
           if (seq === fetchSeq) {
-            setNote('expiry fetch failed');
+            setNote('fetch failed');
             gexExpoSel = gexExpoApplied.slice();
+            gexExpoBucket = gexExpoAppliedBucket;
             syncChrome();
           }
         });
     }
+    // Bring the rendered blob in line with (sel, bucket): page blob when
+    // everything is default, no-op re-render when the blob already matches
+    // (profile switches), a fetch otherwise.
+    function reconcile() {
+      if (!gexExpoSel.length && !gexExpoBucket) {
+        fetchSeq++; // invalidate any in-flight fetch
+        gexExpoData = gexExpoInit;
+        gexExpoApplied = [];
+        gexExpoAppliedBucket = 0;
+        setNote('');
+        syncURL(); syncChrome(); carryZoom(); renderExpo();
+        return;
+      }
+      if (gexExpoSel.join(',') === gexExpoApplied.join(',') && gexExpoBucket === gexExpoAppliedBucket) {
+        syncURL(); syncChrome(); carryZoom(); renderExpo();
+        return;
+      }
+      syncChrome(); // optimistic highlight before the fetch lands
+      refetch();
+    }
+    function selectProfile(key) {
+      if (!gexExpoInit.profiles[key]) return;
+      gexExpoSel = [];
+      gexExpoKey = key;
+      reconcile();
+    }
     function toggleExpiry(date) {
       const i = gexExpoSel.indexOf(date);
       if (i === -1) {
-        // Keep chip-strip (= date) order so the URL and note read naturally.
+        // Keep date order so the URL and note read naturally.
         gexExpoSel.push(date);
         gexExpoSel.sort();
       } else {
         gexExpoSel.splice(i, 1);
       }
-      syncChrome(); // optimistic highlight before the fetch lands
-      if (!gexExpoSel.length) { applyWholeBook('all'); return; }
-      syncURL();
-      fetchSelection();
+      reconcile();
+    }
+    function selectBucket(w) {
+      gexExpoBucket = w === (gexExpoInit.bucketBase || 0) ? 0 : w;
+      reconcile();
     }
 
     wrap.addEventListener('click', function (e) {
@@ -603,19 +645,33 @@
       }
       syncChrome(); renderExpo();
     });
+    // Bucket width seg: fetches the re-aggregated book (composes with the
+    // expiry filter and ?at=); the native-grid button returns to default.
+    if (bseg) bseg.addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-bw]');
+      if (b) selectBucket(parseInt(b.dataset.bw, 10));
+    });
     syncChrome(); // reflect a persisted index-mode choice on load
 
-    // Deep link / reload restore: ?expiry= (comma-separated) re-runs the
-    // combined fetch on init, keeping only dates the strip actually offers.
-    if (gexExpoInit.supportsExpiry && strip) {
-      const want = (new URLSearchParams(location.search).get('expiry') || '')
-        .split(',')
-        .map((d) => d.trim().replace(/[^0-9-]/g, ''))
-        .filter((d) => d && strip.querySelector('button[data-chip-exp="' + d + '"]'));
-      if (want.length) {
+    // Deep link / reload restore: ?expiry= (comma-separated) and ?bucket=
+    // re-run the combined fetch on init - expiries only for dates the strip
+    // offers, buckets only for widths the seg offers.
+    if (gexExpoInit.supportsExpiry) {
+      const spInit = new URLSearchParams(location.search);
+      if (strip) {
+        const want = (spInit.get('expiry') || '')
+          .split(',')
+          .map((d) => d.trim().replace(/[^0-9-]/g, ''))
+          .filter((d) => d && strip.querySelector('button[data-chip-exp="' + d + '"]'));
         gexExpoSel = Array.from(new Set(want)).sort();
+      }
+      const wb = parseInt(spInit.get('bucket') || '0', 10);
+      if (wb > 0 && wb !== (gexExpoInit.bucketBase || 0) && bseg && bseg.querySelector('button[data-bw="' + wb + '"]')) {
+        gexExpoBucket = wb;
+      }
+      if (gexExpoSel.length || gexExpoBucket) {
         syncChrome();
-        fetchSelection();
+        refetch();
       }
     }
   })();
