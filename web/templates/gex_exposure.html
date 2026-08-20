@@ -14,18 +14,25 @@
   .gxe-filters button { font-size: 10px; line-height: 15px; padding: 0 9px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
   .gxe-filters button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .gxe-divider { width: 1px; align-self: stretch; background: var(--border); flex: 0 0 auto; }
-  .gxe-expiries { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
-  .gxe-chip { flex: 0 0 auto; border: 1px solid var(--border); border-radius: var(--r-sm); padding: 3px 8px; font-size: 11px; color: var(--fg-muted); opacity: 0.75; cursor: not-allowed; white-space: nowrap; }
-  .gxe-chip b { display: block; font-size: 11px; color: var(--fg); font-weight: 600; }
+  .gxe-expiries { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
+  .gxe-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; font-size: 11px; white-space: nowrap; border-radius: var(--r-sm); }
+  .gxe-chip b { font-size: 11px; line-height: 1.2; color: var(--fg); font-weight: 600; }
+  .gxe-chip .gxe-chip-nums { display: flex; align-items: baseline; gap: 5px; line-height: 1.2; }
   .gxe-chip .num { font-size: 10px; }
+  .gxe-chip .gxe-pct { font-size: 10px; color: var(--fg-muted); }
   .gxe-chip--pos .num { color: var(--pos); }
   .gxe-chip--neg .num { color: var(--neg); }
-  button.gxe-chip--live { opacity: 1; cursor: pointer; background: none; text-align: left; font: inherit; }
+  /* Interactive = bordered pill (matches the profile filter buttons);
+     informational = plain column separated by hairlines, deliberately NOT
+     button-like - only clickable things look clickable. */
+  button.gxe-chip--live { border: 1px solid var(--border); background: none; cursor: pointer; text-align: left; font: inherit; }
   button.gxe-chip--live:hover { border-color: var(--accent); }
   button.gxe-chip--live.on { border-color: var(--accent); background: var(--accent-soft); }
-  .gxe-chip--locked { opacity: 0.45; border-style: dashed; }
+  button.gxe-chip--live.on b { color: var(--accent); }
+  .gxe-chip--locked { border: 0; border-left: 1px solid var(--border); border-radius: 0; opacity: 0.65; }
+  .gxe-chip--locked b { color: var(--fg-muted); font-weight: 500; }
 
-  #gxe-chart { height: 700px; min-height: 480px; user-select: none; }
+  #gxe-chart { height: 700px; min-height: 480px; user-select: none; } /* JS stretches to the viewport bottom */
   .gxe-svg { width: 100%; display: block; }
   .gxe-svg text { font-size: 10px; fill: var(--fg-muted); }
   .gxe-svg text.num { font-family: "JetBrains Mono", monospace; }
@@ -71,16 +78,15 @@
     {{if eq .DTE 0}}
     <button type="button" class="gxe-chip gxe-chip--live {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" data-chip-prof="0dte" title="Today's expiry = the 0DTE profile — click to filter">
       <b>{{.Label}} · {{.DTE}}d</b>
-      <span class="num">{{.Net}}</span> <span style="opacity:.7">{{.Pct}}</span>
+      <span class="gxe-chip-nums"><span class="num">{{.Net}}</span><span class="gxe-pct">{{.Pct}}</span></span>
     </button>
     {{else}}
-    <span class="gxe-chip gxe-chip--locked {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" title="Not selectable yet — per-expiry strike filtering needs engine support (this expiry rolls off {{.Net}})">
+    <span class="gxe-chip gxe-chip--locked {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" title="Informational only — per-expiry strike filtering is not served by the engine yet (rolls off {{.Net}})">
       <b>{{.Label}} · {{.DTE}}d</b>
-      <span class="num">{{.Net}}</span> <span style="opacity:.7">{{.Pct}}</span>
+      <span class="gxe-chip-nums"><span class="num">{{.Net}}</span><span class="gxe-pct">{{.Pct}}</span></span>
     </span>
     {{end}}
     {{end}}
-    <span class="muted" style="flex: 0 0 auto; font-size: 10px; align-self: center;">date filters need engine support</span>
   </div>
 </div>
 
@@ -294,9 +300,20 @@
     gexExpoView = { lo: lo, hi: hi, padT: padT, padB: padB, H: H };
   }
 
+  // Fill the viewport: the chart's bottom edge tracks the window height
+  // (96px allowance for card padding + the footer line), so big screens get
+  // the whole ladder instead of a fixed 700px strip.
+  function sizeExpo() {
+    const host = document.getElementById('gxe-chart');
+    if (!host) return;
+    const docTop = host.getBoundingClientRect().top + window.scrollY;
+    host.style.height = Math.max(480, window.innerHeight - docTop - 96) + 'px';
+  }
+
   gexExpoSeedZoom();
+  sizeExpo();
   renderExpo();
-  window.addEventListener('resize', function () { renderExpo(); });
+  window.addEventListener('resize', function () { sizeExpo(); renderExpo(); });
   window.addEventListener('themechange', function () { setTimeout(renderExpo, 50); });
 
   // Interactions: wheel zoom / dblclick reset / drag pan, ported from the

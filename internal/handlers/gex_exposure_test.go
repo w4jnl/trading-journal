@@ -85,7 +85,7 @@ func TestGEXExposurePage(t *testing.T) {
 		`"family":"0dte_vol"`,
 		`"0dte":`, // profile key present in blob
 		"Jul 31",  // expiry chip label
-		"needs engine support",
+		"not served by the engine yet",
 		`data-prof="0dte_vol"`,
 		">CALL<", "location.reload",
 	} {
