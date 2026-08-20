@@ -307,19 +307,19 @@ const profileFixture = `{
 }`
 
 func TestProfileDetail(t *testing.T) {
-	var gotPath, gotAuth string
+	var gotPath, gotAuth, gotQuery string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath, gotAuth = r.URL.Path, r.Header.Get("Authorization")
+		gotPath, gotAuth, gotQuery = r.URL.Path, r.Header.Get("Authorization"), r.URL.RawQuery
 		_, _ = w.Write([]byte(profileFixture))
 	}))
 	defer srv.Close()
 	c, _ := New(Options{BaseURL: srv.URL, APIKey: "sekrit"})
-	pd, err := c.ProfileDetail(context.Background(), "ES")
+	pd, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if gotPath != "/v1/profile/ES" || gotAuth != "Bearer sekrit" {
-		t.Errorf("path/auth = %q / %q", gotPath, gotAuth)
+	if gotPath != "/v1/profile/ES" || gotAuth != "Bearer sekrit" || gotQuery != "" {
+		t.Errorf("path/auth/query = %q / %q / %q", gotPath, gotAuth, gotQuery)
 	}
 	if !pd.AsOf.Equal(time.Date(2026, 7, 31, 19, 50, 2, 722581000, time.UTC)) {
 		t.Errorf("as_of = %v", pd.AsOf)
@@ -337,22 +337,94 @@ func TestProfileDetail(t *testing.T) {
 	if pd.ExpiryDecay["2026-08-21"] != 4.0e9 {
 		t.Errorf("decay = %v", pd.ExpiryDecay)
 	}
+	// Pre-v0.7.0 fixture: no expiry_filter key, no OI, no futures fields.
+	if pd.SupportsExpiry || pd.SpotFutures != nil || b.CallOI != nil {
+		t.Errorf("legacy fixture: supports=%v spotFut=%v callOI=%v", pd.SupportsExpiry, pd.SpotFutures, b.CallOI)
+	}
+
+	// The same legacy engine would silently ignore ?expiry= - the client
+	// must refuse to present the whole book as a filtered slice.
+	if _, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{Expiries: []string{"2026-08-21"}}); !errors.Is(err, ErrExpiryUnsupported) {
+		t.Errorf("expiry against legacy engine -> %v, want ErrExpiryUnsupported", err)
+	}
+}
+
+// profileFixtureV070 carries the v0.7.0 additions: expiry_filter echo,
+// per-strike OI, and the futures denomination fields.
+const profileFixtureV070 = `{
+  "market": "ES", "as_of": "2026-08-20T14:00:03.2Z", "oi_date": "2026-08-20",
+  "spot_index": 7494.5498, "bucket_width": 10.0, "sources": ["SPX", "SPY"],
+  "spot_futures": 7523.2, "futures_conversion": {"ratio": 1.0038, "source": "persisted", "paired_at": "2026-07-31T19:44:39Z", "age_seconds": 60},
+  "expiry_filter": ["2026-08-21"],
+  "profiles": {
+    "blend": {"strikes_index": [7300.0, 7530.0], "net_gex": [-1.0e9, 2.0e9], "call_gex": [0.5e9, 2.5e9], "put_gex": [-1.5e9, -0.5e9], "call_oi": [1200, 3400], "put_oi": [5600, 780]}
+  },
+  "expiry_decay": null
+}`
+
+func TestProfileDetailV070(t *testing.T) {
+	var gotQuery string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotQuery = r.URL.RawQuery
+		_, _ = w.Write([]byte(profileFixtureV070))
+	}))
+	defer srv.Close()
+	c, _ := New(Options{BaseURL: srv.URL})
+	at := time.Date(2026, 8, 20, 14, 0, 59, 0, time.UTC)
+	pd, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{At: at, Expiries: []string{"2026-08-21"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(gotQuery, "at=2026-08-20T14%3A00%3A59Z") || !strings.Contains(gotQuery, "expiry=2026-08-21") {
+		t.Errorf("query = %q", gotQuery)
+	}
+	if !pd.SupportsExpiry || len(pd.ExpiryFilter) != 1 || pd.ExpiryFilter[0] != "2026-08-21" {
+		t.Errorf("filter echo = %v (supports %v)", pd.ExpiryFilter, pd.SupportsExpiry)
+	}
+	if pd.SpotFutures == nil || *pd.SpotFutures != 7523.2 || pd.FuturesConversion.Ratio != 1.0038 {
+		t.Errorf("futures fields = %v / %+v", pd.SpotFutures, pd.FuturesConversion)
+	}
+	b := pd.Profiles["blend"]
+	if len(b.CallOI) != 2 || b.CallOI[1] != 3400 || b.PutOI[0] != 5600 {
+		t.Errorf("OI = %v / %v", b.CallOI, b.PutOI)
+	}
+
+	// An unfiltered v0.7.0 response has "expiry_filter": null - the KEY
+	// alone must flip the capability probe.
+	nullFilter := strings.Replace(profileFixtureV070, `["2026-08-21"]`, "null", 1)
+	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(nullFilter))
+	}))
+	defer srv2.Close()
+	c2, _ := New(Options{BaseURL: srv2.URL})
+	pd2, err := c2.ProfileDetail(context.Background(), "ES", ProfileQuery{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !pd2.SupportsExpiry || pd2.ExpiryFilter != nil {
+		t.Errorf("null filter: supports=%v echo=%v", pd2.SupportsExpiry, pd2.ExpiryFilter)
+	}
 }
 
 func TestProfileDetailErrors(t *testing.T) {
+	// The engine's three 404s share the endpoint; the detail string is the
+	// discriminator (verified against v0.7.0).
 	for _, tc := range []struct {
 		status int
+		body   string
 		want   error
 	}{
-		{http.StatusUnauthorized, ErrUnauthorized},
-		{http.StatusNotFound, ErrNoProfile},
+		{http.StatusUnauthorized, "no", ErrUnauthorized},
+		{http.StatusNotFound, "no", ErrNoProfile},
+		{http.StatusNotFound, `{"detail":"no per-expiry data for this snapshot"}`, ErrNoExpiryData},
+		{http.StatusNotFound, `{"detail":"no snapshot at or before that time"}`, ErrNoSnapshot},
 	} {
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			http.Error(w, "no", tc.status)
+			http.Error(w, tc.body, tc.status)
 		}))
 		c, _ := New(Options{BaseURL: srv.URL})
-		if _, err := c.ProfileDetail(context.Background(), "ES"); !errors.Is(err, tc.want) {
-			t.Errorf("status %d -> %v, want %v", tc.status, err, tc.want)
+		if _, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{}); !errors.Is(err, tc.want) {
+			t.Errorf("status %d body %q -> %v, want %v", tc.status, tc.body, err, tc.want)
 		}
 		srv.Close()
 	}
@@ -362,7 +434,7 @@ func TestProfileDetailErrors(t *testing.T) {
 	}))
 	defer srv.Close()
 	c, _ := New(Options{BaseURL: srv.URL})
-	if _, err := c.ProfileDetail(context.Background(), "ES"); err == nil || !strings.Contains(err.Error(), "500") {
+	if _, err := c.ProfileDetail(context.Background(), "ES", ProfileQuery{}); err == nil || !strings.Contains(err.Error(), "500") {
 		t.Errorf("500 -> %v", err)
 	}
 }

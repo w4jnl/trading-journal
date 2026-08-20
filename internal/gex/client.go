@@ -29,6 +29,13 @@ var (
 	// predates GET /v1/profile. The Exposure page degrades to an
 	// explanatory empty state rather than erroring.
 	ErrNoProfile = errors.New("gex: profile endpoint unavailable (engine too old?)")
+	// ErrNoExpiryData is the profile endpoint's 404 for ?expiry= against a
+	// snapshot persisted before engine v0.7.0 or past the ~90-day blob
+	// retention: "breakdown unavailable for this moment", not an error.
+	ErrNoExpiryData = errors.New("gex: no per-expiry data for this snapshot")
+	// ErrExpiryUnsupported means ?expiry= was requested but the engine
+	// predates v0.7.0 and would have silently served the whole book.
+	ErrExpiryUnsupported = errors.New("gex: engine does not support expiry filtering (needs v0.7.0+)")
 )
 
 // Options configures a Client.
@@ -221,22 +228,27 @@ func (c *Client) Snapshot(ctx context.Context, market string, at time.Time) (*Sn
 	return &s, nil
 }
 
-// ProfileSet is one per-strike GEX profile. Strikes are INDEX-denominated
-// (this endpoint carries no futures conversion; consumers denominate via the
-// snapshot). call_gex/put_gex are the signed per-strike components whose sum
-// is net_gex.
+// ProfileSet is one per-strike GEX profile. Strikes are INDEX-denominated;
+// scale by the payload's futures_conversion (v0.7.0+) or the snapshot's.
+// call_gex/put_gex are the signed per-strike components whose sum is
+// net_gex. CallOI/PutOI are plain contract counts (engine v0.7.0+); nil on
+// older engines and pre-v0.7.0 snapshots - consumers fall back to the GEX
+// split. On the blend view they sum index + ETF counts across different
+// notionals (one SPX contract ~ 10 SPY), so label them as counts, not size.
 type ProfileSet struct {
 	StrikesIndex []float64 `json:"strikes_index"`
 	NetGex       []float64 `json:"net_gex"`
 	CallGex      []float64 `json:"call_gex"`
 	PutGex       []float64 `json:"put_gex"`
+	CallOI       []float64 `json:"call_oi"`
+	PutOI        []float64 `json:"put_oi"`
 }
 
 // ProfileDetail is GET /v1/profile/{market}: the full per-strike profile
 // set (index|etf|blend|0dte|0dte_vol) plus expiry_decay - net GEX rolling
-// off per expiry date. LIVE-LATEST ONLY: the endpoint silently ignores
-// ?at= and ?expiry= today (verified empirically), so neither is sent;
-// historical and per-expiry views are engine asks, not client options.
+// off per expiry date. Engine v0.7.0 added ?at= (snapshot semantics),
+// ?expiry= filtering (served views index|etf|blend only; expiry_decay null
+// on filtered responses), per-strike OI, and the futures fields.
 type ProfileDetail struct {
 	Market      string                `json:"market"`
 	AsOf        time.Time             `json:"as_of"`
@@ -246,11 +258,39 @@ type ProfileDetail struct {
 	Sources     []string              `json:"sources"`
 	Profiles    map[string]ProfileSet `json:"profiles"`
 	ExpiryDecay map[string]float64    `json:"expiry_decay"`
+
+	// SpotFutures/FuturesConversion mirror the snapshot's denomination
+	// fields (v0.7.0+; null on SPX/NDX and when the basis is cold).
+	SpotFutures       *float64           `json:"spot_futures"`
+	FuturesConversion *FuturesConversion `json:"futures_conversion"`
+
+	// ExpiryFilter echoes the applied ?expiry= set, sorted. SupportsExpiry
+	// reports whether the engine emitted the expiry_filter KEY at all
+	// (even as null): pre-v0.7.0 engines omit it and silently ignore the
+	// param, so key presence is the only honest capability probe.
+	ExpiryFilter   []string `json:"expiry_filter"`
+	SupportsExpiry bool     `json:"-"`
 }
 
-// ProfileDetail fetches the latest full profile set for market ("ES"/"NQ").
-func (c *Client) ProfileDetail(ctx context.Context, market string) (*ProfileDetail, error) {
+// ProfileQuery narrows a ProfileDetail request. Zero value = live whole book.
+type ProfileQuery struct {
+	At       time.Time // at-or-before snapshot; zero = live
+	Expiries []string  // ISO dates; the engine accepts comma-separated sets
+}
+
+// ProfileDetail fetches the profile set for market ("ES"/"NQ").
+func (c *Client) ProfileDetail(ctx context.Context, market string, q ProfileQuery) (*ProfileDetail, error) {
 	u := c.baseURL + "/v1/profile/" + url.PathEscape(market)
+	vals := url.Values{}
+	if !q.At.IsZero() {
+		vals.Set("at", q.At.UTC().Format(time.RFC3339Nano))
+	}
+	if len(q.Expiries) > 0 {
+		vals.Set("expiry", strings.Join(q.Expiries, ","))
+	}
+	if len(vals) > 0 {
+		u += "?" + vals.Encode()
+	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
 	if err != nil {
 		return nil, fmt.Errorf("gex: build request: %w", err)
@@ -271,7 +311,16 @@ func (c *Client) ProfileDetail(ctx context.Context, market string) (*ProfileDeta
 	case http.StatusUnauthorized, http.StatusForbidden:
 		return nil, ErrUnauthorized
 	case http.StatusNotFound:
-		return nil, ErrNoProfile
+		// Three distinct 404s share this endpoint; the detail string is
+		// the only discriminator the engine offers.
+		switch {
+		case strings.Contains(string(body), "per-expiry"):
+			return nil, ErrNoExpiryData
+		case strings.Contains(string(body), "no snapshot"):
+			return nil, ErrNoSnapshot
+		default:
+			return nil, ErrNoProfile
+		}
 	default:
 		snippet := body
 		if len(snippet) > 256 {
@@ -283,6 +332,17 @@ func (c *Client) ProfileDetail(ctx context.Context, market string) (*ProfileDeta
 	var pd ProfileDetail
 	if err := json.Unmarshal(body, &pd); err != nil {
 		return nil, fmt.Errorf("gex: decode profile: %w", err)
+	}
+	var probe struct {
+		ExpiryFilter json.RawMessage `json:"expiry_filter"`
+	}
+	if err := json.Unmarshal(body, &probe); err == nil {
+		pd.SupportsExpiry = len(probe.ExpiryFilter) > 0 // JSON null still counts
+	}
+	// A pre-v0.7.0 engine returns 200 with the UNFILTERED book for any
+	// ?expiry= - presenting that as filtered would be silently wrong.
+	if len(q.Expiries) > 0 && !pd.SupportsExpiry {
+		return nil, ErrExpiryUnsupported
 	}
 	return &pd, nil
 }

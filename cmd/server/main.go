@@ -609,6 +609,7 @@ func run() error {
 	mux.HandleFunc("GET /gex", h.GEXPage)
 	mux.HandleFunc("GET /gex/exposure", h.GEXExposurePage)
 	mux.HandleFunc("GET /gex/exposure/{market}", h.GEXExposurePage)
+	mux.HandleFunc("GET /gex/exposure/data/{market}", h.GEXExposureData)
 	mux.HandleFunc("GET /gex/data/{market}", h.GEXData)
 	mux.HandleFunc("POST /gex/analyze/{market}", h.GEXAnalyze)
 	mux.HandleFunc("GET /gex/{market}", h.GEXPage)

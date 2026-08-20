@@ -7,30 +7,43 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/gex"
 )
 
 // The Market > Gamma (GEX) > Exposure tab: a MenthorQ-style per-strike net
-// GEX ladder - horizontal bars on a vertical price axis, call/put GEX split
-// columns, an expiry strip, and the structural levels overlaid. LIVE-LATEST
-// ONLY in v1: the engine's /v1/profile ignores ?at= (documented in the
-// engine-ask doc), so this tab has no scrub and simply self-reloads.
+// GEX ladder - horizontal bars on a vertical price axis, call/put split
+// columns (OI when the engine serves it, GEX split otherwise), an expiry
+// strip, and the structural levels overlaid.
+//
+// Engine v0.7.0 (journal-update-005) made the expiry chips REAL filters:
+// ?expiry= returns the blend/index/etf slice for that date, echoed in
+// expiry_filter. Chip clicks fetch /gex/exposure/data/{market} and re-render
+// in place; the selection round-trips through the page URL so reloads and
+// deep links restore it. Against an older engine (which silently ignores
+// the param) the chips stay informational - the expiry_filter key is the
+// capability probe.
 //
 // Denomination follows the rest of /gex: futures-first when the basis is
-// warm. /v1/profile carries no conversion, so the SNAPSHOT is fetched
-// alongside it as the denomination + levels source; when the snapshot is
-// unavailable the tab degrades to index strikes with no level lines rather
-// than dying.
+// warm, preferring the profile payload's own futures fields (v0.7.0+) and
+// falling back to the snapshot's. The snapshot is still fetched on page
+// load for level lines + regime; when it is unavailable the tab degrades
+// to no level lines rather than dying.
 
 // gexExpoProfile is one selectable per-strike profile in the page blob.
+// CallOI/PutOI are contract counts (engine v0.7.0+, else nil): when present
+// the right-hand columns render OI and the GEX split moves to the tooltip.
 type gexExpoProfile struct {
 	Strikes []float64 `json:"strikes"`
 	Net     []float64 `json:"net"`
 	Call    []float64 `json:"call"`
 	Put     []float64 `json:"put"`
+	CallOI  []float64 `json:"callOi,omitempty"`
+	PutOI   []float64 `json:"putOi,omitempty"`
 }
 
 // gexExpoLevel is one overlay line. Kind drives color/dash in JS; Family
@@ -55,6 +68,8 @@ type gexExpoExpiry struct {
 }
 
 // gexExpo is the page's inline JSON blob (plus template-rendered chrome).
+// The /gex/exposure/data endpoint returns the same shape (minus levels and
+// regime - the client keeps the page-load ones).
 type gexExpo struct {
 	Denom       string                    `json:"denom"`
 	AsOfET      string                    `json:"asOfET"`
@@ -67,9 +82,43 @@ type gexExpo struct {
 	Regime      string                    `json:"regime"`
 	NetTotal    string                    `json:"netTotal"`
 	Stale       bool                      `json:"stale"`
+	// SupportsExpiry gates the chip strip's live mode; Today is the
+	// trading-TZ date whose filter shows the 0DTE level family.
+	SupportsExpiry bool   `json:"supportsExpiry"`
+	Today          string `json:"today"`
 }
 
-// GEXExposurePage renders /gex/exposure and /gex/exposure/{market}.
+// gexExpoAt parses the shared ?at= page param (datetime-local format in the
+// trading TZ, same as the Overview scrub). Zero time = live. The +59s keeps
+// minute-resolution input at-or-before-consistent with the snapshot grid.
+func gexExpoAt(r *http.Request, tz *time.Location) (at time.Time, atParam string) {
+	atParam = strings.TrimSpace(r.URL.Query().Get("at"))
+	if atParam == "" {
+		return time.Time{}, ""
+	}
+	t, err := time.ParseInLocation(gexPageMoment, atParam, tz)
+	if err != nil {
+		return time.Time{}, ""
+	}
+	return t.Add(59 * time.Second), atParam
+}
+
+// gexExpoExpiryParam validates ?expiry= (single ISO date; empty = whole book).
+func gexExpoExpiryParam(r *http.Request) string {
+	v := strings.TrimSpace(r.URL.Query().Get("expiry"))
+	if v == "" {
+		return ""
+	}
+	if _, err := time.Parse("2006-01-02", v); err != nil {
+		return ""
+	}
+	return v
+}
+
+// GEXExposurePage renders /gex/exposure and /gex/exposure/{market}. It
+// always fetches the UNFILTERED book (the chip strip and profile buttons
+// need it); a valid ?expiry= is handed to the client, which re-runs the
+// chip-select fetch on init so deep links and self-reloads restore it.
 func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	if h.GEX == nil {
 		http.NotFound(w, r)
@@ -81,36 +130,113 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	tz := h.localTZ()
+	at, atParam := gexExpoAt(r, tz)
 	data := map[string]any{
 		"NavActive": "gex",
 		"BackHref":  validBackHref(r),
 		"Market":    market,
 		"GexTab":    "exposure",
+		"AtParam":   atParam,
+	}
+	// Market-switch links carry the viewed moment + expiry filter along;
+	// the client keeps the same params in sync via history.replaceState.
+	qs := url.Values{}
+	if atParam != "" {
+		qs.Set("at", atParam)
+	}
+	if exp := gexExpoExpiryParam(r); exp != "" {
+		qs.Set("expiry", exp)
+	}
+	if len(qs) > 0 {
+		data["QuerySuffix"] = "?" + qs.Encode()
 	}
 
-	pd, err := h.GEX.ProfileDetail(ctx, market)
+	pd, err := h.GEX.ProfileDetail(ctx, market, gex.ProfileQuery{At: at})
 	switch {
 	case errors.Is(err, gex.ErrNoProfile):
 		data["NoProfile"] = true
+	case errors.Is(err, gex.ErrNoSnapshot):
+		data["EngineError"] = "no snapshot at or before the requested moment"
 	case err != nil:
 		h.logger().Warn("gex exposure: profile fetch failed", "market", market, "err", err)
 		data["EngineError"] = err.Error()
 	default:
-		// The snapshot supplies denomination + levels; its failure only
-		// degrades the view (index strikes, no level lines).
-		s, serr := h.GEX.Snapshot(ctx, market, time.Now())
+		// The snapshot supplies levels + regime (and legacy denomination);
+		// its failure only degrades the view, never kills it.
+		snapAt := at
+		if snapAt.IsZero() {
+			snapAt = time.Now()
+		}
+		s, serr := h.GEX.Snapshot(ctx, market, snapAt)
 		if serr != nil {
 			h.logger().Warn("gex exposure: snapshot fetch failed", "market", market, "err", serr)
 			s = nil
-			data["LevelsNote"] = "levels unavailable — snapshot fetch failed; showing index strikes"
+			if pd.SpotFutures == nil {
+				data["LevelsNote"] = "levels unavailable — snapshot fetch failed; showing index strikes"
+			} else {
+				data["LevelsNote"] = "levels unavailable — snapshot fetch failed"
+			}
 		}
-		expo := gexBuildExpo(pd, s, time.Now(), h.localTZ())
+		expo := gexBuildExpo(pd, s, time.Now(), tz)
 		data["Expo"] = expo
 		if b, err := json.Marshal(expo); err == nil {
 			data["ExpoJSON"] = template.JS(b)
 		}
 	}
 	h.renderPage(w, r, "gex_exposure.html", data)
+}
+
+// GEXExposureData serves the chip-select fetches: the gexExpo blob for one
+// expiry slice (or the whole book), JSON, no snapshot call - the client
+// keeps the page-load levels/regime and only swaps profiles + denomination.
+func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
+	if h.GEX == nil {
+		http.NotFound(w, r)
+		return
+	}
+	market, ok := gexMarketParam(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	tz := h.localTZ()
+	at, _ := gexExpoAt(r, tz)
+	q := gex.ProfileQuery{At: at}
+
+	w.Header().Set("Content-Type", "application/json")
+	writeErr := func(status int, msg string) {
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
+	}
+	// A malformed expiry must NOT silently degrade to the whole book -
+	// that is the exact silent-param hazard ask-001 had the engine fix.
+	if raw := strings.TrimSpace(r.URL.Query().Get("expiry")); raw != "" {
+		exp := gexExpoExpiryParam(r)
+		if exp == "" {
+			writeErr(http.StatusBadRequest, "invalid expiry date; expected YYYY-MM-DD")
+			return
+		}
+		q.Expiries = []string{exp}
+	}
+	pd, err := h.GEX.ProfileDetail(r.Context(), market, q)
+	switch {
+	case errors.Is(err, gex.ErrNoExpiryData):
+		writeErr(http.StatusNotFound, "per-expiry breakdown unavailable for this moment (snapshot predates engine v0.7.0 or is past retention)")
+		return
+	case errors.Is(err, gex.ErrNoSnapshot):
+		writeErr(http.StatusNotFound, "no snapshot at or before the requested moment")
+		return
+	case errors.Is(err, gex.ErrExpiryUnsupported):
+		writeErr(http.StatusUnprocessableEntity, "the engine predates v0.7.0 — expiry filtering needs an engine upgrade/restart")
+		return
+	case err != nil:
+		h.logger().Warn("gex exposure data: profile fetch failed", "market", market, "err", err)
+		writeErr(http.StatusBadGateway, "engine fetch failed")
+		return
+	}
+	expo := gexBuildExpo(pd, nil, time.Now(), tz)
+	_ = json.NewEncoder(w).Encode(expo)
 }
 
 // gexBuildExpo assembles the exposure blob. s may be nil (snapshot down):
@@ -129,12 +255,24 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 		Stale:       now.Sub(pd.AsOf) > gexStaleAfter,
 	}
 
+	e.SupportsExpiry = pd.SupportsExpiry
+	e.Today = now.In(tz).Format("2006-01-02")
+
 	// Denomination: identical futures-first rule as the overview charts.
+	// The profile payload's own futures fields (engine v0.7.0+) win, so the
+	// snapshot-less data endpoint is futures-correct; the snapshot is the
+	// fallback for older engines.
 	ratio := 1.0
 	var spotFut *float64
+	if pd.SpotFutures != nil && pd.FuturesConversion != nil && pd.FuturesConversion.Ratio > 0 {
+		e.Denom = "futures"
+		e.Spot = *pd.SpotFutures
+		ratio = pd.FuturesConversion.Ratio
+		e.BucketWidth = pd.BucketWidth * ratio
+	}
 	if s != nil {
 		spotFut = gexSpotFutures(s)
-		if spotFut != nil && s.FuturesConversion != nil && s.FuturesConversion.Ratio > 0 {
+		if e.Denom == "index" && spotFut != nil && s.FuturesConversion != nil && s.FuturesConversion.Ratio > 0 {
 			e.Denom = "futures"
 			e.Spot = *spotFut
 			ratio = s.FuturesConversion.Ratio
@@ -161,12 +299,18 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 		if n == 0 || len(ps.NetGex) != n || len(ps.CallGex) != n || len(ps.PutGex) != n {
 			return // malformed profile: skip rather than render nonsense
 		}
-		e.Profiles[key] = gexExpoProfile{
+		p := gexExpoProfile{
 			Strikes: scale(ps.StrikesIndex),
 			Net:     ps.NetGex,
 			Call:    ps.CallGex,
 			Put:     ps.PutGex,
 		}
+		// OI ships only when both arrays are well-formed (null on
+		// pre-v0.7.0 snapshots; the client then keeps the GEX split).
+		if len(ps.CallOI) == n && len(ps.PutOI) == n {
+			p.CallOI, p.PutOI = ps.CallOI, ps.PutOI
+		}
+		e.Profiles[key] = p
 	}
 	addProfile("all", "blend")
 	addProfile("0dte", "0dte")

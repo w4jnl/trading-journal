@@ -47,8 +47,8 @@
   <h1 style="margin: 0;">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
   <div class="gex-seg">
-    <a href="/gex/exposure" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
-    <a href="/gex/exposure/NQ" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
+    <a href="/gex/exposure{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
+    <a href="/gex/exposure/NQ{{.QuerySuffix}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
 </div>
 
@@ -74,6 +74,18 @@
   </div>
   <div class="gxe-divider"></div>
   <div class="gxe-expiries" id="gxe-expiries">
+    {{if .SupportsExpiry}}
+    {{/* Engine v0.7.0+: every chip is a real expiry filter (blend slice,
+         repriced live). Clicking the active chip clears the filter. */}}
+    {{range .Expiries}}
+    <button type="button" class="gxe-chip gxe-chip--live {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" data-chip-exp="{{.Date}}" title="Filter strikes to the {{.Label}} expiry — {{.Net}} rolls off ({{.Pct}} of decay); click again to clear">
+      <b>{{.Label}} · {{.DTE}}d</b>
+      <span class="gxe-chip-nums"><span class="num">{{.Net}}</span><span class="gxe-pct">{{.Pct}}</span></span>
+    </button>
+    {{end}}
+    {{else}}
+    {{/* Older engine: it would silently ignore ?expiry=, so only today's
+         chip is live (today's expiry IS the preloaded 0DTE profile). */}}
     {{range .Expiries}}
     {{if eq .DTE 0}}
     <button type="button" class="gxe-chip gxe-chip--live {{if .Neg}}gxe-chip--neg{{else}}gxe-chip--pos{{end}}" data-chip-prof="0dte" title="Today's expiry = the 0DTE profile — click to filter">
@@ -87,40 +99,48 @@
     </span>
     {{end}}
     {{end}}
+    {{end}}
   </div>
 </div>
 
 <div class="card mb-16">
-  <div class="card-title">Net GEX exposure — {{$.Market}} · <span id="gxe-denom">{{.Denom}}</span> strikes · as of {{.AsOfET}}{{if .OIDate}} · OI {{.OIDate}}{{end}}
+  <div class="card-title">Net GEX exposure — {{$.Market}} · <span id="gxe-denom">{{.Denom}}</span> strikes · as of <span id="gxe-asof">{{.AsOfET}}</span>{{if .OIDate}} · OI {{.OIDate}}{{end}}<span id="gxe-filternote"></span>
     <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · drag pans · dblclick resets</span>
   </div>
   {{if $.LevelsNote}}<div class="muted" style="font-size: 12px; margin-bottom: 6px;">{{$.LevelsNote}}</div>{{end}}
+  <div id="gxe-note" class="muted" style="font-size: 12px; margin-bottom: 6px; display: none;"></div>
   <div id="gxe-chart"></div>
 </div>
 
 <div class="muted" style="font-size: 12px;">
-  {{if .Regime}}regime {{.Regime}} · {{end}}{{if .NetTotal}}net total {{.NetTotal}} · {{end}}snapshot {{.AsOfET}}
+  {{if .Regime}}regime {{.Regime}} · {{end}}{{if .NetTotal}}net total <span id="gxe-nettotal">{{.NetTotal}}</span> · {{end}}snapshot {{.AsOfET}}
   {{if .Stale}} · options session closed — showing the last profile{{end}}
 </div>
 
 <script>
   const gexExpoInit = {{$.ExpoJSON}};
+  const GEX_EXPO_MARKET = {{$.Market}};
+  // gexExpoData is the ACTIVE blob: the page-load book, or a fetched expiry
+  // slice from /gex/exposure/data. Levels + regime always come from the
+  // page-load blob (the data endpoint doesn't carry them).
+  let gexExpoData = gexExpoInit;
+  let gexExpoExpiry = null; // ISO date of the active expiry filter, or null
   let gexExpoKey = 'all';
   let gexExpoZoom = null;  // {lo, hi} price window; null = auto fit
   let gexExpoFit = null;   // full strike range of the ACTIVE profile
   let gexExpoView = null;  // {lo, hi, padT, padB, H} written by every render
   const GEX_EXPO_PAD = 16;
 
-  function gexExpoProfile() { return gexExpoInit.profiles[gexExpoKey] || null; }
+  function gexExpoProfile() { return gexExpoData.profiles[gexExpoKey] || null; }
 
   // Landing view: spot +/- 15 buckets (MenthorQ-like), clamped to the fit.
   // Wheel-out / dblclick reach the full strike range.
   function gexExpoSeedZoom() {
     const p = gexExpoProfile();
     if (!p || !p.strikes.length) { gexExpoZoom = null; return; }
-    const bw = gexExpoInit.bucketWidth || 1;
-    const lo = Math.max(p.strikes[0] - bw / 2, gexExpoInit.spot - 15 * bw);
-    const hi = Math.min(p.strikes[p.strikes.length - 1] + bw / 2, gexExpoInit.spot + 15 * bw);
+    const bw = gexExpoData.bucketWidth || 1;
+    const lo = Math.max(p.strikes[0] - bw / 2, gexExpoData.spot - 15 * bw);
+    const hi = Math.min(p.strikes[p.strikes.length - 1] + bw / 2, gexExpoData.spot + 15 * bw);
     gexExpoZoom = hi > lo ? { lo: lo, hi: hi } : null;
   }
 
@@ -149,7 +169,14 @@
     const W = Math.max(480, host.clientWidth || 900);
     const H = Math.max(480, host.clientHeight || 700);
     const padT = GEX_EXPO_PAD + 14, padB = GEX_EXPO_PAD;
-    const bw = gexExpoInit.bucketWidth || 1;
+    const bw = gexExpoData.bucketWidth || 1;
+    const spot = gexExpoData.spot;
+    // Right columns render OI (contract counts) when the engine serves it;
+    // the GEX split then lives in the tooltip only.
+    const useOI = !!(p.callOi && p.putOi && p.callOi.length === p.strikes.length);
+    const callOf = (i) => useOI ? p.callOi[i] : p.call[i];
+    const putOf = (i) => useOI ? p.putOi[i] : p.put[i];
+    const fmtSide = useOI ? ((v) => Math.abs(v).toLocaleString()) : fmtB;
 
     // Fit spans the profile's strikes plus half a bucket each side.
     const fitLo = p.strikes[0] - bw / 2, fitHi = p.strikes[p.strikes.length - 1] + bw / 2;
@@ -173,7 +200,7 @@
       if (s + bw / 2 < lo || s - bw / 2 > hi) continue;
       vis.push(i);
       maxNet = Math.max(maxNet, Math.abs(p.net[i]));
-      maxSide = Math.max(maxSide, Math.abs(p.call[i]), Math.abs(p.put[i]));
+      maxSide = Math.max(maxSide, Math.abs(callOf(i)), Math.abs(putOf(i)));
     }
     const halfW = (x1 - x0) / 2 - 4;
     const netScale = maxNet > 0 ? halfW / maxNet : 0;
@@ -192,10 +219,12 @@
       parts.push(`<text class="num" x="${gutter - 8}" y="${yy + 3.5}" text-anchor="end">${v.toFixed(0)}</text>`);
     }
 
-    // Column headers + zero axes.
+    // Column headers + zero axes. Headers stay CALL/PUT in both modes (the
+    // 40px columns can't fit longer); the tooltip names the unit.
+    const colTip = useOI ? 'open interest (contracts)' : 'GEX contribution';
     parts.push(`<text class="colhead" x="${xZero}" y="${padT - 5}" text-anchor="middle">NET GEX</text>`);
-    parts.push(`<text class="colhead" x="${colX + colW / 2}" y="${padT - 5}" text-anchor="middle">CALL</text>`);
-    parts.push(`<text class="colhead" x="${colX + colW + colGap + colW / 2}" y="${padT - 5}" text-anchor="middle">PUT</text>`);
+    parts.push(`<text class="colhead" x="${colX + colW / 2}" y="${padT - 5}" text-anchor="middle">CALL<title>call ${colTip}</title></text>`);
+    parts.push(`<text class="colhead" x="${colX + colW + colGap + colW / 2}" y="${padT - 5}" text-anchor="middle">PUT<title>put ${colTip}</title></text>`);
     parts.push(`<line x1="${xZero}" y1="${padT}" x2="${xZero}" y2="${H - padB}" stroke="${grid}" stroke-width="1"/>`);
     parts.push(`<line x1="${colX}" y1="${padT}" x2="${colX}" y2="${H - padB}" stroke="${grid}" stroke-width="1"/>`);
     parts.push(`<line x1="${colX + colW + colGap}" y1="${padT}" x2="${colX + colW + colGap}" y2="${H - padB}" stroke="${grid}" stroke-width="1"/>`);
@@ -218,11 +247,13 @@
       const color = v >= 0 ? pos : neg;
       const len = Math.abs(v) * netScale;
       const bx = v >= 0 ? xZero : xZero - len;
-      const d = s - gexExpoInit.spot;
-      const tip = `${s.toFixed(2)} · net ${fmtB(v)} · call ${fmtB(p.call[i])} · put ${fmtB(p.put[i])} · ${d >= 0 ? '+' : ''}${d.toFixed(1)} pts from spot`;
+      const d = s - spot;
+      let tip = `${s.toFixed(2)} · net ${fmtB(v)} · call ${fmtB(p.call[i])} · put ${fmtB(p.put[i])}`;
+      if (useOI) tip += ` · OI ${fmtSide(p.callOi[i])}c/${fmtSide(p.putOi[i])}p`;
+      tip += ` · ${d >= 0 ? '+' : ''}${d.toFixed(1)} pts from spot`;
       let band = `<g class="gxe-band"><rect class="bg" x="0" y="${yTop}" width="${W}" height="${hRow}"></rect>`;
       if (len > 0.4) band += `<rect x="${bx}" y="${by}" width="${len}" height="${bh}" fill="${rgbaBar(color, 0.6)}" stroke="${color}" stroke-width="0.5"/>`;
-      const cl = Math.abs(p.call[i]) * sideScale, pl = Math.abs(p.put[i]) * sideScale;
+      const cl = Math.abs(callOf(i)) * sideScale, pl = Math.abs(putOf(i)) * sideScale;
       if (cl > 0.4) band += `<rect x="${colX + 1}" y="${by}" width="${cl}" height="${bh}" fill="${rgbaBar(pos, 0.55)}"/>`;
       if (pl > 0.4) band += `<rect x="${colX + colW + colGap + 1}" y="${by}" width="${pl}" height="${bh}" fill="${rgbaBar(neg, 0.55)}"/>`;
       band += `<title>${tip}</title></g>`;
@@ -245,7 +276,12 @@
       parts.push(`<text class="num" x="${tx}" y="${cy + 3.5}" text-anchor="${v >= 0 ? 'start' : 'end'}" fill="${color}" font-size="9.5">${fmtB(v)}</text>`);
     }
 
-    // Level lines (filtered by the active profile family) + push-down labels.
+    // Level lines + push-down labels. They always come from the page-load
+    // blob: pick the family by the active profile, or under an expiry
+    // filter show the whole-book structure (0DTE family when the filtered
+    // date IS today - those walls belong to exactly that book). Skip the
+    // overlay entirely if a fetched slice came back in a different
+    // denomination (basis went cold between page load and click).
     const placed = [];
     const styles = {
       flip:  { color: flipColor, dash: '6 4' },
@@ -255,8 +291,10 @@
       pw:    { color: neg, dash: '6 4' },
       gw:    { color: muted, dash: '4 3' },
     };
-    (gexExpoInit.levels || []).forEach((l) => {
-      if (l.family !== gexExpoKey) return;
+    const levelFam = gexExpoExpiry ? (gexExpoExpiry === gexExpoInit.today ? '0dte' : 'all') : gexExpoKey;
+    const levels = gexExpoData.denom === gexExpoInit.denom ? (gexExpoInit.levels || []) : [];
+    levels.forEach((l) => {
+      if (l.family !== levelFam) return;
       if (l.v < lo || l.v > hi) return;
       const st = styles[l.kind] || styles.gw;
       const yy = y(l.v);
@@ -264,15 +302,15 @@
       let ty = yy - 3;
       placed.forEach((pp) => { if (Math.abs(ty - pp) < 11) ty = pp - 11; });
       placed.push(ty);
-      const d = l.v - gexExpoInit.spot;
+      const d = l.v - spot;
       parts.push(`<text class="num" x="${W - 4}" y="${ty}" text-anchor="end" fill="${st.color}">${l.label}${l.gex ? ' ' + l.gex : ''} · ${l.v.toFixed(2)}<title>${d >= 0 ? '+' : ''}${d.toFixed(1)} pts from spot</title></text>`);
     });
 
     // Spot line + pill (clamped to the window edge when panned away).
     {
-      const sy = Math.max(padT, Math.min(H - padB, y(gexExpoInit.spot)));
+      const sy = Math.max(padT, Math.min(H - padB, y(spot)));
       parts.push(`<line x1="${x0}" y1="${sy}" x2="${W - 2}" y2="${sy}" stroke="${accent}" stroke-width="1.5"/>`);
-      const txt = 'spot ' + gexExpoInit.spot.toFixed(2);
+      const txt = 'spot ' + spot.toFixed(2);
       const pw2 = txt.length * 6.1 + 14;
       const py = Math.max(padT + 8, Math.min(H - padB - 8, sy));
       // Solid backing first: the pill sits ON the spot line (and often near
@@ -377,37 +415,113 @@
     host.addEventListener('pointercancel', panEnd);
   })();
 
-  // Profile filter chips: all three profiles ship in the blob, so switching
-  // is instant. Zoom carries over when it still intersects the new profile's
-  // range; otherwise re-seed around spot. Today's expiry chip doubles as a
-  // 0DTE selector (today's expiry IS the 0DTE profile); the future-date
-  // chips stay informational until the engine can filter by expiry.
+  // Profile buttons + expiry chips. The three profile views ship in the
+  // page blob (instant switch); expiry chips fetch their slice from
+  // /gex/exposure/data (engine v0.7.0+) and re-render in place, with the
+  // selection mirrored into the URL so reloads and deep links restore it.
+  // Picking a profile clears the expiry filter and vice versa. Against an
+  // older engine only today's chip is live (data-chip-prof fallback).
   (function () {
     const wrap = document.getElementById('gxe-filters');
     if (!wrap) return;
-    const liveChip = document.querySelector('#gxe-expiries button[data-chip-prof]');
-    function select(key) {
-      if (!gexExpoInit.profiles[key]) return;
-      gexExpoKey = key;
-      wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', x.dataset.prof === key));
-      if (liveChip) liveChip.classList.toggle('on', key === '0dte' || key === '0dte_vol');
+    const strip = document.getElementById('gxe-expiries');
+    const note = document.getElementById('gxe-note');
+    const legacyChip = strip ? strip.querySelector('button[data-chip-prof]') : null;
+    let fetchSeq = 0;
+
+    function setNote(msg) {
+      if (!note) return;
+      note.textContent = msg || '';
+      note.style.display = msg ? '' : 'none';
+    }
+    function setText(id, v) {
+      const el = document.getElementById(id);
+      if (el) el.textContent = v;
+    }
+    function syncChrome() {
+      wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', !gexExpoExpiry && x.dataset.prof === gexExpoKey));
+      if (strip) strip.querySelectorAll('button[data-chip-exp]').forEach((x) => x.classList.toggle('on', x.dataset.chipExp === gexExpoExpiry));
+      if (legacyChip) legacyChip.classList.toggle('on', gexExpoKey === '0dte' || gexExpoKey === '0dte_vol');
+      setText('gxe-denom', gexExpoData.denom);
+      setText('gxe-asof', gexExpoData.asOfET);
+      setText('gxe-nettotal', gexExpoData.netTotal);
+      setText('gxe-filternote', gexExpoExpiry ? ' · expiry ' + gexExpoExpiry + ' only' : '');
+    }
+    function syncURL() {
+      const sp = new URLSearchParams(location.search);
+      if (gexExpoExpiry) sp.set('expiry', gexExpoExpiry); else sp.delete('expiry');
+      const qs = sp.toString();
+      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+    }
+    function carryZoom() {
       const p = gexExpoProfile();
       if (p && p.strikes.length && gexExpoZoom) {
         const flo = p.strikes[0], fhi = p.strikes[p.strikes.length - 1];
         if (gexExpoZoom.hi < flo || gexExpoZoom.lo > fhi) gexExpoSeedZoom();
       }
-      renderExpo();
     }
+    function selectProfile(key) {
+      if (!gexExpoInit.profiles[key]) return;
+      fetchSeq++; // invalidate any in-flight chip fetch
+      gexExpoExpiry = null;
+      gexExpoData = gexExpoInit;
+      gexExpoKey = key;
+      setNote('');
+      syncURL(); syncChrome(); carryZoom(); renderExpo();
+    }
+    function selectExpiry(date) {
+      if (date === gexExpoExpiry) { selectProfile('all'); return; } // toggle off
+      const seq = ++fetchSeq;
+      setNote('loading ' + date + ' slice…');
+      const sp = new URLSearchParams(location.search);
+      let u = '/gex/exposure/data/' + GEX_EXPO_MARKET + '?expiry=' + encodeURIComponent(date);
+      if (sp.get('at')) u += '&at=' + encodeURIComponent(sp.get('at'));
+      fetch(u)
+        .then((r) => r.json().then((j) => ({ ok: r.ok, j: j })))
+        .then((res) => {
+          if (seq !== fetchSeq) return; // superseded by a newer selection
+          if (!res.ok || !res.j.profiles) {
+            setNote(res.j && res.j.error ? res.j.error : 'expiry fetch failed');
+            syncChrome();
+            return;
+          }
+          gexExpoData = res.j;
+          gexExpoExpiry = date;
+          gexExpoKey = 'all'; // filtered responses carry the blend slice only
+          setNote('');
+          syncURL(); syncChrome(); carryZoom(); renderExpo();
+        })
+        .catch(function () {
+          if (seq === fetchSeq) { setNote('expiry fetch failed'); syncChrome(); }
+        });
+    }
+
     wrap.addEventListener('click', function (e) {
       const b = e.target.closest('button[data-prof]');
-      if (b) select(b.dataset.prof);
+      if (b) selectProfile(b.dataset.prof);
     });
-    if (liveChip) liveChip.addEventListener('click', function () { select(liveChip.dataset.chipProf); });
+    if (strip) strip.addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-chip-exp]');
+      if (b) selectExpiry(b.dataset.chipExp);
+    });
+    if (legacyChip) legacyChip.addEventListener('click', function () {
+      const key = legacyChip.dataset.chipProf;
+      selectProfile(gexExpoKey === key ? 'all' : key);
+    });
+
+    // Deep link / reload restore: ?expiry= re-runs the chip fetch on init
+    // (only for a date the strip actually offers).
+    const want = new URLSearchParams(location.search).get('expiry');
+    if (want && gexExpoInit.supportsExpiry && strip && strip.querySelector('button[data-chip-exp="' + want.replace(/[^0-9-]/g, '') + '"]')) {
+      selectExpiry(want);
+    }
   })();
 
-  // Live-latest only: no scrub here; self-reload keeps it fresh (slower
-  // cadence while the options session is closed).
-  setTimeout(function () { location.reload(); }, gexExpoInit.stale ? 900000 : 300000);
+  // No scrub UI here; ?at= deep links render that moment statically, and
+  // the live view self-reloads (slower cadence while the session is closed).
+  if (!new URLSearchParams(location.search).get('at')) {
+    setTimeout(function () { location.reload(); }, gexExpoInit.stale ? 900000 : 300000);
+  }
 </script>
 {{end}}
 {{end}}
