@@ -136,9 +136,13 @@
 
 <div class="gex-main mb-16">
   <div class="card">
-    <div class="card-title">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span>
-      <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">drag-select zooms all views · dblclick resets</span>
-      <span class="gex-ladder-layers" id="gx-bin-seg" style="float: right; display: inline-flex; margin: 0 12px 0 0;"></span>
+    {{/* Flex, not floats: a right-floated control overflows the title box
+         and ends up UNDER uPlot's position:relative wrapper, which then
+         swallows its clicks. Flex children stay in-flow. */}}
+    <div class="card-title" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <span style="flex: 1 1 auto;">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></span>
+      <span class="gex-ladder-layers" id="gx-bin-seg" style="margin: 0;"></span>
+      <span class="muted" style="font-weight: 400; font-size: 11px; flex: 0 0 auto;">drag-select zooms all views · dblclick resets</span>
     </div>
     <!-- Hosts are taller than their charts: uPlot renders its legend as a
          sibling below the canvas, and a tight host lets it spill into the
