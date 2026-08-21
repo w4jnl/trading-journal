@@ -262,11 +262,14 @@
 
     const parts = [];
 
-    // Price ticks: a nice step targeting ~8-12 lines over the window.
+    // Price ticks: a nice step targeting one line per ~30px of chart
+    // height - a fixed ~12-line budget left prices far apart on the tall
+    // viewport-filling chart; density now follows the pixels available.
     const span = hi - lo;
+    const maxTicks = Math.max(8, Math.floor((H - padT - padB) / 26));
     const steps = [1, 2, 5, 10, 25, 50, 100, 250, 500, 1000];
     let step = steps[steps.length - 1];
-    for (const st of steps) { if (span / st <= 12) { step = st; break; } }
+    for (const st of steps) { if (span / st <= maxTicks) { step = st; break; } }
     for (let v = Math.ceil(lo / step) * step; v <= hi; v += step) {
       const yy = y(v);
       parts.push(`<line x1="${x0}" y1="${yy}" x2="${x1}" y2="${yy}" stroke="${grid}" stroke-width="1" opacity="0.5"/>`);
