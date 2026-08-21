@@ -224,18 +224,29 @@ func TestGEXExposurePageV070(t *testing.T) {
 	if body := rec.Body.String(); !strings.Contains(body, `href="/gex/exposure/NQ?expiry=2026-08-21%2C2026-08-24"`) {
 		t.Errorf("multi-expiry QuerySuffix wrong")
 	}
-	// view= rides the QuerySuffix, and every market/tab link is EXPLICIT
-	// (bare paths are the sticky entry points).
+	// view= rides the QuerySuffix. Market seg links are EXPLICIT (an
+	// explicit visit is a deliberate state change), while the TAB links
+	// are the bare sticky paths - switching tabs must restore the stored
+	// view, never wipe it by loading a filterless default.
 	rec = gexExpoGet(t, h, "/gex/exposure?view=0dte")
 	body = rec.Body.String()
 	for _, want := range []string{
 		`href="/gex/exposure/NQ?view=0dte"`,
 		`href="/gex/exposure/ES?view=0dte"`,
-		`href="/gex/ES"`, // tabs partial: Overview link explicit
+		`href="/gex"`, // tabs partial: bare sticky Overview link
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
 		}
+	}
+	if strings.Contains(body, `href="/gex/ES"`) {
+		t.Errorf("tab link went explicit; away-and-back would wipe stored filters")
+	}
+	// Under ?at= the tabs go explicit market + at (historical browsing;
+	// the colon is urlescaped by html/template).
+	rec = gexExpoGet(t, h, "/gex/exposure/NQ?at=2026-07-31T15:50")
+	if body := rec.Body.String(); !strings.Contains(body, `href="/gex/NQ?at=2026-07-31T15%3a50"`) {
+		t.Errorf("at-mode tab link not explicit")
 	}
 }
 
