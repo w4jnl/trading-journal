@@ -105,6 +105,19 @@ func TestGEXPage(t *testing.T) {
 		// (fixture dates are all in the 0-5d band; the fake serves the
 		// same profile for the 1h-earlier fetch, so the delta is zero).
 		`"emPct":"0.13% of spot"`,
+		// Engine v0.10.0 surface (update 008): flip badge (18:10Z = 14:10
+		// ET), intraday since-time, customer-book DEX line, P/C volume
+		// with put-heavy tint + 0DTE ratio, and the skew tenors.
+		`"regimeFlipped":"flipped 14:10 ET"`,
+		"intraday negative · since 13:40 ET",
+		`"netDexLine":"DEX +978.6B · 1h +51.8B"`,
+		`"pcRatio":"1.14"`,
+		`"pcRatioClass":"pnl-neg"`,
+		"puts 6.32M · calls 5.54M",
+		`"pc0dte":"0DTE 1.24"`,
+		`"skewDte0":"-6.1%"`,
+		`"skewM1":"+29.0%"`,
+		`id="gx-pcratio"`, `id="gx-skew0"`,
 		`"emPosPct":50`,
 		`"emBandLo":"7513.29"`,
 		`id="gx-emband"`,

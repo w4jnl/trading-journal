@@ -5,7 +5,7 @@
   /* Stat strip - same shape as the dashboard trailing strip. */
   .stat-strip {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
   }
@@ -122,12 +122,14 @@
     {{/* Front-week reading, shown only when it disagrees with the book -
          empty otherwise (server decides, update 004). */}}
     <div class="sub {{.View.RegimeIntraClass}}" id="gx-regime-intra">{{.View.RegimeIntra}}</div>
+    <div class="sub" id="gx-flipped">{{.View.RegimeFlipped}}</div>
     <div class="sub" id="gx-pctl">20d percentile: P{{.View.Pctl}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Net GEX · total</div>
     <div class="num--lg" id="gx-netgex">{{.View.NetGex}}</div>
     <div class="sub" id="gx-netgexsub">{{.View.NetGexSub}}</div>
+    <div class="sub" id="gx-netdex" title="Customer-book delta notional (Σ Δ·OI·100·S) — not dealer-signed">{{.View.NetDexLine}}</div>
   </div>
   <div class="card stat-tile">
     <div class="label">Spot · index</div>
@@ -153,6 +155,17 @@
       {{if .View.DTE}}<span class="h"></span><span class="h" style="text-align:right">net</span><span class="h" style="text-align:right">Δ 1h</span>{{end}}
       {{range .View.DTE}}<span class="l">{{.Label}}</span><span class="n {{if .Neg}}pnl-neg{{else}}pnl-pos{{end}}">{{.Net}}</span><span class="d">{{.Delta}}</span>{{else}}<span class="num--lg">—</span>{{end}}
     </div>
+  </div>
+  <div class="card stat-tile" title="Session option volume across both blend legs · ratio = put/call, >1 = more puts">
+    <div class="label">Put/Call volume</div>
+    <div class="num--lg {{.View.PCRatioClass}}" id="gx-pcratio">{{.View.PCRatio}}</div>
+    <div class="sub" id="gx-pcsub">{{.View.PCSub}}</div>
+    <div class="sub" id="gx-pc0">{{.View.PC0DTE}}</div>
+  </div>
+  <div class="card stat-tile" title="25Δ risk reversal / ATM IV, index leg · positive = puts richer (engine decision #35)">
+    <div class="label">Skew · 0DTE</div>
+    <div class="num--lg" id="gx-skew0">{{.View.SkewDTE0}}</div>
+    <div class="sub" id="gx-skewm1">1M {{.View.SkewM1}}</div>
   </div>
 </div>
 
@@ -1004,8 +1017,17 @@
     ri.textContent = v.regimeIntra || '';
     ri.className = 'sub ' + (v.regimeIntraClass || '');
     $id('gx-pctl').textContent = '20d percentile: P' + v.pctl;
+    $id('gx-flipped').textContent = v.regimeFlipped || '';
     $id('gx-netgex').textContent = v.netGex;
     $id('gx-netgexsub').textContent = v.netGexSub || '';
+    $id('gx-netdex').textContent = v.netDexLine || '';
+    const pcr = $id('gx-pcratio');
+    pcr.textContent = v.pcRatio;
+    pcr.className = 'num--lg ' + (v.pcRatioClass || '');
+    $id('gx-pcsub').textContent = v.pcSub || '';
+    $id('gx-pc0').textContent = v.pc0dte || '';
+    $id('gx-skew0').textContent = v.skewDte0;
+    $id('gx-skewm1').textContent = '1M ' + v.skewM1;
     $id('gx-spot').textContent = v.spotIndex;
     $id('gx-spotfut').textContent = 'futures ' + v.spotFutures;
     $id('gx-flip').textContent = v.flipFutures;

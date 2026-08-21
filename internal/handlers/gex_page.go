@@ -218,16 +218,31 @@ type gexView struct {
 	// so the tile stays quiet in the common case (engine update 004).
 	RegimeIntra      string `json:"regimeIntra"`
 	RegimeIntraClass string `json:"regimeIntraClass"`
-	Pctl             string `json:"pctl"`
-	NetGex           string `json:"netGex"`
-	NetGexSub        string `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
-	SpotIndex        string `json:"spotIndex"`
-	SpotFutures      string `json:"spotFutures"`
-	ConvLine         string `json:"convLine"`
-	FlipFutures      string `json:"flipFutures"`
-	FlipIndex        string `json:"flipIndex"`
-	FlipSub          string `json:"flipSub"`
-	EM               string `json:"em"`
+	// RegimeFlipped is the "flipped 15:10 ET" badge (engine v0.10.0
+	// flipped_at); "" when the session has no flip yet.
+	RegimeFlipped string `json:"regimeFlipped"`
+	Pctl          string `json:"pctl"`
+	NetGex        string `json:"netGex"`
+	NetGexSub     string `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
+	// NetDexLine pairs customer-book delta notional with its 1h change
+	// ("DEX +978.6B · 1h +51.8B"); NOT dealer-signed (update 008).
+	NetDexLine string `json:"netDexLine"`
+	// Put/call session volume (blend markets): ratio tinted by lean, the
+	// leg totals, and the 0DTE-only ratio when served.
+	PCRatio      string `json:"pcRatio"`
+	PCRatioClass string `json:"pcRatioClass"`
+	PCSub        string `json:"pcSub"`
+	PC0DTE       string `json:"pc0dte"`
+	// Skew tenors, engine-defined 25-delta risk reversal / ATM IV.
+	SkewDTE0    string `json:"skewDte0"`
+	SkewM1      string `json:"skewM1"`
+	SpotIndex   string `json:"spotIndex"`
+	SpotFutures string `json:"spotFutures"`
+	ConvLine    string `json:"convLine"`
+	FlipFutures string `json:"flipFutures"`
+	FlipIndex   string `json:"flipIndex"`
+	FlipSub     string `json:"flipSub"`
+	EM          string `json:"em"`
 	// EM presentation (intraday-panel phase 1): percent of spot, and the
 	// session band position - min/spot/max against the 1Di band (engine
 	// v0.9.0), falling back to spot +/- EM (which centers the marker by
@@ -448,6 +463,9 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		EMBandLo: "—",
 		EMBandHi: "—",
 		EMPosPct: -1,
+		PCRatio:  "—",
+		SkewDTE0: "—",
+		SkewM1:   "—",
 	}
 	switch s.Regime.State {
 	case "positive":
@@ -463,6 +481,12 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		case "negative":
 			v.RegimeIntraClass = "pnl-neg"
 		}
+		if f := s.Regime.IntradayFlippedAt; f != nil {
+			v.RegimeIntra += " · since " + f.In(et).Format("15:04 ET")
+		}
+	}
+	if f := s.Regime.FlippedAt; f != nil {
+		v.RegimeFlipped = "flipped " + f.In(et).Format("15:04 ET")
 	}
 	if total, ok := s.Regime.Total(); ok {
 		v.NetGex = gexFmtB(total)
@@ -478,6 +502,33 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		chg = append(chg, "1d "+gexFmtB(*d))
 	}
 	v.NetGexSub = strings.Join(chg, " · ")
+	if d := s.NetDex; d != nil {
+		v.NetDexLine = "DEX " + gexFmtB(*d)
+		if c := s.NetDexChange1H; c != nil {
+			v.NetDexLine += " · 1h " + gexFmtB(*c)
+		}
+	}
+	if pc := s.PCVolume; pc != nil && pc.Call > 0 {
+		v.PCRatio = fmt.Sprintf("%.2f", pc.Ratio)
+		switch {
+		case pc.Ratio >= 1.05:
+			v.PCRatioClass = "pnl-neg" // put-heavy
+		case pc.Ratio <= 0.95:
+			v.PCRatioClass = "pnl-pos"
+		}
+		v.PCSub = "puts " + gexFmtCount(pc.Put) + " · calls " + gexFmtCount(pc.Call)
+	}
+	if pc := s.PCVolume0DTE; pc != nil && pc.Call > 0 {
+		v.PC0DTE = fmt.Sprintf("0DTE %.2f", pc.Ratio)
+	}
+	if sk := s.Skew; sk != nil {
+		if p := sk.DTE0Pct; p != nil {
+			v.SkewDTE0 = fmt.Sprintf("%+.1f%%", *p)
+		}
+		if p := sk.M1Pct; p != nil {
+			v.SkewM1 = fmt.Sprintf("%+.1f%%", *p)
+		}
+	}
 	if p := s.Regime.Percentile20D; p != nil {
 		v.Pctl = strconv.FormatFloat(*p, 'f', 0, 64)
 	}
@@ -709,6 +760,18 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 }
 
 // gexFmtB renders a raw gamma-dollar value at billions scale ("+74.5B").
+// gexFmtCount formats a contract count (1714233 -> "1.71M").
+func gexFmtCount(v float64) string {
+	switch {
+	case v >= 1e6:
+		return fmt.Sprintf("%.2fM", v/1e6)
+	case v >= 1e3:
+		return fmt.Sprintf("%.0fK", v/1e3)
+	default:
+		return fmt.Sprintf("%.0f", v)
+	}
+}
+
 func gexFmtB(v float64) string {
 	abs := v
 	if abs < 0 {

@@ -113,6 +113,36 @@ type Snapshot struct {
 	NetGexChange1H *float64 `json:"net_gex_change_1h"`
 	NetGexChange1D *float64 `json:"net_gex_change_1d"`
 	ExpectedMove1D *float64 `json:"expected_move_1d"`
+	// NetDex is CUSTOMER-BOOK delta notional (sum of delta x OI x 100 x S),
+	// NOT dealer-signed - puts contribute their natural negative delta
+	// (decision #23; update 008 corrected the journal's assumption). Served
+	// since engine v0.5.0; the 1h change since v0.10.0.
+	NetDex         *float64 `json:"net_dex"`
+	NetDexChange1H *float64 `json:"net_dex_change_1h"`
+	// PCVolume is pre-filter session option volume across both blend legs
+	// (v0.5.0); PCVolume0DTE restricts it to contracts expiring this
+	// session (v0.10.0). Blend markets only; null elsewhere.
+	PCVolume     *PCVolume `json:"pc_volume"`
+	PCVolume0DTE *PCVolume `json:"pc_volume_0dte"`
+	// Skew is the 25-delta risk reversal normalized by ATM IV, in percent,
+	// positive = puts richer (engine decision #35; index leg only). Tenor
+	// fields are independently null when the book lacks the expiry or the
+	// nearest wing is too far from 25 delta.
+	Skew *Skew `json:"skew"`
+}
+
+// PCVolume is a put/call session-volume aggregate. Ratio = put/call,
+// >1 = more puts.
+type PCVolume struct {
+	Put   float64 `json:"put"`
+	Call  float64 `json:"call"`
+	Ratio float64 `json:"ratio"`
+}
+
+// Skew carries the engine's two skew tenors (percent; see Snapshot.Skew).
+type Skew struct {
+	DTE0Pct *float64 `json:"dte0_pct"`
+	M1Pct   *float64 `json:"m1_pct"`
 }
 
 // Profile is the per-strike net-GEX curve behind the summary levels
@@ -149,6 +179,13 @@ type Regime struct {
 	// disagrees with State exactly when spot sits between the two flips -
 	// the front-week book often turns negative while the whole book is long.
 	IntradayState string `json:"intraday_state"`
+	// FlippedAt is the most recent whole-book regime sign change within the
+	// record's session (engine v0.10.0, update 008), null when the session
+	// has no flip yet; IntradayFlippedAt is the front-week sibling. Under
+	// ?at= both are as-of-then. On near-zero days they track the LATEST
+	// crossing - churn there is the data, not noise.
+	FlippedAt         *time.Time `json:"flipped_at"`
+	IntradayFlippedAt *time.Time `json:"intraday_flipped_at"`
 }
 
 // Total returns the whole-book net gamma, preferring the current field name

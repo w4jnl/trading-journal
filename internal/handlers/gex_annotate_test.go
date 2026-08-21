@@ -79,7 +79,7 @@ func gexSnapshotJSON(asOf string) string {
 	return fmt.Sprintf(`{
 		"market": "ES", "as_of": %q, "spot_index": 7494.55,
 		"futures_conversion": {"ratio": 1.0038, "source": "mw_marks", "paired_at": "2026-07-31T19:34:39Z"},
-		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null, "intraday_state": "negative"},
+		"regime": {"state": "positive", "net_gex_at_spot": 7.4486642363e10, "percentile_20d": null, "intraday_state": "negative", "flipped_at": "2026-07-31T18:10:03Z", "intraday_flipped_at": "2026-07-31T17:40:03Z"},
 		"flip": {"index": 7437.55, "futures": 7465.788539891167},
 		"flip_0dte": {"index": 7460.0, "futures": 7488.35},
 		"flip_intraday": {"index": 7470.0, "futures": 7498.39},
@@ -104,7 +104,11 @@ func gexSnapshotJSON(asOf string) string {
 		"profile": {"strikes_index": [7300, 7530], "net_gex": [-3.9e9, 1.08e10]},
 		"net_gex_change_1h": -9.2e9,
 		"net_gex_change_1d": 1.13e10,
-		"expected_move_1d": 9.7
+		"expected_move_1d": 9.7,
+		"net_dex": 9.786e11, "net_dex_change_1h": 5.18e10,
+		"pc_volume": {"put": 6321745, "call": 5537231, "ratio": 1.1417},
+		"pc_volume_0dte": {"put": 890100, "call": 720400, "ratio": 1.2356},
+		"skew": {"dte0_pct": -6.1, "m1_pct": 29.0}
 	}`, asOf)
 }
 
