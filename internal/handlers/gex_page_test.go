@@ -35,9 +35,16 @@ func TestGEXPage(t *testing.T) {
 	var calls atomic.Int64
 	var lastPath, lastAt string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/v1/profile/") {
+			// Feeds the GEX-by-DTE tile; counters below track SNAPSHOT
+			// traffic only, so the tile's extra fetches stay invisible to
+			// the call-count assertions.
+			fmt.Fprint(w, gexProfileJSON("2026-07-31T19:50:02.722581Z"))
+			return
+		}
 		calls.Add(1)
 		lastPath, lastAt = r.URL.Path, r.URL.Query().Get("at")
-		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
 	}))
 	defer srv.Close()
@@ -92,6 +99,31 @@ func TestGEXPage(t *testing.T) {
 		`"nativeW":230`, // fixture profile is 2-point; real grids are 5/10/25
 		`"ratio":1.0038`,
 		`id="gx-bin-seg"`,
+		// Intraday-panel phase 1: EM percent + band position (the merged
+		// fixture carries the 1Di levels from update 007, so the band is
+		// the engine-published one, spot dead-center) and the GEX-by-DTE
+		// tile from expiry_decay (fixture dates are all in the 0-5d band;
+		// the fake serves the same profile for the 1h-earlier fetch, so
+		// the delta is zero).
+		`"emPct":"0.13% of spot"`,
+		`"emPosPct":50`,
+		`"emBandLo":"7488.55"`,
+		`id="gx-emband"`,
+		`"label":"0-5d","net":"-4.0B","delta":"+0.0B","neg":true`,
+		`id="gx-dte"`,
+		// Engine v0.10.0 surface (update 008): flip badge (18:10Z = 14:10
+		// ET), intraday since-time, customer-book DEX line, P/C volume
+		// with put-heavy tint + 0DTE ratio, and the skew tenors.
+		`"regimeFlipped":"flipped 14:10 ET"`,
+		"intraday negative · since 13:40 ET",
+		`"netDexLine":"DEX +978.6B · 1h +51.8B"`,
+		`"pcRatio":"1.14"`,
+		`"pcRatioClass":"pnl-neg"`,
+		"puts 6.32M · calls 5.54M",
+		`"pc0dte":"0DTE 1.24"`,
+		`"skewDte0":"-6.1%"`,
+		`"skewM1":"+29.0%"`,
+		`id="gx-pcratio"`, `id="gx-skew0"`,
 		// Engine v0.9.0 surface (update 007): the session-open intraday
 		// band on the ladder + table, and vol magnitudes suffixed as
 		// session-flow gex so they never read as OI-comparable.
@@ -108,9 +140,10 @@ func TestGEXPage(t *testing.T) {
 	if !strings.Contains(body, `"cw":7558.58`) {
 		t.Errorf("ladder cw is not the all-book wall")
 	}
-	// The prior-day EM band's contractual gex 0.0 renders as absent, not as a
-	// measured "+0.0B".
-	if strings.Contains(body, "0.0B") {
+	// The EM bands' contractual gex 0.0 renders as absent in the LEVELS
+	// TABLE, not as a measured "+0.0B". (Scoped to table cells: the DTE
+	// tile's 1h delta legitimately shows +0.0B against the static fixture.)
+	if strings.Contains(body, "0.0B</td>") {
 		t.Errorf("EM band gex rendered as a measured zero")
 	}
 
@@ -409,6 +442,10 @@ func TestGEXData(t *testing.T) {
 	db := gexTestDB(t)
 	var lastAt string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasPrefix(r.URL.Path, "/v1/profile/") {
+			fmt.Fprint(w, gexProfileJSON("2026-07-31T19:50:02.722581Z"))
+			return
+		}
 		lastAt = r.URL.Query().Get("at")
 		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
 	}))
@@ -527,5 +564,62 @@ func TestGexFmtB(t *testing.T) {
 		if got := gexFmtB(c.v); got != c.want {
 			t.Errorf("gexFmtB(%v) = %q, want %q", c.v, got, c.want)
 		}
+	}
+}
+
+// gexBuildDTE is pure: band edges, deltas, and empty-band honesty.
+func TestGexBuildDTE(t *testing.T) {
+	tz, _ := time.LoadLocation("America/Chicago")
+	now := time.Date(2026, 8, 21, 9, 30, 0, 0, tz)
+	pd := &gex.ProfileDetail{ExpiryDecay: map[string]float64{
+		"2026-08-20": -1e9, // yesterday: past expiries still land in 0-5d
+		"2026-08-21": -2e9, // today
+		"2026-08-31": 5e9,  // 10 DTE
+		"2026-09-20": 1e9,  // 30 DTE
+	}}
+	prev := &gex.ProfileDetail{ExpiryDecay: map[string]float64{
+		"2026-08-21": -2.5e9,
+		"2026-08-31": 4e9,
+	}}
+	rows := gexBuildDTE(pd, prev, now, tz)
+	if len(rows) != 3 {
+		t.Fatalf("rows = %d", len(rows))
+	}
+	if rows[0].Net != "-3.0B" || !rows[0].Neg || rows[0].Delta != "-500M" {
+		t.Errorf("0-5d = %+v", rows[0])
+	}
+	if rows[1].Net != "+5.0B" || rows[1].Delta != "+1.0B" {
+		t.Errorf("6-20d = %+v", rows[1])
+	}
+	// prev has no >20d expiries: net still renders, delta drops.
+	if rows[2].Net != "+1.0B" || rows[2].Delta != "" {
+		t.Errorf(">20d = %+v", rows[2])
+	}
+	if gexBuildDTE(nil, nil, now, tz) != nil || gexBuildDTE(&gex.ProfileDetail{}, nil, now, tz) != nil {
+		t.Errorf("missing profile should yield no rows")
+	}
+}
+
+// The EM band prefers the engine-published 1Di levels over the spot +/- EM
+// fallback, and positions the marker inside them.
+func TestGexViewEMBand(t *testing.T) {
+	em := 10.0
+	s := &gex.Snapshot{
+		SpotIndex:      7500,
+		ExpectedMove1D: &em,
+		Levels: []gex.Level{
+			{Type: "em_intra_min", Index: 7480, Gex: 0, Bucket: "all"},
+			{Type: "em_intra_max", Index: 7530, Gex: 0, Bucket: "all"},
+		},
+	}
+	v := gexBuildView(s, time.Date(2026, 8, 21, 15, 0, 0, 0, time.UTC))
+	if v.EMBandLo != "7480.00" || v.EMBandHi != "7530.00" {
+		t.Errorf("band = %s / %s, want the 1Di levels", v.EMBandLo, v.EMBandHi)
+	}
+	if v.EMPosPct != 40 { // (7500-7480)/(7530-7480)
+		t.Errorf("pos = %d, want 40", v.EMPosPct)
+	}
+	if v.EMPct != "0.13% of spot" {
+		t.Errorf("pct = %q", v.EMPct)
 	}
 }
