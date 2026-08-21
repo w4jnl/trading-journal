@@ -403,6 +403,10 @@
       if (down) parts.push(`<text x="${xZero}" y="${H - padB - 3}" text-anchor="middle">▼ ${down} ${sfx(down)} below</text>`);
     }
 
+    // Mouse crosshair: a horizontal line with the price pinned in the
+    // axis gutter, moved by a single group transform per pointer event
+    // (no re-render). Hidden until the pointer enters the plot area.
+    parts.push(`<g class="gxe-xhair" style="display:none"><line x1="${x0}" y1="0" x2="${W - 2}" y2="0" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3"/><rect x="2" y="-8" width="${gutter - 6}" height="16" rx="4" fill="${cv('--bg-elev', '#ffffff')}" stroke="${grid}"/><text class="num" x="${gutter - 8}" y="3.5" text-anchor="end" fill="${accent}"></text></g>`);
     host.innerHTML = `<svg class="gxe-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Net GEX exposure by strike">${parts.join('')}</svg>`;
     host.style.cursor = z ? 'grab' : '';
     gexExpoView = { lo: lo, hi: hi, padT: padT, padB: padB, H: H };
@@ -429,6 +433,27 @@
   (function () {
     const host = document.getElementById('gxe-chart');
     if (!host) return;
+    // Crosshair follows the pointer; price is interpolated from the last
+    // render's view window, so it reads correctly at ANY point, not just
+    // on strike rows. Re-shown after zoom re-renders at the same cursor.
+    function xhair(clientY) {
+      const svg = host.querySelector('svg');
+      const g = svg && svg.querySelector('.gxe-xhair');
+      if (!g || !gexExpoView) return;
+      const r = svg.getBoundingClientRect();
+      const vw = gexExpoView;
+      const y = clientY - r.top;
+      if (y < vw.padT || y > vw.H - vw.padB) { g.style.display = 'none'; return; }
+      const price = vw.hi - (y - vw.padT) / (vw.H - vw.padT - vw.padB) * (vw.hi - vw.lo);
+      g.setAttribute('transform', 'translate(0,' + y.toFixed(1) + ')');
+      g.querySelector('text').textContent = price.toFixed(2);
+      g.style.display = '';
+    }
+    host.addEventListener('pointermove', function (e) { xhair(e.clientY); });
+    host.addEventListener('pointerleave', function () {
+      const g = host.querySelector('.gxe-xhair');
+      if (g) g.style.display = 'none';
+    });
     host.addEventListener('wheel', function (e) {
       if (!gexExpoFit) return;
       e.preventDefault();
@@ -439,7 +464,7 @@
       if (e.deltaMode === 1) dy *= 33; else if (e.deltaMode === 2) dy *= 300;
       const newSpan = Math.min(fitSpan, Math.max(fitSpan * 0.02, span * Math.exp(dy * 0.0015)));
       if (newSpan >= fitSpan) {
-        if (gexExpoZoom) { gexExpoZoom = null; renderExpo(); }
+        if (gexExpoZoom) { gexExpoZoom = null; renderExpo(); xhair(e.clientY); }
         return;
       }
       const svg = host.querySelector('svg');
@@ -452,6 +477,7 @@
       const lo = p - (p - cur.lo) * (newSpan / span);
       gexExpoZoom = { lo: lo, hi: lo + newSpan };
       renderExpo();
+      xhair(e.clientY);
     }, { passive: false });
     host.addEventListener('dblclick', function () {
       if (gexExpoZoom) { gexExpoZoom = null; renderExpo(); }
