@@ -92,6 +92,12 @@ func TestGEXPage(t *testing.T) {
 		`"nativeW":230`, // fixture profile is 2-point; real grids are 5/10/25
 		`"ratio":1.0038`,
 		`id="gx-bin-seg"`,
+		// Engine v0.9.0 surface (update 007): the session-open intraday
+		// band on the ladder + table, and vol magnitudes suffixed as
+		// session-flow gex so they never read as OI-comparable.
+		`"emiHigh":7557.51`, // ladder: intraday band (published futures)
+		"Intraday EM low",   // table row label
+		`"cwvGex":"+1.9B flow"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
