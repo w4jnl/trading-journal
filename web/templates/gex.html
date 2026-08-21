@@ -89,7 +89,7 @@
 
 {{if .GridJSON}}
 <div class="card card--compact mb-16 gex-scrub">
-  <span class="muted" style="font-size: 12px;">scrub</span>
+  <span class="muted" style="font-size: 12px;" title="Drag, or step slot-by-slot with the ← → arrow keys">scrub · ←→</span>
   <input type="range" id="gx-scrub" aria-label="Scrub snapshot time">
   <span class="muted gex-scrub-when" id="gx-scrub-when"></span>
 </div>
@@ -1170,6 +1170,24 @@
         return;
       }
       request(ts);
+    });
+
+    // Arrow keys scrub slot-by-slot from anywhere on the page - no need
+    // to focus the slider first. Skipped while typing (inputs, textareas,
+    // the as-of picker), with modifiers held, and when the slider itself
+    // has focus (native arrow handling already steps it and fires input).
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+      const t = e.target;
+      if (t === slider) return;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const cur = +slider.value;
+      const next = Math.max(0, Math.min(grid.length - 1, cur + (e.key === 'ArrowRight' ? 1 : -1)));
+      if (next === cur) return;
+      e.preventDefault();
+      slider.value = next;
+      slider.dispatchEvent(new Event('input'));
     });
   })();
   {{end}}
