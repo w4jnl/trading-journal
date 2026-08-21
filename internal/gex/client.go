@@ -13,8 +13,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -25,6 +27,23 @@ import (
 var (
 	ErrUnauthorized = errors.New("gex: unauthorized (check gex.api_key / TJ_GEX_API_KEY)")
 	ErrNoSnapshot   = errors.New("gex: no snapshot at or before requested time")
+	// ErrNoProfile is the profile endpoint's 404: an engine build that
+	// predates GET /v1/profile. The Exposure page degrades to an
+	// explanatory empty state rather than erroring.
+	ErrNoProfile = errors.New("gex: profile endpoint unavailable (engine too old?)")
+	// ErrNoExpiryData is the profile endpoint's 404 for ?expiry= against a
+	// snapshot persisted before engine v0.7.0 or past the ~90-day blob
+	// retention: "breakdown unavailable for this moment", not an error.
+	ErrNoExpiryData = errors.New("gex: no per-expiry data for this snapshot")
+	// ErrExpiryUnsupported means ?expiry= was requested but the engine
+	// predates v0.7.0 and would have silently served the whole book.
+	ErrExpiryUnsupported = errors.New("gex: engine does not support expiry filtering (needs v0.7.0+)")
+	// ErrBadBucket covers every way ?bucket= can fail: the engine's 422
+	// (not a multiple of the stored width / over 100 / finer than a
+	// pre-v0.8.0 snapshot's grid), a v0.7.0 engine 422-ing it as an
+	// unknown param, and an older engine silently ignoring it (detected
+	// by the served width disagreeing with the request).
+	ErrBadBucket = errors.New("gex: bucket width not servable")
 )
 
 // Options configures a Client.
@@ -215,4 +234,142 @@ func (c *Client) Snapshot(ctx context.Context, market string, at time.Time) (*Sn
 		return nil, fmt.Errorf("gex: decode snapshot: %w", err)
 	}
 	return &s, nil
+}
+
+// ProfileSet is one per-strike GEX profile. Strikes are INDEX-denominated;
+// scale by the payload's futures_conversion (v0.7.0+) or the snapshot's.
+// call_gex/put_gex are the signed per-strike components whose sum is
+// net_gex. CallOI/PutOI are plain contract counts (engine v0.7.0+); nil on
+// older engines and pre-v0.7.0 snapshots - consumers fall back to the GEX
+// split. On the blend view they sum index + ETF counts across different
+// notionals (one SPX contract ~ 10 SPY), so label them as counts, not size.
+type ProfileSet struct {
+	StrikesIndex []float64 `json:"strikes_index"`
+	NetGex       []float64 `json:"net_gex"`
+	CallGex      []float64 `json:"call_gex"`
+	PutGex       []float64 `json:"put_gex"`
+	CallOI       []float64 `json:"call_oi"`
+	PutOI        []float64 `json:"put_oi"`
+}
+
+// ProfileDetail is GET /v1/profile/{market}: the full per-strike profile
+// set (index|etf|blend|0dte|0dte_vol) plus expiry_decay - net GEX rolling
+// off per expiry date. Engine v0.7.0 added ?at= (snapshot semantics),
+// ?expiry= filtering (served views index|etf|blend only; expiry_decay null
+// on filtered responses), per-strike OI, and the futures fields.
+type ProfileDetail struct {
+	Market      string                `json:"market"`
+	AsOf        time.Time             `json:"as_of"`
+	OIDate      string                `json:"oi_date"`
+	SpotIndex   float64               `json:"spot_index"`
+	BucketWidth float64               `json:"bucket_width"`
+	Sources     []string              `json:"sources"`
+	Profiles    map[string]ProfileSet `json:"profiles"`
+	ExpiryDecay map[string]float64    `json:"expiry_decay"`
+
+	// SpotFutures/FuturesConversion mirror the snapshot's denomination
+	// fields (v0.7.0+; null on SPX/NDX and when the basis is cold).
+	SpotFutures       *float64           `json:"spot_futures"`
+	FuturesConversion *FuturesConversion `json:"futures_conversion"`
+
+	// ExpiryFilter echoes the applied ?expiry= set, sorted. SupportsExpiry
+	// reports whether the engine emitted the expiry_filter KEY at all
+	// (even as null): pre-v0.7.0 engines omit it and silently ignore the
+	// param, so key presence is the only honest capability probe.
+	ExpiryFilter   []string `json:"expiry_filter"`
+	SupportsExpiry bool     `json:"-"`
+}
+
+// ProfileQuery narrows a ProfileDetail request. Zero value = live whole book
+// at the snapshot's stored grid.
+type ProfileQuery struct {
+	At       time.Time // at-or-before snapshot; zero = live
+	Expiries []string  // ISO dates; the engine accepts comma-separated sets
+	// Bucket re-aggregates strikes into this width (index points). Engine
+	// v0.8.0+: any integer multiple of the stored width, at most 100;
+	// 0 = the stored default.
+	Bucket int
+}
+
+// ProfileDetail fetches the profile set for market ("ES"/"NQ").
+func (c *Client) ProfileDetail(ctx context.Context, market string, q ProfileQuery) (*ProfileDetail, error) {
+	u := c.baseURL + "/v1/profile/" + url.PathEscape(market)
+	vals := url.Values{}
+	if !q.At.IsZero() {
+		vals.Set("at", q.At.UTC().Format(time.RFC3339Nano))
+	}
+	if len(q.Expiries) > 0 {
+		vals.Set("expiry", strings.Join(q.Expiries, ","))
+	}
+	if q.Bucket > 0 {
+		vals.Set("bucket", strconv.Itoa(q.Bucket))
+	}
+	if len(vals) > 0 {
+		u += "?" + vals.Encode()
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return nil, fmt.Errorf("gex: build request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	if c.apiKey != "" {
+		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+	}
+
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("gex request: %w", err)
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	switch resp.StatusCode {
+	case http.StatusOK:
+	case http.StatusUnauthorized, http.StatusForbidden:
+		return nil, ErrUnauthorized
+	case http.StatusNotFound:
+		// Three distinct 404s share this endpoint; the detail string is
+		// the only discriminator the engine offers.
+		switch {
+		case strings.Contains(string(body), "per-expiry"):
+			return nil, ErrNoExpiryData
+		case strings.Contains(string(body), "no snapshot"):
+			return nil, ErrNoSnapshot
+		default:
+			return nil, ErrNoProfile
+		}
+	default:
+		snippet := body
+		if len(snippet) > 256 {
+			snippet = snippet[:256]
+		}
+		// The engine 422s a bad ?bucket= naming it (v0.8.0 validation, or
+		// v0.7.0's unknown-param rejection) - map both to the sentinel so
+		// the UI can revert the control instead of flashing a raw error.
+		if q.Bucket > 0 && resp.StatusCode == http.StatusUnprocessableEntity && strings.Contains(string(body), "bucket") {
+			return nil, fmt.Errorf("%w: %s", ErrBadBucket, strings.TrimSpace(string(snippet)))
+		}
+		return nil, fmt.Errorf("gex: status %d: %s", resp.StatusCode, strings.TrimSpace(string(snippet)))
+	}
+
+	var pd ProfileDetail
+	if err := json.Unmarshal(body, &pd); err != nil {
+		return nil, fmt.Errorf("gex: decode profile: %w", err)
+	}
+	// A pre-v0.7.0 engine silently ignores ?bucket= and serves its fixed
+	// grid; the payload's authoritative bucket_width exposes that.
+	if q.Bucket > 0 && math.Abs(pd.BucketWidth-float64(q.Bucket)) > 1e-6 {
+		return nil, fmt.Errorf("%w: engine served width %g", ErrBadBucket, pd.BucketWidth)
+	}
+	var probe struct {
+		ExpiryFilter json.RawMessage `json:"expiry_filter"`
+	}
+	if err := json.Unmarshal(body, &probe); err == nil {
+		pd.SupportsExpiry = len(probe.ExpiryFilter) > 0 // JSON null still counts
+	}
+	// A pre-v0.7.0 engine returns 200 with the UNFILTERED book for any
+	// ?expiry= - presenting that as filtered would be silently wrong.
+	if len(q.Expiries) > 0 && !pd.SupportsExpiry {
+		return nil, ErrExpiryUnsupported
+	}
+	return &pd, nil
 }

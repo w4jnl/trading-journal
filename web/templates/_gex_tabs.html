@@ -1,0 +1,20 @@
+{{/* Overview | Exposure tab switch, shared by both /gex pages.
+
+     The tab links are the BARE sticky entry paths, so switching tabs
+     means "my last view of that tab" - the 303 restores the stored
+     market/filters/view. An explicit market here would instead load the
+     default view, whose state report would then WIPE the stored filters
+     (the away-and-back reset bug). Only under ?at= (historical browsing,
+     where reporting is off and the moment must carry over) do the links
+     go explicit market + at. */}}
+{{define "gex_tabs"}}
+<div class="gex-seg">
+  {{if .AtParam}}
+  <a href="/gex/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
+  <a href="/gex/exposure/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
+  {{else}}
+  <a href="/gex" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
+  <a href="/gex/exposure" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
+  {{end}}
+</div>
+{{end}}

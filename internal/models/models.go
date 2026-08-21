@@ -290,3 +290,10 @@ type User struct {
 	LastLoginAt  *time.Time `json:"last_login_at"`
 	AiLanguage   string     `json:"ai_language"`
 }
+
+type UserViewPref struct {
+	UserID    int64  `json:"user_id"`
+	Page      string `json:"page"`
+	Value     string `json:"value"`
+	UpdatedAt string `json:"updated_at"`
+}

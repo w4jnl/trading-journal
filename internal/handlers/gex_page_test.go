@@ -65,6 +65,7 @@ func TestGEXPage(t *testing.T) {
 		`const gexData`,               // chart blob
 		`"strikes":[7327.74,7558.614`, // futures-scaled strike axis (index x 1.0038)
 		"ET",                          // as-of label
+		`class="active">Overview`,     // tabs partial, Overview active here
 		// Engine v0.5.0 surface (update 002):
 		"1h -9.2B",                     // net GEX change sub-line on the tile
 		"intraday negative",            // front-week regime shown when it disagrees (update 004)
@@ -86,6 +87,11 @@ func TestGEXPage(t *testing.T) {
 		`"flipI":7498.39,"flip0":7488.35,"cw":7558.58`, // chart blob: all three flips as reference lines (futures denom)
 		`"cwv":7533.52`,                                // ladder: vol-weighted call wall
 		`"near":[{"v":7518.46,"n":1,"gex":"+5.2B"}`,    // ladder: N1 leads the near list
+		// Profile bin control (client-side re-binning): native grid +
+		// conversion in the blob, seg host in the card title.
+		`"nativeW":230`, // fixture profile is 2-point; real grids are 5/10/25
+		`"ratio":1.0038`,
+		`id="gx-bin-seg"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)

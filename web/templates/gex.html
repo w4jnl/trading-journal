@@ -51,6 +51,7 @@
   .gex-ladder-layers { display: flex; gap: 4px; margin: 0 0 6px; }
   .gex-ladder-layers button { font-size: 10px; line-height: 15px; padding: 0 7px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
   .gex-ladder-layers button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .gex-ladder-layers button:disabled { opacity: 0.4; cursor: default; border-style: dashed; }
 
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
   [data-theme="dark"] .u-legend { color: var(--fg); }
@@ -61,15 +62,18 @@
 
 <div class="gex-toolbar">
   <h1 style="margin: 0;">Gamma (GEX)</h1>
+  {{template "gex_tabs" .}}
   <div class="gex-seg">
-    <a href="/gex{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
+    <a href="/gex/ES{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/NQ{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
-  <form method="get" action="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}">
+  {{/* Explicit market here too: the bare /gex path is the sticky entry
+       point, and "Latest" on ES must not bounce to a stored NQ view. */}}
+  <form method="get" action="/gex/{{.Market}}">
     <label class="label" for="gex-at">As of</label>
     <input type="datetime-local" id="gex-at" name="at" value="{{.AtValue}}">
     <button type="submit" class="btn btn--sm">Go</button>
-    {{if not .Latest}}<a class="btn btn--sm" href="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}">Latest</a>{{end}}
+    {{if not .Latest}}<a class="btn btn--sm" href="/gex/{{.Market}}">Latest</a>{{end}}
   </form>
 </div>
 
@@ -134,8 +138,13 @@
 
 <div class="gex-main mb-16">
   <div class="card">
-    <div class="card-title">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span>
-      <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">drag-select zooms all views · dblclick resets</span>
+    {{/* Flex, not floats: a right-floated control overflows the title box
+         and ends up UNDER uPlot's position:relative wrapper, which then
+         swallows its clicks. Flex children stay in-flow. */}}
+    <div class="card-title" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
+      <span style="flex: 1 1 auto;">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></span>
+      <span class="gex-ladder-layers" id="gx-bin-seg" style="margin: 0;"></span>
+      <span class="muted" style="font-weight: 400; font-size: 11px; flex: 0 0 auto;">drag-select zooms all views · dblclick resets</span>
     </div>
     <!-- Hosts are taller than their charts: uPlot renders its legend as a
          sibling below the canvas, and a tight host lets it spill into the
@@ -266,6 +275,80 @@
     let run = 0;
     return gexData.gex.map((v) => (run += v));
   }
+
+  // Profile bin control: the canonical 5/10/25/50-point widths, re-binned
+  // CLIENT-side by summing net GEX into coarser index-space buckets (exact -
+  // GEX is additive; the snapshot endpoint has no ?bucket=). Widths finer
+  // than the snapshot's native grid, or not integer multiples of it, render
+  // disabled. The choice sticks per market for the session. The cumulative
+  // chart always stays native - a finer running sum is strictly better.
+  let gexBin = 0; // 0 = native grid
+  try {
+    // localStorage so the choice survives new windows; read the old
+    // sessionStorage key once as a migration fallback.
+    gexBin = parseInt(localStorage.getItem('gxBin-' + {{.Market}}) || sessionStorage.getItem('gxBin-' + {{.Market}}) || '0', 10) || 0;
+  } catch (e) { /* private mode */ }
+  let gexProfActive = { strikes: [], gex: [] }; // ACTIVE profile arrays (binned or native)
+
+  function gexProfSeries() {
+    const nw = Math.round(gexData.nativeW || 0);
+    const r = gexData.ratio || 1;
+    if (!gexBin || !nw || gexBin <= nw || gexBin % nw !== 0) {
+      gexProfActive = { strikes: gexData.strikes, gex: gexData.gex };
+      return gexProfActive;
+    }
+    const bins = new Map();
+    for (let i = 0; i < gexData.strikes.length; i++) {
+      const k = Math.round(gexData.strikes[i] / r / gexBin) * gexBin;
+      bins.set(k, (bins.get(k) || 0) + gexData.gex[i]);
+    }
+    const ks = Array.from(bins.keys()).sort((a, b) => a - b);
+    gexProfActive = { strikes: ks.map((k) => k * r), gex: ks.map((k) => bins.get(k)) };
+    return gexProfActive;
+  }
+
+  function gexSyncBinSeg() {
+    const seg = document.getElementById('gx-bin-seg');
+    if (!seg) return;
+    const nw = Math.round((gexData && gexData.nativeW) || 0);
+    // Hide on degenerate grids (sparse test/legacy profiles): a native
+    // width beyond the canonical ladder has nothing to offer.
+    if (!nw || nw > 50) { seg.style.display = 'none'; return; }
+    seg.style.display = 'inline-flex';
+    const act = (gexBin > nw && gexBin % nw === 0) ? gexBin : nw;
+    let html = '';
+    [5, 10, 25, 50].forEach(function (w) {
+      const ok = w === nw || (w > nw && w % nw === 0);
+      if (ok) {
+        html += '<button type="button" data-bin="' + w + '"' + (w === act ? ' class="on"' : '') +
+          ' title="' + w + '-point index buckets' + (w === nw ? ' (native grid)' : '') + '">' + w + '</button>';
+      } else {
+        html += '<button type="button" disabled title="' + w + '-point buckets need a snapshot stored on a compatible finer grid — 5-point storage starts with engine v0.8.0 data">' + w + '</button>';
+      }
+    });
+    seg.innerHTML = html;
+  }
+
+  (function () {
+    const seg = document.getElementById('gx-bin-seg');
+    if (!seg) return;
+    seg.addEventListener('click', function (e) {
+      const b = e.target.closest('button[data-bin]');
+      if (!b) return;
+      const w = parseInt(b.dataset.bin, 10);
+      const nw = Math.round((gexData && gexData.nativeW) || 0);
+      gexBin = w === nw ? 0 : w;
+      try { localStorage.setItem('gxBin-' + {{.Market}}, String(gexBin)); } catch (err) { /* ignore */ }
+      gexSyncBinSeg();
+      gexGuarded(() => {
+        if (gexChart) {
+          const pp = gexProfSeries();
+          gexChart.setData([pp.strikes, pp.gex]);
+        }
+      });
+      gexSyncChartsToLadder(); // setData resets x to auto; reapply the window
+    });
+  })();
 
   function buildCharts() {
     buildProfile();
@@ -421,8 +504,8 @@
           paths: uPlot.paths.bars({
             size: [0.9, 10],
             disp: {
-              stroke: { unit: 3, values: () => gexData.gex.map((v) => v >= 0 ? c.pos : c.neg) },
-              fill:   { unit: 3, values: () => gexData.gex.map((v) => v >= 0 ? rgba(c.pos, 0.55) : rgba(c.neg, 0.55)) },
+              stroke: { unit: 3, values: () => gexProfActive.gex.map((v) => v >= 0 ? c.pos : c.neg) },
+              fill:   { unit: 3, values: () => gexProfActive.gex.map((v) => v >= 0 ? rgba(c.pos, 0.55) : rgba(c.neg, 0.55)) },
             },
           }),
           stroke: c.pos, /* legend marker */
@@ -438,7 +521,7 @@
         },
       ],
       hooks: { draw: [gexDrawMarks], setScale: [gexChartZoomHook], setCursor: [gexChartCursorHook] },
-    }, [gexData.strikes, gexData.gex], el);
+    }, [gexProfSeries().strikes, gexProfActive.gex], el);
   }
 
   // Regime ladder: the price structure read vertically, in one denomination.
@@ -737,7 +820,15 @@
     gexSyncChartsToLadder();
   }
 
+  gexSyncBinSeg();
   gexGuarded(buildCharts);
+
+  // Sticky view: remember this market for bare /gex links (any browser or
+  // device). Historical views (?at=) never overwrite the saved live view;
+  // CSRF comes from the base fetch patch.
+  if (!new URLSearchParams(location.search).get('at')) {
+    fetch('/gex/viewstate', { method: 'POST', body: new URLSearchParams({ page: 'gex_overview', market: {{.Market}} }) }).catch(function () { /* best effort */ });
+  }
   renderLadder();
   uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
 
@@ -949,9 +1040,11 @@
     gexLadderData = v.ladder;
     $id('gx-ladder-denom').textContent = (v.ladder && v.ladder.denom) || '';
     renderLadder();
+    gexSyncBinSeg();
     gexGuarded(() => {
       if (gexChart && gexCumChart && v.hasProfile) {
-        gexChart.setData([gexData.strikes, gexData.gex]);
+        const pp = gexProfSeries();
+        gexChart.setData([pp.strikes, pp.gex]);
         gexCumChart.setData([gexData.strikes, gexCumulative()]);
       } else {
         buildCharts();

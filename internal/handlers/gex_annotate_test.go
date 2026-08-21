@@ -43,6 +43,9 @@ func gexTestDB(t *testing.T) *sql.DB {
 			tick_value REAL, multiplier REAL, currency TEXT NOT NULL DEFAULT 'USD',
 			needs_setup INTEGER NOT NULL DEFAULT 0, asset_class TEXT, size_class TEXT)`,
 		`INSERT INTO instruments (symbol_root, tick_size) VALUES ('MES', 0.25)`,
+		`CREATE TABLE user_view_prefs (
+			user_id INTEGER NOT NULL, page TEXT NOT NULL, value TEXT NOT NULL,
+			updated_at TEXT NOT NULL, PRIMARY KEY (user_id, page))`,
 	} {
 		if _, err := db.Exec(stmt); err != nil {
 			t.Fatal(err)
