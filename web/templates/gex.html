@@ -5,10 +5,14 @@
   /* Stat strip - same shape as the dashboard trailing strip. */
   .stat-strip {
     display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 12px;
     margin-bottom: 16px;
   }
+  /* Session-band position bar on the EM tile: min .. spot marker .. max. */
+  .gx-emband { position: relative; height: 5px; border-radius: 3px; margin: 5px 0 3px; background: linear-gradient(90deg, var(--neg), var(--fg-muted) 50%, var(--pos)); opacity: 0.55; }
+  .gx-emband i { position: absolute; top: -3px; width: 2px; height: 11px; background: var(--fg); border-radius: 1px; }
+  .gx-dte-row { display: flex; gap: 6px; justify-content: space-between; white-space: nowrap; }
   @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
@@ -133,6 +137,15 @@
   <div class="card stat-tile">
     <div class="label">Expected move 1d</div>
     <div class="num--lg" id="gx-em">{{.View.EM}}</div>
+    <div class="sub" id="gx-empct">{{.View.EMPct}}</div>
+    <div class="gx-emband" id="gx-emband" title="Session range (1Di band: open ± 1.25×EM; falls back to spot ± EM) — the marker is spot" {{if lt .View.EMPosPct 0}}style="display:none"{{end}}><i id="gx-emmark" style="left: {{.View.EMPosPct}}%"></i></div>
+    <div class="sub" id="gx-emrange">{{if ge .View.EMPosPct 0}}{{.View.EMBandLo}} – {{.View.EMBandHi}}{{end}}</div>
+  </div>
+  <div class="card stat-tile" title="Net GEX bucketed by days to expiry (from the expiry-decay profile) · Δ vs ~1h earlier">
+    <div class="label">GEX by DTE</div>
+    <div id="gx-dte">
+      {{range .View.DTE}}<div class="sub gx-dte-row"><span>{{.Label}}</span><span class="{{if .Neg}}pnl-neg{{else}}pnl-pos{{end}}">{{.Net}}</span><span class="muted">{{.Delta}}</span></div>{{else}}<div class="num--lg">—</div>{{end}}
+    </div>
   </div>
 </div>
 
@@ -992,6 +1005,21 @@
     $id('gx-flipidx').textContent = 'index ' + v.flipIndex;
     $id('gx-flipsub').textContent = v.flipSub || '';
     $id('gx-em').textContent = v.em;
+    $id('gx-empct').textContent = v.emPct || '';
+    const emBand = $id('gx-emband');
+    if (emBand) {
+      emBand.style.display = v.emPosPct >= 0 ? '' : 'none';
+      const mark = $id('gx-emmark');
+      if (mark) mark.style.left = Math.max(0, Math.min(100, v.emPosPct)) + '%';
+    }
+    $id('gx-emrange').textContent = v.emPosPct >= 0 ? v.emBandLo + ' – ' + v.emBandHi : '';
+    const dteHost = $id('gx-dte');
+    if (dteHost) {
+      // Server-formatted strings only - nothing user-controlled lands here.
+      dteHost.innerHTML = (v.dte && v.dte.length)
+        ? v.dte.map((r) => '<div class="sub gx-dte-row"><span>' + r.label + '</span><span class="' + (r.neg ? 'pnl-neg' : 'pnl-pos') + '">' + r.net + '</span><span class="muted">' + (r.delta || '') + '</span></div>').join('')
+        : '<div class="num--lg">—</div>';
+    }
     $id('gx-chart-asof').textContent = v.asOfET + (v.stale ? ' (prior session close)' : '');
     $id('gx-chart-denom').textContent = (v.chart && v.chart.denom) || '';
     $id('gx-conv').textContent = v.convLine + ' · snapshot ' + v.asOfET;

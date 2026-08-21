@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
@@ -123,6 +125,86 @@ type gexMagnet struct {
 	Gex string  `json:"gex"`
 }
 
+// gexDTERow is one band of the GEX-by-DTE tile.
+type gexDTERow struct {
+	Label string `json:"label"`
+	Net   string `json:"net"`
+	Delta string `json:"delta"` // vs ~1h earlier; "" when unavailable
+	Neg   bool   `json:"neg"`
+}
+
+// gexBuildDTE buckets expiry_decay into 0-5 / 6-20 / >20 calendar-DTE
+// bands (trading-TZ midnights, same date math as the Exposure chips).
+// prev is the ~1h-earlier profile for the delta column; nil drops it.
+// Bands with no expiries render "-" rather than a measured zero.
+func gexBuildDTE(pd *gex.ProfileDetail, prev *gex.ProfileDetail, now time.Time, tz *time.Location) []gexDTERow {
+	if pd == nil || len(pd.ExpiryDecay) == 0 {
+		return nil
+	}
+	sum := func(decay map[string]float64) ([3]float64, [3]int) {
+		var tot [3]float64
+		var n [3]int
+		midnight := time.Date(now.In(tz).Year(), now.In(tz).Month(), now.In(tz).Day(), 0, 0, 0, 0, tz)
+		for d, v := range decay {
+			t, err := time.ParseInLocation("2006-01-02", d, tz)
+			if err != nil {
+				continue
+			}
+			dte := int(math.Round(t.Sub(midnight).Hours() / 24))
+			i := 0
+			switch {
+			case dte > 20:
+				i = 2
+			case dte > 5:
+				i = 1
+			}
+			tot[i] += v
+			n[i]++
+		}
+		return tot, n
+	}
+	tot, n := sum(pd.ExpiryDecay)
+	var ptot [3]float64
+	var pn [3]int
+	if prev != nil {
+		ptot, pn = sum(prev.ExpiryDecay)
+	}
+	labels := [3]string{"0-5d", "6-20d", ">20d"}
+	rows := make([]gexDTERow, 0, 3)
+	for i := range labels {
+		row := gexDTERow{Label: labels[i], Net: "—"}
+		if n[i] > 0 {
+			row.Net = gexFmtB(tot[i])
+			row.Neg = tot[i] < 0
+			if prev != nil && pn[i] > 0 {
+				row.Delta = "1h " + gexFmtB(tot[i]-ptot[i])
+			}
+		}
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// gexFetchDTE fetches the profile (and its ~1h-earlier sibling for the
+// delta column) and buckets expiry_decay by DTE. Best effort: any error
+// just shrinks the result (nil = tile renders its empty state) - the page
+// must never fail because /v1/profile did.
+func (h *Handlers) gexFetchDTE(ctx context.Context, market string, at, ref time.Time, tz *time.Location) []gexDTERow {
+	q := gex.ProfileQuery{}
+	if !at.IsZero() {
+		q.At = at
+	}
+	pd, err := h.GEX.ProfileDetail(ctx, market, q)
+	if err != nil {
+		return nil
+	}
+	prev, err := h.GEX.ProfileDetail(ctx, market, gex.ProfileQuery{At: ref.Add(-time.Hour)})
+	if err != nil {
+		prev = nil
+	}
+	return gexBuildDTE(pd, prev, ref, tz)
+}
+
 // gexView is the pre-formatted view model for one snapshot, shared verbatim
 // by the HTML render and the GEXData JSON endpoint so the scrub JS can
 // repaint the exact same fields the server rendered.
@@ -134,22 +216,34 @@ type gexView struct {
 	// RegimeIntra carries the front-week reading ONLY when it disagrees with
 	// the whole-book state ("intraday negative") - agreement renders nothing,
 	// so the tile stays quiet in the common case (engine update 004).
-	RegimeIntra      string         `json:"regimeIntra"`
-	RegimeIntraClass string         `json:"regimeIntraClass"`
-	Pctl             string         `json:"pctl"`
-	NetGex           string         `json:"netGex"`
-	NetGexSub        string         `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
-	SpotIndex        string         `json:"spotIndex"`
-	SpotFutures      string         `json:"spotFutures"`
-	ConvLine         string         `json:"convLine"`
-	FlipFutures      string         `json:"flipFutures"`
-	FlipIndex        string         `json:"flipIndex"`
-	FlipSub          string         `json:"flipSub"`
-	EM               string         `json:"em"`
-	Levels           []gexPageLevel `json:"levels"`
-	Chart            gexChart       `json:"chart"`
-	Ladder           gexLadder      `json:"ladder"`
-	HasProfile       bool           `json:"hasProfile"`
+	RegimeIntra      string `json:"regimeIntra"`
+	RegimeIntraClass string `json:"regimeIntraClass"`
+	Pctl             string `json:"pctl"`
+	NetGex           string `json:"netGex"`
+	NetGexSub        string `json:"netGexSub"` // 1h/1d change line; "" pre-v0.5.0
+	SpotIndex        string `json:"spotIndex"`
+	SpotFutures      string `json:"spotFutures"`
+	ConvLine         string `json:"convLine"`
+	FlipFutures      string `json:"flipFutures"`
+	FlipIndex        string `json:"flipIndex"`
+	FlipSub          string `json:"flipSub"`
+	EM               string `json:"em"`
+	// EM presentation (intraday-panel phase 1): percent of spot, and the
+	// session band position - min/spot/max against the 1Di band (engine
+	// v0.9.0), falling back to spot +/- EM (which centers the marker by
+	// construction). EMPosPct -1 = no band to draw.
+	EMPct    string `json:"emPct"`
+	EMBandLo string `json:"emBandLo"`
+	EMBandHi string `json:"emBandHi"`
+	EMPosPct int    `json:"emPosPct"`
+	// DTE is the GEX-by-DTE breakdown (0-5 / 6-20 / >20 calendar days),
+	// bucketed journal-side from /v1/profile expiry_decay; empty when the
+	// profile fetch failed or the engine predates v0.7.0.
+	DTE        []gexDTERow    `json:"dte"`
+	Levels     []gexPageLevel `json:"levels"`
+	Chart      gexChart       `json:"chart"`
+	Ladder     gexLadder      `json:"ladder"`
+	HasProfile bool           `json:"hasProfile"`
 	// AsOfParam identifies the snapshot for the AI-read endpoint, as
 	// RFC3339Nano. It must keep SUB-SECOND precision: as_of lands a fraction
 	// of a second past its grid mark (19:00:02.501055Z), so a value truncated
@@ -250,6 +344,11 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 			ref = now
 		}
 		view := gexBuildView(s, ref)
+		atOrZero := at
+		if latest {
+			atOrZero = time.Time{}
+		}
+		view.DTE = h.gexFetchDTE(r.Context(), market, atOrZero, ref, h.localTZ())
 		h.gexAttachAnalysis(r.Context(), &view, market, s.AsOf)
 		data["View"] = view
 		data["SessionClosed"] = latest && view.Stale
@@ -291,6 +390,7 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadGateway, "gex-engine unreachable")
 	default:
 		v := gexBuildView(s, at)
+		v.DTE = h.gexFetchDTE(r.Context(), market, at, at, h.localTZ())
 		h.gexAttachAnalysis(r.Context(), &v, market, s.AsOf)
 		writeJSON(w, http.StatusOK, v)
 	}
@@ -339,12 +439,15 @@ func gexSessionGrid(now time.Time) []int64 {
 func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 	et := gexEastern()
 	v := gexView{
-		AsOfET: s.AsOf.In(et).Format("Mon Jan 2, 15:04:05 ET"),
-		Stale:  ref.Sub(s.AsOf) > gexStaleAfter,
-		Regime: s.Regime.State,
-		Pctl:   "—",
-		NetGex: "—",
-		EM:     "—",
+		AsOfET:   s.AsOf.In(et).Format("Mon Jan 2, 15:04:05 ET"),
+		Stale:    ref.Sub(s.AsOf) > gexStaleAfter,
+		Regime:   s.Regime.State,
+		Pctl:     "—",
+		NetGex:   "—",
+		EM:       "—",
+		EMBandLo: "—",
+		EMBandHi: "—",
+		EMPosPct: -1,
 	}
 	switch s.Regime.State {
 	case "positive":
@@ -382,11 +485,51 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		v.EM = fmt.Sprintf("%.1f pts", *e)
 	}
 
+	if e := s.ExpectedMove1D; e != nil && s.SpotIndex > 0 {
+		v.EMPct = fmt.Sprintf("%.2f%% of spot", *e/s.SpotIndex*100)
+	}
+
 	v.SpotIndex = fmt.Sprintf("%.2f", s.SpotIndex)
 	v.SpotFutures = "—"
 	spotFut := gexSpotFutures(s)
 	if spotFut != nil {
 		v.SpotFutures = fmt.Sprintf("%.2f", *spotFut)
+	}
+
+	// Session band position: min/spot/max against the 1Di band (engine
+	// v0.9.0; the session-open anchored range), falling back to spot +/- EM
+	// - which centers the marker by construction, honest but static.
+	{
+		useFut := spotFut != nil
+		spotV := s.SpotIndex
+		if useFut {
+			spotV = *spotFut
+		}
+		band := func(typ string) *float64 {
+			l := gexLevelIn(s, typ, "all")
+			if l == nil {
+				return nil
+			}
+			if useFut {
+				return l.Futures
+			}
+			idx := l.Index
+			return &idx
+		}
+		lo, hi := band("em_intra_min"), band("em_intra_max")
+		if (lo == nil || hi == nil) && s.ExpectedMove1D != nil {
+			d := *s.ExpectedMove1D // index points by contract
+			if useFut && s.FuturesConversion != nil && s.FuturesConversion.Ratio > 0 {
+				d *= s.FuturesConversion.Ratio
+			}
+			l, h := spotV-d, spotV+d
+			lo, hi = &l, &h
+		}
+		if lo != nil && hi != nil && *hi > *lo {
+			v.EMBandLo = fmt.Sprintf("%.2f", *lo)
+			v.EMBandHi = fmt.Sprintf("%.2f", *hi)
+			v.EMPosPct = int(math.Round(math.Max(0, math.Min(100, (spotV-*lo)/(*hi-*lo)*100))))
+		}
 	}
 	if fc := s.FuturesConversion; fc != nil {
 		v.ConvLine = fmt.Sprintf("futures conversion %.4f · %s · paired %s",
