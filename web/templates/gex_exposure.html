@@ -55,7 +55,7 @@
   <h1 style="margin: 0;">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
   <div class="gex-seg">
-    <a href="/gex/exposure{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
+    <a href="/gex/exposure/ES{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/exposure/NQ{{.QuerySuffix}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
 </div>
@@ -538,8 +538,28 @@
       const sp = new URLSearchParams(location.search);
       if (gexExpoSel.length) sp.set('expiry', gexExpoSel.join(',')); else sp.delete('expiry');
       if (gexExpoBucket) sp.set('bucket', String(gexExpoBucket)); else sp.delete('bucket');
+      if (!gexExpoSel.length && gexExpoKey !== 'all') sp.set('view', gexExpoKey); else sp.delete('view');
       const qs = sp.toString();
       history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+      reportState();
+    }
+    // Sticky view: report the current state (debounced, fire-and-forget;
+    // CSRF header added by the base fetch patch) so bare /gex/exposure
+    // links restore it from any browser. Historical browsing (?at=) never
+    // reports - it must not clobber the saved live view.
+    let reportT = null;
+    function reportState() {
+      if (new URLSearchParams(location.search).get('at')) return;
+      clearTimeout(reportT);
+      reportT = setTimeout(function () {
+        fetch('/gex/viewstate', { method: 'POST', body: new URLSearchParams({
+          page: 'gex_exposure',
+          market: GEX_EXPO_MARKET,
+          expiry: gexExpoSel.join(','),
+          bucket: gexExpoBucket ? String(gexExpoBucket) : '',
+          view: !gexExpoSel.length && gexExpoKey !== 'all' ? gexExpoKey : '',
+        }) }).catch(function () { /* best effort */ });
+      }, 600);
     }
     function carryZoom() {
       const p = gexExpoProfile();
@@ -687,11 +707,20 @@
       if (wb > 0 && wb !== (gexExpoInit.bucketBase || 0) && bseg && bseg.querySelector('button[data-bw="' + wb + '"]')) {
         gexExpoBucket = wb;
       }
+      // ?view= restores the profile buttons (ignored under an expiry
+      // filter, which forces the blend slice).
+      const wv = (spInit.get('view') || '').replace(/[^a-z0-9_]/g, '');
+      if (!gexExpoSel.length && wv && wv !== 'all' && gexExpoInit.profiles[wv]) {
+        gexExpoKey = wv;
+      }
       if (gexExpoSel.length || gexExpoBucket) {
         syncChrome();
         refetch();
+      } else if (gexExpoKey !== 'all') {
+        syncChrome(); carryZoom(); renderExpo();
       }
     }
+    reportState(); // plain loads (market switch, first visit) stick too
   })();
 
   // No scrub UI here; ?at= deep links render that moment statically, and

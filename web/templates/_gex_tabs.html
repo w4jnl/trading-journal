@@ -2,8 +2,11 @@
      market and, since engine v0.7.0 gave both tabs ?at= (same
      datetime-local format), the viewed moment. */}}
 {{define "gex_tabs"}}
+{{/* Markets are always EXPLICIT in hrefs: the bare paths are sticky
+     entry points that 303 to the user's stored view, so an implicit-ES
+     link would bounce anyone whose stored market is NQ. */}}
 <div class="gex-seg">
-  <a href="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
-  <a href="/gex/exposure{{if ne .Market "ES"}}/{{.Market}}{{end}}{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
+  <a href="/gex/{{.Market}}{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
+  <a href="/gex/exposure/{{.Market}}{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
 </div>
 {{end}}

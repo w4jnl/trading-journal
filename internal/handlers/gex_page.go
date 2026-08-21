@@ -182,6 +182,9 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if h.gexStickyRedirect(w, r, gexPrefOverview) {
+		return
+	}
 	market, ok := gexMarketParam(r)
 	if !ok {
 		http.NotFound(w, r)

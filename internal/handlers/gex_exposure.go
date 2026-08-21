@@ -150,12 +150,13 @@ func gexExpoAt(r *http.Request, tz *time.Location) (at time.Time, atParam string
 	return t.Add(59 * time.Second), atParam
 }
 
-// gexExpoExpiriesParam validates ?expiry= - a comma-separated set of ISO
-// dates (multi-select chips). Returns the deduped set in request order;
+// gexParseExpiries validates a comma-separated set of ISO dates (the
+// multi-select expiry filter). Returns the deduped set in input order;
 // ok=false when any member is malformed (callers must not degrade a bad
-// filter to the whole book).
-func gexExpoExpiriesParam(r *http.Request) ([]string, bool) {
-	raw := strings.TrimSpace(r.URL.Query().Get("expiry"))
+// filter to the whole book). Shared by the page/data params and the
+// viewstate endpoint.
+func gexParseExpiries(raw string) ([]string, bool) {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return nil, true
 	}
@@ -178,11 +179,15 @@ func gexExpoExpiriesParam(r *http.Request) ([]string, bool) {
 	return out, true
 }
 
-// gexExpoBucketParam validates ?bucket= (index points; 0 = stored default).
-// The engine owns the real constraints (multiple of stored width, <= 100);
-// this only rejects non-numeric junk. ok=false on malformed input.
-func gexExpoBucketParam(r *http.Request) (int, bool) {
-	raw := strings.TrimSpace(r.URL.Query().Get("bucket"))
+func gexExpoExpiriesParam(r *http.Request) ([]string, bool) {
+	return gexParseExpiries(r.URL.Query().Get("expiry"))
+}
+
+// gexParseBucket validates a bucket width (index points; 0 = stored
+// default). The engine owns the real constraints (multiple of stored width,
+// <= 100); this only rejects non-numeric junk.
+func gexParseBucket(raw string) (int, bool) {
+	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return 0, true
 	}
@@ -193,6 +198,23 @@ func gexExpoBucketParam(r *http.Request) (int, bool) {
 	return n, true
 }
 
+func gexExpoBucketParam(r *http.Request) (int, bool) {
+	return gexParseBucket(r.URL.Query().Get("bucket"))
+}
+
+// gexParseView validates a profile-view key ("" = the default ALL view).
+func gexParseView(raw string) (string, bool) {
+	switch strings.TrimSpace(raw) {
+	case "", "all":
+		return "", true
+	case "0dte":
+		return "0dte", true
+	case "0dte_vol":
+		return "0dte_vol", true
+	}
+	return "", false
+}
+
 // GEXExposurePage renders /gex/exposure and /gex/exposure/{market}. It
 // always fetches the UNFILTERED book (the chip strip and profile buttons
 // need it); a valid ?expiry= is handed to the client, which re-runs the
@@ -200,6 +222,9 @@ func gexExpoBucketParam(r *http.Request) (int, bool) {
 func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	if h.GEX == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if h.gexStickyRedirect(w, r, gexPrefExposure) {
 		return
 	}
 	market, ok := gexMarketParam(r)
@@ -228,6 +253,9 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	}
 	if b, ok := gexExpoBucketParam(r); ok && b > 0 {
 		qs.Set("bucket", strconv.Itoa(b))
+	}
+	if v, ok := gexParseView(r.URL.Query().Get("view")); ok && v != "" {
+		qs.Set("view", v)
 	}
 	if len(qs) > 0 {
 		data["QuerySuffix"] = "?" + qs.Encode()

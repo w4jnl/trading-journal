@@ -224,6 +224,19 @@ func TestGEXExposurePageV070(t *testing.T) {
 	if body := rec.Body.String(); !strings.Contains(body, `href="/gex/exposure/NQ?expiry=2026-08-21%2C2026-08-24"`) {
 		t.Errorf("multi-expiry QuerySuffix wrong")
 	}
+	// view= rides the QuerySuffix, and every market/tab link is EXPLICIT
+	// (bare paths are the sticky entry points).
+	rec = gexExpoGet(t, h, "/gex/exposure?view=0dte")
+	body = rec.Body.String()
+	for _, want := range []string{
+		`href="/gex/exposure/NQ?view=0dte"`,
+		`href="/gex/exposure/ES?view=0dte"`,
+		`href="/gex/ES"`, // tabs partial: Overview link explicit
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
 }
 
 // The data endpoint returns the filtered blob as JSON, futures-denominated

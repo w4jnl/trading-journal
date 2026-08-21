@@ -64,14 +64,16 @@
   <h1 style="margin: 0;">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
   <div class="gex-seg">
-    <a href="/gex{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
+    <a href="/gex/ES{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/NQ{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
-  <form method="get" action="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}">
+  {{/* Explicit market here too: the bare /gex path is the sticky entry
+       point, and "Latest" on ES must not bounce to a stored NQ view. */}}
+  <form method="get" action="/gex/{{.Market}}">
     <label class="label" for="gex-at">As of</label>
     <input type="datetime-local" id="gex-at" name="at" value="{{.AtValue}}">
     <button type="submit" class="btn btn--sm">Go</button>
-    {{if not .Latest}}<a class="btn btn--sm" href="/gex{{if ne .Market "ES"}}/{{.Market}}{{end}}">Latest</a>{{end}}
+    {{if not .Latest}}<a class="btn btn--sm" href="/gex/{{.Market}}">Latest</a>{{end}}
   </form>
 </div>
 
@@ -281,7 +283,11 @@
   // disabled. The choice sticks per market for the session. The cumulative
   // chart always stays native - a finer running sum is strictly better.
   let gexBin = 0; // 0 = native grid
-  try { gexBin = parseInt(sessionStorage.getItem('gxBin-' + {{.Market}}) || '0', 10) || 0; } catch (e) { /* private mode */ }
+  try {
+    // localStorage so the choice survives new windows; read the old
+    // sessionStorage key once as a migration fallback.
+    gexBin = parseInt(localStorage.getItem('gxBin-' + {{.Market}}) || sessionStorage.getItem('gxBin-' + {{.Market}}) || '0', 10) || 0;
+  } catch (e) { /* private mode */ }
   let gexProfActive = { strikes: [], gex: [] }; // ACTIVE profile arrays (binned or native)
 
   function gexProfSeries() {
@@ -332,7 +338,7 @@
       const w = parseInt(b.dataset.bin, 10);
       const nw = Math.round((gexData && gexData.nativeW) || 0);
       gexBin = w === nw ? 0 : w;
-      try { sessionStorage.setItem('gxBin-' + {{.Market}}, String(gexBin)); } catch (err) { /* ignore */ }
+      try { localStorage.setItem('gxBin-' + {{.Market}}, String(gexBin)); } catch (err) { /* ignore */ }
       gexSyncBinSeg();
       gexGuarded(() => {
         if (gexChart) {
@@ -816,6 +822,13 @@
 
   gexSyncBinSeg();
   gexGuarded(buildCharts);
+
+  // Sticky view: remember this market for bare /gex links (any browser or
+  // device). Historical views (?at=) never overwrite the saved live view;
+  // CSRF comes from the base fetch patch.
+  if (!new URLSearchParams(location.search).get('at')) {
+    fetch('/gex/viewstate', { method: 'POST', body: new URLSearchParams({ page: 'gex_overview', market: {{.Market}} }) }).catch(function () { /* best effort */ });
+  }
   renderLadder();
   uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
 
