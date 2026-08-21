@@ -99,7 +99,9 @@ func gexSnapshotJSON(asOf string) string {
 			{"type": "gamma_2", "index": 7450.0, "futures": 7478.31, "gex": 6.1e9, "bucket": "all"},
 			{"type": "gamma_3", "index": 7480.0, "futures": 7508.42, "gex": 4.4e9, "bucket": "all"},
 			{"type": "em_1d_min", "index": 7455.3, "futures": 7483.63, "gex": 0.0, "bucket": "all"},
-			{"type": "em_1d_max", "index": 7519.7, "futures": 7548.29, "gex": 0.0, "bucket": "all"}
+			{"type": "em_1d_max", "index": 7519.7, "futures": 7548.29, "gex": 0.0, "bucket": "all"},
+			{"type": "em_intra_min", "index": 7460.2, "futures": 7488.55, "gex": 0.0, "bucket": "all"},
+			{"type": "em_intra_max", "index": 7528.9, "futures": 7557.51, "gex": 0.0, "bucket": "all"}
 		],
 		"profile": {"strikes_index": [7300, 7530], "net_gex": [-3.9e9, 1.08e10]},
 		"net_gex_change_1h": -9.2e9,

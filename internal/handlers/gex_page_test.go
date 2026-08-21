@@ -99,12 +99,18 @@ func TestGEXPage(t *testing.T) {
 		`"nativeW":230`, // fixture profile is 2-point; real grids are 5/10/25
 		`"ratio":1.0038`,
 		`id="gx-bin-seg"`,
-		// Intraday-panel phase 1: EM percent + band position (the fixture
-		// has no 1Di levels, so this is the spot +/- EM fallback, centered
-		// by construction) and the GEX-by-DTE tile from expiry_decay
-		// (fixture dates are all in the 0-5d band; the fake serves the
-		// same profile for the 1h-earlier fetch, so the delta is zero).
+		// Intraday-panel phase 1: EM percent + band position (the merged
+		// fixture carries the 1Di levels from update 007, so the band is
+		// the engine-published one, spot dead-center) and the GEX-by-DTE
+		// tile from expiry_decay (fixture dates are all in the 0-5d band;
+		// the fake serves the same profile for the 1h-earlier fetch, so
+		// the delta is zero).
 		`"emPct":"0.13% of spot"`,
+		`"emPosPct":50`,
+		`"emBandLo":"7488.55"`,
+		`id="gx-emband"`,
+		`"label":"0-5d","net":"-4.0B","delta":"+0.0B","neg":true`,
+		`id="gx-dte"`,
 		// Engine v0.10.0 surface (update 008): flip badge (18:10Z = 14:10
 		// ET), intraday since-time, customer-book DEX line, P/C volume
 		// with put-heavy tint + 0DTE ratio, and the skew tenors.
@@ -118,11 +124,12 @@ func TestGEXPage(t *testing.T) {
 		`"skewDte0":"-6.1%"`,
 		`"skewM1":"+29.0%"`,
 		`id="gx-pcratio"`, `id="gx-skew0"`,
-		`"emPosPct":50`,
-		`"emBandLo":"7513.29"`,
-		`id="gx-emband"`,
-		`"label":"0-5d","net":"-4.0B","delta":"+0.0B","neg":true`,
-		`id="gx-dte"`,
+		// Engine v0.9.0 surface (update 007): the session-open intraday
+		// band on the ladder + table, and vol magnitudes suffixed as
+		// session-flow gex so they never read as OI-comparable.
+		`"emiHigh":7557.51`, // ladder: intraday band (published futures)
+		"Intraday EM low",   // table row label
+		`"cwvGex":"+1.9B flow"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)

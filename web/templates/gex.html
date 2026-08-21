@@ -194,7 +194,7 @@
       <button type="button" data-layer="0dte" title="Today's expiring book: its call/put walls, gamma wall, and 0DTE flip">0dte</button>
       <button type="button" data-layer="vol" title="Today's book re-weighted by session volume instead of open interest — a second opinion on the 0DTE walls">vol</button>
       <button type="button" data-layer="magnets" title="Ranked gamma magnets: G1–G3 across the whole book, N1–N3 within ±1% of spot">magnets</button>
-      <button type="button" data-layer="em" title="Expected-move bands: today's (spot ± EM, dashed) and the prior session's (close ± its EM, dotted)">em</button>
+      <button type="button" data-layer="em" title="Expected-move bands: today's (spot ± EM, dashed), the prior session's (close ± its EM, dotted), and the session-open intraday band (1Di, open ± 1.25×EM — MenthorQ's intra 1D Min/Max)">em</button>
     </div>
     <div id="gx-ladder"></div>
   </div>
@@ -602,8 +602,10 @@
       { v: lad.gw0,     label: 'GW 0DTE',    color: muted,    note: lad.gw0Gex, family: '0dte' },
       { v: lad.gwv,     label: 'GW vol',     color: muted,    note: lad.gwvGex, family: 'vol' },
       { v: lad.emHigh,  label: 'EM high',    color: muted,    family: 'em' },
+      { v: lad.emiHigh, label: '1Di max',    color: muted,    family: 'em' },
       { v: lad.em1High, label: '1D max',     color: muted,    family: 'em' },
       { v: lad.em1Low,  label: '1D min',     color: muted,    family: 'em' },
+      { v: lad.emiLow,  label: '1Di min',    color: muted,    family: 'em' },
       { v: lad.emLow,   label: 'EM low',     color: muted,    family: 'em' },
       { v: lad.flip,    label: 'Flip',       color: flipColor, flip: true },
       { v: lad.flipI,   label: 'Flip intra', color: flipColor, flip: true },
@@ -675,6 +677,14 @@
       const yTop = yClamp(lad.emHigh), yBot = yClamp(lad.emLow);
       if (yBot - yTop > 0) {
         parts.push(`<rect x="0.5" y="${yTop}" width="${colsW - 1}" height="${yBot - yTop}" fill="none" stroke="${muted}" stroke-width="1" stroke-dasharray="3 3" opacity="0.8"/>`);
+      }
+    }
+    // Session-open intraday band (engine v0.9.0, "1Di"): lighter than the
+    // spot-anchored EM band so the two never blur together.
+    if (gexLadderLayers.em && lad.emiHigh != null && lad.emiLow != null && lad.emiHigh >= lo && lad.emiLow <= hi) {
+      const yTop = yClamp(lad.emiHigh), yBot = yClamp(lad.emiLow);
+      if (yBot - yTop > 0) {
+        parts.push(`<rect x="1.5" y="${yTop}" width="${colsW - 3}" height="${yBot - yTop}" fill="none" stroke="${muted}" stroke-width="1" stroke-dasharray="1 3" opacity="0.55"/>`);
       }
     }
 
