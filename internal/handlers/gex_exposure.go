@@ -468,6 +468,10 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 		add("Flip intra", lad.FlipI, "flipI", "all", "")
 		add("CW", lad.CW, "cw", "all", lad.CWGex)
 		add("PW", lad.PW, "pw", "all", lad.PWGex)
+		// Session-open intraday band (engine v0.9.0, update 007) - the
+		// band that lines up with MenthorQ's intra 1D Min/Max.
+		add("1Di hi", lad.EMIHigh, "em", "all", "")
+		add("1Di lo", lad.EMILow, "em", "all", "")
 		add("Flip 0DTE", lad.Flip0, "flip0", "0dte", "")
 		add("CW 0DTE", lad.CW0, "cw", "0dte", lad.CW0Gex)
 		add("PW 0DTE", lad.PW0, "pw", "0dte", lad.PW0Gex)

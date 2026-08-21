@@ -99,6 +99,11 @@ type gexLadder struct {
 	Magnets []gexMagnet `json:"magnets"`
 	EM1High *float64    `json:"em1High"`
 	EM1Low  *float64    `json:"em1Low"`
+	// Engine v0.9.0 additions (update 007): the session-open-anchored
+	// intraday band (opening spot +/- opening EM x 1.25, static after the
+	// open) - the band that lines up with MenthorQ's intra 1D Min/Max.
+	EMIHigh *float64 `json:"emiHigh"`
+	EMILow  *float64 `json:"emiLow"`
 	// Engine v0.6.0 additions (update 003): the front-week (<=5 DTE) flip,
 	// today's book re-weighted by session volume, and the near magnets
 	// (ranked within +/-1% of spot).
@@ -451,10 +456,13 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 			Gex:     gexFmtB(l.Gex),
 			Dist:    "—",
 		}
-		if strings.HasPrefix(l.Type, "em_1d_") {
-			// The prior-day EM band carries gex 0.0 by contract - it is a
-			// static price band, not a gamma concentration; "+0.0B" would
-			// read as a measured zero.
+		if l.Bucket == "0dte_vol" {
+			row.Gex += " flow" // decision #33: session-flow gex, not OI-comparable
+		}
+		if strings.HasPrefix(l.Type, "em_") {
+			// The EM bands (prior-day and intraday) carry gex 0.0 by
+			// contract - they are static price bands, not gamma
+			// concentrations; "+0.0B" would read as a measured zero.
 			row.Gex = "—"
 		}
 		if l.Futures != nil {
@@ -510,11 +518,19 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 		if l == nil {
 			return nil, ""
 		}
+		note := gexFmtB(l.Gex)
+		if bucket == "0dte_vol" {
+			// Decision #33: vol-bucket magnitudes are session-FLOW gex
+			// (volume counts opens AND closes; late-day values run 20-50x
+			// the OI walls). The suffix keeps the two scales from ever
+			// reading as comparable.
+			note += " flow"
+		}
 		if useFut {
-			return l.Futures, gexFmtB(l.Gex)
+			return l.Futures, note
 		}
 		idx := l.Index
-		return &idx, gexFmtB(l.Gex)
+		return &idx, note
 	}
 	lad.CW, lad.CWGex = pick("call_wall", "all")
 	lad.PW, lad.PWGex = pick("put_wall", "all")
@@ -534,10 +550,12 @@ func gexBuildLadder(s *gex.Snapshot, spotFut *float64) gexLadder {
 			lad.Near = append(lad.Near, gexMagnet{V: *v, N: i + 1, Gex: note})
 		}
 	}
-	// The prior-day band carries gex 0.0 by contract - the note would only
-	// say "+0", so it is dropped.
+	// The EM bands carry gex 0.0 by contract - the note would only say
+	// "+0", so it is dropped.
 	lad.EM1High, _ = pick("em_1d_max", "all")
 	lad.EM1Low, _ = pick("em_1d_min", "all")
+	lad.EMIHigh, _ = pick("em_intra_max", "all")
+	lad.EMILow, _ = pick("em_intra_min", "all")
 
 	lad.IntraState = s.Regime.IntradayState
 	if useFut {
@@ -597,6 +615,10 @@ func gexLevelName(typ string) string {
 		return "Prior EM low"
 	case "em_1d_max":
 		return "Prior EM high"
+	case "em_intra_min":
+		return "Intraday EM low"
+	case "em_intra_max":
+		return "Intraday EM high"
 	default:
 		return strings.ReplaceAll(typ, "_", " ")
 	}

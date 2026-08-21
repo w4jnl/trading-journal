@@ -153,6 +153,10 @@ func TestGEXExposurePage(t *testing.T) {
 		`"family":"0dte_vol"`,
 		`"0dte":`, // profile key present in blob
 		"Jul 31",  // expiry chip label
+		// Engine v0.9.0 (update 007): 1Di band lines + flow-suffixed vol
+		// magnitudes flow through the shared ladder builder.
+		`"label":"1Di hi","v":7557.51,"kind":"em","family":"all"`,
+		`+1.9B flow`,
 		"not served by the engine yet",
 		`data-prof="0dte_vol"`,
 		">CALL<", "location.reload",
