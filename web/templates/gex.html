@@ -12,7 +12,13 @@
   /* Session-band position bar on the EM tile: min .. spot marker .. max. */
   .gx-emband { position: relative; height: 5px; border-radius: 3px; margin: 5px 0 3px; background: linear-gradient(90deg, var(--neg), var(--fg-muted) 50%, var(--pos)); opacity: 0.55; }
   .gx-emband i { position: absolute; top: -3px; width: 2px; height: 11px; background: var(--fg); border-radius: 1px; }
-  .gx-dte-row { display: flex; gap: 6px; justify-content: space-between; white-space: nowrap; }
+  /* GEX-by-DTE mini-table: label | net | 1h-delta, numbers right-aligned
+     in tabular mono so the three rows read as columns, not prose. */
+  #gx-dte { display: grid; grid-template-columns: auto 1fr auto; gap: 3px 10px; font-size: 12px; white-space: nowrap; align-content: start; }
+  #gx-dte .h { font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--fg-muted); }
+  #gx-dte .l { color: var(--fg-muted); }
+  #gx-dte .n, #gx-dte .d { text-align: right; font-family: "JetBrains Mono", monospace; font-variant-numeric: tabular-nums; }
+  #gx-dte .d { color: var(--fg-muted); }
   @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
@@ -144,7 +150,8 @@
   <div class="card stat-tile" title="Net GEX bucketed by days to expiry (from the expiry-decay profile) · Δ vs ~1h earlier">
     <div class="label">GEX by DTE</div>
     <div id="gx-dte">
-      {{range .View.DTE}}<div class="sub gx-dte-row"><span>{{.Label}}</span><span class="{{if .Neg}}pnl-neg{{else}}pnl-pos{{end}}">{{.Net}}</span><span class="muted">{{.Delta}}</span></div>{{else}}<div class="num--lg">—</div>{{end}}
+      {{if .View.DTE}}<span class="h"></span><span class="h" style="text-align:right">net</span><span class="h" style="text-align:right">Δ 1h</span>{{end}}
+      {{range .View.DTE}}<span class="l">{{.Label}}</span><span class="n {{if .Neg}}pnl-neg{{else}}pnl-pos{{end}}">{{.Net}}</span><span class="d">{{.Delta}}</span>{{else}}<span class="num--lg">—</span>{{end}}
     </div>
   </div>
 </div>
@@ -1017,8 +1024,9 @@
     if (dteHost) {
       // Server-formatted strings only - nothing user-controlled lands here.
       dteHost.innerHTML = (v.dte && v.dte.length)
-        ? v.dte.map((r) => '<div class="sub gx-dte-row"><span>' + r.label + '</span><span class="' + (r.neg ? 'pnl-neg' : 'pnl-pos') + '">' + r.net + '</span><span class="muted">' + (r.delta || '') + '</span></div>').join('')
-        : '<div class="num--lg">—</div>';
+        ? '<span class="h"></span><span class="h" style="text-align:right">net</span><span class="h" style="text-align:right">Δ 1h</span>' +
+          v.dte.map((r) => '<span class="l">' + r.label + '</span><span class="n ' + (r.neg ? 'pnl-neg' : 'pnl-pos') + '">' + r.net + '</span><span class="d">' + (r.delta || '') + '</span>').join('')
+        : '<span class="num--lg">—</span>';
     }
     $id('gx-chart-asof').textContent = v.asOfET + (v.stale ? ' (prior session close)' : '');
     $id('gx-chart-denom').textContent = (v.chart && v.chart.denom) || '';

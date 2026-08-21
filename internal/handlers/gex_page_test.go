@@ -108,7 +108,7 @@ func TestGEXPage(t *testing.T) {
 		`"emPosPct":50`,
 		`"emBandLo":"7513.29"`,
 		`id="gx-emband"`,
-		`"label":"0-5d","net":"-4.0B","delta":"1h +0.0B","neg":true`,
+		`"label":"0-5d","net":"-4.0B","delta":"+0.0B","neg":true`,
 		`id="gx-dte"`,
 	} {
 		if !strings.Contains(body, want) {
@@ -565,10 +565,10 @@ func TestGexBuildDTE(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("rows = %d", len(rows))
 	}
-	if rows[0].Net != "-3.0B" || !rows[0].Neg || rows[0].Delta != "1h -500M" {
+	if rows[0].Net != "-3.0B" || !rows[0].Neg || rows[0].Delta != "-500M" {
 		t.Errorf("0-5d = %+v", rows[0])
 	}
-	if rows[1].Net != "+5.0B" || rows[1].Delta != "1h +1.0B" {
+	if rows[1].Net != "+5.0B" || rows[1].Delta != "+1.0B" {
 		t.Errorf("6-20d = %+v", rows[1])
 	}
 	// prev has no >20d expiries: net still renders, delta drops.

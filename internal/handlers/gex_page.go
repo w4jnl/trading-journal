@@ -177,7 +177,7 @@ func gexBuildDTE(pd *gex.ProfileDetail, prev *gex.ProfileDetail, now time.Time, 
 			row.Net = gexFmtB(tot[i])
 			row.Neg = tot[i] < 0
 			if prev != nil && pn[i] > 0 {
-				row.Delta = "1h " + gexFmtB(tot[i]-ptot[i])
+				row.Delta = gexFmtB(tot[i] - ptot[i]) // column header carries the "1h"
 			}
 		}
 		rows = append(rows, row)
