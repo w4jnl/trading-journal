@@ -30,6 +30,33 @@ import (
 // interpreted in the journal's trading timezone).
 const gexPageMoment = "2006-01-02T15:04"
 
+// gexParseAtParam parses the shared ?at= moment param in either wire form:
+// unix seconds (what the scrub JS writes - client code cannot format a
+// trading-TZ datetime-local string) or the picker's datetime-local format in
+// the trading TZ. Unix values are used as-is (the scrub already bakes its
+// +120s slot buffer into what it sends); picker values get +59s because the
+// control has minute resolution, so "14:55" denotes that whole minute -
+// query its END, or at-or-before would resolve onto the PREVIOUS slot
+// (snapshots are stamped 1-3s after their grid minute). Zero time = live;
+// ok=false only on malformed non-empty input.
+func gexParseAtParam(raw string, tz *time.Location) (at time.Time, canonical string, ok bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, "", true
+	}
+	if sec, err := strconv.ParseInt(raw, 10, 64); err == nil {
+		if sec <= 0 {
+			return time.Time{}, "", false
+		}
+		return time.Unix(sec, 0), raw, true
+	}
+	t, err := time.ParseInLocation(gexPageMoment, raw, tz)
+	if err != nil {
+		return time.Time{}, "", false
+	}
+	return t.Add(59 * time.Second), raw, true
+}
+
 // gexHistoryStart is the engine's first stored session (nothing exists at or
 // before any earlier moment, per the P4 handoff).
 var gexHistoryStart = time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC)
@@ -309,18 +336,11 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	now := time.Now()
 	at := now
 	latest := true
-	atParam := strings.TrimSpace(r.URL.Query().Get("at"))
-	if atParam != "" {
-		if t, err := time.ParseInLocation(gexPageMoment, atParam, tz); err == nil {
-			// The picker has minute resolution, so "14:55" denotes that whole
-			// minute - query its END. Snapshots are stamped 1-3 s AFTER their
-			// grid minute (engine contract), so asking at :00 would resolve
-			// at-or-before to the PREVIOUS slot, and the picker would
-			// disagree with the scrub slider sitting on the same minute.
-			at, latest = t.Add(59*time.Second), false
-		} else {
-			atParam = ""
-		}
+	atParam := ""
+	// Page handlers stay lenient: a malformed ?at= renders live (URLs are
+	// human-shareable); the data endpoints 400 instead.
+	if t, p, ok := gexParseAtParam(r.URL.Query().Get("at"), tz); ok && p != "" {
+		at, latest, atParam = t, false, p
 	}
 
 	data := map[string]any{
@@ -333,21 +353,9 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		"Latest":    latest,
 	}
 
-	// Scrub-slider grid: recent session slots, oldest first, plus the initial
-	// position (the last slot at or before the viewed moment; -1 = older than
-	// the window, slider then starts parked without a seeded view).
-	grid := gexSessionGrid(now)
-	if len(grid) > 1 {
-		pos := -1
-		for i, ts := range grid {
-			if ts <= at.Unix() {
-				pos = i
-			}
-		}
-		if b, err := json.Marshal(grid); err == nil {
-			data["GridJSON"] = template.JS(b)
-			data["GridPos"] = pos
-		}
+	if js, pos, ok := gexGrid(now, at); ok {
+		data["GridJSON"] = js
+		data["GridPos"] = pos
 	}
 
 	s, err := h.GEX.Snapshot(r.Context(), market, at)
@@ -414,6 +422,29 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 		h.gexAttachAnalysis(r.Context(), &v, market, s.AsOf)
 		writeJSON(w, http.StatusOK, v)
 	}
+}
+
+// gexGrid marshals the scrub slider's session grid plus the initial slider
+// position: the last slot at or before the viewed moment (-1 = older than
+// the window; the slider then starts parked without a seeded view). ok is
+// false when the grid is too short to scrub. Shared by the Overview and
+// Exposure page handlers - one grid, one scrub behavior.
+func gexGrid(now, at time.Time) (js template.JS, pos int, ok bool) {
+	grid := gexSessionGrid(now)
+	if len(grid) < 2 {
+		return "", 0, false
+	}
+	pos = -1
+	for i, ts := range grid {
+		if ts <= at.Unix() {
+			pos = i
+		}
+	}
+	b, err := json.Marshal(grid)
+	if err != nil {
+		return "", 0, false
+	}
+	return template.JS(b), pos, true
 }
 
 // gexSessionGrid returns the scrub slider's time slots: 09:50-16:00 ET in

@@ -7,6 +7,12 @@
   .gex-seg a { padding: 5px 14px; font-size: 13px; text-decoration: none; color: var(--fg-muted); }
   .gex-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
 
+  /* Time scrub: same chrome as the Overview page (see gex.html - the fixed
+     label width keeps the flex slider from resizing mid-drag). */
+  .gex-scrub { display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
+  .gex-scrub input[type=range] { flex: 1; accent-color: var(--accent); }
+  .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; width: 168px; flex: 0 0 168px; text-align: right; white-space: nowrap; }
+
   /* Chip strip: selectable profile filters left, informational expiry chips
      scrolling horizontally on the right. */
   .gxe-strip { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
@@ -32,6 +38,10 @@
   button.gxe-chip--live.on b { color: var(--accent); }
   .gxe-chip--locked { border: 0; border-left: 1px solid var(--border); border-radius: 0; opacity: 0.65; }
   .gxe-chip--locked b { color: var(--fg-muted); font-weight: 500; }
+  /* Ghost chip: a SELECTED date the currently viewed book doesn't offer
+     (scrubbed to a moment before it listed, or past its expiry). Stays
+     clickable so the selection can be dropped. */
+  button.gxe-chip--ghost { border-style: dashed; opacity: 0.75; }
 
   #gxe-chart { height: 700px; min-height: 480px; user-select: none; } /* JS stretches to the viewport bottom */
   .gxe-svg { width: 100%; display: block; }
@@ -54,11 +64,20 @@
 <div class="gex-toolbar">
   <h1 style="margin: 0;">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
-  <div class="gex-seg">
+  <div class="gex-seg" id="gxe-market-seg">
     <a href="/gex/exposure/ES{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/exposure/NQ{{.QuerySuffix}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
 </div>
+
+{{if and .GridJSON .Expo}}
+<div class="card card--compact mb-16 gex-scrub">
+  <span class="muted" style="font-size: 12px;" title="Drag, or step slot-by-slot with the ← → arrow keys">scrub · ←→</span>
+  <input type="range" id="gxe-scrub" aria-label="Scrub snapshot time">
+  <span class="muted gex-scrub-when" id="gxe-scrub-when"></span>
+  <a class="btn btn--sm" id="gxe-latest" href="/gex/exposure/{{.Market}}"{{if not .AtParam}} style="display: none;"{{end}}>Latest</a>
+</div>
+{{end}}
 
 {{if .EngineError}}
 <div class="flash error mb-16" role="alert">
@@ -112,7 +131,7 @@
 </div>
 
 <div class="card mb-16">
-  <div class="card-title">Net GEX exposure — {{$.Market}} · <span id="gxe-denom">{{.Denom}}</span> strikes · as of <span id="gxe-asof">{{.AsOfET}}</span>{{if .OIDate}} · OI {{.OIDate}}{{end}}<span id="gxe-filternote"></span>
+  <div class="card-title">Net GEX exposure — {{$.Market}} · <span id="gxe-denom">{{.Denom}}</span> strikes · as of <span id="gxe-asof">{{.AsOfET}}</span><span id="gxe-oidate">{{if .OIDate}} · OI {{.OIDate}}{{end}}</span><span id="gxe-filternote"></span>
     <span class="muted" style="float: right; font-weight: 400; font-size: 11px;">scroll zooms · drag pans · dblclick resets</span>
     {{if .Ratio}}
     <span class="gxe-filters" id="gxe-denom-seg" style="float: right; margin: 0 12px 0 0;">
@@ -127,23 +146,36 @@
     </span>
     {{end}}
   </div>
-  {{if $.LevelsNote}}<div class="muted" style="font-size: 12px; margin-bottom: 6px;">{{$.LevelsNote}}</div>{{end}}
+  <div id="gxe-levelsnote" class="muted" style="font-size: 12px; margin-bottom: 6px;{{if not .LevelsNote}} display: none;{{end}}">{{.LevelsNote}}</div>
   <div id="gxe-note" class="muted" style="font-size: 12px; margin-bottom: 6px; display: none;"></div>
   <div id="gxe-chart"></div>
 </div>
 
 <div class="muted" style="font-size: 12px;">
-  {{if .Regime}}regime {{.Regime}} · {{end}}{{if .NetTotal}}net total <span id="gxe-nettotal">{{.NetTotal}}</span> · {{end}}snapshot {{.AsOfET}}
-  {{if .Stale}} · options session closed — showing the last profile{{end}}
+  <span id="gxe-regime">{{if .Regime}}regime {{.Regime}} · {{end}}</span>{{if .NetTotal}}net total <span id="gxe-nettotal">{{.NetTotal}}</span> · {{end}}snapshot <span id="gxe-snap-asof">{{.AsOfET}}</span><span id="gxe-stale">{{if .Stale}} · options session closed — showing the last profile{{end}}</span>
 </div>
 
+<script src="/static/js/gex-chips.js"></script>
 <script>
   const gexExpoInit = {{$.ExpoJSON}};
   const GEX_EXPO_MARKET = {{$.Market}};
-  // gexExpoData is the ACTIVE blob: the page-load book, or a fetched expiry
-  // slice from /gex/exposure/data. Levels + regime always come from the
-  // page-load blob (the data endpoint doesn't carry them).
+  // gexExpoData is the ACTIVE blob: the page-load book, or a fetch from
+  // /gex/exposure/data (an expiry slice, a bucket re-aggregation, or a
+  // scrub slot). gexExpoChrome owns the page CHROME - levels, regime,
+  // today, the expiry strip and bucket options - i.e. the moment being
+  // viewed: live filter fetches never touch it (their blobs carry no
+  // levels), while at-bearing fetches (scrub slots) replace it wholesale.
   let gexExpoData = gexExpoInit;
+  let gexExpoChrome = gexExpoInit;
+  // The viewed moment: '' = live, else the ?at= wire value (unix seconds
+  // from the scrub, incl. its +120s fetch buffer; or the page-load param).
+  // Single source of truth for URL sync and data fetches.
+  const GEX_EXPO_AT0 = (function () {
+    const v = new URLSearchParams(location.search).get('at') || '';
+    return /^\d+$|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? v : '';
+  })();
+  let gexExpoAt = GEX_EXPO_AT0;
+  let gexExpoAppliedAt = GEX_EXPO_AT0; // moment the ACTIVE blob answers
   // Multi-select expiry filter: gexExpoSel is what the chips show
   // (optimistic, updated on click), gexExpoApplied is the set the ACTIVE
   // blob was fetched for - they differ only while a fetch is in flight.
@@ -215,7 +247,7 @@
     // magnitudes are denomination-free - only the price axis converts.
     const dv = gexExpoDiv();
     const ratio = gexExpoData.ratio || 0;
-    const idxName = gexExpoInit.indexName || 'index';
+    const idxName = gexExpoChrome.indexName || 'index';
     const K = (i) => p.strikes[i] / dv;
     const bw = (gexExpoData.bucketWidth || 1) / dv;
     const spot = gexExpoData.spot / dv;
@@ -343,12 +375,13 @@
       parts.push(`<text class="num${inbar ? ' inbar' : ''}" x="${tx}" y="${cy + 3.5}" text-anchor="${anchor}" fill="${color}" font-size="9.5">${txt}</text>`);
     }
 
-    // Level lines + push-down labels. They always come from the page-load
-    // blob: pick the family by the active profile, or under an expiry
-    // filter show the whole-book structure (0DTE family when the filtered
-    // date IS today - those walls belong to exactly that book). Skip the
-    // overlay entirely if a fetched slice came back in a different
-    // denomination (basis went cold between page load and click).
+    // Level lines + push-down labels. They come from the CHROME blob (the
+    // viewed moment - page load, or the scrubbed slot): pick the family by
+    // the active profile, or under an expiry filter show the whole-book
+    // structure (0DTE family when the filtered date IS the viewed day -
+    // those walls belong to exactly that book). Skip the overlay entirely
+    // if the data blob is in a different denomination than the chrome
+    // (basis went cold between the chrome's moment and the fetch).
     const placed = [];
     const styles = {
       flip:  { color: flipColor, dash: '6 4' },
@@ -360,9 +393,9 @@
       em:    { color: muted, dash: '1 4' }, /* 1Di band edges: lightest */
     };
     const levelFam = gexExpoApplied.length
-      ? (gexExpoApplied.length === 1 && gexExpoApplied[0] === gexExpoInit.today ? '0dte' : 'all')
+      ? (gexExpoApplied.length === 1 && gexExpoApplied[0] === gexExpoChrome.today ? '0dte' : 'all')
       : gexExpoKey;
-    const levels = gexExpoData.denom === gexExpoInit.denom ? (gexExpoInit.levels || []) : [];
+    const levels = gexExpoData.denom === gexExpoChrome.denom ? (gexExpoChrome.levels || []) : [];
     levels.forEach((l) => {
       if (l.family !== levelFam) return;
       const lv = l.v / dv;
@@ -526,10 +559,18 @@
     if (!wrap) return;
     const strip = document.getElementById('gxe-expiries');
     const note = document.getElementById('gxe-note');
-    const legacyChip = strip ? strip.querySelector('button[data-chip-prof]') : null;
     const dseg = document.getElementById('gxe-denom-seg');
     const bseg = document.getElementById('gxe-bucket-seg');
-    let fetchSeq = 0;
+    // Per-tuple blob cache: key = at|expiry-set|bucket. Never invalidated -
+    // a (moment, filter) pair is immutable upstream, and size is bounded by
+    // what a human actually visits (revisits repaint instantly, incl. after
+    // toggling a chip mid-scrub). inflightKey enforces a single in-flight
+    // fetch; on landing it re-pumps toward the CURRENT desired state, so
+    // dragging the scrub never queues a backlog (the Overview pattern).
+    const blobCache = new Map();
+    let inflightKey = null;
+    function tupleKey(at, sel, bkt) { return at + '|' + sel.join(',') + '|' + (bkt || 0); }
+    blobCache.set(tupleKey(GEX_EXPO_AT0, [], 0), gexExpoInit);
 
     function setNote(msg) {
       if (!note) return;
@@ -542,8 +583,11 @@
     }
     function syncChrome() {
       wrap.querySelectorAll('button').forEach((x) => x.classList.toggle('on', !gexExpoSel.length && x.dataset.prof === gexExpoKey));
-      if (strip) strip.querySelectorAll('button[data-chip-exp]').forEach((x) => x.classList.toggle('on', gexExpoSel.indexOf(x.dataset.chipExp) !== -1));
-      if (legacyChip) legacyChip.classList.toggle('on', gexExpoKey === '0dte' || gexExpoKey === '0dte_vol');
+      if (strip) {
+        strip.querySelectorAll('button[data-chip-exp]').forEach((x) => x.classList.toggle('on', gexExpoSel.indexOf(x.dataset.chipExp) !== -1));
+        const legacy = strip.querySelector('button[data-chip-prof]');
+        if (legacy) legacy.classList.toggle('on', gexExpoKey === '0dte' || gexExpoKey === '0dte_vol');
+      }
       // Denomination readout + toggle: index mode only exists while the
       // active blob carries a ratio (a fetched slice could lose the basis).
       const r = gexExpoData.ratio || 0;
@@ -552,9 +596,19 @@
         dseg.style.display = r > 0 ? '' : 'none';
         dseg.querySelectorAll('button').forEach((b) => b.classList.toggle('on', (b.dataset.dn === 'idx') === idxOn));
       }
-      setText('gxe-denom', idxOn ? (gexExpoInit.indexName || 'index') : gexExpoData.denom);
+      setText('gxe-denom', idxOn ? (gexExpoChrome.indexName || 'index') : gexExpoData.denom);
       setText('gxe-asof', gexExpoData.asOfET);
       setText('gxe-nettotal', gexExpoData.netTotal);
+      setText('gxe-oidate', gexExpoChrome.oiDate ? ' · OI ' + gexExpoChrome.oiDate : '');
+      // Footer + level-note chrome follows the viewed moment.
+      setText('gxe-regime', gexExpoChrome.regime ? 'regime ' + gexExpoChrome.regime + ' · ' : '');
+      setText('gxe-snap-asof', gexExpoChrome.asOfET);
+      setText('gxe-stale', gexExpoChrome.stale ? ' · options session closed — showing the last profile' : '');
+      const ln = document.getElementById('gxe-levelsnote');
+      if (ln) {
+        ln.textContent = gexExpoChrome.levelsNote || '';
+        ln.style.display = gexExpoChrome.levelsNote ? '' : 'none';
+      }
       // Bucket seg: active = the width the ACTIVE blob was served at
       // (authoritative bucketIndex, not the optimistic request).
       if (bseg) {
@@ -564,13 +618,64 @@
       const n = gexExpoApplied.length;
       setText('gxe-filternote', n ? (n === 1 ? ' · expiry ' + gexExpoApplied[0] + ' only' : ' · ' + n + ' expiries: ' + gexExpoApplied.join(', ')) : '');
     }
+    // Rebuild the expiry strip / bucket seg from the CHROME blob - scrub
+    // slots change both (different expiry universe, different stored grid).
+    function renderExpiryChips() {
+      if (!strip || !window.gexChips) return;
+      gexChips.render(strip, gexExpoChrome.expiries || [], gexExpoSel, {
+        supportsExpiry: !!gexExpoChrome.supportsExpiry,
+      });
+    }
+    function renderBucketSeg() {
+      if (!bseg) return;
+      const opts = gexExpoChrome.bucketOpts || [];
+      const base = gexExpoChrome.bucketBase || 0;
+      bseg.textContent = '';
+      opts.forEach(function (o) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.textContent = String(o.w);
+        if (o.ok) {
+          b.dataset.bw = String(o.w);
+          b.title = 'Aggregate strikes into ' + o.w + '-point index buckets' + (o.w === base ? ' (native grid)' : '');
+        } else {
+          b.disabled = true;
+          b.title = o.w + '-point buckets need a snapshot stored on a compatible finer grid';
+        }
+        bseg.appendChild(b);
+      });
+      bseg.style.display = opts.length > 1 && gexExpoChrome.supportsExpiry ? '' : 'none';
+    }
+    // Carry the viewed moment into every navigation target: tab links and
+    // Latest reflect at; the market segment additionally carries the full
+    // filter state (the server's QuerySuffix, kept live client-side). With
+    // no at the tabs return to the BARE sticky paths - an explicit default
+    // link would let a state report wipe stored filters (_gex_tabs.html).
+    function syncMoment() {
+      const at = gexExpoAt;
+      const ov = document.getElementById('gx-tab-overview');
+      const ex = document.getElementById('gx-tab-exposure');
+      if (ov) ov.href = at ? '/gex/' + GEX_EXPO_MARKET + '?at=' + encodeURIComponent(at) : '/gex';
+      if (ex) ex.href = at ? '/gex/exposure/' + GEX_EXPO_MARKET + '?at=' + encodeURIComponent(at) : '/gex/exposure';
+      const seg = document.getElementById('gxe-market-seg');
+      if (seg) {
+        const qs = new URLSearchParams(location.search).toString();
+        seg.querySelectorAll('a').forEach((a) => {
+          a.href = '/gex/exposure/' + a.textContent.trim() + (qs ? '?' + qs : '');
+        });
+      }
+      const latest = document.getElementById('gxe-latest');
+      if (latest) latest.style.display = at ? '' : 'none';
+    }
     function syncURL() {
       const sp = new URLSearchParams(location.search);
       if (gexExpoSel.length) sp.set('expiry', gexExpoSel.join(',')); else sp.delete('expiry');
       if (gexExpoBucket) sp.set('bucket', String(gexExpoBucket)); else sp.delete('bucket');
       if (!gexExpoSel.length && gexExpoKey !== 'all') sp.set('view', gexExpoKey); else sp.delete('view');
+      if (gexExpoAt) sp.set('at', gexExpoAt); else sp.delete('at');
       const qs = sp.toString();
       history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+      syncMoment();
       reportState();
     }
     // Sticky view: report the current state (debounced, fire-and-forget;
@@ -599,72 +704,108 @@
         if (gexExpoZoom.hi < flo || gexExpoZoom.lo > fhi) gexExpoSeedZoom();
       }
     }
-    // Fetch the blob for the CURRENT (sel, bucket) state. Controls already
-    // show the optimistic state; on failure they roll back to the state
-    // the rendered blob belongs to.
-    function refetch() {
-      const sel = gexExpoSel.slice();
-      const bkt = gexExpoBucket;
-      const seq = ++fetchSeq;
-      const what = [];
-      if (sel.length) what.push(sel.join(' + ') + ' slice');
-      if (bkt) what.push(bkt + '-pt buckets');
-      setNote('loading ' + what.join(', ') + '…');
-      const sp = new URLSearchParams(location.search);
-      const qp = [];
-      if (sel.length) qp.push('expiry=' + encodeURIComponent(sel.join(',')));
-      if (bkt) qp.push('bucket=' + bkt);
-      if (sp.get('at')) qp.push('at=' + encodeURIComponent(sp.get('at')));
-      fetch('/gex/exposure/data/' + GEX_EXPO_MARKET + '?' + qp.join('&'))
-        .then((r) => r.json().then((j) => ({ ok: r.ok, j: j })))
-        .then((res) => {
-          if (seq !== fetchSeq) return; // superseded by a newer selection
-          if (!res.ok || !res.j.profiles) {
-            setNote(res.j && res.j.error ? res.j.error : 'fetch failed');
-            gexExpoSel = gexExpoApplied.slice(); // roll back the controls
-            gexExpoBucket = gexExpoAppliedBucket;
-            syncChrome();
-            return;
-          }
-          gexExpoData = res.j;
-          gexExpoApplied = sel;
-          gexExpoAppliedBucket = bkt;
-          if (sel.length) gexExpoKey = 'all'; // filtered = blend slice only
-          else if (!res.j.profiles[gexExpoKey]) gexExpoKey = 'all';
-          setNote('');
-          syncURL(); syncChrome(); carryZoom(); renderExpo();
-        })
-        .catch(function () {
-          if (seq === fetchSeq) {
-            setNote('fetch failed');
-            gexExpoSel = gexExpoApplied.slice();
-            gexExpoBucket = gexExpoAppliedBucket;
-            syncChrome();
-          }
-        });
+    // The degraded/levels note a moment-addressed blob may carry.
+    function blobNote(blob) {
+      const parts = [];
+      const d = blob.degraded || '';
+      if (d.indexOf('expiry') !== -1) parts.push('per-expiry data unavailable at this moment — showing the whole book');
+      if (d.indexOf('bucket') !== -1) parts.push('requested bucket width unavailable at this moment — showing the served grid');
+      return parts.join(' · ');
     }
-    // Bring the rendered blob in line with (sel, bucket): page blob when
-    // everything is default, no-op re-render when the blob already matches
-    // (profile switches), a fetch otherwise.
+    // Apply a landed blob for tuple t. The bookkeeping records the REQUEST
+    // the blob answers (matching the cache key), so a fallback-degraded
+    // slot keeps the selection retained - the note says what was dropped.
+    function applyTuple(blob, t) {
+      if (blob.empty) {
+        setNote(blob.error || 'no data at this moment');
+        return;
+      }
+      const denomFlip = blob.denom !== gexExpoData.denom;
+      gexExpoData = blob;
+      gexExpoApplied = t.sel.slice();
+      gexExpoAppliedBucket = t.bkt;
+      gexExpoAppliedAt = t.at;
+      // Moment-addressed blobs carry their own chrome; live blobs keep the
+      // page-load chrome (their fetches ship no levels by design).
+      const chrome = t.at ? blob : gexExpoInit;
+      if (chrome !== gexExpoChrome) {
+        gexExpoChrome = chrome;
+        renderExpiryChips();
+        renderBucketSeg();
+      }
+      if (t.sel.length) gexExpoKey = 'all'; // filtered = blend slice only
+      else if (!blob.profiles[gexExpoKey]) gexExpoKey = 'all';
+      setNote(blobNote(blob));
+      // A held zoom survives the swap unless the denomination flipped
+      // (futures <-> index across a basis boundary) - prices would be on a
+      // different scale entirely; carryZoom handles the fully-off-book case.
+      if (denomFlip) gexExpoSeedZoom(); else carryZoom();
+      syncChrome();
+      renderExpo();
+    }
+    // Fetch toward the CURRENT desired tuple: serve from cache, or run the
+    // single in-flight fetch and chase whatever is desired when it lands.
+    function pump() {
+      if (inflightKey) return; // finish() re-pumps
+      const t = { at: gexExpoAt, sel: gexExpoSel.slice(), bkt: gexExpoBucket };
+      const key = tupleKey(t.at, t.sel, t.bkt);
+      if (key === tupleKey(gexExpoAppliedAt, gexExpoApplied, gexExpoAppliedBucket)) return;
+      const hit = blobCache.get(key);
+      if (hit) { applyTuple(hit, t); return; }
+      if (!t.at) {
+        const what = [];
+        if (t.sel.length) what.push(t.sel.join(' + ') + ' slice');
+        if (t.bkt) what.push(t.bkt + '-pt buckets');
+        if (what.length) setNote('loading ' + what.join(', ') + '…');
+      }
+      inflightKey = key;
+      const qp = [];
+      if (t.sel.length) qp.push('expiry=' + encodeURIComponent(t.sel.join(',')));
+      if (t.bkt) qp.push('bucket=' + t.bkt);
+      // Moment fetches degrade server-side (fallback=1) instead of 4xxing:
+      // a scrub slot must always paint something.
+      if (t.at) { qp.push('at=' + encodeURIComponent(t.at)); qp.push('fallback=1'); }
+      fetch('/gex/exposure/data/' + GEX_EXPO_MARKET + (qp.length ? '?' + qp.join('&') : ''))
+        .then((r) => r.json().then((j) => ({ ok: r.ok, status: r.status, j: j })))
+        .then((res) => finish(t, key, res))
+        .catch(() => finish(t, key, null));
+    }
+    function finish(t, key, res) {
+      inflightKey = null;
+      if (res && res.ok && res.j && res.j.profiles) blobCache.set(key, res.j);
+      else if (res && t.at && res.status === 404) blobCache.set(key, { empty: true, error: res.j && res.j.error });
+      // (other failures are transient - not cached)
+      if (tupleKey(gexExpoAt, gexExpoSel, gexExpoBucket) !== key) { pump(); return; } // superseded: chase
+      const hit = blobCache.get(key);
+      if (hit) { applyTuple(hit, t); return; }
+      setNote(res && res.j && res.j.error ? res.j.error : 'fetch failed');
+      if (!t.at) {
+        // Live filter change failed: roll back the optimistic controls to
+        // the state the rendered blob belongs to.
+        gexExpoSel = gexExpoApplied.slice();
+        gexExpoBucket = gexExpoAppliedBucket;
+        syncURL();
+        syncChrome();
+      }
+    }
+    // Bring the rendered blob in line with the desired (at, sel, bucket)
+    // tuple: no-op re-render when the blob already matches (profile
+    // switches, scrubbing back onto the applied slot), pump otherwise.
     function reconcile() {
-      if (!gexExpoSel.length && !gexExpoBucket) {
-        fetchSeq++; // invalidate any in-flight fetch
-        gexExpoData = gexExpoInit;
-        gexExpoApplied = [];
-        gexExpoAppliedBucket = 0;
-        setNote('');
+      if (tupleKey(gexExpoAt, gexExpoSel, gexExpoBucket) === tupleKey(gexExpoAppliedAt, gexExpoApplied, gexExpoAppliedBucket)) {
+        if (!gexExpoData.profiles[gexExpoKey]) gexExpoKey = 'all';
         syncURL(); syncChrome(); carryZoom(); renderExpo();
         return;
       }
-      if (gexExpoSel.join(',') === gexExpoApplied.join(',') && gexExpoBucket === gexExpoAppliedBucket) {
-        syncURL(); syncChrome(); carryZoom(); renderExpo();
-        return;
-      }
+      syncURL();
       syncChrome(); // optimistic highlight before the fetch lands
-      refetch();
+      pump();
     }
     function selectProfile(key) {
-      if (!gexExpoInit.profiles[key]) return;
+      // Guard against the CHROME's profile set (the viewed moment's whole
+      // book): the active blob may be a filtered slice that only carries
+      // "all", but clearing the filter below restores the full set.
+      if (!(gexExpoChrome.profiles && gexExpoChrome.profiles[key])) return;
       gexExpoSel = [];
       gexExpoKey = key;
       reconcile();
@@ -681,7 +822,9 @@
       reconcile();
     }
     function selectBucket(w) {
-      gexExpoBucket = w === (gexExpoInit.bucketBase || 0) ? 0 : w;
+      // "Native" is the CURRENT chrome's stored grid (it differs across the
+      // v0.8.0 boundary while scrubbing): clicking it means back-to-default.
+      gexExpoBucket = w === (gexExpoChrome.bucketBase || 0) ? 0 : w;
       reconcile();
     }
 
@@ -689,13 +832,16 @@
       const b = e.target.closest('button[data-prof]');
       if (b) selectProfile(b.dataset.prof);
     });
+    // All chip handling is DELEGATED to the strip container: scrub slots
+    // rebuild the chips, so direct listeners would go stale.
     if (strip) strip.addEventListener('click', function (e) {
       const b = e.target.closest('button[data-chip-exp]');
-      if (b) toggleExpiry(b.dataset.chipExp);
-    });
-    if (legacyChip) legacyChip.addEventListener('click', function () {
-      const key = legacyChip.dataset.chipProf;
-      selectProfile(gexExpoKey === key ? 'all' : key);
+      if (b) { toggleExpiry(b.dataset.chipExp); return; }
+      const lp = e.target.closest('button[data-chip-prof]');
+      if (lp) {
+        const key = lp.dataset.chipProf;
+        selectProfile(gexExpoKey === key ? 'all' : key);
+      }
     });
     // FUT <-> index toggle: pure display-unit change - the zoom window
     // converts along so the viewed slice of the book stays put.
@@ -743,21 +889,83 @@
       if (!gexExpoSel.length && wv && wv !== 'all' && gexExpoInit.profiles[wv]) {
         gexExpoKey = wv;
       }
-      if (gexExpoSel.length || gexExpoBucket) {
-        syncChrome();
-        refetch();
-      } else if (gexExpoKey !== 'all') {
-        syncChrome(); carryZoom(); renderExpo();
+      if (gexExpoSel.length || gexExpoBucket || gexExpoKey !== 'all') {
+        reconcile();
       }
     }
+
+    // Time scrub over the shared session grid (slot mechanics mirror
+    // gex.html: per-slot cache via the tuple pipeline, single in-flight
+    // fetch chasing the latest slot, +120s fetch buffer). Retention is
+    // free here - the desired tuple keeps sel/bucket/view, only the
+    // moment changes per slot; the zoom window rides through applyTuple.
+    {{if $.GridJSON}}
+    (function () {
+      const grid = {{$.GridJSON}};
+      const slider = document.getElementById('gxe-scrub');
+      const when = document.getElementById('gxe-scrub-when');
+      if (!slider || grid.length < 2) return;
+      let pos = {{$.GridPos}};
+      slider.min = 0;
+      slider.max = grid.length - 1;
+      slider.value = pos >= 0 ? pos : 0;
+      const fmtET = new Intl.DateTimeFormat('en-US', {
+        timeZone: 'America/New_York',
+        month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+      });
+      function setSlot(ts) { when.textContent = fmtET.format(new Date(ts * 1000)) + ' ET'; }
+      if (pos >= 0) setSlot(grid[pos]);
+      slider.addEventListener('input', function () {
+        pos = +slider.value;
+        const ts = grid[pos];
+        setSlot(ts);
+        if (pos === grid.length - 1) {
+          // The max slot IS the live view. A page that loaded historical
+          // has no live chrome to restore - navigate into it instead.
+          if (GEX_EXPO_AT0) { location.href = '/gex/exposure/' + GEX_EXPO_MARKET; return; }
+          gexExpoAt = '';
+        } else {
+          // +120s: snapshots land a few seconds AFTER their grid point, so
+          // querying the exact slot time would at-or-before onto the
+          // previous snapshot. The buffer stays inside the 5-minute step.
+          gexExpoAt = String(ts + 120);
+        }
+        reconcile();
+      });
+      // Arrow keys scrub slot-by-slot from anywhere on the page (same
+      // guards as the Overview: not while typing, no modifiers, and not
+      // when the slider itself has focus - native handling steps it).
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+        if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return;
+        const t = e.target;
+        if (t === slider) return;
+        if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+        const cur = +slider.value;
+        const next = Math.max(0, Math.min(grid.length - 1, cur + (e.key === 'ArrowRight' ? 1 : -1)));
+        if (next === cur) return;
+        e.preventDefault();
+        slider.value = next;
+        slider.dispatchEvent(new Event('input'));
+      });
+    })();
+    {{end}}
+
     reportState(); // plain loads (market switch, first visit) stick too
   })();
 
-  // No scrub UI here; ?at= deep links render that moment statically, and
-  // the live view self-reloads (slower cadence while the session is closed).
-  if (!new URLSearchParams(location.search).get('at')) {
-    setTimeout(function () { location.reload(); }, gexExpoInit.stale ? 900000 : 300000);
-  }
+  // Live self-reload on the snapshot cadence (slower once the session is
+  // closed) - but never yank a scrub through history: reload only while
+  // the URL carries no ?at= and the slider (when present) is parked at
+  // the live slot.
+  (function schedule() {
+    setTimeout(function () {
+      const s = document.getElementById('gxe-scrub');
+      const live = !new URLSearchParams(location.search).get('at');
+      if (live && (!s || +s.value === +s.max)) { location.reload(); return; }
+      schedule();
+    }, gexExpoChrome.stale ? 900000 : 300000);
+  })();
 </script>
 {{end}}
 {{end}}

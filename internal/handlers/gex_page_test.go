@@ -175,6 +175,52 @@ func TestGEXPage(t *testing.T) {
 	if strings.Contains(body, "location.reload") {
 		t.Errorf("rewind view must not auto-refresh")
 	}
+
+	// Unix-seconds ?at= (what the scrub writes into the URL) is accepted
+	// too: the engine sees that exact instant.
+	sec := time.Date(2026, 7, 31, 21, 52, 0, 0, time.UTC).Unix()
+	rec = gexPageGet(t, h, fmt.Sprintf("/gex?at=%d", sec))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unix at = %d", rec.Code)
+	}
+	if lastAt != "2026-07-31T21:52:00Z" {
+		t.Errorf("engine at for unix param = %q", lastAt)
+	}
+	body = rec.Body.String()
+	if !strings.Contains(body, ">Latest<") || strings.Contains(body, `id="gx-latest" href="/gex/ES" style`) {
+		t.Errorf("unix rewind should show the Latest link")
+	}
+	// Moment-carry anchors: the scrub rewrites these ids client-side so a
+	// tab or market switch keeps the viewed moment.
+	for _, want := range []string{`id="gx-tab-overview"`, `id="gx-tab-exposure"`, `id="gx-market-seg"`, `id="gx-latest"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("body missing %q", want)
+		}
+	}
+}
+
+func TestGexParseAtParam(t *testing.T) {
+	tz, _ := time.LoadLocation("America/Chicago")
+	// Empty = live.
+	if at, p, ok := gexParseAtParam("", tz); !ok || p != "" || !at.IsZero() {
+		t.Errorf("empty: %v %q %v", at, p, ok)
+	}
+	// Unix seconds pass through exactly (the client owns the +120s buffer).
+	if at, p, ok := gexParseAtParam("1785503520", tz); !ok || p != "1785503520" || at.Unix() != 1785503520 {
+		t.Errorf("unix: %v %q %v", at, p, ok)
+	}
+	// Picker format: trading-TZ minute, queried at its END (+59s).
+	at, p, ok := gexParseAtParam("2026-07-31T14:55", tz)
+	want := time.Date(2026, 7, 31, 14, 55, 59, 0, tz)
+	if !ok || p != "2026-07-31T14:55" || !at.Equal(want) {
+		t.Errorf("picker: %v %q %v", at, p, ok)
+	}
+	// Junk is refused (ok=false), never silently treated as live.
+	for _, bad := range []string{"0", "-5", "12abc", "2026-07-31", "garbage"} {
+		if _, _, ok := gexParseAtParam(bad, tz); ok {
+			t.Errorf("%q accepted", bad)
+		}
+	}
 }
 
 func TestGEXPageDisabledAndErrors(t *testing.T) {

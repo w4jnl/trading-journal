@@ -160,6 +160,14 @@ func TestGEXExposurePage(t *testing.T) {
 		"not served by the engine yet",
 		`data-prof="0dte_vol"`,
 		">CALL<", "location.reload",
+		// Time scrub: shared session grid + slider + moment-carry anchors
+		// (rendered whenever history has slots, i.e. always in practice).
+		`id="gxe-scrub"`,
+		`id="gxe-scrub-when"`,
+		`id="gxe-latest"`,
+		`id="gxe-market-seg"`,
+		`id="gx-tab-overview"`,
+		"/static/js/gex-chips.js",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
@@ -251,6 +259,21 @@ func TestGEXExposurePageV070(t *testing.T) {
 	rec = gexExpoGet(t, h, "/gex/exposure/NQ?at=2026-07-31T15:50")
 	if body := rec.Body.String(); !strings.Contains(body, `href="/gex/NQ?at=2026-07-31T15%3a50"`) {
 		t.Errorf("at-mode tab link not explicit")
+	}
+
+	// Unix-seconds ?at= (the scrub's wire form) rides the QuerySuffix and
+	// shows the Latest link; live pages render it hidden.
+	rec = gexExpoGet(t, h, "/gex/exposure?at=1785503520&expiry=2026-08-21")
+	body = rec.Body.String()
+	if !strings.Contains(body, `href="/gex/exposure/NQ?at=1785503520&amp;expiry=2026-08-21"`) {
+		t.Errorf("unix-at QuerySuffix missing from market links")
+	}
+	if !strings.Contains(body, `id="gxe-latest" href="/gex/exposure/ES">`) {
+		t.Errorf("historical view should show the Latest link")
+	}
+	rec = gexExpoGet(t, h, "/gex/exposure")
+	if !strings.Contains(rec.Body.String(), `id="gxe-latest" href="/gex/exposure/ES" style="display: none;"`) {
+		t.Errorf("live view should hide the Latest link")
 	}
 }
 
@@ -377,6 +400,116 @@ func TestGEXExposureData(t *testing.T) {
 	rec = gexExpoGet(t, gh, "/gex/exposure/data/ES?expiry=2026-08-21")
 	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "unavailable for this moment") {
 		t.Errorf("no-expiry-data = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	// Malformed ?at= is a 400 here (programmatic endpoint), never a silent
+	// live view under a historical UI.
+	if rec := gexExpoGet(t, h, "/gex/exposure/data/ES?at=garbage"); rec.Code != http.StatusBadRequest {
+		t.Errorf("malformed at = %d", rec.Code)
+	}
+
+	// A moment-addressed fetch (unix at, the scrub's wire form) is a FULL
+	// moment: snapshot levels + regime ride along, chip stats come from the
+	// unfiltered book even under a filter, and stale/today anchor to the
+	// viewed moment - not the wall clock.
+	atSec := time.Date(2026, 7, 31, 19, 52, 2, 0, time.UTC).Unix()
+	rec = gexExpoGet(t, h, fmt.Sprintf("/gex/exposure/data/ES?at=%d&expiry=2026-08-21&fallback=1", atSec))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("at slot = %d: %s", rec.Code, rec.Body.String())
+	}
+	var slot struct {
+		Profiles map[string]json.RawMessage `json:"profiles"`
+		Levels   []any                      `json:"levels"`
+		Regime   string                     `json:"regime"`
+		Expiries []struct {
+			Date string `json:"date"`
+			DTE  int    `json:"dte"`
+		} `json:"expiries"`
+		Stale    bool   `json:"stale"`
+		Today    string `json:"today"`
+		Degraded string `json:"degraded"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &slot); err != nil {
+		t.Fatal(err)
+	}
+	if len(slot.Profiles) != 1 || len(slot.Levels) == 0 || slot.Regime == "" {
+		t.Errorf("slot blob: profiles=%d levels=%d regime=%q (want filtered slice + snapshot chrome)", len(slot.Profiles), len(slot.Levels), slot.Regime)
+	}
+	if len(slot.Expiries) != 3 || slot.Expiries[0].Date != "2026-07-31" || slot.Expiries[0].DTE != 0 {
+		t.Errorf("slot chips = %+v (want the unfiltered book's strip, DTE anchored at the viewed day)", slot.Expiries)
+	}
+	if slot.Stale || slot.Today != "2026-07-31" || slot.Degraded != "" {
+		t.Errorf("slot anchors: stale=%v today=%q degraded=%q", slot.Stale, slot.Today, slot.Degraded)
+	}
+
+	// fallback=1 + an unservable bucket degrades server-side: the request
+	// paints the native grid and names what was dropped, instead of 422ing
+	// (a scrub slot must always paint something).
+	rec = gexExpoGet(t, h, fmt.Sprintf("/gex/exposure/data/ES?at=%d&bucket=7&fallback=1", atSec))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("fallback bucket = %d: %s", rec.Code, rec.Body.String())
+	}
+	var deg struct {
+		Degraded    string  `json:"degraded"`
+		BucketIndex float64 `json:"bucketIndex"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &deg); err != nil {
+		t.Fatal(err)
+	}
+	if deg.Degraded != "bucket" || deg.BucketIndex != 10 {
+		t.Errorf("degraded bucket: %+v", deg)
+	}
+
+	// fallback=1 + missing per-expiry data drops the filter instead: whole
+	// book, degraded "expiry", selection preserved client-side.
+	fb := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/v1/profile/") {
+			if r.URL.Query().Get("expiry") != "" {
+				http.Error(w, `{"detail":"no per-expiry data for this snapshot"}`, http.StatusNotFound)
+				return
+			}
+			fmt.Fprint(w, gexProfileJSONV070(""))
+			return
+		}
+		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02.722581Z"))
+	}))
+	defer fb.Close()
+	fc, _ := gex.New(gex.Options{BaseURL: fb.URL})
+	fh := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: fc}
+	rec = gexExpoGet(t, fh, fmt.Sprintf("/gex/exposure/data/ES?at=%d&expiry=2026-08-21&fallback=1", atSec))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("fallback expiry = %d: %s", rec.Code, rec.Body.String())
+	}
+	var fdeg struct {
+		Degraded string                     `json:"degraded"`
+		Profiles map[string]json.RawMessage `json:"profiles"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &fdeg); err != nil {
+		t.Fatal(err)
+	}
+	if fdeg.Degraded != "expiry" || len(fdeg.Profiles) != 3 {
+		t.Errorf("degraded expiry: %q, profiles=%d", fdeg.Degraded, len(fdeg.Profiles))
+	}
+	// Without fallback the same request keeps the honest 404.
+	rec = gexExpoGet(t, fh, fmt.Sprintf("/gex/exposure/data/ES?at=%d&expiry=2026-08-21", atSec))
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("no-fallback = %d, want 404", rec.Code)
+	}
+}
+
+// Chip DTE math anchors to the VIEWED moment, so historical strips read as
+// that day did (a scrubbed Sep-1 book shows its own 0d, not today's).
+func TestGexBuildExpiryChips(t *testing.T) {
+	tz := time.UTC
+	decay := map[string]float64{"2026-08-21": 1e9, "2026-08-24": -1e9}
+	chips := gexBuildExpiryChips(decay, time.Date(2026, 8, 21, 14, 0, 0, 0, tz), tz)
+	if len(chips) != 2 || chips[0].DTE != 0 || chips[1].DTE != 3 {
+		t.Fatalf("chips = %+v", chips)
+	}
+	chips = gexBuildExpiryChips(decay, time.Date(2026, 8, 24, 14, 0, 0, 0, tz), tz)
+	if chips[0].DTE != -3 || chips[1].DTE != 0 {
+		t.Errorf("historical anchor: %+v", chips)
 	}
 }
 

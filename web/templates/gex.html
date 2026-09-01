@@ -73,17 +73,19 @@
 <div class="gex-toolbar">
   <h1 style="margin: 0;">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
-  <div class="gex-seg">
+  <div class="gex-seg" id="gx-market-seg">
     <a href="/gex/ES{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/NQ{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
   {{/* Explicit market here too: the bare /gex path is the sticky entry
-       point, and "Latest" on ES must not bounce to a stored NQ view. */}}
+       point, and "Latest" on ES must not bounce to a stored NQ view.
+       Latest is always in the DOM (hidden when live) so the scrub can
+       show it without a reload. */}}
   <form method="get" action="/gex/{{.Market}}">
     <label class="label" for="gex-at">As of</label>
     <input type="datetime-local" id="gex-at" name="at" value="{{.AtValue}}">
     <button type="submit" class="btn btn--sm">Go</button>
-    {{if not .Latest}}<a class="btn btn--sm" href="/gex/{{.Market}}">Latest</a>{{end}}
+    <a class="btn btn--sm" id="gx-latest" href="/gex/{{.Market}}"{{if .Latest}} style="display: none;"{{end}}>Latest</a>
   </form>
 </div>
 
@@ -1148,6 +1150,30 @@
     }
     if (pos >= 0) setSlot(grid[pos]);
 
+    // Carry the viewed moment: rewrite the URL, tab links, market segment
+    // and Latest button per slot so a tab or market switch mid-scrub lands
+    // on the same moment. The max slot IS the live view - links go back to
+    // the bare sticky paths (an explicit default link would let a state
+    // report wipe stored filters; see _gex_tabs.html). at carries the +120s
+    // fetch buffer so a reload resolves to the same snapshot, not the
+    // previous one.
+    function gexSyncMoment(ts) {
+      const at = ts == null ? '' : String(ts + 120);
+      const sp = new URLSearchParams(location.search);
+      if (at) sp.set('at', at); else sp.delete('at');
+      const qs = sp.toString();
+      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+      const ov = $id('gx-tab-overview'), ex = $id('gx-tab-exposure');
+      if (ov) ov.href = at ? '/gex/{{.Market}}?at=' + at : '/gex';
+      if (ex) ex.href = at ? '/gex/exposure/{{.Market}}?at=' + at : '/gex/exposure';
+      const seg = $id('gx-market-seg');
+      if (seg) seg.querySelectorAll('a').forEach((a) => {
+        a.href = '/gex/' + a.textContent.trim() + (at ? '?at=' + at : '');
+      });
+      const latest = $id('gx-latest');
+      if (latest) latest.style.display = at ? '' : 'none';
+    }
+
     let inflight = false;
     let wanted = 0;
     function request(ts) {
@@ -1173,6 +1199,7 @@
       pos = +slider.value;
       const ts = grid[pos];
       setSlot(ts);
+      gexSyncMoment(pos === grid.length - 1 ? null : ts);
       const v = cache.get(ts);
       if (v) {
         if (v.empty) { when.textContent = 'no snapshot'; return; }
