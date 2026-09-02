@@ -561,6 +561,11 @@ func run() error {
 	mux.HandleFunc("POST /settings/api-keys", h.APIKeyCreate)
 	mux.HandleFunc("POST /settings/api-keys/{id}/revoke", h.APIKeyRevoke)
 	mux.HandleFunc("POST /settings/api-keys/{id}/delete", h.APIKeyDelete)
+	// In-app API reference (API.md rendered) + a session-auth alias for the
+	// OpenAPI document so the page's link works in a browser; /api/v1/openapi.json
+	// itself stays key-gated for machines.
+	mux.HandleFunc("GET /settings/api-docs", h.APIDocsPage)
+	mux.HandleFunc("GET /settings/api-docs/openapi.json", h.APIOpenAPI)
 	mux.HandleFunc("POST /settings/language", h.SettingsLanguageSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)

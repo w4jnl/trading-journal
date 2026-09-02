@@ -327,7 +327,8 @@
   <p class="muted" style="font-size: 12px;">
     Generate a key to use the read/append HTTP API at <code>/api/v1</code>. Keys grant full
     access to your own data; revoke any you no longer use. Start at
-    <code>GET /api/v1</code> for the endpoint index.
+    <code>GET /api/v1</code> for the endpoint index; the full reference is under
+    <a href="/settings/api-docs">API docs</a>.
   </p>
 
   <form method="post" action="/settings/api-keys" class="row-sm" style="margin: 10px 0; gap: 8px; flex-wrap: wrap;">
@@ -377,7 +378,14 @@
   <details style="margin-top: 14px;">
     <summary class="muted" style="cursor: pointer; font-size: 12px;">Usage example</summary>
     <pre style="padding: 10px; margin-top: 8px; background: var(--bg-sunken); border-radius: 6px; overflow-x: auto; font-size: 12px;">curl -H "Authorization: Bearer tj_..." \
-  https://YOUR_HOST/api/v1/journal?scope=day&amp;limit=5</pre>
+  https://YOUR_HOST/api/v1/journal?scope=day&amp;limit=5
+
+# daily P&amp;L + trade stats (the Calendar's numbers), inclusive dates
+curl -H "Authorization: Bearer tj_..." \
+  https://YOUR_HOST/api/v1/stats/daily?from=2026-08-01&amp;to=2026-08-31
+
+# change detection: poll, refetch when the value differs
+curl -H "Authorization: Bearer tj_..." https://YOUR_HOST/api/v1/version</pre>
   </details>
 </div>
 {{end}}
