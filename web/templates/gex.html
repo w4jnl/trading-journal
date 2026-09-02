@@ -664,8 +664,12 @@
       parts.push(`<text class="colhead" x="${x + colW / 2}" y="${padT - 5}" text-anchor="middle">${col.key}</text>`);
       if (col.flip != null) {
         const yf = yClamp(col.flip);
-        if (yf - padT > 0.5) parts.push(`<rect x="${x}" y="${padT}" width="${colW}" height="${yf - padT}" fill="${rgba(c.pos, 0.16)}"><title>${col.key}: ${posTip}</title></rect>`);
-        if (H - padB - yf > 0.5) parts.push(`<rect x="${x}" y="${yf}" width="${colW}" height="${H - padB - yf}" fill="${rgba(c.neg, 0.16)}"><title>${col.key}: ${negTip}</title></rect>`);
+        // Saturated tints (0.16 originally, then 0.28 - both still read as
+        // pale washes) plus a solid flip line at the transition itself,
+        // which is the level being read off.
+        if (yf - padT > 0.5) parts.push(`<rect x="${x}" y="${padT}" width="${colW}" height="${yf - padT}" fill="${rgba(c.pos, 0.45)}"><title>${col.key}: ${posTip}</title></rect>`);
+        if (H - padB - yf > 0.5) parts.push(`<rect x="${x}" y="${yf}" width="${colW}" height="${H - padB - yf}" fill="${rgba(c.neg, 0.45)}"><title>${col.key}: ${negTip}</title></rect>`);
+        if (yf - padT > 0.5 && H - padB - yf > 0.5) parts.push(`<line x1="${x}" y1="${yf}" x2="${x + colW}" y2="${yf}" stroke="${flipColor}" stroke-width="1.5"/>`);
       } else {
         parts.push(`<rect x="${x}" y="${padT}" width="${colW}" height="${H - padT - padB}" fill="${rgba(muted, 0.08)}"><title>no ${col.key} flip in this snapshot</title></rect>`);
       }
