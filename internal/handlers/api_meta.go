@@ -11,6 +11,29 @@ import (
 //go:embed api_openapi.json
 var apiOpenAPISpec []byte
 
+// apiIndexEndpoints is the hand-maintained discovery index. It is one of
+// four documentation surfaces (with the OpenAPI spec, API.md and README);
+// TestAPISurfaceDocsInSync keeps the first three in step.
+var apiIndexEndpoints = []map[string]string{
+	{"method": "GET", "path": "/api/v1/openapi.json", "summary": "OpenAPI 3 spec"},
+	{"method": "GET", "path": "/api/v1/version", "summary": "Data version for change detection (poll; refetch on any change)"},
+	{"method": "GET", "path": "/api/v1/stats/daily", "summary": "Daily P&L + trade stats per trading day, with range totals (the Calendar's numbers)"},
+	{"method": "GET", "path": "/api/v1/strategies", "summary": "List strategies"},
+	{"method": "GET", "path": "/api/v1/strategies/{id}", "summary": "Strategy detail (name + full markdown)"},
+	{"method": "GET", "path": "/api/v1/journal", "summary": "List journal entries"},
+	{"method": "POST", "path": "/api/v1/journal", "summary": "Create an entry (day/week/trade/group)"},
+	{"method": "POST", "path": "/api/v1/journal/prepare-day", "summary": "Cluster a day's trades + create the journal entries to analyze"},
+	{"method": "GET", "path": "/api/v1/journal/{id}", "summary": "Journal entry detail"},
+	{"method": "POST", "path": "/api/v1/journal/{id}/notes", "summary": "Append a dated note (append-only)"},
+	{"method": "POST", "path": "/api/v1/journal/{id}/strategy", "summary": "Assign a strategy (only if the entry has none; never overwrites)"},
+	{"method": "POST", "path": "/api/v1/journal/{id}/tag", "summary": "Set a tag good|neutral|bad (only if the entry has none; never overwrites)"},
+	{"method": "GET", "path": "/api/v1/journal/{id}/chart.png", "summary": "Rendered chart PNG"},
+	{"method": "GET", "path": "/api/v1/trades", "summary": "List trades (filtered, paged)"},
+	{"method": "GET", "path": "/api/v1/trades/{id}", "summary": "Trade detail (fills + chart)"},
+	{"method": "GET", "path": "/api/v1/trades/{id}/chart.png", "summary": "Rendered trade chart PNG"},
+	{"method": "GET", "path": "/api/v1/attachments/{id}", "summary": "Fetch an embedded image"},
+}
+
 // APIIndex: GET /api/v1 - a discovery index (behind key auth; no anonymous access).
 func (h *Handlers) APIIndex(w http.ResponseWriter, r *http.Request) {
 	u := auth.MustUser(r.Context())
@@ -18,24 +41,8 @@ func (h *Handlers) APIIndex(w http.ResponseWriter, r *http.Request) {
 		"service":         "trading-journal-api",
 		"version":         "v1",
 		"authenticatedAs": map[string]any{"id": u.ID, "username": u.Username},
-		"endpoints": []map[string]string{
-			{"method": "GET", "path": "/api/v1/openapi.json", "summary": "OpenAPI 3 spec"},
-			{"method": "GET", "path": "/api/v1/strategies", "summary": "List strategies"},
-			{"method": "GET", "path": "/api/v1/strategies/{id}", "summary": "Strategy detail (name + full markdown)"},
-			{"method": "GET", "path": "/api/v1/journal", "summary": "List journal entries"},
-			{"method": "POST", "path": "/api/v1/journal", "summary": "Create an entry (day/week/trade/group)"},
-			{"method": "POST", "path": "/api/v1/journal/prepare-day", "summary": "Cluster a day's trades + create the journal entries to analyze"},
-			{"method": "GET", "path": "/api/v1/journal/{id}", "summary": "Journal entry detail"},
-			{"method": "POST", "path": "/api/v1/journal/{id}/notes", "summary": "Append a dated note (append-only)"},
-			{"method": "POST", "path": "/api/v1/journal/{id}/strategy", "summary": "Assign a strategy (only if the entry has none; never overwrites)"},
-			{"method": "POST", "path": "/api/v1/journal/{id}/tag", "summary": "Set a tag good|neutral|bad (only if the entry has none; never overwrites)"},
-			{"method": "GET", "path": "/api/v1/journal/{id}/chart.png", "summary": "Rendered chart PNG"},
-			{"method": "GET", "path": "/api/v1/trades", "summary": "List trades (filtered, paged)"},
-			{"method": "GET", "path": "/api/v1/trades/{id}", "summary": "Trade detail (fills + chart)"},
-			{"method": "GET", "path": "/api/v1/trades/{id}/chart.png", "summary": "Rendered trade chart PNG"},
-			{"method": "GET", "path": "/api/v1/attachments/{id}", "summary": "Fetch an embedded image"},
-		},
-		"openapi": "/api/v1/openapi.json",
+		"endpoints":       apiIndexEndpoints,
+		"openapi":         "/api/v1/openapi.json",
 	})
 }
 

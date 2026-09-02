@@ -3,7 +3,10 @@ package handlers
 import (
 	"encoding/json"
 	"net/http/httptest"
+	"strings"
 	"testing"
+
+	tj "github.com/w4jnl/trading-journal"
 )
 
 // TestAPIOpenAPIServerURL verifies that the served OpenAPI spec carries an ABSOLUTE
@@ -53,7 +56,7 @@ func TestAPIOpenAPIServerURL(t *testing.T) {
 	for _, want := range []string{
 		"prepareDay", "listTrades", "getTrade", "listJournal", "getJournalEntry",
 		"createJournalEntry", "appendNote", "assignStrategy", "setTag",
-		"listStrategies", "getStrategy",
+		"listStrategies", "getStrategy", "getDailyStats", "getVersion",
 	} {
 		if !got[want] {
 			t.Errorf("missing operationId %q", want)
@@ -64,5 +67,39 @@ func TestAPIOpenAPIServerURL(t *testing.T) {
 	schemes := d["components"].(map[string]any)["securitySchemes"].(map[string]any)
 	if len(schemes) != 1 {
 		t.Errorf("want exactly 1 security scheme, got %d (%v)", len(schemes), schemes)
+	}
+}
+
+// TestAPISurfaceDocsInSync guards the documentation-drift class the API has
+// already suffered once (three endpoints lived in the mux, index and spec but
+// not in API.md): every path in the discovery index must be in the OpenAPI
+// spec (the spec's own path aside) AND be mentioned literally in API.md, and
+// every spec path must be in the index. Prose can still drift; paths cannot.
+func TestAPISurfaceDocsInSync(t *testing.T) {
+	var spec struct {
+		Paths map[string]any `json:"paths"`
+	}
+	if err := json.Unmarshal(apiOpenAPISpec, &spec); err != nil {
+		t.Fatal(err)
+	}
+	doc := string(tj.APIDoc)
+	indexed := map[string]bool{}
+	for _, e := range apiIndexEndpoints {
+		p := e["path"]
+		indexed[p] = true
+		if p == "/api/v1/openapi.json" {
+			continue
+		}
+		if _, ok := spec.Paths[strings.TrimPrefix(p, "/api/v1")]; !ok {
+			t.Errorf("index path %s missing from api_openapi.json", p)
+		}
+		if !strings.Contains(doc, p) {
+			t.Errorf("index path %s not documented in API.md", p)
+		}
+	}
+	for p := range spec.Paths {
+		if !indexed["/api/v1"+p] {
+			t.Errorf("spec path %s missing from the discovery index", p)
+		}
 	}
 }
