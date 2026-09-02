@@ -27,7 +27,9 @@ const (
 // gexCanonicalViewURL rebuilds the stored URL from validated parts. The
 // market segment is always explicit (that is what makes the bare-entry
 // redirect loop-free). A view key only makes sense without an expiry
-// filter - a filter forces the blend slice.
+// filter - a filter forces the blend slice. The Overview stores expiry +
+// view but never bucket: its bin control is client-side re-binning,
+// persisted in localStorage, not a server param.
 func gexCanonicalViewURL(page, market string, expiries []string, bucket int, view string) string {
 	base := "/gex"
 	if page == gexPrefExposure {
@@ -35,16 +37,14 @@ func gexCanonicalViewURL(page, market string, expiries []string, bucket int, vie
 	}
 	base += "/" + market
 	q := url.Values{}
-	if page == gexPrefExposure {
-		if len(expiries) > 0 {
-			q.Set("expiry", strings.Join(expiries, ","))
-		}
-		if bucket > 0 {
-			q.Set("bucket", strconv.Itoa(bucket))
-		}
-		if view != "" && len(expiries) == 0 {
-			q.Set("view", view)
-		}
+	if len(expiries) > 0 {
+		q.Set("expiry", strings.Join(expiries, ","))
+	}
+	if view != "" && len(expiries) == 0 {
+		q.Set("view", view)
+	}
+	if page == gexPrefExposure && bucket > 0 {
+		q.Set("bucket", strconv.Itoa(bucket))
 	}
 	if len(q) > 0 {
 		base += "?" + q.Encode()

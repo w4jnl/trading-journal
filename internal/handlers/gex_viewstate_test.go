@@ -58,12 +58,25 @@ func TestGEXViewStateSave(t *testing.T) {
 		t.Errorf("overwrite = %q", got)
 	}
 
-	// Overview stores the market only, whatever else is sent.
+	// Overview stores expiry + view but NEVER bucket (its bin control is
+	// client-side localStorage), with the same filter-drops-view rule.
 	gexExpoPost(t, h, "/gex/viewstate", url.Values{
 		"page": {"gex_overview"}, "market": {"NQ"}, "bucket": {"25"},
 	})
 	if got := pref("gex_overview"); got != "/gex/NQ" {
 		t.Errorf("overview = %q", got)
+	}
+	gexExpoPost(t, h, "/gex/viewstate", url.Values{
+		"page": {"gex_overview"}, "market": {"NQ"}, "expiry": {"2026-08-22"}, "view": {"0dte"}, "bucket": {"25"},
+	})
+	if got := pref("gex_overview"); got != "/gex/NQ?expiry=2026-08-22" {
+		t.Errorf("overview filtered = %q", got)
+	}
+	gexExpoPost(t, h, "/gex/viewstate", url.Values{
+		"page": {"gex_overview"}, "market": {"ES"}, "view": {"0dte_vol"},
+	})
+	if got := pref("gex_overview"); got != "/gex/ES?view=0dte_vol" {
+		t.Errorf("overview view = %q", got)
 	}
 
 	// Junk 400s and never touches the stored rows.
@@ -122,6 +135,13 @@ func TestGEXStickyRedirect(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/gex/NQ" {
 		t.Errorf("bare overview = %d -> %q", rec.Code, rec.Header().Get("Location"))
 	}
+	// A filtered Overview view restores too (view dropped under the filter
+	// by canonicalization, bucket never stored).
+	seed("gex_overview", "/gex/NQ?expiry=2026-08-22&view=0dte")
+	rec = gexExpoGet(t, h, "/gex")
+	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/gex/NQ?expiry=2026-08-22" {
+		t.Errorf("bare filtered overview = %d -> %q", rec.Code, rec.Header().Get("Location"))
+	}
 
 	// Explicit market or any query wins over the stored view.
 	if rec := gexExpoGet(t, h, "/gex/exposure/ES"); rec.Code != http.StatusOK {
@@ -159,7 +179,11 @@ func TestGexCanonicalViewURL(t *testing.T) {
 		bucket             int
 		want               string
 	}{
-		{gexPrefOverview, "NQ", "0dte", []string{"2026-08-22"}, 25, "/gex/NQ"}, // overview: market only
+		{gexPrefOverview, "ES", "", nil, 0, "/gex/ES"},
+		// Overview stores expiry + view (a filter drops the view, like the
+		// Exposure rule) but NEVER bucket - its bin control is client-side.
+		{gexPrefOverview, "NQ", "0dte", []string{"2026-08-22"}, 25, "/gex/NQ?expiry=2026-08-22"},
+		{gexPrefOverview, "NQ", "0dte", nil, 0, "/gex/NQ?view=0dte"},
 		{gexPrefExposure, "ES", "", nil, 0, "/gex/exposure/ES"},
 		{gexPrefExposure, "ES", "0dte_vol", nil, 0, "/gex/exposure/ES?view=0dte_vol"},
 		{gexPrefExposure, "NQ", "0dte", []string{"2026-08-22"}, 50, "/gex/exposure/NQ?bucket=50&expiry=2026-08-22"}, // filter drops view

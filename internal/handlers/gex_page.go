@@ -8,6 +8,7 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -157,6 +158,58 @@ type gexMagnet struct {
 	Gex string  `json:"gex"`
 }
 
+// gexChartProfile is one selectable per-strike slice of the profile chart
+// (from the engine's /v1/profile views, keyed like the Exposure tab:
+// all/0dte/0dte_vol). Strikes are denominated like gexChart.Strikes - the
+// chart's own conversion ratio, so the wall/flip lines stay exactly on the
+// bars - and NativeW is the served bucket width in INDEX points, feeding
+// the client-side re-binning exactly like gexChart.NativeW.
+type gexChartProfile struct {
+	Strikes []float64 `json:"strikes"`
+	Gex     []float64 `json:"gex"`
+	NativeW float64   `json:"nativeW"`
+}
+
+// gexBuildChartProfiles maps the profile-detail views onto chart slices in
+// ch's denomination. Filtered responses carry only the blend view, so the
+// map then has just "all" - which is exactly the Exposure tab's rule (a
+// filter forces the blend slice). nil when nothing well-formed is served.
+func gexBuildChartProfiles(pd *gex.ProfileDetail, ch gexChart) map[string]gexChartProfile {
+	if pd == nil {
+		return nil
+	}
+	ratio := 1.0
+	if ch.Ratio > 0 {
+		ratio = ch.Ratio
+	}
+	out := make(map[string]gexChartProfile, 3)
+	add := func(key, engineKey string) {
+		ps, ok := pd.Profiles[engineKey]
+		if !ok {
+			return
+		}
+		n := len(ps.StrikesIndex)
+		if n < 2 || len(ps.NetGex) != n {
+			return // malformed or degenerate: skip rather than chart nonsense
+		}
+		strikes := ps.StrikesIndex
+		if ratio != 1.0 {
+			strikes = make([]float64, n)
+			for i, v := range ps.StrikesIndex {
+				strikes[i] = v * ratio
+			}
+		}
+		out[key] = gexChartProfile{Strikes: strikes, Gex: ps.NetGex, NativeW: pd.BucketWidth}
+	}
+	add("all", "blend")
+	add("0dte", "0dte")
+	add("0dte_vol", "0dte_vol")
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
 // gexDTERow is one band of the GEX-by-DTE tile.
 type gexDTERow struct {
 	Label string `json:"label"`
@@ -217,24 +270,66 @@ func gexBuildDTE(pd *gex.ProfileDetail, prev *gex.ProfileDetail, now time.Time, 
 	return rows
 }
 
-// gexFetchDTE fetches the profile (and its ~1h-earlier sibling for the
-// delta column) and buckets expiry_decay by DTE. Best effort: any error
-// just shrinks the result (nil = tile renders its empty state) - the page
-// must never fail because /v1/profile did.
-func (h *Handlers) gexFetchDTE(ctx context.Context, market string, at, ref time.Time, tz *time.Location) []gexDTERow {
+// gexFetchProfiles fetches the profile (and its ~1h-earlier sibling for
+// the DTE tile's delta column), returning the DTE rows AND the unfiltered
+// profile itself - the same fetch feeds the chart's profile slices and the
+// expiry chip strip for free. Best effort: any error just shrinks the
+// result (nil = empty states) - the page must never fail because
+// /v1/profile did.
+func (h *Handlers) gexFetchProfiles(ctx context.Context, market string, at, ref time.Time, tz *time.Location) ([]gexDTERow, *gex.ProfileDetail) {
 	q := gex.ProfileQuery{}
 	if !at.IsZero() {
 		q.At = at
 	}
 	pd, err := h.GEX.ProfileDetail(ctx, market, q)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	prev, err := h.GEX.ProfileDetail(ctx, market, gex.ProfileQuery{At: ref.Add(-time.Hour)})
 	if err != nil {
 		prev = nil
 	}
-	return gexBuildDTE(pd, prev, ref, tz)
+	return gexBuildDTE(pd, prev, ref, tz), pd
+}
+
+// gexAttachProfileSurface fills a view's /v1/profile-sourced surface: the
+// DTE tile, the expiry chip strip (always the UNFILTERED book's stats, DTE
+// anchored at ref), the capability flag, and the selectable chart profile
+// slices - narrowed to exps when a filter is on. The filter affects ONLY
+// ChartProfiles: tiles, ladder and levels are whole-book snapshot
+// artifacts the engine cannot filter. Best effort throughout; a filter the
+// engine cannot serve for this moment empty-states the chart alone via
+// ChartUnavailable.
+func (h *Handlers) gexAttachProfileSurface(ctx context.Context, v *gexView, market string, at, ref time.Time, exps []string, tz *time.Location) {
+	dte, pd := h.gexFetchProfiles(ctx, market, at, ref, tz)
+	v.DTE = dte
+	if pd == nil {
+		return
+	}
+	v.SupportsExpiry = pd.SupportsExpiry
+	v.Expiries = gexBuildExpiryChips(pd.ExpiryDecay, ref, tz)
+	if len(exps) == 0 || !pd.SupportsExpiry {
+		// A filter against a pre-v0.7.0 engine is not silently dropped
+		// data: the chips render locked there, so nothing offered it.
+		v.ChartProfiles = gexBuildChartProfiles(pd, v.Chart)
+		return
+	}
+	q := gex.ProfileQuery{Expiries: exps}
+	if !at.IsZero() {
+		q.At = at
+	}
+	fpd, err := h.GEX.ProfileDetail(ctx, market, q)
+	switch {
+	case err == nil:
+		v.ChartProfiles = gexBuildChartProfiles(fpd, v.Chart)
+	case errors.Is(err, gex.ErrNoExpiryData):
+		v.ChartUnavailable = "per-expiry breakdown unavailable for this moment (snapshot predates engine v0.7.0 or is past retention)"
+	case errors.Is(err, gex.ErrExpiryUnsupported):
+		v.ChartUnavailable = "the engine predates v0.7.0 — expiry filtering needs an engine upgrade/restart"
+	default:
+		h.logger().Warn("gex page: filtered profile fetch failed", "market", market, "err", err)
+		v.ChartUnavailable = "filtered profile fetch failed"
+	}
 }
 
 // gexView is the pre-formatted view model for one snapshot, shared verbatim
@@ -291,6 +386,17 @@ type gexView struct {
 	Chart      gexChart       `json:"chart"`
 	Ladder     gexLadder      `json:"ladder"`
 	HasProfile bool           `json:"hasProfile"`
+	// The profile card's filter surface (all /v1/profile-sourced, so all
+	// best-effort): the expiry chip strip, whether the engine serves
+	// per-expiry filtering, the selectable chart slices (all/0dte/
+	// 0dte_vol; just "all" under a filter), and - when a filter cannot be
+	// served for this moment - why the CHART alone is empty. The filter
+	// never touches tiles/ladder/levels: those are whole-book snapshot
+	// artifacts the engine cannot filter.
+	SupportsExpiry   bool                       `json:"supportsExpiry"`
+	Expiries         []gexExpoExpiry            `json:"expiries,omitempty"`
+	ChartProfiles    map[string]gexChartProfile `json:"chartProfiles,omitempty"`
+	ChartUnavailable string                     `json:"chartUnavailable,omitempty"`
 	// AsOfParam identifies the snapshot for the AI-read endpoint, as
 	// RFC3339Nano. It must keep SUB-SECOND precision: as_of lands a fraction
 	// of a second past its grid mark (19:00:02.501055Z), so a value truncated
@@ -343,6 +449,17 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		at, latest, atParam = t, false, p
 	}
 
+	// Filter params (lenient like at: malformed values are dropped, the
+	// page renders unfiltered). The client validates its own restore too.
+	exps, ok := gexExpoExpiriesParam(r)
+	if !ok {
+		exps = nil
+	}
+	viewKey, ok := gexParseView(r.URL.Query().Get("view"))
+	if !ok {
+		viewKey = ""
+	}
+
 	data := map[string]any{
 		"NavActive": "gex",
 		"BackHref":  validBackHref(r),
@@ -351,6 +468,21 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		"AtParam":   atParam,
 		"AtValue":   at.In(tz).Format(gexPageMoment), // picker prefill
 		"Latest":    latest,
+	}
+	// Market-switch links carry the moment + filter along, like the
+	// Exposure tab (the client keeps them in sync via replaceState).
+	qs := url.Values{}
+	if atParam != "" {
+		qs.Set("at", atParam)
+	}
+	if len(exps) > 0 {
+		qs.Set("expiry", strings.Join(exps, ","))
+	}
+	if viewKey != "" && len(exps) == 0 {
+		qs.Set("view", viewKey)
+	}
+	if len(qs) > 0 {
+		data["QuerySuffix"] = "?" + qs.Encode()
 	}
 
 	if js, pos, ok := gexGrid(now, at); ok {
@@ -376,7 +508,7 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		if latest {
 			atOrZero = time.Time{}
 		}
-		view.DTE = h.gexFetchDTE(r.Context(), market, atOrZero, ref, h.localTZ())
+		h.gexAttachProfileSurface(r.Context(), &view, market, atOrZero, ref, exps, h.localTZ())
 		h.gexAttachAnalysis(r.Context(), &view, market, s.AsOf)
 		data["View"] = view
 		data["SessionClosed"] = latest && view.Stale
@@ -408,6 +540,15 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	at := time.Unix(sec, 0)
+	// Malformed expiry is a 400 like the Exposure data endpoint - never a
+	// silent whole book presented under a filtered UI. A filter the engine
+	// cannot serve for this MOMENT is different: a 200 whose chart alone is
+	// empty (ChartUnavailable) - scrub slots must always paint.
+	exps, ok := gexExpoExpiriesParam(r)
+	if !ok {
+		writeJSONError(w, http.StatusBadRequest, "invalid expiry date; expected YYYY-MM-DD (comma-separated for a set)")
+		return
+	}
 
 	s, err := h.GEX.Snapshot(r.Context(), market, at)
 	switch {
@@ -418,7 +559,7 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadGateway, "gex-engine unreachable")
 	default:
 		v := gexBuildView(s, at)
-		v.DTE = h.gexFetchDTE(r.Context(), market, at, at, h.localTZ())
+		h.gexAttachProfileSurface(r.Context(), &v, market, at, at, exps, h.localTZ())
 		h.gexAttachAnalysis(r.Context(), &v, market, s.AsOf)
 		writeJSON(w, http.StatusOK, v)
 	}
