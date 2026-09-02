@@ -16,6 +16,11 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m := http.NewServeMux()
 	m.HandleFunc("GET /api/v1", h.APIIndex)
 	m.HandleFunc("GET /api/v1/openapi.json", h.APIOpenAPI)
+	// Change detection for consumer apps: the same in-memory version the
+	// HTML pages poll, reachable with a key (the /data/version route sits
+	// behind the session chain).
+	m.HandleFunc("GET /api/v1/version", h.DataVersion)
+	m.HandleFunc("GET /api/v1/stats/daily", h.APIStatsDaily)
 	m.HandleFunc("GET /api/v1/strategies", h.APIStrategiesList)
 	m.HandleFunc("GET /api/v1/strategies/{id}", h.APIStrategyDetail)
 	m.HandleFunc("GET /api/v1/journal", h.APIJournalList)
