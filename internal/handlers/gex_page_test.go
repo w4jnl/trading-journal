@@ -130,10 +130,29 @@ func TestGEXPage(t *testing.T) {
 		`"emiHigh":7557.51`, // ladder: intraday band (published futures)
 		"Intraday EM low",   // table row label
 		`"cwvGex":"+1.9B flow"`,
+		// Profile-card filter surface (tab unification PR2): view seg +
+		// chip host + shared renderer in the markup; the blob carries the
+		// chart slices (chart-denominated) and the chip strip. This fake's
+		// profile has no expiry_filter key, so filtering is unsupported.
+		`id="gx-view-seg"`,
+		`id="gx-expiries"`,
+		"/static/js/gex-chips.js",
+		`"supportsExpiry":false`,
+		`"chartProfiles":{"0dte":{"strikes":[7478.31`, // 7450 x 1.0038, like the chart
+		`"nativeW":10`,                                // slice width from the profile's bucket_width
+		`"expiries":[{"date":"2026-07-31"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
 		}
+	}
+	// The market segment carries the filter (QuerySuffix, like the Exposure
+	// tab); a view under a filter is dropped.
+	if rec := gexPageGet(t, h, "/gex?expiry=2026-08-21&view=0dte"); !strings.Contains(rec.Body.String(), `href="/gex/NQ?expiry=2026-08-21"`) {
+		t.Errorf("filter QuerySuffix missing from market links")
+	}
+	if rec := gexPageGet(t, h, "/gex?view=0dte"); !strings.Contains(rec.Body.String(), `href="/gex/NQ?view=0dte"`) {
+		t.Errorf("view QuerySuffix missing from market links")
 	}
 	// The bucket guard end-to-end: the fixture lists the 0DTE call wall
 	// (7538.54) FIRST, but the ladder/chart wall stays the all-book one.
@@ -556,6 +575,89 @@ func TestGEXData(t *testing.T) {
 	h.GEX, _ = gex.New(gex.Options{BaseURL: srvDown.URL})
 	if rec := get("/gex/data/ES?at=1785526202"); rec.Code != http.StatusBadGateway {
 		t.Errorf("engine down = %d", rec.Code)
+	}
+
+	// The expiry filter narrows ONLY the chart slices. A malformed set
+	// 400s; a valid one reaches the engine and the served map shrinks to
+	// the blend slice, while the chips still describe the unfiltered book.
+	if rec := get("/gex/data/ES?at=1785526202&expiry=zzz"); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad expiry = %d", rec.Code)
+	}
+	v070, v070Query := gexExpoEngineV070(t)
+	defer v070.Close()
+	h.GEX, _ = gex.New(gex.Options{BaseURL: v070.URL, APIKey: "test"})
+	rec = get("/gex/data/ES?at=1785526202&expiry=2026-08-21")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("filtered = %d: %s", rec.Code, rec.Body.String())
+	}
+	var fv struct {
+		SupportsExpiry bool                       `json:"supportsExpiry"`
+		ChartProfiles  map[string]json.RawMessage `json:"chartProfiles"`
+		Expiries       []struct{ Date string }    `json:"expiries"`
+		Regime         string                     `json:"regime"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &fv); err != nil {
+		t.Fatal(err)
+	}
+	if !fv.SupportsExpiry || len(fv.ChartProfiles) != 1 || fv.ChartProfiles["all"] == nil {
+		t.Errorf("filtered surface: supports=%v profiles=%d", fv.SupportsExpiry, len(fv.ChartProfiles))
+	}
+	if len(fv.Expiries) != 3 || fv.Regime != "positive" {
+		t.Errorf("chips=%d regime=%q (chips from the unfiltered book; tiles untouched by the filter)", len(fv.Expiries), fv.Regime)
+	}
+	if q := v070Query(); !strings.Contains(q, "expiry=2026-08-21") {
+		t.Errorf("filter not forwarded: %q", q)
+	}
+
+	// A moment without per-expiry data keeps painting: 200 with the chart
+	// alone empty-stated, everything else intact (scrub slots must paint).
+	gone := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/v1/profile/") {
+			if r.URL.Query().Get("expiry") != "" {
+				http.Error(w, `{"detail":"no per-expiry data for this snapshot"}`, http.StatusNotFound)
+				return
+			}
+			fmt.Fprint(w, gexProfileJSONV070(""))
+			return
+		}
+		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
+	}))
+	defer gone.Close()
+	h.GEX, _ = gex.New(gex.Options{BaseURL: gone.URL})
+	rec = get("/gex/data/ES?at=1785526202&expiry=2026-08-21")
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || !strings.Contains(body, `"chartUnavailable":"per-expiry breakdown unavailable`) || strings.Contains(body, `"chartProfiles"`) || !strings.Contains(body, `"regime":"positive"`) {
+		t.Errorf("chartUnavailable path: %d %s", rec.Code, body)
+	}
+}
+
+// Chart slices are cut in the CHART's denomination (wall lines stay on
+// their bars); malformed views are skipped, nil profile yields nil.
+func TestGexBuildChartProfiles(t *testing.T) {
+	pd := &gex.ProfileDetail{
+		BucketWidth: 10,
+		Profiles: map[string]gex.ProfileSet{
+			"blend":    {StrikesIndex: []float64{7300, 7530}, NetGex: []float64{-3.9e9, 1.08e10}},
+			"0dte":     {StrikesIndex: []float64{7450, 7530}, NetGex: []float64{1e9, 2e9}},
+			"0dte_vol": {StrikesIndex: []float64{7450, 7530}, NetGex: []float64{1e9}}, // mismatched: dropped
+		},
+	}
+	cps := gexBuildChartProfiles(pd, gexChart{Ratio: 1.0038})
+	if len(cps) != 2 {
+		t.Fatalf("keys = %v", cps)
+	}
+	if got := cps["all"].Strikes[0]; got != 7300*1.0038 {
+		t.Errorf("scaled strike = %v", got)
+	}
+	if cps["all"].NativeW != 10 || cps["0dte"].Gex[1] != 2e9 {
+		t.Errorf("nativeW/gex: %+v", cps)
+	}
+	if got := gexBuildChartProfiles(pd, gexChart{})["all"].Strikes[0]; got != 7300 {
+		t.Errorf("index-denominated chart must pass strikes through: %v", got)
+	}
+	if gexBuildChartProfiles(nil, gexChart{}) != nil {
+		t.Errorf("nil pd must yield nil")
 	}
 }
 

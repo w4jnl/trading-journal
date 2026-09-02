@@ -63,6 +63,25 @@
   .gex-ladder-layers button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .gex-ladder-layers button:disabled { opacity: 0.4; cursor: default; border-style: dashed; }
 
+  /* Expiry chip strip in the profile card: mirrors the Exposure tab's chip
+     CSS (gex_exposure.html) - the chips themselves are built by the shared
+     /static/js/gex-chips.js renderer, so markup and classes match. */
+  .gxe-expiries { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
+  .gxe-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; font-size: 11px; white-space: nowrap; border-radius: var(--r-sm); }
+  .gxe-chip b { font-size: 11px; line-height: 1.2; color: var(--fg); font-weight: 600; }
+  .gxe-chip .gxe-chip-nums { display: flex; align-items: baseline; gap: 5px; line-height: 1.2; }
+  .gxe-chip .num { font-size: 10px; }
+  .gxe-chip .gxe-pct { font-size: 10px; color: var(--fg-muted); }
+  .gxe-chip--pos .num { color: var(--pos); }
+  .gxe-chip--neg .num { color: var(--neg); }
+  button.gxe-chip--live { border: 1px solid var(--border); background: none; cursor: pointer; text-align: left; font: inherit; }
+  button.gxe-chip--live:hover { border-color: var(--accent); }
+  button.gxe-chip--live.on { border-color: var(--accent); background: var(--accent-soft); }
+  button.gxe-chip--live.on b { color: var(--accent); }
+  .gxe-chip--locked { border: 0; border-left: 1px solid var(--border); border-radius: 0; opacity: 0.65; }
+  .gxe-chip--locked b { color: var(--fg-muted); font-weight: 500; }
+  button.gxe-chip--ghost { border-style: dashed; opacity: 0.75; }
+
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
   [data-theme="dark"] .u-legend { color: var(--fg); }
   [data-theme="dark"] .u-axis { color: var(--fg-muted); }
@@ -74,8 +93,8 @@
   <h1 style="margin: 0;">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
   <div class="gex-seg" id="gx-market-seg">
-    <a href="/gex/ES{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
-    <a href="/gex/NQ{{if .AtParam}}?at={{.AtParam}}{{end}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
+    <a href="/gex/ES{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
+    <a href="/gex/NQ{{.QuerySuffix}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
   {{/* Explicit market here too: the bare /gex path is the sticky entry
        point, and "Latest" on ES must not bounce to a stored NQ view.
@@ -178,9 +197,20 @@
          swallows its clicks. Flex children stay in-flow. */}}
     <div class="card-title" style="display: flex; align-items: center; gap: 12px; flex-wrap: wrap;">
       <span style="flex: 1 1 auto;">Net GEX profile — {{.Market}} · <span id="gx-chart-denom">{{.View.Chart.Denom}}</span> strikes · as of <span id="gx-chart-asof">{{.View.AsOfET}}</span></span>
+      <span class="gex-ladder-layers" id="gx-view-seg" style="margin: 0; display: none;">
+        <button type="button" data-view="all" title="Whole blended book">All</button>
+        <button type="button" data-view="0dte" title="Today's expiring book (OI-weighted)">0DTE</button>
+        <button type="button" data-view="0dte_vol" title="Today's book re-weighted by session volume">0DTE·vol</button>
+      </span>
       <span class="gex-ladder-layers" id="gx-bin-seg" style="margin: 0;"></span>
       <span class="muted" style="font-weight: 400; font-size: 11px; flex: 0 0 auto;">drag-select zooms all views · dblclick resets</span>
     </div>
+    {{/* Expiry filter chips - scoped to THIS card on purpose: the engine
+         cannot filter the snapshot artifacts (tiles/ladder/levels), so the
+         controls sit on the one chart they affect. Built client-side by
+         gex-chips.js from the view blob; empty until the first sync. */}}
+    <div class="gxe-expiries" id="gx-expiries" style="margin: 0 0 6px; display: none;"></div>
+    <div id="gx-chart-note" class="muted" style="font-size: 12px; margin-bottom: 6px; display: none;"></div>
     <!-- Hosts are taller than their charts: uPlot renders its legend as a
          sibling below the canvas, and a tight host lets it spill into the
          next block. -->
@@ -242,6 +272,7 @@
 <div class="muted" style="font-size: 12px;" id="gx-conv">{{.View.ConvLine}} · snapshot {{.View.AsOfET}}</div>
 
 {{template "uplot_assets" .}}
+<script src="/static/js/gex-chips.js"></script>
 <script>
   // The initial view model is rendered into the page as inline JSON by the
   // handler; the scrub slider fetches sibling moments from /gex/data and
@@ -267,6 +298,32 @@
   let gexAsOfParam = gexInit.asOfParam;
   let gexStale = !!gexInit.stale;
   const $id = (id) => document.getElementById(id);
+
+  // Profile-card filter state (PR2 of the tab unification): the expiry
+  // multi-select + view seg narrow ONLY the profile/cumulative charts -
+  // tiles, ladder and levels are whole-book snapshot artifacts the engine
+  // cannot filter. gexCurrent is the applied view blob (init, or a fetched
+  // slot); gexAtStr mirrors the viewed moment into the URL ('' = live).
+  let gexCurrent = gexInit;
+  let gexSel = [];        // expiry filter, ISO dates (optimistic)
+  let gexSelApplied = []; // set the applied blob answers
+  let gexViewKey = 'all'; // chart profile slice: all | 0dte | 0dte_vol
+  let gexAtStr = (function () {
+    const v = new URLSearchParams(location.search).get('at') || '';
+    return /^\d+$|^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(v) ? v : '';
+  })();
+  // Per-(slot, filter) view cache + single in-flight fetch chasing the
+  // latest wanted state - shared by the scrub slider and the chip clicks so
+  // the two can never race each other.
+  const gexViewCache = new Map();
+  let gexInflightKey = null;
+  let gexWantedTs = 0;
+  let gexGridRef = null; // the scrub grid, when this page has one
+  // Debounce handle for the sticky-view report. Declared HERE with the rest
+  // of the state, not next to gexReportState: the boot code below calls it
+  // before that point in the file, and a later `let` is a temporal-dead-
+  // zone ReferenceError that silently kills the rest of the script.
+  let gexReportT = null;
 
   // The scrub label's stamp. One format everywhere, so the label's length
   // never changes as it moves between a slot and the snapshot it resolved to.
@@ -869,15 +926,36 @@
     gexSyncChartsToLadder();
   }
 
+  // Restore the profile-card filter from the URL (each part validated
+  // against what the blob actually offers), then apply it to the chart
+  // arrays BEFORE the first build. The init blob already reflects a
+  // server-rendered filter, so applied state starts in sync.
+  (function () {
+    const sp = new URLSearchParams(location.search);
+    if (gexInit.supportsExpiry) {
+      const dates = {};
+      (gexInit.expiries || []).forEach((e) => { dates[e.date] = true; });
+      const want = (sp.get('expiry') || '')
+        .split(',')
+        .map((d) => d.trim().replace(/[^0-9-]/g, ''))
+        .filter((d) => d && dates[d]);
+      gexSel = Array.from(new Set(want)).sort();
+      gexSelApplied = gexSel.slice();
+    }
+    const wv = (sp.get('view') || '').replace(/[^a-z0-9_]/g, '');
+    if (!gexSel.length && wv && wv !== 'all' && gexInit.chartProfiles && gexInit.chartProfiles[wv]) {
+      gexViewKey = wv;
+    }
+  })();
+  gexApplyChartSelection();
+  gexSyncChips();
   gexSyncBinSeg();
   gexGuarded(buildCharts);
 
-  // Sticky view: remember this market for bare /gex links (any browser or
-  // device). Historical views (?at=) never overwrite the saved live view;
-  // CSRF comes from the base fetch patch.
-  if (!new URLSearchParams(location.search).get('at')) {
-    fetch('/gex/viewstate', { method: 'POST', body: new URLSearchParams({ page: 'gex_overview', market: {{.Market}} }) }).catch(function () { /* best effort */ });
-  }
+  // Sticky view: the load state sticks too (market switches, first visits).
+  // gexReportState bails under ?at= - historical browsing must never
+  // overwrite the saved live view.
+  gexReportState();
   renderLadder();
   uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
 
@@ -1024,6 +1102,177 @@
 
   // applyView repaints every server-formatted field of the page from one
   // /gex/data view model (the same shape the server rendered inline).
+  // Re-point the chart arrays at the selected profile slice of the applied
+  // view. Under a filter only the blend slice exists (Exposure's rule); a
+  // filter the engine cannot serve for this moment empty-states the chart
+  // alone, with the reason in the note - showing the whole book under a
+  // filtered UI would be worse than showing nothing.
+  function gexApplyChartSelection() {
+    const cps = gexCurrent.chartProfiles;
+    const note = $id('gx-chart-note');
+    if (note) {
+      note.textContent = gexCurrent.chartUnavailable || '';
+      note.style.display = gexCurrent.chartUnavailable ? '' : 'none';
+    }
+    const segEl = $id('gx-view-seg');
+    if (segEl) segEl.style.display = cps ? '' : 'none';
+    if (gexCurrent.chartUnavailable) {
+      gexData.strikes = [];
+      gexData.gex = [];
+      return;
+    }
+    if (!cps) return; // legacy blob: the snapshot-sourced arrays stay
+    const p = cps[gexSel.length ? 'all' : (cps[gexViewKey] ? gexViewKey : 'all')];
+    if (!p) return;
+    gexData.strikes = p.strikes;
+    gexData.gex = p.gex;
+    gexData.nativeW = p.nativeW;
+  }
+  // Chip strip + view-seg highlight for the applied blob's moment.
+  function gexSyncChips() {
+    const host = $id('gx-expiries');
+    if (host && window.gexChips) {
+      const exps = gexCurrent.expiries || [];
+      host.style.display = exps.length || gexSel.length ? '' : 'none';
+      gexChips.render(host, exps, gexSel, { supportsExpiry: gexCurrent.supportsExpiry !== false });
+    }
+    const segEl = $id('gx-view-seg');
+    if (segEl) segEl.querySelectorAll('button[data-view]').forEach((b) => {
+      b.classList.toggle('on', !gexSel.length && b.dataset.view === gexViewKey);
+    });
+  }
+  function gexRefreshCharts() {
+    gexSyncBinSeg();
+    gexGuarded(() => {
+      if (gexChart && gexCumChart && gexData.strikes.length > 1) {
+        const pp = gexProfSeries();
+        gexChart.setData([pp.strikes, pp.gex]);
+        gexCumChart.setData([gexData.strikes, gexCumulative()]);
+      } else {
+        buildCharts();
+      }
+    });
+    gexSyncChartsToLadder(); // setData/rebuild reset x to auto; reapply the window
+  }
+  function gexSelectView(key) {
+    const cps = gexCurrent.chartProfiles || {};
+    if (key !== 'all' && !cps[key] && !gexSel.length) return;
+    const hadSel = gexSel.length > 0;
+    gexSel = [];
+    gexViewKey = key;
+    gexSyncURL();
+    gexSyncChips();
+    if (hadSel) { gexRequestView(gexCurrentTs()); return; } // filtered blob lacks the full set
+    gexApplyChartSelection();
+    gexRefreshCharts();
+  }
+  function gexToggleExpiry(d) {
+    const i = gexSel.indexOf(d);
+    if (i === -1) { gexSel.push(d); gexSel.sort(); } else { gexSel.splice(i, 1); }
+    gexSyncChips(); // optimistic
+    gexSyncURL();
+    gexRequestView(gexCurrentTs());
+  }
+  // The slot the page is currently on: the scrub position when a grid
+  // exists, else derived from the snapshot on screen (the fetch adds +120s,
+  // so subtract to land just past the snapshot itself).
+  function gexCurrentTs() {
+    const sl = $id('gx-scrub');
+    if (gexGridRef && sl) return gexGridRef[+sl.value];
+    return Math.floor(Date.parse(gexAsOfParam) / 1000) - 119;
+  }
+  // Fetch (or serve from cache) the view for slot ts under the CURRENT
+  // filter. One in-flight request chases the latest wanted state, so
+  // dragging never queues a backlog and a chip click can't race a scrub.
+  function gexRequestView(ts) {
+    gexWantedTs = ts;
+    const key = ts + '|' + gexSel.join(',');
+    const hit = gexViewCache.get(key);
+    if (hit) { gexApplyOrEmpty(hit); return; }
+    if (gexInflightKey) return; // completion re-chases
+    gexInflightKey = key;
+    const sel = gexSel.join(',');
+    // +120s: snapshots land a few seconds AFTER their grid point, so
+    // querying the exact slot time would at-or-before onto the previous
+    // snapshot. The buffer stays well inside the 5-minute step.
+    fetch('/gex/data/{{.Market}}?at=' + (ts + 120) + (sel ? '&expiry=' + encodeURIComponent(sel) : ''))
+      .then((r) => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
+      .then((v) => gexViewCache.set(key, v))
+      .catch(() => { /* transient or 4xx: not cached, handled below */ })
+      .finally(() => {
+        gexInflightKey = null;
+        if (gexWantedTs + '|' + gexSel.join(',') !== key) { gexRequestView(gexWantedTs); return; }
+        const v = gexViewCache.get(key);
+        if (v) { gexApplyOrEmpty(v); return; }
+        const when = $id('gx-scrub-when');
+        if (when) when.textContent = 'fetch failed';
+        if (gexSel.join(',') !== gexSelApplied.join(',')) {
+          // A changed filter that failed rolls back; a scrub slot that
+          // failed just reports and stays put.
+          gexSel = gexSelApplied.slice();
+          gexSyncChips();
+          gexSyncURL();
+        }
+      });
+  }
+  function gexApplyOrEmpty(v) {
+    if (v && !v.empty) { applyView(v); return; }
+    const when = $id('gx-scrub-when');
+    if (when) when.textContent = 'no snapshot';
+  }
+  // One URL writer for the whole page state: moment + filter + view into
+  // location (replaceState) and every navigation target - tab links carry
+  // the moment (bare sticky paths when live), the market segment the full
+  // state - then the debounced sticky-view report.
+  function gexSyncURL() {
+    const sp = new URLSearchParams(location.search);
+    if (gexSel.length) sp.set('expiry', gexSel.join(',')); else sp.delete('expiry');
+    if (!gexSel.length && gexViewKey !== 'all') sp.set('view', gexViewKey); else sp.delete('view');
+    if (gexAtStr) sp.set('at', gexAtStr); else sp.delete('at');
+    const qs = sp.toString();
+    history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+    const ov = $id('gx-tab-overview'), ex = $id('gx-tab-exposure');
+    if (ov) ov.href = gexAtStr ? '/gex/{{.Market}}?at=' + encodeURIComponent(gexAtStr) : '/gex';
+    if (ex) ex.href = gexAtStr ? '/gex/exposure/{{.Market}}?at=' + encodeURIComponent(gexAtStr) : '/gex/exposure';
+    const seg = $id('gx-market-seg');
+    if (seg) seg.querySelectorAll('a').forEach((a) => {
+      a.href = '/gex/' + a.textContent.trim() + (qs ? '?' + qs : '');
+    });
+    const latest = $id('gx-latest');
+    if (latest) latest.style.display = gexAtStr ? '' : 'none';
+    gexReportState();
+  }
+  // Sticky view: report market + filter + view (debounced, fire-and-forget;
+  // CSRF from the base fetch patch) so bare /gex links restore it from any
+  // browser. Historical browsing (?at=) never reports.
+  function gexReportState() {
+    if (new URLSearchParams(location.search).get('at')) return;
+    clearTimeout(gexReportT);
+    gexReportT = setTimeout(function () {
+      fetch('/gex/viewstate', { method: 'POST', body: new URLSearchParams({
+        page: 'gex_overview',
+        market: {{.Market}},
+        expiry: gexSel.join(','),
+        view: !gexSel.length && gexViewKey !== 'all' ? gexViewKey : '',
+      }) }).catch(function () { /* best effort */ });
+    }, 600);
+  }
+  // Filter interactions (all delegated - the chip strip rebuilds per view).
+  (function () {
+    const segEl = $id('gx-view-seg');
+    if (segEl) segEl.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-view]');
+      if (b) gexSelectView(b.dataset.view);
+    });
+    const host = $id('gx-expiries');
+    if (host) host.addEventListener('click', (e) => {
+      const b = e.target.closest('button[data-chip-exp]');
+      if (b) { gexToggleExpiry(b.dataset.chipExp); return; }
+      const lp = e.target.closest('button[data-chip-prof]');
+      if (lp) gexSelectView(gexViewKey === lp.dataset.chipProf ? 'all' : lp.dataset.chipProf);
+    });
+  })();
+
   function applyView(v) {
     if (!v || v.empty) return;
     const regime = $id('gx-regime');
@@ -1102,6 +1351,13 @@
     syncPicker(snapAt.getTime() / 1000);
 
     Object.assign(gexData, v.chart);
+    // The filter surface rides every view: adopt the blob, re-point the
+    // chart arrays at the selected slice, rebuild the chips for this
+    // moment (their per-day stats change slot to slot).
+    gexCurrent = v;
+    gexSelApplied = gexSel.slice();
+    gexApplyChartSelection();
+    gexSyncChips();
     // A held zoom survives scrubbing (prices are comparable slot to slot),
     // but resets when it stops making sense: spot drifted out of the window,
     // or the denomination flipped (index vs futures - same digits, different
@@ -1114,17 +1370,7 @@
     gexLadderData = v.ladder;
     $id('gx-ladder-denom').textContent = (v.ladder && v.ladder.denom) || '';
     renderLadder();
-    gexSyncBinSeg();
-    gexGuarded(() => {
-      if (gexChart && gexCumChart && v.hasProfile) {
-        const pp = gexProfSeries();
-        gexChart.setData([pp.strikes, pp.gex]);
-        gexCumChart.setData([gexData.strikes, gexCumulative()]);
-      } else {
-        buildCharts();
-      }
-    });
-    gexSyncChartsToLadder(); // setData/rebuild reset x to auto; reapply the window
+    gexRefreshCharts();
   }
 
   {{if .GridJSON}}
@@ -1138,13 +1384,18 @@
     const slider = $id('gx-scrub');
     const when = $id('gx-scrub-when');
     if (!slider || grid.length < 2) return;
+    gexGridRef = grid;
     let pos = {{.GridPos}};
     slider.min = 0;
     slider.max = grid.length - 1;
     slider.value = pos >= 0 ? pos : 0;
 
-    const cache = new Map();
-    if (pos >= 0 && gexInit && gexInit.chart) cache.set(grid[pos], gexInit);
+    // Seed the shared view cache with the page-load blob under its true
+    // (slot, filter) key - the init blob already reflects a server-rendered
+    // filter, so the key includes it.
+    if (pos >= 0 && gexInit && gexInit.chart) {
+      gexViewCache.set(grid[pos] + '|' + gexSel.join(','), gexInit);
+    }
 
     // Immediate feedback while dragging; applyView corrects both to the
     // snapshot that the slot actually resolved to once the fetch lands.
@@ -1154,63 +1405,17 @@
     }
     if (pos >= 0) setSlot(grid[pos]);
 
-    // Carry the viewed moment: rewrite the URL, tab links, market segment
-    // and Latest button per slot so a tab or market switch mid-scrub lands
-    // on the same moment. The max slot IS the live view - links go back to
-    // the bare sticky paths (an explicit default link would let a state
-    // report wipe stored filters; see _gex_tabs.html). at carries the +120s
-    // fetch buffer so a reload resolves to the same snapshot, not the
-    // previous one.
-    function gexSyncMoment(ts) {
-      const at = ts == null ? '' : String(ts + 120);
-      const sp = new URLSearchParams(location.search);
-      if (at) sp.set('at', at); else sp.delete('at');
-      const qs = sp.toString();
-      history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
-      const ov = $id('gx-tab-overview'), ex = $id('gx-tab-exposure');
-      if (ov) ov.href = at ? '/gex/{{.Market}}?at=' + at : '/gex';
-      if (ex) ex.href = at ? '/gex/exposure/{{.Market}}?at=' + at : '/gex/exposure';
-      const seg = $id('gx-market-seg');
-      if (seg) seg.querySelectorAll('a').forEach((a) => {
-        a.href = '/gex/' + a.textContent.trim() + (at ? '?at=' + at : '');
-      });
-      const latest = $id('gx-latest');
-      if (latest) latest.style.display = at ? '' : 'none';
-    }
-
-    let inflight = false;
-    let wanted = 0;
-    function request(ts) {
-      wanted = ts;
-      if (inflight) return;
-      inflight = true;
-      // +120s: snapshots land a few seconds AFTER their grid point, so
-      // querying the exact slot time would at-or-before onto the previous
-      // snapshot. The buffer stays well inside the 5-minute step.
-      fetch('/gex/data/{{.Market}}?at=' + (ts + 120))
-        .then((r) => { if (!r.ok) throw new Error('status ' + r.status); return r.json(); })
-        .then((v) => cache.set(ts, v))
-        .catch(() => cache.set(ts, { empty: true }))
-        .finally(() => {
-          inflight = false;
-          if (wanted !== ts) { request(wanted); return; }
-          const v = cache.get(ts);
-          if (v && v.empty) { when.textContent = 'no snapshot'; return; }
-          applyView(v);
-        });
-    }
     slider.addEventListener('input', () => {
       pos = +slider.value;
       const ts = grid[pos];
       setSlot(ts);
-      gexSyncMoment(pos === grid.length - 1 ? null : ts);
-      const v = cache.get(ts);
-      if (v) {
-        if (v.empty) { when.textContent = 'no snapshot'; return; }
-        applyView(v);
-        return;
-      }
-      request(ts);
+      // Carry the viewed moment: the max slot IS the live view, so at
+      // drops and the tab links return to the bare sticky paths; any other
+      // slot rides the URL (with the +120s fetch buffer baked in, so a
+      // reload resolves to the same snapshot, not the previous one).
+      gexAtStr = pos === grid.length - 1 ? '' : String(ts + 120);
+      gexSyncURL();
+      gexRequestView(ts);
     });
 
     // Arrow keys scrub slot-by-slot from anywhere on the page - no need
