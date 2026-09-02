@@ -707,3 +707,50 @@ func (h *Handlers) resolveAccountFilter(r *http.Request) (accountFilter, error) 
 	}
 	return af, nil
 }
+
+// bridgeLegacyAccountID maps the legacy singular ?account_id=N onto the
+// multi-select ?filter=acc:N form BEFORE resolveAccountFilter runs, so old
+// bookmarks, calendar links and API clients keep working. Returns r itself
+// when there is nothing to bridge.
+func bridgeLegacyAccountID(r *http.Request) *http.Request {
+	legacy := strings.TrimSpace(r.URL.Query().Get("account_id"))
+	if legacy == "" {
+		return r
+	}
+	r2 := *r
+	r2.URL = cloneURL(r.URL)
+	q := r2.URL.Query()
+	q.Add("filter", "acc:"+legacy)
+	r2.URL.RawQuery = q.Encode()
+	return &r2
+}
+
+// accountAdmission is the stats account rule as ONE predicate, built from
+// the same three sources Calendar/Analytics use: retired accounts never
+// count; with an explicit filter only the named accounts count (an empty
+// resolved filter admits nothing - "show none", never everything);
+// otherwise every account except the excluded_from_stats ones.
+type accountAdmission struct {
+	active   bool
+	allowed  map[int64]bool
+	retired  map[int64]bool
+	excluded map[int64]bool
+}
+
+func newAccountAdmission(af accountFilter, retired, excluded map[int64]bool) accountAdmission {
+	a := accountAdmission{active: af.Active, allowed: map[int64]bool{}, retired: retired, excluded: excluded}
+	for _, id := range af.AccountIDs {
+		a.allowed[id] = true
+	}
+	return a
+}
+
+func (a accountAdmission) admits(accountID int64) bool {
+	if a.retired[accountID] {
+		return false
+	}
+	if a.active {
+		return a.allowed[accountID]
+	}
+	return !a.excluded[accountID]
+}
