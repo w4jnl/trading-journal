@@ -8,13 +8,15 @@
      where reporting is off and the moment must carry over) do the links
      go explicit market + at. */}}
 {{define "gex_tabs"}}
+{{/* The ids are rewritten client-side while scrubbing (gexSyncMoment on
+     both pages), so the viewed moment follows a tab switch. */}}
 <div class="gex-seg">
   {{if .AtParam}}
-  <a href="/gex/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
-  <a href="/gex/exposure/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
+  <a id="gx-tab-overview" href="/gex/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
+  <a id="gx-tab-exposure" href="/gex/exposure/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
   {{else}}
-  <a href="/gex" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
-  <a href="/gex/exposure" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
+  <a id="gx-tab-overview" href="/gex" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
+  <a id="gx-tab-exposure" href="/gex/exposure" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
   {{end}}
 </div>
 {{end}}

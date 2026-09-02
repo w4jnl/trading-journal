@@ -104,6 +104,12 @@ type gexExpo struct {
 	BucketIndex float64            `json:"bucketIndex"`
 	BucketBase  int                `json:"bucketBase"`
 	BucketOpts  []gexExpoBucketOpt `json:"bucketOpts"`
+	// Data-endpoint extras (omitempty keeps live blobs byte-stable):
+	// LevelsNote flags a degraded moment-addressed response (snapshot fetch
+	// failed, so no level lines); Degraded names the narrowing params a
+	// fallback=1 request dropped ("bucket", "expiry", or both).
+	LevelsNote string `json:"levelsNote,omitempty"`
+	Degraded   string `json:"degraded,omitempty"`
 }
 
 // gexExpoBucketOpt is one width in the bucket control.
@@ -133,21 +139,6 @@ func gexBucketOpts(base int) []gexExpoBucketOpt {
 		opts = append([]gexExpoBucketOpt{{W: base, Ok: true}}, opts...)
 	}
 	return opts
-}
-
-// gexExpoAt parses the shared ?at= page param (datetime-local format in the
-// trading TZ, same as the Overview scrub). Zero time = live. The +59s keeps
-// minute-resolution input at-or-before-consistent with the snapshot grid.
-func gexExpoAt(r *http.Request, tz *time.Location) (at time.Time, atParam string) {
-	atParam = strings.TrimSpace(r.URL.Query().Get("at"))
-	if atParam == "" {
-		return time.Time{}, ""
-	}
-	t, err := time.ParseInLocation(gexPageMoment, atParam, tz)
-	if err != nil {
-		return time.Time{}, ""
-	}
-	return t.Add(59 * time.Second), atParam
 }
 
 // gexParseExpiries validates a comma-separated set of ISO dates (the
@@ -234,13 +225,30 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	tz := h.localTZ()
-	at, atParam := gexExpoAt(r, tz)
+	now := time.Now()
+	// Lenient like GEXPage: malformed ?at= renders live.
+	var at time.Time
+	atParam := ""
+	if t, p, ok := gexParseAtParam(r.URL.Query().Get("at"), tz); ok && p != "" {
+		at, atParam = t, p
+	}
+	// ref is the moment being VIEWED - chip DTE labels, the Today used for
+	// the 0DTE level family, and Stale are all relative to it, so a
+	// historical render reads as that day did, not as today does.
+	ref := at
+	if ref.IsZero() {
+		ref = now
+	}
 	data := map[string]any{
 		"NavActive": "gex",
 		"BackHref":  validBackHref(r),
 		"Market":    market,
 		"GexTab":    "exposure",
 		"AtParam":   atParam,
+	}
+	if js, pos, ok := gexGrid(now, ref); ok {
+		data["GridJSON"] = js
+		data["GridPos"] = pos
 	}
 	// Market-switch links carry the viewed moment + expiry filter along;
 	// the client keeps the same params in sync via history.replaceState.
@@ -278,16 +286,20 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 			snapAt = time.Now()
 		}
 		s, serr := h.GEX.Snapshot(ctx, market, snapAt)
+		var levelsNote string
 		if serr != nil {
 			h.logger().Warn("gex exposure: snapshot fetch failed", "market", market, "err", serr)
 			s = nil
 			if pd.SpotFutures == nil {
-				data["LevelsNote"] = "levels unavailable — snapshot fetch failed; showing index strikes"
+				levelsNote = "levels unavailable — snapshot fetch failed; showing index strikes"
 			} else {
-				data["LevelsNote"] = "levels unavailable — snapshot fetch failed"
+				levelsNote = "levels unavailable — snapshot fetch failed"
 			}
 		}
-		expo := gexBuildExpo(pd, s, time.Now(), tz)
+		expo := gexBuildExpo(pd, s, ref, tz)
+		// On the struct (not a template data key) so the inline blob carries
+		// it too - the client's chrome sync re-renders it per scrub slot.
+		expo.LevelsNote = levelsNote
 		data["Expo"] = expo
 		if b, err := json.Marshal(expo); err == nil {
 			data["ExpoJSON"] = template.JS(b)
@@ -296,9 +308,18 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 	h.renderPage(w, r, "gex_exposure.html", data)
 }
 
-// GEXExposureData serves the chip-select fetches: the gexExpo blob for one
-// expiry slice (or the whole book), JSON, no snapshot call - the client
+// GEXExposureData serves the chip-select fetches AND the scrub slots.
+//
+// Live filter fetches (no ?at=) keep today's contract: the gexExpo blob for
+// one expiry slice (or the whole book), JSON, no snapshot call - the client
 // keeps the page-load levels/regime and only swaps profiles + denomination.
+//
+// With ?at= (a scrub slot or historical deep link) the response is a full
+// moment: the snapshot is fetched too (levels + regime, degrade-don't-die
+// like the page), chip stats reflect that moment even under a filter, and
+// with fallback=1 the narrowing params the engine cannot serve for that
+// moment are dropped server-side (Degraded names what) instead of 4xxing -
+// a scrub must always paint something.
 func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 	if h.GEX == nil {
 		http.NotFound(w, r)
@@ -310,16 +331,21 @@ func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tz := h.localTZ()
-	at, _ := gexExpoAt(r, tz)
-	q := gex.ProfileQuery{At: at}
 
 	w.Header().Set("Content-Type", "application/json")
 	writeErr := func(status int, msg string) {
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]string{"error": msg})
 	}
-	// Malformed narrowing params must NOT silently degrade to the whole
-	// book - the exact silent-param hazard ask-001 had the engine fix.
+	// Malformed params must NOT silently degrade - the exact silent-param
+	// hazard ask-001 had the engine fix. This endpoint is programmatic, so
+	// unlike the page handlers a bad ?at= is a 400, not a silent live view.
+	at, _, ok := gexParseAtParam(r.URL.Query().Get("at"), tz)
+	if !ok {
+		writeErr(http.StatusBadRequest, "invalid at; expected unix seconds or YYYY-MM-DDTHH:MM")
+		return
+	}
+	q := gex.ProfileQuery{At: at}
 	exps, ok := gexExpoExpiriesParam(r)
 	if !ok {
 		writeErr(http.StatusBadRequest, "invalid expiry date; expected YYYY-MM-DD (comma-separated for a set)")
@@ -332,7 +358,28 @@ func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q.Bucket = bucket
+
 	pd, err := h.GEX.ProfileDetail(r.Context(), market, q)
+	var degraded []string
+	if r.URL.Query().Get("fallback") == "1" {
+		// Scrub slots retry without the narrowing param the engine cannot
+		// serve for this moment (a pre-v0.8.0 grid, a pre-v0.7.0 snapshot)
+		// rather than 4xx. Each branch clears the param it retried without,
+		// so the loop runs at most twice; the response names what was
+		// dropped so the client can say so.
+		for err != nil {
+			if errors.Is(err, gex.ErrBadBucket) && q.Bucket > 0 {
+				q.Bucket = 0
+				degraded = append(degraded, "bucket")
+			} else if (errors.Is(err, gex.ErrNoExpiryData) || errors.Is(err, gex.ErrExpiryUnsupported)) && len(q.Expiries) > 0 {
+				q.Expiries = nil
+				degraded = append(degraded, "expiry")
+			} else {
+				break
+			}
+			pd, err = h.GEX.ProfileDetail(r.Context(), market, q)
+		}
+	}
 	switch {
 	case errors.Is(err, gex.ErrNoExpiryData):
 		writeErr(http.StatusNotFound, "per-expiry breakdown unavailable for this moment (snapshot predates engine v0.7.0 or is past retention)")
@@ -353,7 +400,35 @@ func (h *Handlers) GEXExposureData(w http.ResponseWriter, r *http.Request) {
 		writeErr(http.StatusBadGateway, "engine fetch failed")
 		return
 	}
-	expo := gexBuildExpo(pd, nil, time.Now(), tz)
+
+	ref := time.Now()
+	var s *gex.Snapshot
+	var levelsNote string
+	if !at.IsZero() {
+		ref = at
+		// A moment-addressed response repaints the client's levels + regime
+		// chrome, so it needs the snapshot of THAT moment. Failure only
+		// degrades to no level lines, mirroring the page handler.
+		var serr error
+		s, serr = h.GEX.Snapshot(r.Context(), market, at)
+		if serr != nil {
+			h.logger().Warn("gex exposure data: snapshot fetch failed", "market", market, "err", serr)
+			s = nil
+			levelsNote = "levels unavailable — snapshot fetch failed"
+		}
+	}
+	expo := gexBuildExpo(pd, s, ref, tz)
+	expo.LevelsNote = levelsNote
+	expo.Degraded = strings.Join(degraded, ",")
+	if !at.IsZero() && len(q.Expiries) > 0 {
+		// Filtered responses carry no expiry_decay (engine contract), but a
+		// scrubbed moment must still show that moment's chip stats: fetch
+		// the unfiltered book for the strip. Best effort - on failure the
+		// strip goes empty and the client's ghost chips cover the selection.
+		if upd, uerr := h.GEX.ProfileDetail(r.Context(), market, gex.ProfileQuery{At: at}); uerr == nil {
+			expo.Expiries = gexBuildExpiryChips(upd.ExpiryDecay, ref, tz)
+		}
+	}
 	_ = json.NewEncoder(w).Encode(expo)
 }
 
@@ -482,19 +557,26 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 		add("GW vol", lad.GWV, "gw", "0dte_vol", lad.GWVGex)
 	}
 
-	// Expiry strip: informational chips from expiry_decay, sorted by date.
-	// Pct is the share of total ABSOLUTE decay - matching the reference
-	// UI's per-expiry weight readout.
-	dates := make([]string, 0, len(pd.ExpiryDecay))
+	e.Expiries = gexBuildExpiryChips(pd.ExpiryDecay, now, tz)
+	return e
+}
+
+// gexBuildExpiryChips builds the expiry strip from expiry_decay, sorted by
+// date. Pct is the share of total ABSOLUTE decay - matching the reference
+// UI's per-expiry weight readout. now anchors the DTE math (the viewed
+// moment under ?at=, so historical strips read as that day did).
+func gexBuildExpiryChips(decay map[string]float64, now time.Time, tz *time.Location) []gexExpoExpiry {
+	dates := make([]string, 0, len(decay))
 	var absSum float64
-	for d, v := range pd.ExpiryDecay {
+	for d, v := range decay {
 		dates = append(dates, d)
 		absSum += math.Abs(v)
 	}
 	sort.Strings(dates)
 	todayMidnight := time.Date(now.In(tz).Year(), now.In(tz).Month(), now.In(tz).Day(), 0, 0, 0, 0, tz)
+	out := make([]gexExpoExpiry, 0, len(dates))
 	for _, d := range dates {
-		v := pd.ExpiryDecay[d]
+		v := decay[d]
 		t, err := time.ParseInLocation("2006-01-02", d, tz)
 		if err != nil {
 			continue
@@ -503,7 +585,7 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 		if absSum > 0 {
 			pct = fmt.Sprintf("%.0f%%", math.Abs(v)/absSum*100)
 		}
-		e.Expiries = append(e.Expiries, gexExpoExpiry{
+		out = append(out, gexExpoExpiry{
 			Date:  d,
 			Label: t.Format("Jan 2"),
 			DTE:   int(math.Round(t.Sub(todayMidnight).Hours() / 24)),
@@ -512,5 +594,5 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 			Neg:   v < 0,
 		})
 	}
-	return e
+	return out
 }
