@@ -11,9 +11,9 @@ numbers by summing `/api/v1/trades` yourself — see *Semantics*).
 
 **Date:** 2026-09-02 · **From:** trading-journal · **Concerns:** a consumer
 app showing daily P&L + trade stats · **Version:** API v1; the two endpoints
-ship in the first journal release after v2.9.1 · **Status:** contract
-(implementation in progress; a captured live sample is appended when it
-lands).
+ship in the first journal release after v2.9.1 · **Status:** implemented
+(branch `feature/api-daily-stats`, PR pending merge); a sample captured from
+a live instance is at the end of this document.
 
 **Goal:** the consumer renders, for any date range and optional account
 filter, the same per-day P&L / trade-count / win-loss numbers the journal's
@@ -137,6 +137,8 @@ changes). Response carries `Cache-Control: no-store`.
 - **Money is in account currency as raw JSON numbers** (USD for all
   current instruments); `commission` is a positive cost, `net = gross −
   commission` per trade summed over the day. `largestLoss` is negative.
+  Sums are floating-point (`11617.299999999992` is a legitimate value) —
+  format to two decimals for display, exactly as the journal itself does.
 - **Cache freshness.** `daily_stats` is rebuilt after every import /
   recompute, so the endpoint reflects the last import — exactly like the
   Calendar. Use `/api/v1/version` to know when to refetch (below).
@@ -210,3 +212,34 @@ journal, the consumer picks up the new day within one poll interval
 without a manual refresh. Days with `null` fields render as "—", never as
 0. Report any discrepancy back to the journal side with the exact request
 URL and the date in question.
+
+## Appendix — captured from a live instance
+
+`GET /api/v1/stats/daily?from=2026-01-01&to=2026-09-02` against the run-skill
+smoke instance (the repo's sample CSV exports imported; 18 prop-eval
+accounts, none retired or excluded), captured 2026-09-02, abridged to the
+first two of six items:
+
+```json
+{
+  "from": "2026-01-01", "to": "2026-09-02", "timezone": "America/Chicago",
+  "totals": {
+    "trades": 474, "net": 11617.299999999992, "gross": 12879.49999999999, "commission": 1262.1999999999998,
+    "wins": 436, "losses": 38, "winRate": 0.919831223628692,
+    "winDays": 5, "lossDays": 1,
+    "bestDay": { "date": "2026-05-08", "net": 7359.9700000000275 },
+    "worstDay": { "date": "2026-05-06", "net": -1007.3599999999634 },
+    "largestWin": 8857.5, "largestLoss": -1861.9399999999546
+  },
+  "items": [
+    { "date": "2026-05-01", "trades": 79, "net": 342.66000000004516, "gross": 522.5000000000455, "commission": 179.83999999999997,
+      "wins": 77, "losses": 2, "winRate": 0.9746835443037974, "largestWin": 1000.56, "largestLoss": -1861.9399999999546 },
+    { "date": "2026-05-04", "trades": 41, "net": 403.29999999988183, "gross": 519.9999999998818, "commission": 116.7,
+      "wins": 41, "losses": 0, "winRate": 1, "largestWin": 28.319999999986358, "largestLoss": null }
+  ]
+}
+```
+
+Note the all-win day: `losses: 0` gives `winRate: 1` and `largestLoss: null`
+— null because there was no losing trade, not because the loss was zero.
+`GET /api/v1/version` on the same instance returned `{"v":2}`.
