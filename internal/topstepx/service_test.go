@@ -477,6 +477,46 @@ func TestMaybeEnqueueUserAPI(t *testing.T) {
 	nilSvc.MaybeEnqueueUserAPI(uid) // no-op
 }
 
+// TestWaitForUser: returns when pending clears, at the deadline when it does
+// not, and immediately when nothing is pending or the receiver is nil.
+func TestWaitForUser(t *testing.T) {
+	svc, _, _, uid := setupSync(t)
+	ctx := context.Background()
+
+	start := time.Now()
+	svc.WaitForUser(ctx, uid, time.Now().Add(2*time.Second)) // nothing pending
+	if time.Since(start) > 500*time.Millisecond {
+		t.Errorf("idle wait took %v", time.Since(start))
+	}
+
+	svc.mu.Lock()
+	svc.pending[uid] = true
+	svc.mu.Unlock()
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		svc.mu.Lock()
+		svc.pending[uid] = false
+		svc.mu.Unlock()
+	}()
+	start = time.Now()
+	svc.WaitForUser(ctx, uid, time.Now().Add(5*time.Second))
+	if d := time.Since(start); d < 100*time.Millisecond || d > 2*time.Second {
+		t.Errorf("wait for clearing pending took %v", d)
+	}
+
+	svc.mu.Lock()
+	svc.pending[uid] = true
+	svc.mu.Unlock()
+	start = time.Now()
+	svc.WaitForUser(ctx, uid, time.Now().Add(400*time.Millisecond)) // stuck -> deadline
+	if d := time.Since(start); d < 300*time.Millisecond || d > 2*time.Second {
+		t.Errorf("stuck wait took %v, want ~400ms", d)
+	}
+
+	var nilSvc *SyncService
+	nilSvc.WaitForUser(ctx, uid, time.Now().Add(time.Second)) // no-op
+}
+
 // TestSyncUser_NoCredentials is a no-op, not an error.
 func TestSyncUser_NoCredentials(t *testing.T) {
 	svc, _, q, uid := setupSync(t)

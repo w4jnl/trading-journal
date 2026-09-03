@@ -68,9 +68,17 @@ Failures return `401` with a JSON body `{"error": "..."}`:
   list (`{"limit", "offset", "count"}`), page-based on the trades list
   (`{"page", "pageSize", "pages", "total"}`).
 - **Date ranges.** `from` / `to` are `YYYY-MM-DD` calendar dates in the
-  trading timezone, **inclusive** on both ends. The stats endpoint rejects
-  a malformed or inverted range with `400`; the list endpoints ignore junk
-  dates.
+  trading timezone, **inclusive** on both ends, and the stats and trades
+  endpoints also accept the keywords **`today`**, **`yesterday`** and
+  **`last`** (the last trading day before today), resolved server-side in
+  the trading timezone - so a client (or a model) never has to know today's
+  date in that zone. `day=X` is shorthand for `from=X&to=X`. The stats
+  endpoint rejects a malformed or inverted range with `400`; the list
+  endpoints ignore junk dates.
+- **`refresh=1`** on the stats and trades endpoints pulls the latest fills
+  from the brokers first and waits for them (bounded, ~15 s) before
+  answering - use it for intraday "how am I doing today" reads. Without it a
+  read still nudges the sync, but answers from the data on hand.
 - **Account filter.** `filter=acc:<id>` and `filter=type:<slug>` (slugs
   `live`, `prop_live`, `prop_funded`, `prop_eval`, `paper`) are repeatable
   and OR-combined; the legacy singular `account_id=<id>` still works.
@@ -472,11 +480,12 @@ Query parameters (all optional):
 | `symbol_root` | string | e.g. `MES` |
 | `direction` | `long` \| `short` | |
 | `outcome` | `win` \| `loss` \| `breakeven` | by net P&L sign |
-| `from` | `YYYY-MM-DD` | inclusive lower bound on exit date |
-| `to` | `YYYY-MM-DD` | inclusive upper bound |
-| `account_id` | integer | one account |
+| `from` | `YYYY-MM-DD` \| `today` \| `yesterday` \| `last` | inclusive lower bound on the exit day (trading timezone) |
+| `to` | same | inclusive upper bound |
+| `account_id` | integer | one account (`filter=acc:<id>` / `filter=type:<slug>` also work) |
 | `page` | integer | 1-based; default `1` |
 | `show_retired` | `1` | include trades on retired accounts |
+| `refresh` | `1` | pull the latest broker fills first and wait for them (~15 s max) before listing |
 
 ```jsonc
 // GET /api/v1/trades?symbol_root=MES&outcome=win&page=1
@@ -544,10 +553,12 @@ Query parameters (all optional):
 
 | Param | Type | Notes |
 |---|---|---|
-| `from` | `YYYY-MM-DD` | First day, inclusive (trading timezone). Default: `to` minus 29 days |
-| `to` | `YYYY-MM-DD` | Last day, inclusive. Default: today |
+| `from` | `YYYY-MM-DD` \| `today` \| `yesterday` \| `last` | First day, inclusive (trading timezone). Default: `to` minus 29 days |
+| `to` | same | Last day, inclusive. Default: today |
+| `day` | same | Shorthand for `from=to=day` - `day=today` is the intraday check |
 | `filter` | `acc:<id>` \| `type:<slug>` | Repeatable; an explicit filter overrides *excluded from stats* |
 | `account_id` | integer | Legacy alias for one `filter=acc:<id>` |
+| `refresh` | `1` | Pull the latest broker fills first and wait for them (~15 s max) before computing |
 
 At most **400 days** per request.
 

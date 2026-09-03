@@ -207,10 +207,12 @@
         "operationId": "getDailyStats",
         "summary": "Daily P&L + trade stats per trading day with range totals - the Calendar's numbers (daily_stats cache; retired accounts never count, excluded-from-stats accounts are dropped unless filtered).",
         "parameters": [
-          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-08-01" }, "description": "First day, inclusive, trading timezone. Default: to minus 29 days." },
-          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive. Default: today. Span at most 400 days." },
+          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-08-01" }, "description": "First day, inclusive, trading timezone: YYYY-MM-DD or the keyword today|yesterday|last (resolved server-side - never compute the date yourself). Default: to minus 29 days." },
+          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last. Default: today. Span at most 400 days." },
+          { "name": "day", "in": "query", "schema": { "type": "string", "example": "today" }, "description": "Shorthand for from=to=day. Use day=today for the intraday check." },
           { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug> (live|prop_live|prop_funded|prop_eval|paper). An explicit filter overrides excluded_from_stats." },
-          { "name": "account_id", "in": "query", "deprecated": true, "schema": { "type": "integer" }, "description": "Legacy alias for filter=acc:<id>." }
+          { "name": "account_id", "in": "query", "deprecated": true, "schema": { "type": "integer" }, "description": "Legacy alias for filter=acc:<id>." },
+          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday today questions." }
         ],
         "responses": {
           "200": { "description": "OK (an empty range is a 200 with items: [] and zeroed totals)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DailyStats" } } } },
@@ -439,11 +441,12 @@
           { "name": "symbol_root", "in": "query", "schema": { "type": "string" }, "description": "e.g. MES" },
           { "name": "direction", "in": "query", "schema": { "type": "string", "enum": ["long", "short"] } },
           { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["win", "loss", "breakeven"] } },
-          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" } },
-          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" } },
+          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" }, "description": "Inclusive lower bound on the exit day (trading timezone): YYYY-MM-DD or today|yesterday|last (resolved server-side)." },
+          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" }, "description": "Inclusive upper bound: YYYY-MM-DD or today|yesterday|last. For today's trades send from=today&to=today." },
           { "name": "account_id", "in": "query", "schema": { "type": "integer" } },
           { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "show_retired", "in": "query", "schema": { "type": "boolean" } }
+          { "name": "show_retired", "in": "query", "schema": { "type": "boolean" } },
+          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before listing." }
         ],
         "responses": {
           "200": {

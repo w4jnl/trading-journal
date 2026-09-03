@@ -83,10 +83,11 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	), h.mcpServerInfo)
 
 	s.AddTool(mcpgo.NewTool("list_trades",
-		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) plus entryTime, direction, account and entryPrice (use them to cluster copytrader copies: same symbolRoot+direction+entryTime within ~2s across >=2 accounts). Page size 50."),
-		mcpgo.WithString("day", mcpgo.Description("Single trading day YYYY-MM-DD; sets from=to=day. Use for 'yesterday'.")),
-		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD (inclusive).")),
-		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD (inclusive).")),
+		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) plus entryTime, direction, account and entryPrice (use them to cluster copytrader copies: same symbolRoot+direction+entryTime within ~2s across >=2 accounts). Page size 50. Dates are trading-timezone days; the keywords today, yesterday and last (last trading day) are resolved server-side - use day=\"today\" for today's trades, never compute the date yourself."),
+		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
+		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive).")),
+		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive).")),
+		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s) before listing. Use for intraday 'today' questions.")),
 		mcpgo.WithString("symbolRoot", mcpgo.Description("Filter by root, e.g. MES.")),
 		mcpgo.WithString("direction", mcpgo.Enum("long", "short")),
 		mcpgo.WithString("outcome", mcpgo.Enum("win", "loss", "breakeven")),
@@ -163,10 +164,12 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	), h.mcpSetTag)
 
 	s.AddTool(mcpgo.NewTool("get_daily_stats",
-		mcpgo.WithDescription("Daily P&L + trade stats per trading day (trades, wins, losses, net, gross, commission, winRate, largestWin/largestLoss) with totals over the range - the same numbers as the journal's Calendar. Use it for overview figures instead of summing trades yourself. A trade belongs to the day of its exit (trading tz); retired accounts never count and excluded-from-stats accounts are dropped unless accountId is given. Days without closed trades are omitted."),
-		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD (inclusive, trading tz); default = to minus 29 days.")),
-		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD (inclusive); default = today. Span at most 400 days.")),
+		mcpgo.WithDescription("Daily P&L + trade stats per trading day (trades, wins, losses, net, gross, commission, winRate, largestWin/largestLoss) with totals over the range - the same numbers as the journal's Calendar. Use it for overview figures instead of summing trades yourself; for 'how am I doing today' call it with day=\"today\", refresh=true. A trade belongs to the day of its exit (trading tz); the keywords today, yesterday and last (last trading day) are resolved server-side - never compute the date yourself. Retired accounts never count and excluded-from-stats accounts are dropped unless accountId is given. Days without closed trades are omitted."),
+		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
+		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive, trading tz); default = to minus 29 days.")),
+		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive); default = today. Span at most 400 days.")),
 		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id.")),
+		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday 'today' questions.")),
 	), h.mcpGetDailyStats)
 }
 
@@ -190,7 +193,7 @@ func (h *Handlers) mcpServerInfo(ctx context.Context, _ mcpgo.CallToolRequest) (
 }
 
 func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	h.nudgeSyncFromAPI(ctx)
+	h.syncForAPIRead(ctx, req.GetBool("refresh", false))
 	f := tradeFilters{Page: req.GetInt("page", 1)}
 	if f.Page < 1 {
 		f.Page = 1
@@ -204,7 +207,7 @@ func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest)
 	if v := req.GetString("outcome", ""); v == "win" || v == "loss" || v == "breakeven" {
 		f.Outcome = &v
 	}
-	from, to := mcpDateRange(req)
+	from, to := h.mcpDateRange(ctx, req)
 	f.From, f.To = from, to
 	if v := mcpOptInt(req, "accountId"); v != nil {
 		f.Account = accountFilter{Active: true, AccountIDs: []int64{*v}}
@@ -234,9 +237,12 @@ func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest)
 }
 
 func (h *Handlers) mcpGetDailyStats(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
-	h.nudgeSyncFromAPI(ctx)
 	tz := h.localTZ()
-	rng, err := parseAPIDateRange(req.GetString("from", ""), req.GetString("to", ""), tz, todayLocal(tz))
+	fromStr, toStr := req.GetString("from", ""), req.GetString("to", "")
+	if day := req.GetString("day", ""); day != "" {
+		fromStr, toStr = day, day
+	}
+	rng, err := parseAPIDateRange(h.resolveDayKeyword(ctx, fromStr, tz), h.resolveDayKeyword(ctx, toStr, tz), tz, todayLocal(tz))
 	if err != nil {
 		return mcpgo.NewToolResultError(err.Error()), nil
 	}
@@ -244,6 +250,7 @@ func (h *Handlers) mcpGetDailyStats(ctx context.Context, req mcpgo.CallToolReque
 	if v := mcpOptInt(req, "accountId"); v != nil {
 		af = accountFilter{Active: true, AccountIDs: []int64{*v}}
 	}
+	h.syncForAPIRead(ctx, req.GetBool("refresh", false)) // after validation: a bad date must not nudge
 	out, err := h.dailyStats(ctx, af, rng)
 	if err != nil {
 		return mcpgo.NewToolResultError("could not load daily stats"), nil
@@ -531,18 +538,24 @@ func toInt64(v any) (int64, bool) {
 
 // mcpDateRange parses day/from/to (YYYY-MM-DD, UTC) into a trade-filter window
 // (to is exclusive +24h), mirroring parseTradeFilters.
-func mcpDateRange(req mcpgo.CallToolRequest) (from, to *time.Time) {
+// mcpDateRange is the trades-filter variant: day/from/to (keywords resolved)
+// are trading-tz calendar days, converted to UTC instants because
+// trades.exit_time is stored in UTC and compared as text - so "today" means
+// the trading day, not the UTC day, and matches get_daily_stats.
+func (h *Handlers) mcpDateRange(ctx context.Context, req mcpgo.CallToolRequest) (from, to *time.Time) {
+	tz := h.localTZ()
 	fromStr := req.GetString("from", "")
 	toStr := req.GetString("to", "")
 	if day := req.GetString("day", ""); day != "" {
 		fromStr, toStr = day, day
 	}
-	if t, err := time.Parse("2006-01-02", fromStr); err == nil {
-		from = &t
+	if t, err := time.ParseInLocation("2006-01-02", h.resolveDayKeyword(ctx, fromStr, tz), tz); err == nil {
+		u := t.UTC()
+		from = &u
 	}
-	if t, err := time.Parse("2006-01-02", toStr); err == nil {
-		t = t.Add(24 * time.Hour)
-		to = &t
+	if t, err := time.ParseInLocation("2006-01-02", h.resolveDayKeyword(ctx, toStr, tz), tz); err == nil {
+		u := t.AddDate(0, 0, 1).UTC() // inclusive upper bound
+		to = &u
 	}
 	return from, to
 }

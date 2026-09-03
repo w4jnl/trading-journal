@@ -358,5 +358,35 @@ func TestMaybeEnqueueUserAPI(t *testing.T) {
 	nilSvc.MaybeEnqueueUserAPI(uid) // no panic
 }
 
+// TestWaitForUser mirrors topstepx: clears -> returns; stuck -> deadline; nil-safe.
+func TestWaitForUser(t *testing.T) {
+	svc, _, _, uid, _ := setupIbkr(t)
+	ctx := context.Background()
+	svc.mu.Lock()
+	svc.pending[uid] = true
+	svc.mu.Unlock()
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		svc.mu.Lock()
+		svc.pending[uid] = false
+		svc.mu.Unlock()
+	}()
+	start := time.Now()
+	svc.WaitForUser(ctx, uid, time.Now().Add(5*time.Second))
+	if d := time.Since(start); d < 100*time.Millisecond || d > 2*time.Second {
+		t.Errorf("wait took %v", d)
+	}
+	svc.mu.Lock()
+	svc.pending[uid] = true
+	svc.mu.Unlock()
+	start = time.Now()
+	svc.WaitForUser(ctx, uid, time.Now().Add(400*time.Millisecond))
+	if d := time.Since(start); d < 300*time.Millisecond || d > 2*time.Second {
+		t.Errorf("stuck wait took %v, want ~400ms", d)
+	}
+	var nilSvc *SyncService
+	nilSvc.WaitForUser(ctx, uid, time.Now().Add(time.Second))
+}
+
 // Unused-var guards for the linter in tests that ignore gw.
 var _ = errors.Is

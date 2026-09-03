@@ -382,3 +382,126 @@ func TestAPIReadsNudgeSync(t *testing.T) {
 		t.Errorf("API trigger must be off when APIThrottle is 0")
 	}
 }
+
+// Date keywords resolve server-side in the trading tz; explicit dates and
+// junk pass through untouched; `last` follows the user's trade history.
+func TestResolveDayKeyword(t *testing.T) {
+	conn, q := newAuthzTestDB(t)
+	tz := time.UTC
+	h := &Handlers{DB: conn, Queries: q, Timezone: tz}
+	u, err := q.CreateUser(context.Background(), models.CreateUserParams{Username: "kw"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: u.ID, Username: "kw", DisplayName: "K"})
+	today := todayLocal(tz)
+	if got := h.resolveDayKeyword(ctx, " Today ", tz); got != today.Format("2006-01-02") {
+		t.Errorf("today = %q", got)
+	}
+	if got := h.resolveDayKeyword(ctx, "yesterday", tz); got != today.AddDate(0, 0, -1).Format("2006-01-02") {
+		t.Errorf("yesterday = %q", got)
+	}
+	for _, raw := range []string{"2026-08-03", "nope", ""} {
+		if got := h.resolveDayKeyword(ctx, raw, tz); got != raw {
+			t.Errorf("%q passthrough = %q", raw, got)
+		}
+	}
+	// No history yet: last falls back to yesterday.
+	if got := h.resolveDayKeyword(ctx, "last", tz); got != today.AddDate(0, 0, -1).Format("2006-01-02") {
+		t.Errorf("last without history = %q", got)
+	}
+	// With a closed trade three days ago, last = that day.
+	acct, err := q.CreateAccount(ctx, models.CreateAccountParams{UserID: u.ID, Name: "A", ImportSource: "motivewave_csv", AccountRef: "A", Currency: "USD", CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exit := today.AddDate(0, 0, -3).Add(15 * time.Hour)
+	if _, err := q.CreateTrade(ctx, models.CreateTradeParams{
+		AccountID: acct.ID, Symbol: "MESU26", SymbolRoot: "MES", Direction: "long", Qty: 1,
+		EntryPrice: 5000, ExitPrice: ptrF(5010), EntryTime: exit.Add(-time.Hour), ExitTime: &exit, NetPnl: ptrF(50), Status: "closed",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if got := h.resolveDayKeyword(ctx, "last", tz); got != today.AddDate(0, 0, -3).Format("2006-01-02") {
+		t.Errorf("last with history = %q", got)
+	}
+	// Keywords flow through the stats endpoint (day= shorthand too).
+	h.Templates = web.TemplatesFS
+	req := httptest.NewRequest("GET", "/api/v1/stats/daily?day=today", nil).WithContext(ctx)
+	rec := httptest.NewRecorder()
+	h.APIMux().ServeHTTP(rec, req)
+	var out apiDailyStats
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("day=today: %d %s", rec.Code, rec.Body.String())
+	}
+	if out.From != today.Format("2006-01-02") || out.To != out.From {
+		t.Errorf("day=today range = %s..%s", out.From, out.To)
+	}
+}
+
+// The /trades date filters are trading-tz days converted to UTC instants
+// (exit_time is stored in UTC), and accept the keywords.
+func TestParseTradeFiltersTradingTZ(t *testing.T) {
+	chi, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Skip("no tzdata")
+	}
+	h := &Handlers{Timezone: chi}
+	req := httptest.NewRequest("GET", "/api/v1/trades?from=2026-09-03&to=2026-09-03", nil)
+	req = req.WithContext(auth.WithUser(req.Context(), &auth.User{ID: 7, Username: "t"}))
+	f, err := h.parseTradeFilters(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.From == nil || !f.From.Equal(time.Date(2026, 9, 3, 5, 0, 0, 0, time.UTC)) || f.From.Location() != time.UTC {
+		t.Errorf("from = %v, want 2026-09-03T05:00Z (Chicago midnight in UTC)", f.From)
+	}
+	if f.To == nil || !f.To.Equal(time.Date(2026, 9, 4, 5, 0, 0, 0, time.UTC)) {
+		t.Errorf("to = %v, want 2026-09-04T05:00Z", f.To)
+	}
+	req = httptest.NewRequest("GET", "/api/v1/trades?from=today&to=today", nil)
+	req = req.WithContext(auth.WithUser(req.Context(), &auth.User{ID: 7, Username: "t"}))
+	f, err = h.parseTradeFilters(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.From == nil || !f.From.Equal(todayLocal(chi).UTC()) {
+		t.Errorf("from=today = %v, want %v", f.From, todayLocal(chi).UTC())
+	}
+}
+
+// refresh=1 waits for the nudged sync but never past apiRefreshWait: with a
+// job stuck in the queue (no Run loop) the read still returns, bounded.
+func TestAPIRefreshWaitBounded(t *testing.T) {
+	conn, q := newAuthzTestDB(t)
+	ts := topstepx.NewSyncService(q, nil, nil, nil, topstepx.SyncOptions{APIThrottle: time.Minute}, nil)
+	h := &Handlers{DB: conn, Queries: q, Timezone: time.UTC, TopstepxSync: ts, LiveData: livedata.NewNotifier()}
+	old := apiRefreshWait
+	apiRefreshWait = 300 * time.Millisecond
+	t.Cleanup(func() { apiRefreshWait = old })
+
+	req := httptest.NewRequest("GET", "/api/v1/stats/daily?refresh=1", nil)
+	req = req.WithContext(auth.WithUser(req.Context(), &auth.User{ID: 7, Username: "t"}))
+	rec := httptest.NewRecorder()
+	start := time.Now()
+	h.APIMux().ServeHTTP(rec, req)
+	d := time.Since(start)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refresh read = %d: %s", rec.Code, rec.Body.String())
+	}
+	if d < 250*time.Millisecond || d > 3*time.Second {
+		t.Errorf("refresh wait took %v, want ~300ms bounded", d)
+	}
+	if !ts.PendingForUser(7) {
+		t.Errorf("the nudged job should still be queued (no worker in this test)")
+	}
+	// A plain read does not wait.
+	req = httptest.NewRequest("GET", "/api/v1/stats/daily", nil)
+	req = req.WithContext(auth.WithUser(req.Context(), &auth.User{ID: 7, Username: "t"}))
+	rec = httptest.NewRecorder()
+	start = time.Now()
+	h.APIMux().ServeHTTP(rec, req)
+	if time.Since(start) > 200*time.Millisecond {
+		t.Errorf("plain read waited %v", time.Since(start))
+	}
+}

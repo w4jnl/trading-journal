@@ -143,6 +143,23 @@ func (s *SyncService) PendingForUser(userID int64) bool {
 	return s.pending[userID]
 }
 
+// WaitForUser blocks until no sync is pending for the user, the deadline
+// passes, or ctx ends - the second half of a refresh read (nudge, wait, then
+// read). Run clears pending only after the job's import has committed, so a
+// read after this sees the fills the nudge pulled. Nil-safe: returns at once.
+func (s *SyncService) WaitForUser(ctx context.Context, userID int64, deadline time.Time) {
+	if s == nil {
+		return
+	}
+	for s.PendingForUser(userID) && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
 // enqueueWithGap enqueues a whole-user sync unless one is pending or the
 // last one finished less than minGap ago. The page-visit hook uses the
 // configured throttle; the scheduler passes half its cadence so a sync a
