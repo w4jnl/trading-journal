@@ -57,10 +57,16 @@ Query parameters (all optional):
 
 | Param | Format | Meaning |
 |---|---|---|
-| `from` | `YYYY-MM-DD` | first day, **inclusive**, in the journal's trading timezone. Default: `to − 29 days` |
-| `to` | `YYYY-MM-DD` | last day, **inclusive**. Default: today (trading timezone) |
+| `from` | `YYYY-MM-DD` or `today` \| `yesterday` \| `last` | first day, **inclusive**, in the journal's trading timezone. Default: `to − 29 days` |
+| `to` | same | last day, **inclusive**. Default: today (trading timezone) |
+| `day` | same | shorthand for `from=to=day`; `day=today` is the intraday check |
 | `filter` | `acc:<id>` or `type:<slug>`, repeatable | restrict to these accounts (OR-union). `type` slugs: `live`, `prop_live`, `prop_funded`, `prop_eval`, `paper` |
 | `account_id` | integer | legacy alias for one `filter=acc:<id>` |
+| `refresh` | `1` | pull the latest broker fills first and wait for them (bounded, ~15 s) before computing — for "right now" reads |
+
+The keywords are resolved **server-side in the trading timezone**, so you
+never need to know what "today" is there (`last` = the last trading day
+before today with closed trades).
 
 Span cap: **400 days** per request (page by month or quarter for history).
 

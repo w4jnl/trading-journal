@@ -186,6 +186,21 @@ func (s *SyncService) PendingForUser(userID int64) bool {
 	return s.pending[userID]
 }
 
+// WaitForUser mirrors topstepx: block until the user's sync is idle, the
+// deadline passes, or ctx ends (the refresh read's wait). Nil-safe.
+func (s *SyncService) WaitForUser(ctx context.Context, userID int64, deadline time.Time) {
+	if s == nil {
+		return
+	}
+	for s.PendingForUser(userID) && time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(200 * time.Millisecond):
+		}
+	}
+}
+
 // KeepAlive tickles every enabled gateway so their sessions do not idle out
 // between polls; a dropped brokerage session is reauthenticated on the spot.
 func (s *SyncService) KeepAlive(ctx context.Context) {

@@ -45,8 +45,14 @@ parentheses:
 - `get_daily_stats` (`GET /stats/daily`) - per-day P&L + trade counts with range
   totals (the Calendar's numbers: `trades, wins, losses, net, gross, commission,
   winRate, largestWin, largestLoss`). Use it for the overview's figures instead of
-  summing trades yourself; `from`/`to` inclusive (default last 30 days), optional
-  `accountId`. Days without closed trades are omitted; `null` means absent.
+  summing trades yourself; `day` or `from`/`to` inclusive (default last 30 days),
+  optional `accountId`, `refresh=true` to pull fresh fills first. Days without
+  closed trades are omitted; `null` means absent.
+
+**Dates:** `day`/`from`/`to` on `list_trades` and `get_daily_stats` accept the
+keywords `today`, `yesterday` and `last` (last trading day), resolved on the
+**server in the trading timezone** - always use them instead of computing a
+date yourself; you do not reliably know today's date in the user's zone.
 
 ## The once-only marker
 
@@ -139,6 +145,24 @@ trading-journal connectors are configured, call `server_info` first and use one
 instance for the whole run.
 
 ---
+
+## Mode: today (P&L and trades check - read-only)
+
+When the user asks how they are doing today / today's P&L / today's trades (or
+"yesterday's numbers"), answer from two calls and **write nothing** - no entries,
+notes, tags or strategies in this mode:
+
+1. `get_daily_stats(day="today", refresh=true)` - `refresh` pulls the latest
+   fills from the brokers and waits for them, so the answer is current. Use
+   `day="yesterday"` / `day="last"` when asked; never compute the date.
+2. `list_trades(day="today", refresh=true)` for the trade list (page through if
+   `page.pages > 1`).
+
+Report: net (and gross / commission), # trades with wins/losses and win rate,
+best and worst trade (symbol, direction, time, net), and the run of the day
+in a few words. If `items` is empty, say there are no closed trades today yet
+(open positions are not P&L). `null` fields mean "none", not zero. Do not
+start the daily review unless asked.
 
 ## Mode: on-demand (a specific trade or entry)
 - **Trade**: `get_trade(id)` + `get_chart_image(tradeId=id)`; if it has a linked

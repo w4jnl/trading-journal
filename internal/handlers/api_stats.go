@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -251,7 +252,15 @@ func (h *Handlers) dailyStats(ctx context.Context, af accountFilter, rng apiDate
 func (h *Handlers) statsRangeAndFilter(r *http.Request) (accountFilter, apiDateRange, error) {
 	r = bridgeLegacyAccountID(r)
 	tz := h.localTZ()
-	rng, err := parseAPIDateRange(r.URL.Query().Get("from"), r.URL.Query().Get("to"), tz, todayLocal(tz))
+	q := r.URL.Query()
+	// day=X is shorthand for from=to=X (the MCP tools' convention); keywords
+	// (today|yesterday|last) resolve server-side so the caller never has to
+	// know the date in the trading tz.
+	fromStr, toStr := q.Get("from"), q.Get("to")
+	if day := strings.TrimSpace(q.Get("day")); day != "" {
+		fromStr, toStr = day, day
+	}
+	rng, err := parseAPIDateRange(h.resolveDayKeyword(r.Context(), fromStr, tz), h.resolveDayKeyword(r.Context(), toStr, tz), tz, todayLocal(tz))
 	if err != nil {
 		return accountFilter{}, apiDateRange{}, err
 	}
@@ -275,7 +284,9 @@ func (h *Handlers) APIStatsDaily(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "could not resolve account filter")
 		return
 	}
-	h.nudgeSyncFromAPI(r.Context()) // a valid read keeps the broker data moving
+	// A valid read keeps the broker data moving; refresh=1 also waits for
+	// the sync so the answer is current, not the last poll's.
+	h.syncForAPIRead(r.Context(), apiWantsRefresh(r))
 	out, err := h.dailyStats(r.Context(), af, rng)
 	if err != nil {
 		h.logger().Warn("api stats: load failed", "err", err)

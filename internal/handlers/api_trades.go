@@ -86,7 +86,7 @@ func apiTradeRowFrom(t tradeRow) apiTradeRow {
 // same filter parsing + dynamic-WHERE path as the HTML /trades page, so the API
 // honors symbol_root / direction / outcome / from / to / account_id / page.
 func (h *Handlers) APITradesList(w http.ResponseWriter, r *http.Request) {
-	h.nudgeSyncFromAPI(r.Context())
+	h.syncForAPIRead(r.Context(), apiWantsRefresh(r))
 	ctx := r.Context()
 	f, err := h.parseTradeFilters(r)
 	if err != nil {

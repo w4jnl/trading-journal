@@ -58,4 +58,23 @@ func TestMCPToolsList(t *testing.T) {
 	if len(res.Tools) != len(want) {
 		t.Errorf("tool count = %d, want %d", len(res.Tools), len(want))
 	}
+
+	// Annotations drive the Claude app's connector grouping: reads must be
+	// readOnly (so they can be always-allowed), writes must declare they are
+	// non-destructive (additive / fill-a-blank only). An un-annotated tool
+	// is filed under "Write/delete tools" by the client.
+	readOnly := map[string]bool{
+		"server_info": true, "list_trades": true, "get_trade": true, "list_journal": true,
+		"get_journal_entry": true, "list_strategies": true, "get_strategy": true,
+		"get_chart_image": true, "get_daily_stats": true,
+	}
+	for _, tl := range res.Tools {
+		ro := tl.Annotations.ReadOnlyHint != nil && *tl.Annotations.ReadOnlyHint
+		if ro != readOnly[tl.Name] {
+			t.Errorf("%s readOnlyHint = %v, want %v", tl.Name, ro, readOnly[tl.Name])
+		}
+		if !readOnly[tl.Name] && (tl.Annotations.DestructiveHint == nil || *tl.Annotations.DestructiveHint) {
+			t.Errorf("%s must declare destructiveHint=false", tl.Name)
+		}
+	}
 }

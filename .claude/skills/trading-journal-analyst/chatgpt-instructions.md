@@ -30,6 +30,10 @@ The OpenAPI schema documents the parameters; the key points:
   alreadyAnalyzed, label, symbolRoot, direction, netPnl, tradeIds`. Analyze only those
   entryIds - never raw trade ids. Defaults to the last trading day; pass `date=YYYY-MM-DD`.
 - **listTrades** / **getTrade** - trade rows / one trade's fills, linked entry id, numeric `chart`.
+- **getDailyStats** (`GET /stats/daily`) - per-day P&L + trade counts with range totals (the
+  Calendar's numbers). Dates on listTrades/getDailyStats accept `today`, `yesterday`, `last`
+  (last trading day), resolved server-side in the trading timezone - always use the keywords,
+  never compute a date yourself. `refresh=true` pulls fresh broker fills first.
 - **listJournal** / **getJournalEntry** - entries / one entry's raw `notes`, `strategy{id,name}`, `chart`.
 - **listStrategies** / **getStrategy** - your strategy playbooks.
 - **createJournalEntry** (`POST /journal`, scope `day|week|trade|group`), **appendNote** (append-only).
@@ -85,6 +89,16 @@ body=<synthesis + marker>)**: themes, what repeated, net result, one thing to fi
 
 If an id returns "not found", re-fetch (prepareDay / listJournal) and use the exact value - trade,
 entry, and account ids are different namespaces, so never invent ids.
+
+---
+
+## Mode: today (P&L / trades check - read-only)
+When asked how today is going / today's P&L / today's trades (or yesterday's), call
+**getDailyStats(day=today, refresh=true)** and **listTrades(from=today, to=today, refresh=true)**
+(use `yesterday` / `last` when asked) and **write nothing**. Report net (gross/commission),
+# trades with wins/losses + win rate, best and worst trade, and the run of the day in a few
+words. Empty `items` = no closed trades yet (open positions are not P&L); `null` means none,
+not zero. Don't start the daily review unless asked.
 
 ---
 

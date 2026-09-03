@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -57,6 +58,67 @@ func (h *Handlers) nudgeSyncFromAPI(ctx context.Context) {
 func (h *Handlers) APIVersion(w http.ResponseWriter, r *http.Request) {
 	h.nudgeSyncFromAPI(r.Context())
 	h.DataVersion(w, r)
+}
+
+// apiRefreshWait bounds how long a refresh read waits for the nudged sync.
+// A var so tests can shorten it.
+var apiRefreshWait = 15 * time.Second
+
+// refreshSyncFromAPI is the refresh variant of nudgeSyncFromAPI: nudge, then
+// wait - bounded, one shared deadline across both brokers - until the
+// caller's syncs are idle, so the read that follows sees the fills the nudge
+// pulled ("what is my P&L right now" gets a current answer, not the last
+// poll's). Within the API throttle nothing is enqueued and this returns at
+// once, so a refresh read is never slower than the sync it actually caused.
+func (h *Handlers) refreshSyncFromAPI(ctx context.Context) {
+	h.nudgeSyncFromAPI(ctx)
+	uid := userID(ctx)
+	deadline := time.Now().Add(apiRefreshWait)
+	h.TopstepxSync.WaitForUser(ctx, uid, deadline)
+	h.IbkrSync.WaitForUser(ctx, uid, deadline)
+}
+
+// syncForAPIRead runs a read's sync side effect: refresh (nudge + wait) when
+// asked, a plain nudge otherwise.
+func (h *Handlers) syncForAPIRead(ctx context.Context, refresh bool) {
+	if refresh {
+		h.refreshSyncFromAPI(ctx)
+		return
+	}
+	h.nudgeSyncFromAPI(ctx)
+}
+
+// apiWantsRefresh reads the shared ?refresh=1 flag.
+func apiWantsRefresh(r *http.Request) bool {
+	switch strings.ToLower(strings.TrimSpace(r.URL.Query().Get("refresh"))) {
+	case "1", "true", "yes", "on":
+		return true
+	}
+	return false
+}
+
+// resolveDayKeyword maps the date keywords the API and MCP tools accept onto
+// YYYY-MM-DD in the trading tz: today, yesterday (calendar days) and last
+// (the last trading day before today with closed trades - the same
+// resolution prepare_day uses; falls back to yesterday when there is no
+// history). Anything else passes through untouched to the normal date
+// parsing, so a typo still fails as a bad date instead of silently meaning
+// something. This exists because the caller is usually a model that does
+// not reliably know today's date in the user's timezone.
+func (h *Handlers) resolveDayKeyword(ctx context.Context, raw string, tz *time.Location) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "today":
+		return todayLocal(tz).Format("2006-01-02")
+	case "yesterday":
+		return todayLocal(tz).AddDate(0, 0, -1).Format("2006-01-02")
+	case "last":
+		// lastTradingDay reports "no history" as a zero time, not an error.
+		if d, err := h.lastTradingDay(ctx, tz); err == nil && !d.IsZero() {
+			return d.In(tz).Format("2006-01-02")
+		}
+		return todayLocal(tz).AddDate(0, 0, -1).Format("2006-01-02")
+	}
+	return raw
 }
 
 // ---- API response projections (camelCase; we never serialize sqlc model

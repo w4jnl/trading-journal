@@ -747,15 +747,21 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	if v := strings.TrimSpace(q.Get("outcome")); v == "win" || v == "loss" || v == "breakeven" {
 		f.Outcome = &v
 	}
+	// Dates are trading-tz calendar days (keywords today|yesterday|last are
+	// resolved server-side), converted to UTC instants: exit_time is stored
+	// in UTC and compared as text, so a Chicago day must be expressed as its
+	// UTC bounds or the evening hours land on the wrong day. Junk is ignored.
+	tz := h.localTZ()
 	if v := strings.TrimSpace(q.Get("from")); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			f.From = &t
+		if t, err := time.ParseInLocation("2006-01-02", h.resolveDayKeyword(r.Context(), v, tz), tz); err == nil {
+			u := t.UTC()
+			f.From = &u
 		}
 	}
 	if v := strings.TrimSpace(q.Get("to")); v != "" {
-		if t, err := time.Parse("2006-01-02", v); err == nil {
-			t = t.Add(24 * time.Hour) // inclusive upper bound
-			f.To = &t
+		if t, err := time.ParseInLocation("2006-01-02", h.resolveDayKeyword(r.Context(), v, tz), tz); err == nil {
+			u := t.AddDate(0, 0, 1).UTC() // inclusive upper bound
+			f.To = &u
 		}
 	}
 	if v := strings.TrimSpace(q.Get("page")); v != "" {
