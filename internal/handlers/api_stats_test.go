@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/livedata"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/topstepx"
 	"github.com/w4jnl/trading-journal/web"
 )
 
@@ -339,5 +341,44 @@ func TestAPIVersionRoute(t *testing.T) {
 	h.LiveData = nil
 	if rec := get(); rec.Code != http.StatusOK {
 		t.Errorf("nil notifier = %d", rec.Code)
+	}
+}
+
+// API reads nudge both broker syncs for the caller (the read-triggered
+// trigger), bounded by the services' own API gap and off when that gap is 0.
+func TestAPIReadsNudgeSync(t *testing.T) {
+	conn, q := newAuthzTestDB(t)
+	ts := topstepx.NewSyncService(q, nil, nil, nil, topstepx.SyncOptions{APIThrottle: time.Minute}, nil)
+	ib := ibkr.NewSyncService(q, nil, ibkr.SyncOptions{APIThrottle: time.Minute}, nil)
+	h := &Handlers{DB: conn, Queries: q, Timezone: time.UTC, TopstepxSync: ts, IbkrSync: ib, LiveData: livedata.NewNotifier()}
+	get := func(target string) int {
+		req := httptest.NewRequest("GET", target, nil)
+		req = req.WithContext(auth.WithUser(req.Context(), &auth.User{ID: 7, Username: "t"}))
+		rec := httptest.NewRecorder()
+		h.APIMux().ServeHTTP(rec, req)
+		return rec.Code
+	}
+	if code := get("/api/v1/version"); code != http.StatusOK {
+		t.Fatalf("version = %d", code)
+	}
+	if !ts.PendingForUser(7) || !ib.PendingForUser(7) {
+		t.Errorf("version read did not enqueue syncs: topstepx=%v ibkr=%v", ts.PendingForUser(7), ib.PendingForUser(7))
+	}
+	if ts.PendingForUser(8) {
+		t.Errorf("another user's sync was enqueued")
+	}
+	// A 400 does not nudge; a valid stats read does. With the trigger off
+	// (api_sync_throttle_sec 0) nothing is enqueued at all.
+	off := topstepx.NewSyncService(q, nil, nil, nil, topstepx.SyncOptions{}, nil)
+	h.TopstepxSync = off
+	h.IbkrSync = nil // feature off must be a no-op, not a panic
+	if code := get("/api/v1/stats/daily?from=nope"); code != http.StatusBadRequest {
+		t.Fatalf("bad stats read = %d", code)
+	}
+	if code := get("/api/v1/stats/daily"); code != http.StatusOK {
+		t.Fatalf("stats read = %d", code)
+	}
+	if off.PendingForUser(7) {
+		t.Errorf("API trigger must be off when APIThrottle is 0")
 	}
 }

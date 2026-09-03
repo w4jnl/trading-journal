@@ -444,6 +444,7 @@ func run() error {
 		rthStart, rthEnd, _ := cfg.TopstepX.RTHWindowHM() // validated when rth_sync_min > 0
 		topstepxSync = topstepx.NewSyncService(queries, importSvc, client, box, topstepx.SyncOptions{
 			Throttle:     time.Duration(cfg.TopstepX.SyncThrottleMin) * time.Minute,
+			APIThrottle:  time.Duration(cfg.TopstepX.APISyncThrottleSec) * time.Second,
 			SessionEvery: time.Duration(cfg.TopstepX.SessionSyncMin) * time.Minute,
 			RTHEvery:     time.Duration(cfg.TopstepX.RTHSyncMin) * time.Minute,
 			RTHStartMin:  rthStart,
@@ -451,6 +452,7 @@ func run() error {
 		}, slog.Default())
 		slog.Info("topstepx api sync enabled",
 			"base_url", cfg.TopstepX.BaseURL, "throttle_min", cfg.TopstepX.SyncThrottleMin,
+			"api_sync_throttle_sec", cfg.TopstepX.APISyncThrottleSec,
 			"session_sync_min", cfg.TopstepX.SessionSyncMin, "rth_sync_min", cfg.TopstepX.RTHSyncMin,
 			"rth_window", cfg.TopstepX.RTHWindow)
 	}
@@ -462,6 +464,7 @@ func run() error {
 		ibkrRTHStart, ibkrRTHEnd, _ := cfg.IBKR.RTHWindowHM() // validated when rth_sync_min > 0
 		ibkrSync = ibkr.NewSyncService(queries, importSvc, ibkr.SyncOptions{
 			Throttle:     time.Duration(cfg.IBKR.SyncThrottleMin) * time.Minute,
+			APIThrottle:  time.Duration(cfg.IBKR.APISyncThrottleSec) * time.Second,
 			SessionEvery: time.Duration(cfg.IBKR.SessionSyncMin) * time.Minute,
 			RTHEvery:     time.Duration(cfg.IBKR.RTHSyncMin) * time.Minute,
 			RTHStartMin:  ibkrRTHStart,
@@ -470,6 +473,7 @@ func run() error {
 		}, slog.Default())
 		slog.Info("ibkr live sync enabled",
 			"session_sync_min", cfg.IBKR.SessionSyncMin, "rth_sync_min", cfg.IBKR.RTHSyncMin,
+			"api_sync_throttle_sec", cfg.IBKR.APISyncThrottleSec,
 			"rth_window", cfg.IBKR.RTHWindow, "tickle_sec", cfg.IBKR.TickleSec)
 	}
 

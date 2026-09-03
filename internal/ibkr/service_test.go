@@ -331,5 +331,32 @@ func TestThrottleAndNilReceiver(t *testing.T) {
 	nilSvc.MaybeEnqueueUser(uid) // no panic
 }
 
+// TestMaybeEnqueueUserAPI mirrors topstepx: off unless APIThrottle is set,
+// then bounded by that gap.
+func TestMaybeEnqueueUserAPI(t *testing.T) {
+	svc, _, _, uid, _ := setupIbkr(t)
+	svc.MaybeEnqueueUserAPI(uid) // APIThrottle 0 -> disabled
+	if len(svc.jobs) != 0 {
+		t.Fatalf("disabled API trigger enqueued: queue = %d", len(svc.jobs))
+	}
+	svc.Opts.APIThrottle = time.Minute
+	svc.MaybeEnqueueUserAPI(uid)
+	svc.MaybeEnqueueUserAPI(uid) // pending -> dropped
+	if len(svc.jobs) != 1 {
+		t.Fatalf("queue = %d, want 1", len(svc.jobs))
+	}
+	<-svc.jobs
+	svc.mu.Lock()
+	svc.pending[uid] = false
+	svc.lastRun[uid] = time.Now()
+	svc.mu.Unlock()
+	svc.MaybeEnqueueUserAPI(uid) // inside the API gap -> dropped
+	if len(svc.jobs) != 0 {
+		t.Fatalf("queue inside API gap = %d, want 0", len(svc.jobs))
+	}
+	var nilSvc *SyncService
+	nilSvc.MaybeEnqueueUserAPI(uid) // no panic
+}
+
 // Unused-var guards for the linter in tests that ignore gw.
 var _ = errors.Is

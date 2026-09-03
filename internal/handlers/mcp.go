@@ -190,6 +190,7 @@ func (h *Handlers) mcpServerInfo(ctx context.Context, _ mcpgo.CallToolRequest) (
 }
 
 func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	h.nudgeSyncFromAPI(ctx)
 	f := tradeFilters{Page: req.GetInt("page", 1)}
 	if f.Page < 1 {
 		f.Page = 1
@@ -233,6 +234,7 @@ func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest)
 }
 
 func (h *Handlers) mcpGetDailyStats(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	h.nudgeSyncFromAPI(ctx)
 	tz := h.localTZ()
 	rng, err := parseAPIDateRange(req.GetString("from", ""), req.GetString("to", ""), tz, todayLocal(tz))
 	if err != nil {

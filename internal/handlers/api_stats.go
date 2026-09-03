@@ -275,6 +275,7 @@ func (h *Handlers) APIStatsDaily(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusInternalServerError, "could not resolve account filter")
 		return
 	}
+	h.nudgeSyncFromAPI(r.Context()) // a valid read keeps the broker data moving
 	out, err := h.dailyStats(r.Context(), af, rng)
 	if err != nil {
 		h.logger().Warn("api stats: load failed", "err", err)

@@ -80,6 +80,13 @@ Failures return `401` with a JSON body `{"error": "..."}`:
 - **`null` means absent, never zero** - a P&L withheld for a stub
   instrument, a win rate with no decided trades, a largest win on a day
   with no winners. Render it as "—".
+- **Reads keep the data fresh.** Fetching `/version`, `/stats/daily` or the
+  trades endpoints nudges the broker syncs (TopstepX, IBKR) for your user,
+  the same way opening a page does - throttled to at most one sync per
+  `api_sync_throttle_sec` (default 60 s; `0` disables). The sync is
+  asynchronous: the response you get is what is there now, and new fills
+  change `/version` a few seconds later, so the poll-then-refetch loop below
+  picks them up.
 - **Ownership.** You only ever see your own data. A request for an id you
   don't own returns `404` (not `403`) - the resource simply doesn't exist
   for you.
@@ -591,6 +598,9 @@ refetch when the value **differs** from the last one you saw. Compare for
 inequality only: the counter is process-local and restarts at zero when the
 server restarts. It is an in-memory read with no database work, so it is
 the cheap thing to poll; the response carries `Cache-Control: no-store`.
+Polling it also acts as your presence signal: each poll nudges the broker
+syncs (throttled per `api_sync_throttle_sec`), so a consumer that only ever
+polls `/version` still keeps the underlying data moving.
 
 ## MCP server (for AI agents)
 

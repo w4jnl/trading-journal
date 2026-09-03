@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -18,8 +19,8 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m.HandleFunc("GET /api/v1/openapi.json", h.APIOpenAPI)
 	// Change detection for consumer apps: the same in-memory version the
 	// HTML pages poll, reachable with a key (the /data/version route sits
-	// behind the session chain).
-	m.HandleFunc("GET /api/v1/version", h.DataVersion)
+	// behind the session chain) - plus the read-triggered sync nudge.
+	m.HandleFunc("GET /api/v1/version", h.APIVersion)
 	m.HandleFunc("GET /api/v1/stats/daily", h.APIStatsDaily)
 	m.HandleFunc("GET /api/v1/strategies", h.APIStrategiesList)
 	m.HandleFunc("GET /api/v1/strategies/{id}", h.APIStrategyDetail)
@@ -36,6 +37,26 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m.HandleFunc("GET /api/v1/trades/{id}/chart.png", h.APITradeChartPNG)
 	m.HandleFunc("GET /api/v1/attachments/{id}", h.APIAttachmentServe)
 	return m
+}
+
+// nudgeSyncFromAPI asks both broker syncs to refresh the caller's data, the
+// way a page visit does - so a consumer app reading trades/stats/version
+// keeps the data moving without anyone opening a web page. Throttled per
+// user by api_sync_throttle_sec (the services' APIThrottle; 0 disables) and
+// nil-safe when a broker is off. The sync is asynchronous: the current read
+// returns what is there now, and new fills bump /api/v1/version shortly
+// after - which is exactly the poll-then-refetch loop consumers already run.
+func (h *Handlers) nudgeSyncFromAPI(ctx context.Context) {
+	uid := userID(ctx)
+	h.TopstepxSync.MaybeEnqueueUserAPI(uid)
+	h.IbkrSync.MaybeEnqueueUserAPI(uid)
+}
+
+// APIVersion: GET /api/v1/version - DataVersion plus the sync nudge, so a
+// consumer's cheap change-detection poll doubles as its presence signal.
+func (h *Handlers) APIVersion(w http.ResponseWriter, r *http.Request) {
+	h.nudgeSyncFromAPI(r.Context())
+	h.DataVersion(w, r)
 }
 
 // ---- API response projections (camelCase; we never serialize sqlc model

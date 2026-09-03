@@ -59,6 +59,7 @@ type syncJob struct {
 // SyncOptions bundles the cadence/throttle knobs from config.
 type SyncOptions struct {
 	Throttle     time.Duration // min gap between page-visit syncs per user; <=0 -> 15m
+	APIThrottle  time.Duration // min gap between API-read-triggered syncs per user; <=0 disables that trigger
 	SessionEvery time.Duration // scheduled cadence in the Globex window; 0 disables
 	RTHEvery     time.Duration // faster cadence inside the RTH window; 0 disables
 	RTHStartMin  int           // RTH window bounds, minutes-of-day Chicago
@@ -116,6 +117,19 @@ func (s *SyncService) MaybeEnqueueUser(userID int64) {
 		return
 	}
 	s.enqueueWithGap(userID, s.Opts.Throttle)
+}
+
+// MaybeEnqueueUserAPI is the read-triggered twin of MaybeEnqueueUser for the
+// JSON API and MCP tools: a consumer app reading trades/stats/version keeps
+// the user's broker data moving without anyone opening a web page. It has
+// its own, tighter gap (Opts.APIThrottle) because a client may poll every
+// few seconds - the gap bounds the broker traffic that can cause; <=0
+// disables the trigger. Never blocks; safe on a nil receiver.
+func (s *SyncService) MaybeEnqueueUserAPI(userID int64) {
+	if s == nil || s.Opts.APIThrottle <= 0 {
+		return
+	}
+	s.enqueueWithGap(userID, s.Opts.APIThrottle)
 }
 
 // PendingForUser reports whether a sync is currently queued or running for

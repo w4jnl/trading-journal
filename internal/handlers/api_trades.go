@@ -86,6 +86,7 @@ func apiTradeRowFrom(t tradeRow) apiTradeRow {
 // same filter parsing + dynamic-WHERE path as the HTML /trades page, so the API
 // honors symbol_root / direction / outcome / from / to / account_id / page.
 func (h *Handlers) APITradesList(w http.ResponseWriter, r *http.Request) {
+	h.nudgeSyncFromAPI(r.Context())
 	ctx := r.Context()
 	f, err := h.parseTradeFilters(r)
 	if err != nil {
@@ -119,6 +120,7 @@ func (h *Handlers) APITradesList(w http.ResponseWriter, r *http.Request) {
 // APITradeDetail: GET /api/v1/trades/{id} - one trade with its fills, linked
 // journal entry id (if any), group count, and cached chart data.
 func (h *Handlers) APITradeDetail(w http.ResponseWriter, r *http.Request) {
+	h.nudgeSyncFromAPI(r.Context())
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")

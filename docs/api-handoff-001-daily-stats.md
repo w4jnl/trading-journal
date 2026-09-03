@@ -141,7 +141,8 @@ changes). Response carries `Cache-Control: no-store`.
   format to two decimals for display, exactly as the journal itself does.
 - **Cache freshness.** `daily_stats` is rebuilt after every import /
   recompute, so the endpoint reflects the last import — exactly like the
-  Calendar. Use `/api/v1/version` to know when to refetch (below).
+  Calendar. Your own reads trigger those imports from the brokers (see
+  *Change detection*); use `/api/v1/version` to know when to refetch.
 - **Timezone changes.** If the journal's configured trading timezone is
   ever changed, historical day keys shift only after the user recomputes;
   a consumer should treat `timezone` as part of the data, not a constant.
@@ -150,6 +151,12 @@ changes). Response carries `Cache-Control: no-store`.
 
 Poll `GET /api/v1/version` (the journal's own pages poll every 10 s) and
 refetch your stats when the value **differs** from the last one you saw.
+Your polling is also what keeps the data fresh: every read of `/version`,
+`/stats/daily` or the trades endpoints nudges the journal's broker syncs
+(TopstepX, IBKR) for the key's user, throttled to at most one sync per
+`api_sync_throttle_sec` (default 60 s) - so you never need to open the web
+UI for new fills to arrive. The sync is asynchronous: new fills land a few
+seconds after the nudge and change `/version`, which your loop then sees.
 Rules: compare for inequality only — the counter is process-local and
 restarts at zero when the journal restarts, so "changed" must never be
 read as "increased". It is coarse (any mutation of the user's data bumps
