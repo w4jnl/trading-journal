@@ -42,6 +42,11 @@ parentheses:
 - `set_tag` (`POST /journal/{id}/tag`) - set `good|neutral|bad` **only if the
   entry has none** (never overwrites), on any entry when your analysis warrants a
   clear verdict.
+- `get_daily_stats` (`GET /stats/daily`) - per-day P&L + trade counts with range
+  totals (the Calendar's numbers: `trades, wins, losses, net, gross, commission,
+  winRate, largestWin, largestLoss`). Use it for the overview's figures instead of
+  summing trades yourself; `from`/`to` inclusive (default last 30 days), optional
+  `accountId`. Days without closed trades are omitted; `null` means absent.
 
 ## The once-only marker
 

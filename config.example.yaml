@@ -123,6 +123,11 @@ topstepx:
   http_timeout_sec: 15
   # Minimum minutes between page-visit-triggered syncs per user.
   sync_throttle_min: 15
+  # Read-triggered sync for consumer apps: a JSON API / MCP read of trades,
+  # stats or the data version nudges a sync, at most once per this many
+  # seconds per user (the sync is asynchronous; new fills then bump
+  # /api/v1/version). 0 disables the trigger.
+  api_sync_throttle_sec: 60
   # Scheduled sync cadences (minutes; 0 disables a tier):
   #  - session_sync_min runs during CME Globex trading hours (Sun 17:00 -
   #    Fri 16:00 Chicago, minus the daily 16:00-17:00 break, Sat off).
@@ -149,6 +154,7 @@ ibkr:
   # cadence gated to CME Globex hours (silent overnight/weekends). Minutes;
   # 0 disables a tier.
   sync_throttle_min: 15  # min minutes between page-visit-triggered syncs per user
+  api_sync_throttle_sec: 60  # max one read-triggered (JSON API / MCP) sync per user per N seconds; 0 disables
   session_sync_min: 60   # cadence during Globex hours (Sun 17:00 - Fri 16:00 CT, minus the daily break)
   rth_sync_min: 15       # faster cadence inside rth_window
   rth_window: "07:30-16:00"  # Chicago time, Mon-Fri (RTH 08:30-15:00 CT +/- 1h)

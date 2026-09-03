@@ -161,6 +161,13 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithString("tag", mcpgo.Required(), mcpgo.Enum("good", "neutral", "bad")),
 	), h.mcpSetTag)
+
+	s.AddTool(mcpgo.NewTool("get_daily_stats",
+		mcpgo.WithDescription("Daily P&L + trade stats per trading day (trades, wins, losses, net, gross, commission, winRate, largestWin/largestLoss) with totals over the range - the same numbers as the journal's Calendar. Use it for overview figures instead of summing trades yourself. A trade belongs to the day of its exit (trading tz); retired accounts never count and excluded-from-stats accounts are dropped unless accountId is given. Days without closed trades are omitted."),
+		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD (inclusive, trading tz); default = to minus 29 days.")),
+		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD (inclusive); default = today. Span at most 400 days.")),
+		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id.")),
+	), h.mcpGetDailyStats)
 }
 
 // ---- tool handlers (reuse the same ctx-based logic as the REST API) ----
@@ -183,6 +190,7 @@ func (h *Handlers) mcpServerInfo(ctx context.Context, _ mcpgo.CallToolRequest) (
 }
 
 func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	h.nudgeSyncFromAPI(ctx)
 	f := tradeFilters{Page: req.GetInt("page", 1)}
 	if f.Page < 1 {
 		f.Page = 1
@@ -223,6 +231,24 @@ func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest)
 		"items": items,
 		"page":  map[string]any{"page": f.Page, "pageSize": tradesPageSize, "pages": pages, "total": total},
 	})
+}
+
+func (h *Handlers) mcpGetDailyStats(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	h.nudgeSyncFromAPI(ctx)
+	tz := h.localTZ()
+	rng, err := parseAPIDateRange(req.GetString("from", ""), req.GetString("to", ""), tz, todayLocal(tz))
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
+	var af accountFilter
+	if v := mcpOptInt(req, "accountId"); v != nil {
+		af = accountFilter{Active: true, AccountIDs: []int64{*v}}
+	}
+	out, err := h.dailyStats(ctx, af, rng)
+	if err != nil {
+		return mcpgo.NewToolResultError("could not load daily stats"), nil
+	}
+	return mcpJSON(out)
 }
 
 func (h *Handlers) mcpGetTrade(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {

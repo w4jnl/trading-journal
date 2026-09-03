@@ -727,16 +727,7 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	q := r.URL.Query()
 	f := tradeFilters{Page: 1}
 
-	// Bridge legacy ?account_id=N → ?filter=acc:N before resolving.
-	if legacy := strings.TrimSpace(q.Get("account_id")); legacy != "" {
-		r2 := *r
-		r2.URL = cloneURL(r.URL)
-		r2.URL.RawQuery = q.Encode() // start from current
-		newQ := r2.URL.Query()
-		newQ.Add("filter", "acc:"+legacy)
-		r2.URL.RawQuery = newQ.Encode()
-		r = &r2
-	}
+	r = bridgeLegacyAccountID(r) // legacy ?account_id=N -> ?filter=acc:N
 
 	af, err := h.resolveAccountFilter(r)
 	if err != nil {

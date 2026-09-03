@@ -98,6 +98,8 @@ check "/dashboard"  "$(code "${H[@]}" "$BASE/dashboard")" 200
 check "/trades"     "$(code "${H[@]}" "$BASE/trades")"    200
 check "/journal"    "$(code "${H[@]}" "$BASE/journal")"   200
 check "/calendar"   "$(code "${H[@]}" "$BASE/calendar")"  200
+check "/settings/api-docs" "$(code "${H[@]}" "$BASE/settings/api-docs")" 200
+curl -s "${H[@]}" "$BASE/settings/api-docs" | grep -q "Daily stats" && say "PASS  /settings/api-docs renders API.md" || { say "FAIL  /settings/api-docs"; fails=$((fails+1)); }
 check "/ no header -> 401" "$(code "$BASE/")" 401
 curl -s "${H[@]}" "$BASE/trades" | grep -q "<title>" && say "PASS  /trades renders HTML" || { say "FAIL  /trades HTML"; fails=$((fails+1)); }
 
@@ -109,6 +111,9 @@ check "/api/v1 no key -> 401" "$(code "$BASE/api/v1")" 401
 check "/api/v1 with key"      "$(code "${A[@]}" "$BASE/api/v1")" 200
 check "/api/v1/trades"        "$(code "${A[@]}" "$BASE/api/v1/trades?page=1")" 200
 check "/api/v1/strategies"    "$(code "${A[@]}" "$BASE/api/v1/strategies")" 200
+check "/api/v1/stats/daily"   "$(code "${A[@]}" "$BASE/api/v1/stats/daily")" 200
+check "/api/v1/stats/daily bad from -> 400" "$(code "${A[@]}" "$BASE/api/v1/stats/daily?from=nope")" 400
+check "/api/v1/version"       "$(code "${A[@]}" "$BASE/api/v1/version")" 200
 
 say ""; say "== chart PNG (visual artifact; warms bars from Yahoo -- needs network) =="
 TID=$(sqlite3 "$SCRATCH/data/trading.db" "SELECT id FROM trades WHERE status='closed' LIMIT 1;")

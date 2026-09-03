@@ -439,6 +439,44 @@ func TestMaybeEnqueueUserThrottle(t *testing.T) {
 	nilSvc.EnqueueAccountRefetch(uid, 1)
 }
 
+// TestMaybeEnqueueUserAPI: the read-triggered twin is off unless APIThrottle
+// is set, then dedups on pending and on its own (shorter) gap.
+func TestMaybeEnqueueUserAPI(t *testing.T) {
+	svc, _, _, uid := setupSync(t)
+
+	svc.MaybeEnqueueUserAPI(uid) // APIThrottle 0 -> trigger disabled
+	if len(svc.jobs) != 0 {
+		t.Fatalf("disabled API trigger enqueued: queue = %d", len(svc.jobs))
+	}
+	svc.Opts.APIThrottle = time.Minute
+	svc.MaybeEnqueueUserAPI(uid)
+	if len(svc.jobs) != 1 {
+		t.Fatalf("queue = %d, want 1", len(svc.jobs))
+	}
+	svc.MaybeEnqueueUserAPI(uid) // pending -> dropped
+	if len(svc.jobs) != 1 {
+		t.Fatalf("queue after pending dup = %d, want 1", len(svc.jobs))
+	}
+	<-svc.jobs
+	svc.mu.Lock()
+	svc.pending[uid] = false
+	svc.lastRun[uid] = time.Now()
+	svc.mu.Unlock()
+	svc.MaybeEnqueueUserAPI(uid) // inside the API gap -> dropped
+	if len(svc.jobs) != 0 {
+		t.Fatalf("queue inside API gap = %d, want 0", len(svc.jobs))
+	}
+	svc.mu.Lock()
+	svc.lastRun[uid] = time.Now().Add(-61 * time.Second)
+	svc.mu.Unlock()
+	svc.MaybeEnqueueUserAPI(uid) // gap expired -> enqueued
+	if len(svc.jobs) != 1 {
+		t.Fatalf("queue after API gap = %d, want 1", len(svc.jobs))
+	}
+	var nilSvc *SyncService
+	nilSvc.MaybeEnqueueUserAPI(uid) // no-op
+}
+
 // TestSyncUser_NoCredentials is a no-op, not an error.
 func TestSyncUser_NoCredentials(t *testing.T) {
 	svc, _, q, uid := setupSync(t)

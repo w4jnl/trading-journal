@@ -35,6 +35,7 @@ type gatewayClient interface {
 // page-visit throttle plus a two-tier cadence gated to CME Globex hours.
 type SyncOptions struct {
 	Throttle     time.Duration // min gap between page-visit syncs per user; <=0 -> 15m
+	APIThrottle  time.Duration // min gap between API-read-triggered syncs per user; <=0 disables that trigger
 	SessionEvery time.Duration // scheduled cadence during Globex hours; 0 disables
 	RTHEvery     time.Duration // faster cadence inside the RTH window; 0 disables
 	RTHStartMin  int           // RTH window bounds, minutes-of-day Chicago
@@ -126,6 +127,16 @@ func (s *SyncService) MaybeEnqueueUser(userID int64) {
 		return
 	}
 	s.enqueueWithGap(userID, s.Opts.Throttle)
+}
+
+// MaybeEnqueueUserAPI mirrors topstepx: the read-triggered sync for the JSON
+// API / MCP tools, bounded by its own gap (Opts.APIThrottle; <=0 disables)
+// so a fast-polling consumer cannot hammer the gateway. Nil-safe.
+func (s *SyncService) MaybeEnqueueUserAPI(userID int64) {
+	if s == nil || s.Opts.APIThrottle <= 0 {
+		return
+	}
+	s.enqueueWithGap(userID, s.Opts.APIThrottle)
 }
 
 func (s *SyncService) enqueueWithGap(userID int64, minGap time.Duration) {

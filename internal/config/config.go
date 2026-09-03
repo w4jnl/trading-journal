@@ -65,12 +65,16 @@ func (m MWEmail) IngestEnabled() bool {
 // Scheduling mirrors TopstepX: a page-visit throttle plus a two-tier
 // (RTH/session) scheduler gated to CME Globex hours.
 type IBKR struct {
-	Enabled         *bool  `yaml:"enabled"`           // nil = true
-	TickleSec       int    `yaml:"tickle_sec"`        // per-gateway keep-alive; default 60; 0 disables
-	SyncThrottleMin int    `yaml:"sync_throttle_min"` // min minutes between page-visit syncs per user; default 15
-	SessionSyncMin  int    `yaml:"session_sync_min"`  // scheduled cadence during Globex hours; default 60; 0 disables
-	RTHSyncMin      int    `yaml:"rth_sync_min"`      // faster cadence inside rth_window; default 15; 0 disables
-	RTHWindow       string `yaml:"rth_window"`        // "HH:MM-HH:MM" Chicago, Mon-Fri; default "07:30-16:00"
+	Enabled         *bool `yaml:"enabled"`           // nil = true
+	TickleSec       int   `yaml:"tickle_sec"`        // per-gateway keep-alive; default 60; 0 disables
+	SyncThrottleMin int   `yaml:"sync_throttle_min"` // min minutes between page-visit syncs per user; default 15
+	// APISyncThrottleSec bounds the read-triggered sync: a JSON API / MCP read
+	// of trades, stats or the data version nudges a sync at most this often
+	// per user. Default 60; 0 disables the trigger.
+	APISyncThrottleSec int    `yaml:"api_sync_throttle_sec"`
+	SessionSyncMin     int    `yaml:"session_sync_min"` // scheduled cadence during Globex hours; default 60; 0 disables
+	RTHSyncMin         int    `yaml:"rth_sync_min"`     // faster cadence inside rth_window; default 15; 0 disables
+	RTHWindow          string `yaml:"rth_window"`       // "HH:MM-HH:MM" Chicago, Mon-Fri; default "07:30-16:00"
 }
 
 // RTHWindowHM parses RTHWindow into start/end minutes-of-day (Chicago).
@@ -90,6 +94,10 @@ type TopstepX struct {
 	EncryptionKey   string `yaml:"encryption_key"`    // 64 hex chars (32 bytes); env TJ_TOPSTEPX_ENC_KEY
 	HTTPTimeoutSec  int    `yaml:"http_timeout_sec"`  // default 15
 	SyncThrottleMin int    `yaml:"sync_throttle_min"` // min minutes between page-visit syncs per user; default 15
+	// APISyncThrottleSec bounds the read-triggered sync: a JSON API / MCP read
+	// of trades, stats or the data version nudges a sync at most this often
+	// per user. Default 60; 0 disables the trigger.
+	APISyncThrottleSec int `yaml:"api_sync_throttle_sec"`
 
 	// Scheduled-sync cadences. The scheduler runs at SessionSyncMin
 	// throughout the CME Globex session (plus a 2h margin each side) and
@@ -302,11 +310,11 @@ func defaults() Config {
 		AI:         AI{Provider: "openai", BaseURL: "http://0.0.0.0:8080/v1", TimeoutSec: 120, MaxTokens: 1024, Temperature: 0.4},
 		GEX:        GEX{TimeoutSec: 5},
 		TopstepX: TopstepX{
-			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15,
+			BaseURL: "https://api.topstepx.com", HTTPTimeoutSec: 15, SyncThrottleMin: 15, APISyncThrottleSec: 60,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
 		IBKR: IBKR{
-			TickleSec: 60, SyncThrottleMin: 15,
+			TickleSec: 60, SyncThrottleMin: 15, APISyncThrottleSec: 60,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
 		MWEmail:  MWEmail{ListenAddr: ":2525", TLSMode: "off", ArchiveDir: "data/mw-raw"},
@@ -388,6 +396,9 @@ func (c Config) Validate() error {
 	if c.TopstepX.SyncThrottleMin < 0 {
 		return fmt.Errorf("topstepx.sync_throttle_min must be >= 0, got %d", c.TopstepX.SyncThrottleMin)
 	}
+	if c.TopstepX.APISyncThrottleSec < 0 {
+		return fmt.Errorf("topstepx.api_sync_throttle_sec must be >= 0 (0 disables), got %d", c.TopstepX.APISyncThrottleSec)
+	}
 	if c.TopstepX.SessionSyncMin < 0 {
 		return fmt.Errorf("topstepx.session_sync_min must be >= 0 (0 disables), got %d", c.TopstepX.SessionSyncMin)
 	}
@@ -404,6 +415,9 @@ func (c Config) Validate() error {
 	}
 	if c.IBKR.SyncThrottleMin < 0 {
 		return fmt.Errorf("ibkr.sync_throttle_min must be >= 0, got %d", c.IBKR.SyncThrottleMin)
+	}
+	if c.IBKR.APISyncThrottleSec < 0 {
+		return fmt.Errorf("ibkr.api_sync_throttle_sec must be >= 0 (0 disables), got %d", c.IBKR.APISyncThrottleSec)
 	}
 	if c.IBKR.SessionSyncMin < 0 {
 		return fmt.Errorf("ibkr.session_sync_min must be >= 0 (0 disables), got %d", c.IBKR.SessionSyncMin)

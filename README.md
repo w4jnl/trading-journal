@@ -233,7 +233,9 @@ Beyond the web UI, the app exposes a small **HTTP API** for external
 clients and AI agents: read your strategies and journal entries (trades
 overview, detailed trade list, tags, assigned strategy, chart data + a
 server-rendered PNG, embedded images), and append dated notes to an entry
-(append-only — existing content is never overwritten).
+(append-only — existing content is never overwritten). Consumer apps get
+daily P&L / trade stats (`GET /api/v1/stats/daily` — the Calendar's
+numbers) and a data version to poll for changes (`GET /api/v1/version`).
 
 Access is by **per-user API key**, generated under **Settings**
 (`/settings`) and sent as `Authorization: Bearer tj_...` (or `X-API-Key`).
@@ -241,7 +243,10 @@ The surface is LLM-friendly: a discovery index at `GET /api/v1` and an
 OpenAPI 3.1 spec at `GET /api/v1/openapi.json`, both behind the key.
 
 Full reference — authentication, every endpoint, JSON shapes, and a
-worked example — lives in **[API.md](API.md)**.
+worked example — lives in **[API.md](API.md)**, rendered in-app under
+**Settings → API docs**. A contract-first brief for building a consumer
+app on the stats endpoint is in
+[docs/api-handoff-001-daily-stats.md](docs/api-handoff-001-daily-stats.md).
 
 For AI agents the app also speaks **MCP** (Model Context Protocol) at
 `/mcp`, authenticated by the same per-user keys — so Claude Code, the

@@ -3,7 +3,7 @@
   "info": {
     "title": "Trading Journal API",
     "version": "v1",
-    "description": "Read strategies and journal entries, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content)."
+    "description": "Read strategies, journal entries, trades and daily P&L / trade stats, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content). Poll /version to learn when the user's data changed."
   },
   "servers": [{ "url": "/api/v1" }],
   "security": [{ "bearerApiKey": [] }],
@@ -46,6 +46,55 @@
           "trades": { "type": "integer" }, "net": { "type": "number" }, "gross": { "type": "number" },
           "commission": { "type": "number" }, "wins": { "type": "integer" }, "losses": { "type": "integer" }
         }
+      },
+      "DayRef": {
+        "type": "object",
+        "properties": { "date": { "type": "string", "example": "2026-08-14" }, "net": { "type": "number" } }
+      },
+      "DailyStatsItem": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Summary" },
+          {
+            "type": "object",
+            "properties": {
+              "date": { "type": "string", "example": "2026-08-03", "description": "Trading day in the trading timezone; a trade belongs to the day of its exit." },
+              "winRate": { "type": ["number", "null"], "description": "wins/(wins+losses); null when no decided trades." },
+              "largestWin": { "type": ["number", "null"], "description": "null when no winning trade that day." },
+              "largestLoss": { "type": ["number", "null"], "description": "Negative; null when no losing trade that day." }
+            }
+          }
+        ]
+      },
+      "DailyStatsTotals": {
+        "allOf": [
+          { "$ref": "#/components/schemas/Summary" },
+          {
+            "type": "object",
+            "properties": {
+              "winRate": { "type": ["number", "null"] },
+              "winDays": { "type": "integer", "description": "Days with net > 0." },
+              "lossDays": { "type": "integer", "description": "Days with net < 0." },
+              "bestDay": { "oneOf": [{ "$ref": "#/components/schemas/DayRef" }, { "type": "null" }] },
+              "worstDay": { "oneOf": [{ "$ref": "#/components/schemas/DayRef" }, { "type": "null" }] },
+              "largestWin": { "type": ["number", "null"] },
+              "largestLoss": { "type": ["number", "null"] }
+            }
+          }
+        ]
+      },
+      "DailyStats": {
+        "type": "object",
+        "properties": {
+          "from": { "type": "string", "example": "2026-08-03", "description": "Effective range start (echoed even when defaulted)." },
+          "to": { "type": "string", "example": "2026-09-01" },
+          "timezone": { "type": "string", "example": "America/Chicago", "description": "The trading timezone every date is in." },
+          "totals": { "$ref": "#/components/schemas/DailyStatsTotals" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/DailyStatsItem" }, "description": "One per day WITH closed trades, ascending; gap days omitted." }
+        }
+      },
+      "DataVersion": {
+        "type": "object",
+        "properties": { "v": { "type": "integer", "description": "Opaque per-user data version. Compare for inequality only (process-local; resets on restart)." } }
       },
       "JournalDetail": {
         "type": "object",
@@ -153,6 +202,32 @@
     }
   },
   "paths": {
+    "/stats/daily": {
+      "get": {
+        "operationId": "getDailyStats",
+        "summary": "Daily P&L + trade stats per trading day with range totals - the Calendar's numbers (daily_stats cache; retired accounts never count, excluded-from-stats accounts are dropped unless filtered).",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-08-01" }, "description": "First day, inclusive, trading timezone. Default: to minus 29 days." },
+          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive. Default: today. Span at most 400 days." },
+          { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug> (live|prop_live|prop_funded|prop_eval|paper). An explicit filter overrides excluded_from_stats." },
+          { "name": "account_id", "in": "query", "deprecated": true, "schema": { "type": "integer" }, "description": "Legacy alias for filter=acc:<id>." }
+        ],
+        "responses": {
+          "200": { "description": "OK (an empty range is a 200 with items: [] and zeroed totals)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DailyStats" } } } },
+          "400": { "description": "Malformed date, to before from, or span over 400 days", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/version": {
+      "get": {
+        "operationId": "getVersion",
+        "summary": "Per-user data version for change detection: poll it and refetch when the value differs from the last one you saw.",
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DataVersion" } } } }
+        }
+      }
+    },
     "/strategies": {
       "get": {
         "operationId": "listStrategies",

@@ -1,10 +1,10 @@
 # HTTP API
 
-A small, read-plus-append HTTP API over your own strategies and journal
-entries, authenticated by a **per-user API key**. It's designed to be
-LLM-friendly: a discovery index, a machine-readable OpenAPI 3.1 spec,
-stable camelCase JSON, and append-only note writes that can never destroy
-what you've already written.
+A small, read-plus-append HTTP API over your own strategies, journal
+entries, trades and daily P&L / trade stats, authenticated by a **per-user
+API key**. It's designed to be LLM-friendly: a discovery index, a
+machine-readable OpenAPI 3.1 spec, stable camelCase JSON, and append-only
+note writes that can never destroy what you've already written.
 
 Everything is scoped to the key's user. There is no anonymous access -
 every endpoint, including the index and the OpenAPI spec, requires a key.
@@ -64,8 +64,29 @@ Failures return `401` with a JSON body `{"error": "..."}`:
   snake_case columns.)
 - **Errors** are always `{"error": "<message>"}` with a `4xx`/`5xx` status.
 - **Single resources** are returned as a bare object. **Lists** are
-  `{"items": [...]}`; the journal list additionally carries
-  `{"page": {"limit", "offset", "count"}}`.
+  `{"items": [...]}` plus a `page` object - offset-based on the journal
+  list (`{"limit", "offset", "count"}`), page-based on the trades list
+  (`{"page", "pageSize", "pages", "total"}`).
+- **Date ranges.** `from` / `to` are `YYYY-MM-DD` calendar dates in the
+  trading timezone, **inclusive** on both ends. The stats endpoint rejects
+  a malformed or inverted range with `400`; the list endpoints ignore junk
+  dates.
+- **Account filter.** `filter=acc:<id>` and `filter=type:<slug>` (slugs
+  `live`, `prop_live`, `prop_funded`, `prop_eval`, `paper`) are repeatable
+  and OR-combined; the legacy singular `account_id=<id>` still works.
+  Retired accounts never count in stats; accounts marked *excluded from
+  stats* are dropped from default stats unless an explicit filter names
+  them.
+- **`null` means absent, never zero** - a P&L withheld for a stub
+  instrument, a win rate with no decided trades, a largest win on a day
+  with no winners. Render it as "—".
+- **Reads keep the data fresh.** Fetching `/version`, `/stats/daily` or the
+  trades endpoints nudges the broker syncs (TopstepX, IBKR) for your user,
+  the same way opening a page does - throttled to at most one sync per
+  `api_sync_throttle_sec` (default 60 s; `0` disables). The sync is
+  asynchronous: the response you get is what is there now, and new fills
+  change `/version` a few seconds later, so the poll-then-refetch loop below
+  picks them up.
 - **Ownership.** You only ever see your own data. A request for an id you
   don't own returns `404` (not `403`) - the resource simply doesn't exist
   for you.
@@ -108,12 +129,17 @@ surface:
 |---|---|---|
 | `GET`  | `/api/v1` | Discovery index |
 | `GET`  | `/api/v1/openapi.json` | OpenAPI 3.1 spec |
+| `GET`  | `/api/v1/version` | Data version for change detection |
+| `GET`  | `/api/v1/stats/daily` | Daily P&L + trade stats with range totals |
 | `GET`  | `/api/v1/strategies` | List your strategies |
 | `GET`  | `/api/v1/strategies/{id}` | One strategy |
 | `GET`  | `/api/v1/journal` | List journal entries (summary rows) |
 | `POST` | `/api/v1/journal` | Create an entry (day/week/trade/group) |
+| `POST` | `/api/v1/journal/prepare-day` | Cluster a day's trades + create the entries to analyze |
 | `GET`  | `/api/v1/journal/{id}` | One journal entry (full detail) |
 | `POST` | `/api/v1/journal/{id}/notes` | Append a dated note (append-only) |
+| `POST` | `/api/v1/journal/{id}/strategy` | Assign a strategy (only if the entry has none) |
+| `POST` | `/api/v1/journal/{id}/tag` | Set a tag (only if the entry has none) |
 | `GET`  | `/api/v1/journal/{id}/chart.png` | Server-rendered chart image |
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
 | `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
@@ -348,6 +374,64 @@ unknown/foreign `strategyId` or `tradeId`, or (group) no owned trades. Editing a
 existing entry's tag/mood/strategy and deleting entries are out of scope -
 create new, or append notes.
 
+### Prepare a day for review
+
+`POST /api/v1/journal/prepare-day` - the daily-review entry point for
+agents. Clusters the day's copytrader fan-out (same root + direction +
+entry time within ~2 s across accounts) into **group** entries and the
+solos into **trade** entries, creates the missing ones (idempotent - an
+existing entry is reused, never duplicated), and returns them so the
+caller analyzes by `entryId` and never handles raw trade ids.
+
+Request body (optional): `{"date": "YYYY-MM-DD"}`; default = the last
+trading day before today (skips weekends, holidays and no-trade days).
+
+```jsonc
+// 200
+{
+  "date": "2026-05-12",
+  "entries": [
+    { "entryId": 41, "scope": "group", "created": true, "alreadyAnalyzed": false,
+      "label": "MES long 14:32", "symbolRoot": "MES", "direction": "long",
+      "accounts": 3, "netPnl": 96.4, "tradeIds": [4412, 4413, 4418] },
+    { "entryId": 42, "scope": "trade", "created": false, "alreadyAnalyzed": true,
+      "label": "MNQ short 15:10", "symbolRoot": "MNQ", "direction": "short",
+      "accounts": 1, "netPnl": -22.0, "tradeIds": [4420] }
+  ],
+  "note": "..."                        // informational (e.g. no trades that day); may be absent
+}
+```
+
+`alreadyAnalyzed` reflects the analysis marker in the entry's notes, so a
+re-run knows what to skip. `400` for a malformed or future date.
+
+### Assign a strategy (only if unset)
+
+`POST /api/v1/journal/{id}/strategy` with `{"strategyId": 3}` assigns a
+strategy to a **trade or group** entry that has none yet. An existing
+assignment is **never changed** - the response then says
+`"assigned": false`. Day and week entries span mixed setups and are
+rejected.
+
+```json
+{ "id": 41, "assigned": true }
+```
+
+`400` for an unknown/foreign entry or strategy, a missing `strategyId`, or
+a day/week entry.
+
+### Set a tag (only if unset)
+
+`POST /api/v1/journal/{id}/tag` with `{"tag": "good"}` (`good` | `neutral` |
+`bad`) tags an entry that is still untagged. An existing tag is **never
+changed** (`"assigned": false` then).
+
+```json
+{ "id": 41, "assigned": true }
+```
+
+`400` for an unknown entry or a bad/missing tag.
+
 ### Chart image (PNG)
 
 `GET /api/v1/journal/{id}/chart.png`
@@ -446,6 +530,78 @@ trade. The `chart` field has the same shape as the journal
 `GET /api/v1/trades/{id}/chart.png` - same renderer and `?contract=` rule as the
 journal chart image; `image/png` or `404` when nothing is cached.
 
+### Daily stats
+
+`GET /api/v1/stats/daily` - per trading day: trade count, winners/losers,
+net/gross/commission, win rate and largest win/loss, plus totals over the
+range. These are **the Calendar's numbers**: the same cache (`daily_stats`,
+rebuilt after every import/recompute), the same account rule, the same day
+bucketing. Built for consumer apps and dashboards - use it instead of
+summing `/api/v1/trades` yourself. The contract-first brief for building
+such an app is `docs/api-handoff-001-daily-stats.md`.
+
+Query parameters (all optional):
+
+| Param | Type | Notes |
+|---|---|---|
+| `from` | `YYYY-MM-DD` | First day, inclusive (trading timezone). Default: `to` minus 29 days |
+| `to` | `YYYY-MM-DD` | Last day, inclusive. Default: today |
+| `filter` | `acc:<id>` \| `type:<slug>` | Repeatable; an explicit filter overrides *excluded from stats* |
+| `account_id` | integer | Legacy alias for one `filter=acc:<id>` |
+
+At most **400 days** per request.
+
+```jsonc
+// GET /api/v1/stats/daily?from=2026-08-03&to=2026-09-01
+{
+  "from": "2026-08-03", "to": "2026-09-01",   // effective range, echoed even when defaulted
+  "timezone": "America/Chicago",              // every "date" is a calendar day in this zone
+  "totals": {
+    "trades": 41, "wins": 24, "losses": 15,
+    "net": 1834.5, "gross": 2011.0, "commission": 176.5,
+    "winRate": 0.615,                         // wins / (wins + losses); null when both are 0
+    "winDays": 12, "lossDays": 6,             // days with net > 0 / net < 0
+    "bestDay":  { "date": "2026-08-14", "net": 612.0 },   // null when items is empty
+    "worstDay": { "date": "2026-08-21", "net": -388.0 },
+    "largestWin": 402.5, "largestLoss": -210.0            // best/worst single trade; null when none
+  },
+  "items": [                                  // one per day WITH closed trades, ascending; gap days omitted
+    { "date": "2026-08-03", "trades": 3, "wins": 2, "losses": 1,
+      "net": 120.0, "gross": 132.5, "commission": 12.5,
+      "winRate": 0.667, "largestWin": 95.0, "largestLoss": -40.0 }
+  ]
+}
+```
+
+Semantics:
+
+- A trade belongs to the day of its **exit** (last closing fill), in the
+  trading timezone. Closed trades only.
+- `wins` = net > 0, `losses` = net < 0. Breakeven trades and trades whose
+  instrument has no tick spec yet count in `trades` but in neither bucket
+  and add 0 to the money totals, so `wins + losses <= trades`.
+- Retired accounts never count; *excluded from stats* accounts are dropped
+  unless named by `filter=`. An explicit filter that matches no account
+  yields an empty result, never everything.
+- An empty range is a normal `200`: `"items": []`, zeroed totals, the
+  nullable fields `null`.
+
+Errors: `400` for a malformed `from`/`to`, `to` before `from`, or a span
+over 400 days (the message says which).
+
+### Data version (change detection)
+
+`GET /api/v1/version` -> `{"v": 137}` - an opaque per-user data version that
+changes after every committed mutation of your data (imports, recomputes,
+journal writes, account changes). Poll it (the web UI polls every 10 s) and
+refetch when the value **differs** from the last one you saw. Compare for
+inequality only: the counter is process-local and restarts at zero when the
+server restarts. It is an in-memory read with no database work, so it is
+the cheap thing to poll; the response carries `Cache-Control: no-store`.
+Polling it also acts as your presence signal: each poll nudges the broker
+syncs (throttled per `api_sync_throttle_sec`), so a consumer that only ever
+polls `/version` still keeps the underlying data moving.
+
 ## MCP server (for AI agents)
 
 Beyond the REST API, the app exposes an **MCP** (Model Context Protocol) server at
@@ -458,7 +614,9 @@ Tools: `prepare_day` (cluster a day's copytrader fan-out + create the journal
 entries to analyze - the daily-review entry point), `server_info`, `list_trades`,
 `get_trade`, `list_journal`, `get_journal_entry`, `list_strategies`,
 `get_strategy`, `get_chart_image` (returns the rendered PNG as image content),
-`create_journal_entry`, `append_note`.
+`create_journal_entry`, `append_note`, `assign_strategy` and `set_tag` (both
+only-if-unset, never overwrite), and `get_daily_stats` (the daily P&L / trade
+stats above).
 
 Connect:
 
@@ -485,7 +643,7 @@ and synthesizes the daily journal.
 |---|---|
 | `200` | OK |
 | `201` | Created (journal create) |
-| `400` | Bad request (malformed id, bad/missing field) |
+| `400` | Bad request (malformed id, bad/missing field, malformed or inverted date range, range too large) |
 | `401` | Missing/invalid/disabled key |
 | `404` | Not found, or not owned by you |
 | `409` | Conflict - a singleton entry already exists (carries `entryId`) |
@@ -518,6 +676,13 @@ curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/js
 curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/trades?symbol_root=MES&outcome=win"
 curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/trades/4412"
 
+# Daily P&L + trade stats for August, then just the live accounts
+curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/stats/daily?from=2026-08-01&to=2026-08-31"
+curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/stats/daily?from=2026-08-01&to=2026-08-31&filter=type:live"
+
+# Has anything changed since my last fetch? (poll this, not the data)
+curl -s -H "Authorization: Bearer $KEY" "$HOST/api/v1/version"
+
 # Create a day journal entry (201, or 409 with entryId if it already exists)
 curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/json" \
   -d '{"scope":"day","date":"2026-06-02","body":"Choppy open, sat out.","tag":"neutral"}' \
@@ -533,3 +698,9 @@ curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/js
 - Trades are read-only and the list is page-based (fixed page size 50).
 - No rate limiting (intended for a private network / trusted agents).
 - The PNG is a single panel; the JSON `chart` field carries every panel.
+- Daily stats come from the `daily_stats` cache (rebuilt after every import
+  or recompute) - the Calendar's numbers - and are capped at 400 days per
+  request.
+- `openapi.json` needs a key like everything else; while signed in to the
+  web UI the same document is at `/settings/api-docs/openapi.json`, and this
+  reference is rendered under **Settings → API docs**.

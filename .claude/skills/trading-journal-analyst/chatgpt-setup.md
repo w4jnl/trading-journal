@@ -52,6 +52,7 @@ Claude uses:
 | `append_note` | `appendNote` | `POST /journal/{id}/notes` |
 | `assign_strategy` | `assignStrategy` | `POST /journal/{id}/strategy` |
 | `set_tag` | `setTag` | `POST /journal/{id}/tag` |
+| `get_daily_stats` | `getDailyStats` | `GET /stats/daily` |
 
 **Charts:** there is no `get_chart_image` equivalent — Actions return JSON, so the GPT
 reasons from the numeric `chart` field on `getTrade` / `getJournalEntry` (OHLC bars +
