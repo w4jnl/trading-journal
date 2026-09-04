@@ -92,7 +92,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcpgo.NewTool("list_trades",
 		mcpgo.WithReadOnlyHintAnnotation(true),
-		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) plus entryTime, direction, account and entryPrice (use them to cluster copytrader copies: same symbolRoot+direction+entryTime within ~2s across >=2 accounts). Page size 50. Dates are trading-timezone days; the keywords today, yesterday and last (last trading day) are resolved server-side - use day=\"today\" for today's trades, never compute the date yourself."),
+		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) plus entryTime, direction, account and entryPrice (use them to cluster copytrader copies: same symbolRoot+direction+entryTime within ~2s across >=2 accounts). Page size 50. Dates are trading-timezone days; the keywords today, yesterday and last (last trading day) are resolved server-side - use day=\"today\" for today's trades, never compute the date yourself. Accounts hidden in Settings are left out unless accountId names one."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
 		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive).")),
 		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive).")),

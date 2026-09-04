@@ -29,10 +29,11 @@
   <div class="card-title">Account visibility in reports</div>
   <p class="muted" style="font-size: 12px; max-width: 78ch;">
     Turn an account off to leave it out of the <strong>Dashboard</strong>,
-    <strong>Calendar</strong>, and <strong>Analytics</strong> totals - handy for hiding
+    <strong>Calendar</strong>, <strong>Analytics</strong> and the default
+    <strong>Trades</strong> list (and the API's daily stats) - handy for hiding
     prop-firm Eval accounts whose paper P&amp;L would distort the real picture. Hidden
-    accounts stay fully visible in Accounts, still import, and still show on Trades;
-    picking one explicitly in a Calendar/Analytics account filter also overrides this.
+    accounts stay fully visible in Accounts and still import; picking one explicitly
+    in the Trades / Calendar / Analytics account filter overrides this.
   </p>
   {{if .VisGroups}}
   <form method="post" action="/settings/account-visibility" id="vis-form" data-vis-total="{{.VisTotal}}">

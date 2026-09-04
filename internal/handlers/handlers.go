@@ -574,6 +574,13 @@ func validBackHref(r *http.Request) string {
 // retirement rule lives in one place across dashboard/calendar/trades/analytics.
 const retiredAccountFilterSQL = "account_id IN (SELECT id FROM accounts WHERE active = 1)"
 
+// hiddenAccountFilterSQL is the WHERE fragment for the Settings account-
+// visibility flag (accounts.excluded_from_stats = 1): those accounts drop
+// out of the DEFAULT trades list exactly as they drop out of the default
+// Calendar/Analytics numbers, and an explicit account filter overrides it in
+// both places. Same shape as retiredAccountFilterSQL; use as `t.` + this.
+const hiddenAccountFilterSQL = "account_id NOT IN (SELECT id FROM accounts WHERE excluded_from_stats = 1)"
+
 // accountsForFilter returns the slice rendered in the account-filter dropdown
 // on /trades, /calendar, /analytics. When includeRetired is false, retired
 // accounts (active = 0) are dropped so the dropdown doesn't even hint at

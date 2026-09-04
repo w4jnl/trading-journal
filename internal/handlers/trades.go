@@ -37,6 +37,12 @@ type tradeFilters struct {
 	// retire-account contract: trades stay in the database but only the /trades
 	// view can reveal them, behind an opt-in toggle.
 	IncludeRetired bool
+	// IncludeHidden lifts the Settings account-visibility rule (accounts
+	// flagged excluded_from_stats are out of the default list, like on
+	// Calendar/Analytics). Only the page's "how many did that hide" shadow
+	// count sets it; users override the rule by naming the account in the
+	// filter, which buildWhere honors on its own.
+	IncludeHidden bool
 }
 
 // tradeRow mirrors models.ListTradesFilteredRow, but we hand-scan it because
@@ -171,6 +177,19 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Accounts hidden in Settings (excluded_from_stats) drop out of the
+	// default list like they do from Calendar/Analytics; count what the rule
+	// hid so the row can say so and point at the filter that overrides it.
+	visibilityHidden := int64(0)
+	if !filters.Account.Active && !filters.IncludeHidden {
+		shadow := filters
+		shadow.IncludeHidden = true
+		shadow.Page = 1
+		if all, err := countTradesFiltered(ctx, h.DB, shadow); err == nil && all > total {
+			visibilityHidden = all - total
+		}
+	}
+
 	data := map[string]any{
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
@@ -194,6 +213,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"ShowRetired":      filters.IncludeRetired,
 		"RetiredAuto":      retiredAutoOn,
 		"RetiredHidden":    retiredHidden,
+		"VisibilityHidden": visibilityHidden,
 		"RetiredQuery":     retiredToggleQuery(r, !filters.IncludeRetired),
 		"GroupOptions":     groupOptions,
 	}
@@ -656,6 +676,12 @@ func buildWhere(f tradeFilters, uid int64) (string, []any) {
 	args := []any{uid}
 	if !f.IncludeRetired {
 		clauses = append(clauses, "t."+retiredAccountFilterSQL)
+	}
+	// Settings account visibility: hidden accounts leave the DEFAULT list;
+	// an explicit account filter (Active) is the override, same rule as
+	// Calendar/Analytics.
+	if !f.Account.Active && !f.IncludeHidden {
+		clauses = append(clauses, "t."+hiddenAccountFilterSQL)
 	}
 	if f.Account.Active {
 		if len(f.Account.AccountIDs) == 0 {
