@@ -103,7 +103,7 @@ func (h *Handlers) AdminTransactionsPage(w http.ResponseWriter, r *http.Request)
 		"NavActive":     "admin_transactions",
 		"BackHref":      validBackHref(r),
 		"Accounts":      accounts,
-		"OpenPositions": openPositions,
+		"OpenPositions": openPositionRows(ctx, openPositions),
 		"Rows":          rows,
 		"Filter":        f,
 		"FilterQuery":   f.query().Encode(), // carried on POST actions to preserve the view
