@@ -82,9 +82,9 @@ Failures return `401` with a JSON body `{"error": "..."}`:
 - **Account filter.** `filter=acc:<id>` and `filter=type:<slug>` (slugs
   `live`, `prop_live`, `prop_funded`, `prop_eval`, `paper`) are repeatable
   and OR-combined; the legacy singular `account_id=<id>` still works.
-  Retired accounts never count in stats; accounts marked *excluded from
-  stats* are dropped from default stats unless an explicit filter names
-  them.
+  Retired accounts never count in stats; accounts hidden in Settings
+  (*excluded from stats*) are dropped from default stats **and from the
+  default trades list** unless an explicit filter names them.
 - **`null` means absent, never zero** - a P&L withheld for a stub
   instrument, a win rate with no decided trades, a largest win on a day
   with no winners. Render it as "—".
@@ -471,7 +471,9 @@ strategy or journal body **you own**; anything else is `404`.
 ### Trades list
 
 `GET /api/v1/trades` returns closed trades, newest first, **page-based** (fixed
-page size 50).
+page size 50). Accounts hidden in Settings are left out by default - the same
+rule as the daily stats; naming an account via `account_id` / `filter`
+overrides it.
 
 Query parameters (all optional):
 

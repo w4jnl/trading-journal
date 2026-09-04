@@ -436,7 +436,7 @@
     "/trades": {
       "get": {
         "operationId": "listTrades",
-        "summary": "List trades (filtered, paged; page size 50).",
+        "summary": "List closed trades (filtered, paged; page size 50). Retired accounts and accounts hidden in Settings (excluded_from_stats) are left out by default; an explicit account_id / filter overrides the visibility rule, show_retired the retired one.",
         "parameters": [
           { "name": "symbol_root", "in": "query", "schema": { "type": "string" }, "description": "e.g. MES" },
           { "name": "direction", "in": "query", "schema": { "type": "string", "enum": ["long", "short"] } },

@@ -320,6 +320,9 @@
   {{else if .RetiredHidden}}
     <a href="/trades{{.RetiredQuery}}" class="retired-toggle">Show <span class="num">{{.RetiredHidden}}</span> trade{{if ne .RetiredHidden 1}}s{{end}} from retired accounts</a>
   {{end}}
+  {{if .VisibilityHidden}}
+    <span class="retired-toggle-note"><span class="num">{{.VisibilityHidden}}</span> trade{{if ne .VisibilityHidden 1}}s{{end}} on accounts hidden in <a href="/settings">Settings</a> — pick the account in the filter to see them.</span>
+  {{end}}
 </div>
 
 <div class="table-scroll">
