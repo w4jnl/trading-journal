@@ -10,6 +10,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"os/signal"
 	"path"
@@ -134,16 +135,43 @@ func (s *statusRecorder) Flush() {
 // frame-ancestors/base-uri/object-src/form-action add clickjacking and
 // injection protections independent of inline handling. Follow-up to tighten:
 // nonce the inline scripts, then drop 'unsafe-inline'.
-const contentSecurityPolicy = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
-	"style-src 'self' 'unsafe-inline'; " +
-	"img-src 'self' data: https:; " +
-	"font-src 'self'; " +
-	"connect-src 'self'; " +
-	"frame-ancestors 'none'; " +
-	"base-uri 'self'; " +
-	"form-action 'self'; " +
-	"object-src 'none'"
+//
+// form-action is 'self' plus any configured cross-origin SSO logout target
+// (proxy mode's auth.proxy.logout_url): the sign-out form POSTs to /logout
+// which 303-redirects to the identity provider, and a browser enforces
+// form-action against that final redirect origin - without it listed the
+// logout navigation is blocked and sign-out silently does nothing.
+func buildContentSecurityPolicy(logoutOrigin string) string {
+	formAction := "form-action 'self'"
+	if logoutOrigin != "" {
+		formAction += " " + logoutOrigin
+	}
+	return "default-src 'self'; " +
+		"script-src 'self' 'unsafe-inline'; " +
+		"style-src 'self' 'unsafe-inline'; " +
+		"img-src 'self' data: https:; " +
+		"font-src 'self'; " +
+		"connect-src 'self'; " +
+		"frame-ancestors 'none'; " +
+		"base-uri 'self'; " +
+		formAction + "; " +
+		"object-src 'none'"
+}
+
+// cspOrigin reduces a URL to its scheme://host origin (a valid CSP source),
+// dropping path/query. Empty when the URL is blank, relative (same-origin -
+// already covered by 'self'), or unparseable.
+func cspOrigin(rawURL string) string {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return ""
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return ""
+	}
+	return u.Scheme + "://" + u.Host
+}
 
 // oiFileCSP governs the /oi/file/ subtree: self-contained HTML dashboards
 // produced by an external pipeline and displayed inside a same-origin <iframe>
@@ -165,9 +193,9 @@ const oiFileCSP = "default-src 'none'; " +
 // ServeMux, which canonicalizes dirty paths (e.g. /oi/file/../../dashboard)
 // with a 301 only AFTER we run, so matching on the raw path would stamp the
 // relaxed headers onto that redirect.
-func securityHeaders(next http.Handler) http.Handler {
+func securityHeaders(appCSP string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		frameOptions, csp := "DENY", contentSecurityPolicy
+		frameOptions, csp := "DENY", appCSP
 		if strings.HasPrefix(path.Clean(r.URL.Path), "/oi/file/") {
 			frameOptions, csp = "SAMEORIGIN", oiFileCSP
 		}
@@ -670,9 +698,13 @@ func run() error {
 	}
 	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
 
+	// Allow the SSO logout redirect (proxy mode) through form-action, so the
+	// sign-out form's 303 to the identity provider isn't blocked by CSP.
+	appCSP := buildContentSecurityPolicy(cspOrigin(cfg.Auth.Proxy.LogoutURL))
+
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           securityHeaders(root),
+		Handler:           securityHeaders(appCSP, root),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,
