@@ -69,6 +69,11 @@ market_data:
   enabled: true
   prefetch: false
 timezone: "America/Chicago"
+mcp:
+  enabled: true
+  oauth:
+    enabled: true
+    issuer: "http://127.0.0.1:$PORT"
 auth:
   mode: "proxy"
   bootstrap_user: "admin"
@@ -91,6 +96,13 @@ curl -sf --retry 60 --retry-delay 1 --retry-connrefused "$BASE/healthz" >/dev/nu
 ntr=$(sqlite3 "$SCRATCH/data/trading.db" "SELECT count(*) FROM trades;")
 say "trades imported: $ntr"
 [ "$SEED" = "1" ] && check "import created trades" "$([ "$ntr" -gt 0 ] && echo yes || echo no)" yes
+
+say ""; say "== MCP OAuth discovery (public documents, no auth) =="
+check "/.well-known/oauth-authorization-server"     "$(code "$BASE/.well-known/oauth-authorization-server")" 200
+check "AS metadata issuer == base URL"              "$(curl -s "$BASE/.well-known/oauth-authorization-server" | grep -c "\"issuer\":\"$BASE\"")" 1
+check "/.well-known/oauth-protected-resource"       "$(code "$BASE/.well-known/oauth-protected-resource")" 200
+check "/.well-known/oauth-protected-resource/mcp"   "$(code "$BASE/.well-known/oauth-protected-resource/mcp")" 200
+check "PRM resource == base URL + /mcp"             "$(curl -s "$BASE/.well-known/oauth-protected-resource" | grep -c "\"resource\":\"$BASE/mcp\"")" 1
 
 say ""; say "== authenticated HTML (proxy-auth header) =="
 H=(-H "Remote-User: admin" -H "Remote-Groups: admin")

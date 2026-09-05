@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -162,6 +163,63 @@ type MCP struct {
 	// InstanceLabel (e.g. "prod" / "dev") is reported by the MCP server_info
 	// tool so an AI client can tell which instance it is connected to.
 	InstanceLabel string `yaml:"instance_label"`
+	// OAuth turns on the built-in OAuth 2.1 authorization server for /mcp so
+	// connectors that cannot hold a static key (ChatGPT, claude.ai, Claude
+	// Code) can sign in through the app. See MCPOAuth.
+	OAuth MCPOAuth `yaml:"oauth"`
+}
+
+// MCPOAuth configures the OAuth 2.1 authorization server behind /mcp. Clients
+// register themselves (RFC 7591), the signed-in user approves them once at
+// /oauth/authorize (behind the normal proxy/session login), and the resulting
+// opaque tokens are accepted on /mcp only. Opt-in: nil/false leaves /mcp on
+// API keys alone. tj_ keys keep working either way. Unlike MCP.Enabled (nil =
+// on) this feature is off unless explicitly enabled.
+type MCPOAuth struct {
+	Enabled *bool `yaml:"enabled"`
+	// Issuer is the public origin the connectors reach the app on, e.g.
+	// "https://trading.example.com". It is stamped into the discovery documents and
+	// must equal the URL clients fetch them from, so it is configured
+	// explicitly rather than derived from request headers. Plain http is
+	// accepted only for loopback hosts (local development).
+	Issuer string `yaml:"issuer"`
+	// Consent (nil = true) shows a one-click approval page naming the client
+	// before a code is issued. false auto-approves - a downgrade: anyone can
+	// register a client, so a crafted link could then mint a token for a
+	// signed-in user without them seeing it.
+	Consent *bool `yaml:"consent"`
+	// Lifetimes in seconds. Defaults: access 3600 (1h), refresh 2592000 (30d),
+	// code 60.
+	AccessTokenTTLSec  int `yaml:"access_token_ttl_sec"`
+	RefreshTokenTTLSec int `yaml:"refresh_token_ttl_sec"`
+	CodeTTLSec         int `yaml:"code_ttl_sec"`
+	// AllowedRedirectHosts, when set, restricts the https redirect URIs that
+	// clients may register to these hosts. Loopback http (Claude Code's local
+	// callback) is always allowed. Empty = any https host.
+	AllowedRedirectHosts []string `yaml:"allowed_redirect_hosts"`
+}
+
+// OAuthEnabled reports whether the OAuth server should be mounted: explicitly
+// enabled and an issuer is configured (Validate rejects enabled-without-issuer,
+// so after Load+Validate the second check is belt-and-braces).
+func (m MCP) OAuthEnabled() bool {
+	return m.OAuth.Enabled != nil && *m.OAuth.Enabled && strings.TrimSpace(m.OAuth.Issuer) != ""
+}
+
+// ConsentRequired is the tri-state Consent flag resolved: unset means yes.
+func (o MCPOAuth) ConsentRequired() bool { return o.Consent == nil || *o.Consent }
+
+// IssuerURL is Issuer trimmed of whitespace and trailing slashes.
+func (o MCPOAuth) IssuerURL() string { return strings.TrimRight(strings.TrimSpace(o.Issuer), "/") }
+
+// isLoopbackHost mirrors oauth.IsLoopbackHost for issuer validation without
+// importing that package from config.
+func isLoopbackHost(host string) bool {
+	switch strings.ToLower(host) {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return false
 }
 
 // AI configures the in-app analysis engine (server-side journal analysis). It calls
@@ -318,6 +376,7 @@ func defaults() Config {
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
 		MWEmail:  MWEmail{ListenAddr: ":2525", TLSMode: "off", ArchiveDir: "data/mw-raw"},
+		MCP:      MCP{OAuth: MCPOAuth{AccessTokenTTLSec: 3600, RefreshTokenTTLSec: 2592000, CodeTTLSec: 60}},
 		Timezone: "America/Chicago",
 	}
 }
@@ -428,6 +487,37 @@ func (c Config) Validate() error {
 	if c.IBKR.RTHSyncMin > 0 {
 		if _, _, ok := c.IBKR.RTHWindowHM(); !ok {
 			return fmt.Errorf("ibkr.rth_window must be \"HH:MM-HH:MM\" (Chicago time, start < end), got %q", c.IBKR.RTHWindow)
+		}
+	}
+	if c.MCP.OAuth.Enabled != nil && *c.MCP.OAuth.Enabled {
+		iss := strings.TrimSpace(c.MCP.OAuth.Issuer)
+		if iss == "" {
+			return fmt.Errorf("mcp.oauth.issuer is required when mcp.oauth.enabled is true")
+		}
+		u, err := url.Parse(iss)
+		if err != nil || u.Host == "" || (u.Scheme != "https" && u.Scheme != "http") {
+			return fmt.Errorf("mcp.oauth.issuer must be an absolute http(s) URL, got %q", iss)
+		}
+		if u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+			return fmt.Errorf("mcp.oauth.issuer must use https (plain http is only allowed for loopback hosts), got %q", iss)
+		}
+		if u.RawQuery != "" || u.Fragment != "" || u.User != nil || (u.Path != "" && u.Path != "/") {
+			return fmt.Errorf("mcp.oauth.issuer must be a bare origin (scheme://host[:port]) with no path, query or fragment, got %q", iss)
+		}
+		for _, kv := range []struct {
+			name string
+			v    int
+		}{
+			{"mcp.oauth.access_token_ttl_sec", c.MCP.OAuth.AccessTokenTTLSec},
+			{"mcp.oauth.refresh_token_ttl_sec", c.MCP.OAuth.RefreshTokenTTLSec},
+			{"mcp.oauth.code_ttl_sec", c.MCP.OAuth.CodeTTLSec},
+		} {
+			if kv.v <= 0 {
+				return fmt.Errorf("%s must be > 0, got %d", kv.name, kv.v)
+			}
+		}
+		if c.MCP.Enabled != nil && !*c.MCP.Enabled {
+			return fmt.Errorf("mcp.oauth.enabled requires mcp.enabled (the OAuth server only protects /mcp)")
 		}
 	}
 	if c.MWEmail.Enabled {
