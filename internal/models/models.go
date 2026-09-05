@@ -174,6 +174,69 @@ type JournalTemplate struct {
 	UpdatedAt *time.Time `json:"updated_at"`
 }
 
+type OauthAccessToken struct {
+	ID          int64      `json:"id"`
+	TokenSha256 string     `json:"token_sha256"`
+	GrantID     int64      `json:"grant_id"`
+	ClientID    string     `json:"client_id"`
+	UserID      int64      `json:"user_id"`
+	Resource    *string    `json:"resource"`
+	Scope       *string    `json:"scope"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	RevokedAt   *time.Time `json:"revoked_at"`
+	LastUsedAt  *time.Time `json:"last_used_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type OauthAuthCode struct {
+	ID                  int64      `json:"id"`
+	CodeSha256          string     `json:"code_sha256"`
+	GrantID             int64      `json:"grant_id"`
+	ClientID            string     `json:"client_id"`
+	UserID              int64      `json:"user_id"`
+	RedirectUri         string     `json:"redirect_uri"`
+	CodeChallenge       string     `json:"code_challenge"`
+	CodeChallengeMethod string     `json:"code_challenge_method"`
+	Resource            *string    `json:"resource"`
+	Scope               *string    `json:"scope"`
+	ExpiresAt           time.Time  `json:"expires_at"`
+	ConsumedAt          *time.Time `json:"consumed_at"`
+	CreatedAt           time.Time  `json:"created_at"`
+}
+
+type OauthClient struct {
+	ID           int64     `json:"id"`
+	ClientID     string    `json:"client_id"`
+	ClientName   *string   `json:"client_name"`
+	RedirectUris string    `json:"redirect_uris"`
+	CreatedAt    time.Time `json:"created_at"`
+}
+
+type OauthGrant struct {
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	ClientID   string     `json:"client_id"`
+	Scope      *string    `json:"scope"`
+	Resource   *string    `json:"resource"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
+}
+
+type OauthRefreshToken struct {
+	ID          int64      `json:"id"`
+	TokenSha256 string     `json:"token_sha256"`
+	GrantID     int64      `json:"grant_id"`
+	ClientID    string     `json:"client_id"`
+	UserID      int64      `json:"user_id"`
+	Resource    *string    `json:"resource"`
+	Scope       *string    `json:"scope"`
+	ExpiresAt   time.Time  `json:"expires_at"`
+	RevokedAt   *time.Time `json:"revoked_at"`
+	RotatedTo   *string    `json:"rotated_to"`
+	CreatedAt   time.Time  `json:"created_at"`
+}
+
 type PriceBar struct {
 	YahooSymbol string  `json:"yahoo_symbol"`
 	Timeframe   string  `json:"timeframe"`
