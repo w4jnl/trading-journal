@@ -22,6 +22,14 @@ RETURNING *;
 -- name: GetOAuthGrantByID :one
 SELECT * FROM oauth_grants WHERE id = ?;
 
+-- name: GetActiveOAuthGrantForUserClient :one
+-- Re-approving an already-connected client reuses its live grant instead of
+-- stacking a duplicate row in Settings; the newest unrevoked one wins.
+SELECT * FROM oauth_grants
+WHERE user_id = ? AND client_id = ? AND revoked_at IS NULL
+ORDER BY id DESC
+LIMIT 1;
+
 -- name: ListOAuthGrantsForUser :many
 -- Newest first; includes revoked grants so the settings UI can show their
 -- state, mirroring ListAPIKeysForUser.

@@ -69,41 +69,47 @@ type APIKeyAuth struct {
 // userID(ctx)/MustUser helpers the session app uses.
 func (a *APIKeyAuth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		tok := parseBearer(r)
-		if tok == "" || !strings.HasPrefix(tok, "tj_") {
-			slog.Debug("api auth rejected", "reason", "missing or malformed key", "method", r.Method, "path", r.URL.Path)
-			writeAPIError(w, http.StatusUnauthorized, "missing or malformed API key")
+		u, reason := a.authenticate(r, parseBearer(r))
+		if u == nil {
+			slog.Debug("api auth rejected", "reason", reason, "method", r.Method, "path", r.URL.Path)
+			writeAPIError(w, http.StatusUnauthorized, reason)
 			return
 		}
-		row, err := a.Queries.GetAPIKeyBySHA256(r.Context(), HashAPIKey(tok))
-		if err != nil {
-			// sql.ErrNoRows (unknown OR revoked key) and any other error -> 401.
-			slog.Debug("api auth rejected", "reason", "unknown or revoked key", "method", r.Method, "path", r.URL.Path)
-			writeAPIError(w, http.StatusUnauthorized, "invalid API key")
-			return
-		}
-		if row.IsActive == 0 {
-			slog.Debug("api auth rejected", "reason", "account disabled", "user", row.Username, "method", r.Method, "path", r.URL.Path)
-			writeAPIError(w, http.StatusUnauthorized, "account disabled")
-			return
-		}
-		u := &User{
-			ID:          row.UserID,
-			Username:    row.Username,
-			DisplayName: row.DisplayName, // COALESCEd to username in the query
-			Email:       row.Email,       // COALESCEd to "" in the query
-			IsAdmin:     row.IsAdmin != 0,
-		}
-		// Best-effort last-used bump; never block the request (or its latency)
-		// on the write. Its own context so a slow disk write can't wedge it.
-		keyID := row.KeyID
-		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-			defer cancel()
-			_ = a.Queries.TouchAPIKeyLastUsed(ctx, keyID)
-		}()
 		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
 	})
+}
+
+// authenticate resolves a tj_ key to its user, or returns nil and the reason
+// for the 401. Shared by Middleware and the OAuth-aware /mcp middleware so
+// the key rules live in exactly one place.
+func (a *APIKeyAuth) authenticate(r *http.Request, tok string) (*User, string) {
+	if tok == "" || !strings.HasPrefix(tok, "tj_") {
+		return nil, "missing or malformed API key"
+	}
+	row, err := a.Queries.GetAPIKeyBySHA256(r.Context(), HashAPIKey(tok))
+	if err != nil {
+		// sql.ErrNoRows (unknown OR revoked key) and any other error -> 401.
+		return nil, "invalid API key"
+	}
+	if row.IsActive == 0 {
+		return nil, "account disabled"
+	}
+	u := &User{
+		ID:          row.UserID,
+		Username:    row.Username,
+		DisplayName: row.DisplayName, // COALESCEd to username in the query
+		Email:       row.Email,       // COALESCEd to "" in the query
+		IsAdmin:     row.IsAdmin != 0,
+	}
+	// Best-effort last-used bump; never block the request (or its latency)
+	// on the write. Its own context so a slow disk write can't wedge it.
+	keyID := row.KeyID
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		_ = a.Queries.TouchAPIKeyLastUsed(ctx, keyID)
+	}()
+	return u, ""
 }
 
 // writeAPIError writes a JSON {"error": ...} body. It lives in auth (which can't
