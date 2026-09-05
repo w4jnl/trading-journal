@@ -3,6 +3,7 @@ package handlers
 import (
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/oauth"
@@ -87,14 +88,37 @@ func (h *Handlers) oauthAuthorizeFail(w http.ResponseWriter, r *http.Request, re
 	})
 }
 
+// allowFormActionOrigin widens the consent page's CSP form-action to the
+// client's redirect origin. Browsers enforce form-action against the final
+// target of a form submission INCLUDING redirects, so the Allow button's
+// POST /oauth/authorize -> 302 to chatgpt.com / claude.ai / localhost would
+// otherwise be refused silently and the page would appear to do nothing
+// (the same failure the sign-out form had with the SSO logout URL). The
+// origin is derived from a redirect_uri that ValidateAuthorize has already
+// matched against the client's registration, so this never opens form-action
+// to an attacker-chosen host. No-op when the security middleware is absent.
+func allowFormActionOrigin(w http.ResponseWriter, origin string) {
+	if origin == "" {
+		return
+	}
+	const marker = "form-action 'self'"
+	csp := w.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, marker) {
+		return
+	}
+	w.Header().Set("Content-Security-Policy", strings.Replace(csp, marker, marker+" "+origin, 1))
+}
+
 // renderConsent shows who is asking and what they get, with the whole
 // request carried in hidden fields for the POST.
 func (h *Handlers) renderConsent(w http.ResponseWriter, r *http.Request, req oauth.AuthorizeRequest, client *models.OauthClient) {
 	scope, _ := oauth.NormalizeScope(req.Scope)
-	host := ""
-	if u, err := url.Parse(req.RedirectURI); err == nil {
+	host, origin := "", ""
+	if u, err := url.Parse(req.RedirectURI); err == nil && u.Scheme != "" && u.Host != "" {
 		host = u.Host
+		origin = u.Scheme + "://" + u.Host
 	}
+	allowFormActionOrigin(w, origin)
 	h.renderPage(w, r, "oauth_consent.html", map[string]any{
 		"NavActive":    "",
 		"ClientName":   oauth.ClientDisplayName(*client),
