@@ -88,11 +88,11 @@ Firewalling the bypass routers by source IP? Anthropic's connector traffic origi
 
 All three clients discover everything from the single URL `https://trading.example.com/mcp`. You never type a client ID or secret.
 
-### ChatGPT (MCP connector)
-1. ChatGPT → Settings → Connectors → *Create* (developer mode / custom connector).
-2. MCP server URL: `https://trading.example.com/mcp`. Authentication: **OAuth**.
-3. ChatGPT registers itself, then opens the journal's authorize page → Authelia login → **Allow** for "ChatGPT".
-4. The tool list appears. Import nothing else; the OpenAPI/Actions setup in `.claude/skills/trading-journal-analyst/chatgpt-setup.md` becomes optional.
+### ChatGPT (MCP connector / "plugin")
+1. ChatGPT → Settings → Connectors (Plugins) → *Create*.
+2. Server URL: `https://trading.example.com/mcp` — the `/mcp` path, not the site root (the root is your Authelia-gated app and answers with a login redirect, which ChatGPT reports as "does not implement OAuth"). Authentication: **OAuth**.
+3. Advanced OAuth settings should show *Dynamic Client Registration (DCR)* with scopes `mcp` + `offline_access` — leave as discovered; there is no client ID/secret to enter. ("CIMD unavailable" is expected.)
+4. *Create* → Authelia login → **Allow** for "ChatGPT" → the tool list appears. The former Custom GPT + Action route is retired; the analyst instructions for ChatGPT are in `.claude/skills/trading-journal-analyst/chatgpt-setup.md`.
 
 ### claude.ai (custom connector)
 1. Settings → Connectors → *Add custom connector*.
@@ -109,13 +109,13 @@ Claude Code registers itself with a loopback callback (`http://localhost:<random
 ### Disconnecting
 Settings → **Connected apps** lists every approved client (name, when, last used) with a **Revoke** button. Revoking kills that client's access and refresh tokens immediately — no config edits, no restart. Revoking in the journal is the authoritative action; also remove the connector on the client side so it stops retrying.
 
-## 4. Rollout
+## 4. Versions
 
-| Stage | What is live | What to do |
-|---|---|---|
-| **PR1** (this doc) | Schema, config, the two discovery documents | Add the `mcp.oauth` config + the Traefik router. `curl https://trading.example.com/.well-known/oauth-authorization-server` must return JSON with `"issuer": "https://trading.example.com"`. `/mcp` still accepts only `tj_` keys. |
-| **PR2** | Registration, authorize + consent, token endpoint; `/mcp` accepts `tjo_` tokens and answers unauthenticated calls with the `WWW-Authenticate` challenge | Connect the clients as in §3. |
-| **PR3** | Settings → Connected apps (revoke), housekeeping of expired tokens | Nothing; use Revoke to drop a client. |
+Everything above is live from **v2.11.1** (v2.11.0 shipped the server; v2.11.1 fixed the consent page's Content-Security-Policy so the Allow button redirects back to the client). Verified end to end with Claude Code, the Claude app and ChatGPT against `trading.example.com`.
+
+Two configuration lessons from the rollout, both of which produce a working app with **no** OAuth and no error:
+- The `mcp:` block must sit at **column 0** in `config.yaml`. Pasted two spaces deep it becomes `auth.mcp` and is silently ignored; the boot log then shows `MCP server enabled` but not `MCP OAuth enabled`.
+- The hostname must resolve on the **public** internet, not just in a LAN's split-horizon DNS — the connectors' servers do the discovery. Check with DNS-over-HTTPS: `curl -s 'https://cloudflare-dns.com/dns-query?name=HOST&type=A' -H 'accept: application/dns-json'`.
 
 ## 5. Troubleshooting
 

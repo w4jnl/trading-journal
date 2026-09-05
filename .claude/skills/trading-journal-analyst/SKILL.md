@@ -13,10 +13,10 @@ a marker), and you finish by printing an overview in chat.
 
 ## Tools
 
-In **Claude** these are MCP tools (server `trading-journal`); in **ChatGPT** they
-are the OpenAPI Action operations on the same endpoints (see
-[chatgpt-setup.md](chatgpt-setup.md)). Names below are the MCP tools, REST path in
-parentheses:
+In **Claude** (Code and app) and in **ChatGPT** alike these are the MCP tools of the
+`trading-journal` connector — same names, same behaviour (ChatGPT connection steps in
+[chatgpt-setup.md](chatgpt-setup.md)). The REST path in parentheses is the equivalent
+for scripts using the HTTP API:
 
 - `prepare_day` (`POST /journal/prepare-day`) - **the daily entry point.** Clusters
   the day's copytrader fan-out into **group** entries + solos into **trade**
@@ -192,22 +192,25 @@ fills only when unset); leave it untagged when the read is ambiguous.
 
 ## Setup (one-time)
 
-The tools need the trading-journal server reachable and a **per-user API key**
-(generate at `/settings` in the web UI). The key lives in the client config, never
-in a prompt.
+Every client connects to `https://YOUR_HOST/mcp` and **signs in with OAuth** through
+the browser (the journal is its own authorization server, `mcp.oauth` enabled — see
+`docs/mcp-oauth-setup.md`). There is no key to generate or paste; each connection
+shows up under the journal's **Settings → Connected apps**, where Revoke cuts it off.
 
 - **Claude Code**:
   ```bash
-  claude mcp add trading-journal --transport http https://YOUR_HOST/mcp \
-    --header "Authorization: Bearer tj_..."
+  claude mcp add --transport http trading-journal https://YOUR_HOST/mcp
+  claude mcp login trading-journal      # browser → your login → Allow
   ```
-- **Claude app**: Settings → Connectors → add a custom connector pointing at
-  `https://YOUR_HOST/mcp` with the `Authorization: Bearer tj_...` header. (If your
-  app build requires OAuth for connectors, use Claude Code or the ChatGPT path
-  for now - header-key auth on `/mcp` is what's implemented.)
-- **ChatGPT**: a Custom GPT with an Action on the REST API — paste
-  [chatgpt-instructions.md](chatgpt-instructions.md) into the GPT's Instructions as-is;
-  full steps in [chatgpt-setup.md](chatgpt-setup.md).
+- **Claude app** (claude.ai / desktop): Settings → Connectors → *Add custom connector*
+  → URL `https://YOUR_HOST/mcp`, leave client ID/secret empty → *Connect* → log in →
+  **Allow**.
+- **ChatGPT**: Settings → Connectors (Plugins) → *Create* → server URL
+  `https://YOUR_HOST/mcp`, authentication **OAuth** → *Create* → log in → **Allow**.
+  Then put [chatgpt-instructions.md](chatgpt-instructions.md) into the Project / GPT
+  that has the connector; full steps in [chatgpt-setup.md](chatgpt-setup.md).
+- **Scripts** (not chat clients) keep using a per-user API key from `/settings`
+  against the REST API — see API.md.
 
 ## Scheduling (daily, automatic)
 - **Claude Code routine** (recommended): use the `schedule` skill to run this each
