@@ -32,6 +32,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/mwmail"
+	"github.com/w4jnl/trading-journal/internal/oauth"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -206,6 +207,19 @@ func securityHeaders(appCSP string, next http.Handler) http.Handler {
 		h.Set("Content-Security-Policy", csp)
 		next.ServeHTTP(w, r)
 	})
+}
+
+// oauthConfig converts the YAML block into the oauth package's resolved config
+// (seconds -> durations; tri-state consent resolved).
+func oauthConfig(o config.MCPOAuth) oauth.Config {
+	return oauth.Config{
+		Issuer:               o.IssuerURL(),
+		Consent:              o.ConsentRequired(),
+		AccessTokenTTL:       time.Duration(o.AccessTokenTTLSec) * time.Second,
+		RefreshTokenTTL:      time.Duration(o.RefreshTokenTTLSec) * time.Second,
+		CodeTTL:              time.Duration(o.CodeTTLSec) * time.Second,
+		AllowedRedirectHosts: o.AllowedRedirectHosts,
+	}
 }
 
 // debugHTTP logs each API/MCP request (method, path, status, duration, user) at
@@ -695,6 +709,19 @@ func run() error {
 	if cfg.MCP.Enabled == nil || *cfg.MCP.Enabled {
 		root.Handle("/mcp", apiKeyAuth.Middleware(debugHTTP(h.MCPHandler())))
 		slog.Info("MCP server enabled", "path", "/mcp")
+		// OAuth discovery for connectors that cannot hold a static key. The two
+		// well-known documents are public (the reverse proxy must route them
+		// straight to the app, like /mcp); they advertise the issuer-derived
+		// endpoints. The authorize/token/register handlers and the OAuth-aware
+		// /mcp middleware follow in the next change; until then /mcp stays
+		// key-only and these documents simply describe what is coming.
+		if cfg.MCP.OAuthEnabled() {
+			oauthSrv := &oauth.Server{Queries: queries, Cfg: oauthConfig(cfg.MCP.OAuth)}
+			root.Handle("/.well-known/oauth-authorization-server", oauthSrv.ASMetadataHandler())
+			root.Handle("/.well-known/oauth-protected-resource", oauthSrv.PRMHandler())
+			root.Handle("/.well-known/oauth-protected-resource/mcp", oauthSrv.PRMHandler())
+			slog.Info("MCP OAuth discovery enabled", "issuer", oauthSrv.Issuer(), "resource", oauthSrv.Resource())
+		}
 	}
 	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
 

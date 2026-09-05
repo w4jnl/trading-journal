@@ -63,6 +63,29 @@ mcp:
   # Optional label (e.g. "prod" / "dev") reported by the MCP server_info tool so
   # an AI client configured with several connectors can tell instances apart.
   instance_label: ""
+  # Built-in OAuth 2.1 authorization server for /mcp. Lets connectors that cannot
+  # hold a static API key (ChatGPT's MCP connector, claude.ai custom connectors,
+  # Claude Code's `claude mcp add --transport http`) sign in through the app:
+  # they register themselves, you approve them once behind your normal login,
+  # and the resulting tokens are accepted on /mcp only. tj_ API keys keep
+  # working for /api/v1 and /mcp regardless. Off unless enabled here.
+  # See docs/mcp-oauth-setup.md for the reverse-proxy routing this needs.
+  oauth:
+    enabled: false
+    # Public origin the connectors reach the app on. Written into the discovery
+    # documents, so it must equal the URL they fetch them from. https required
+    # (plain http only for localhost during development).
+    issuer: ""
+    # Show a one-click approval page naming the client before issuing a code.
+    # Keep on: anyone can register a client, so with auto-approve a crafted link
+    # could mint a token for a signed-in user unnoticed.
+    consent: true
+    access_token_ttl_sec: 3600       # 1 hour; clients refresh silently
+    refresh_token_ttl_sec: 2592000   # 30 days idle before a client must re-login
+    code_ttl_sec: 60                 # raise to 120 if a client is slow to exchange
+    # Optional allow-list of https hosts clients may register as redirect
+    # targets. Loopback http (Claude Code) is always allowed. Empty = any https.
+    allowed_redirect_hosts: []
 
 # In-app AI analysis (server-side). When enabled, the app calls an AI endpoint to
 # generate journal analyses itself -- the inward counterpart to the MCP server (which
