@@ -132,6 +132,48 @@ func TestOAuthAuthorizeNeverRedirectsToUnverifiedURI(t *testing.T) {
 	}
 }
 
+// The consent page must let the browser follow the post-Allow redirect to the
+// client: its CSP form-action gains the (verified) redirect origin, and only
+// that. Without the security middleware's header nothing is added.
+func TestOAuthConsentWidensFormActionToClientOrigin(t *testing.T) {
+	h, _, user, clientID := newOAuthHandlers(t, true)
+	ctx := auth.WithUser(context.Background(), user)
+	const base = "default-src 'self'; form-action 'self' https://auth.example.com; object-src 'none'"
+
+	rec := httptest.NewRecorder()
+	rec.Header().Set("Content-Security-Policy", base) // what securityHeaders sets before the handler runs
+	h.OAuthAuthorizePage(rec, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+authorizeQuery(clientID).Encode(), nil).WithContext(ctx))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("code = %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Security-Policy"); got != "default-src 'self'; form-action 'self' https://claude.ai https://auth.example.com; object-src 'none'" {
+		t.Errorf("CSP = %q", got)
+	}
+
+	// No middleware header -> untouched (tests, or a deployment without it).
+	rec = httptest.NewRecorder()
+	h.OAuthAuthorizePage(rec, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+authorizeQuery(clientID).Encode(), nil).WithContext(ctx))
+	if got := rec.Header().Get("Content-Security-Policy"); got != "" {
+		t.Errorf("CSP without middleware = %q, want empty", got)
+	}
+
+	// The error page (unknown client) never widens anything.
+	rec = httptest.NewRecorder()
+	rec.Header().Set("Content-Security-Policy", base)
+	h.OAuthAuthorizePage(rec, httptest.NewRequest(http.MethodGet, "/oauth/authorize?"+authorizeQuery("tjc_nobody").Encode(), nil).WithContext(ctx))
+	if got := rec.Header().Get("Content-Security-Policy"); got != base {
+		t.Errorf("error page CSP = %q, want unchanged", got)
+	}
+
+	// Loopback clients (Claude Code) get their exact scheme://host:port.
+	rec = httptest.NewRecorder()
+	rec.Header().Set("Content-Security-Policy", "form-action 'self'")
+	allowFormActionOrigin(rec, "http://localhost:52341")
+	if got := rec.Header().Get("Content-Security-Policy"); got != "form-action 'self' http://localhost:52341" {
+		t.Errorf("loopback CSP = %q", got)
+	}
+}
+
 // With consent disabled the GET issues the code immediately; with the feature
 // off entirely the routes are 404.
 func TestOAuthAuthorizeAutoApproveAndDisabled(t *testing.T) {
