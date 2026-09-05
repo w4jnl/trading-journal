@@ -149,6 +149,8 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"NavActive":       "settings",
 		"BackHref":        validBackHref(r),
 		"Keys":            keys,
+		"OAuthEnabled":    h.OAuth != nil,
+		"OAuthGrants":     h.oauthGrantRows(ctx),
 		"NewKey":          newKey,
 		"AILanguage":      h.userAILanguage(ctx),
 		"AILanguages":     aiLanguageOptions,
