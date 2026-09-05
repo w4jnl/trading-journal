@@ -1,0 +1,41 @@
+{{define "title"}}Connect an app — Trading Journal{{end}}
+
+{{define "content"}}
+<style>
+  .oauth-consent { max-width: 560px; margin: 24px auto; }
+  .oauth-consent h1 { margin: 0 0 12px; }
+  .oauth-consent .who { font-size: 15px; margin: 0 0 12px; }
+  .oauth-consent ul { margin: 0 0 14px 18px; padding: 0; }
+  .oauth-consent li { margin: 3px 0; }
+  .oauth-consent .actions { display: flex; gap: 10px; margin-top: 18px; }
+</style>
+
+<div class="oauth-consent">
+  <h1>Connect an app</h1>
+  {{if .Error}}
+  <div class="card">
+    <p class="who"><strong>Can't continue.</strong> {{.Error}}</p>
+    <p class="muted">Nothing was authorized. The app that sent you here needs to start over (remove and re-add the connection on its side); if this keeps happening, check that it registered with the address it is actually using.</p>
+    <p><a href="/" class="btn btn--ghost btn--sm">Back to the journal</a></p>
+  </div>
+  {{else}}
+  <div class="card">
+    <p class="who"><strong>{{.ClientName}}</strong> wants to access your trading journal as <strong>{{.CurrentUser.DisplayName}}</strong>.</p>
+    <p class="muted" style="margin:0 0 6px;">It will be able to, through the MCP tools:</p>
+    <ul class="muted">
+      <li>read your trades, journal entries, strategies, charts and daily stats;</li>
+      <li>add journal notes and tags — the same things an API key allows, nothing more.</li>
+    </ul>
+    <p class="muted">After you allow, you'll be sent back to <code>{{.RedirectHost}}</code>. You can disconnect it at any time from Settings → Connected apps.</p>
+    <form method="post" action="/oauth/authorize">
+      <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+      {{range $k, $vs := .Fields}}{{range $vs}}<input type="hidden" name="{{$k}}" value="{{.}}">{{end}}{{end}}
+      <div class="actions">
+        <button type="submit" name="decision" value="allow" class="btn btn--primary">Allow</button>
+        <button type="submit" name="decision" value="deny" class="btn btn--ghost">Deny</button>
+      </div>
+    </form>
+  </div>
+  {{end}}
+</div>
+{{end}}

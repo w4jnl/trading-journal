@@ -104,6 +104,38 @@ check "/.well-known/oauth-protected-resource"       "$(code "$BASE/.well-known/o
 check "/.well-known/oauth-protected-resource/mcp"   "$(code "$BASE/.well-known/oauth-protected-resource/mcp")" 200
 check "PRM resource == base URL + /mcp"             "$(curl -s "$BASE/.well-known/oauth-protected-resource" | grep -c "\"resource\":\"$BASE/mcp\"")" 1
 
+say ""; say "== MCP OAuth flow (register -> consent -> code -> token -> /mcp; refresh rotation; replay) =="
+H=(-H "Remote-User: admin" -H "Remote-Groups: admin")
+check "/mcp without a token -> 401"                 "$(code -X POST "$BASE/mcp")" 401
+check "401 carries the WWW-Authenticate challenge"  "$(curl -s -o /dev/null -D - -X POST "$BASE/mcp" | grep -ci '^WWW-Authenticate: Bearer resource_metadata=')" 1
+REG=$(curl -s -X POST "$BASE/oauth/register" -H 'Content-Type: application/json' \
+      -d '{"client_name":"smoke","redirect_uris":["http://localhost/callback"],"token_endpoint_auth_method":"none"}')
+CID=$(printf %s "$REG" | sed -n 's/.*"client_id":"\([^"]*\)".*/\1/p')
+yesno() { [[ "$1" == "$2"* ]] && echo yes || echo "no ($1)"; }   # prefix test; case/) breaks inside $( )
+check "DCR returned a tjc_ client_id"               "$(yesno "$CID" tjc_)" yes
+VER=$(openssl rand -base64 48 | tr '+/' '-_' | tr -d '=\n' | cut -c1-64)
+CHAL=$(printf %s "$VER" | openssl dgst -sha256 -binary | base64 | tr '+/' '-_' | tr -d '=\n')
+CB='http%3A%2F%2Flocalhost%3A4242%2Fcallback'
+AUTHQ="response_type=code&client_id=$CID&redirect_uri=$CB&state=s1&scope=mcp&code_challenge=$CHAL&code_challenge_method=S256"
+check "GET /oauth/authorize renders the consent page" "$(code "${H[@]}" "$BASE/oauth/authorize?$AUTHQ")" 200
+check "consent page names the client"               "$(curl -s "${H[@]}" "$BASE/oauth/authorize?$AUTHQ" | grep -c '<strong>smoke</strong>')" 1
+check "unknown client -> 400, no redirect"          "$(code "${H[@]}" "$BASE/oauth/authorize?${AUTHQ/client_id=$CID/client_id=tjc_nobody}")" 400
+LOC=$(curl -s -o /dev/null -D - "${H[@]}" -X POST "$BASE/oauth/authorize" --data "$AUTHQ&decision=allow" | grep -i '^Location:' | tr -d '\r' | sed 's/^[Ll]ocation: //')
+CODE=$(printf %s "$LOC" | sed -n 's/.*[?&]code=\([^&]*\).*/\1/p')
+check "Allow redirects to the loopback callback with a code" "$([[ "$LOC" == "http://localhost:4242/callback?"*"code="* ]] && echo yes || echo "no ($LOC)")" yes
+TOK=$(curl -s -X POST "$BASE/oauth/token" --data "grant_type=authorization_code&code=$CODE&redirect_uri=$CB&client_id=$CID&code_verifier=$VER")
+AT=$(printf %s "$TOK" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+RT=$(printf %s "$TOK" | sed -n 's/.*"refresh_token":"\([^"]*\)".*/\1/p')
+check "token endpoint issued a tjo_ access token"   "$(yesno "$AT" tjo_)" yes
+MCPINIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'
+check "/mcp accepts the OAuth access token"         "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/mcp" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$MCPINIT")" 200
+check "/api/v1 rejects the OAuth token (audience)"  "$(code -H "Authorization: Bearer $AT" "$BASE/api/v1/trades")" 401
+TOK2=$(curl -s -X POST "$BASE/oauth/token" --data "grant_type=refresh_token&refresh_token=$RT&client_id=$CID")
+AT2=$(printf %s "$TOK2" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
+check "refresh rotates to a new access token"       "$([[ "$AT2" == tjo_* && "$AT2" != "$AT" ]] && echo yes || echo "no ($TOK2)")" yes
+check "reused refresh token -> invalid_grant"       "$(curl -s -X POST "$BASE/oauth/token" --data "grant_type=refresh_token&refresh_token=$RT&client_id=$CID" | grep -c invalid_grant)" 1
+check "reuse revoked the grant: token now rejected" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/mcp" -H "Authorization: Bearer $AT2" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$MCPINIT")" 401
+
 say ""; say "== authenticated HTML (proxy-auth header) =="
 H=(-H "Remote-User: admin" -H "Remote-Groups: admin")
 check "/dashboard"  "$(code "${H[@]}" "$BASE/dashboard")" 200
@@ -119,6 +151,7 @@ say ""; say "== JSON API (key auth) =="
 SHA=$(printf '%s' "$TOKEN" | sha256)
 sqlite3 "$SCRATCH/data/trading.db" "INSERT INTO api_keys (user_id,name,key_prefix,key_sha256) VALUES (1,'runskill','tj_run','$SHA');"
 A=(-H "Authorization: Bearer $TOKEN")
+check "/mcp still accepts a tj_ API key" "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/mcp" "${A[@]}" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$MCPINIT")" 200
 check "/api/v1 no key -> 401" "$(code "$BASE/api/v1")" 401
 check "/api/v1 with key"      "$(code "${A[@]}" "$BASE/api/v1")" 200
 check "/api/v1/trades"        "$(code "${A[@]}" "$BASE/api/v1/trades?page=1")" 200

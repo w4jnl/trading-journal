@@ -27,6 +27,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/livedata"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/oauth"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 )
 
@@ -102,6 +103,12 @@ type Handlers struct {
 	// Nil-safe (Version() on nil returns 0), so tests building bare Handlers
 	// keep working; main always wires a real one.
 	LiveData *livedata.Notifier
+
+	// OAuth is the built-in authorization server for /mcp (mcp.oauth). The
+	// browser-facing /oauth/authorize consent handlers live in this package
+	// because they render through the app layout; the protocol logic is in
+	// internal/oauth. Nil when the feature is disabled (handlers 404).
+	OAuth *oauth.Server
 
 	// templateCache memoizes parsed template sets so renderPage / renderPartial
 	// don't re-glob and re-parse the templates fs on every request. Keys

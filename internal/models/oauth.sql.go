@@ -280,6 +280,36 @@ func (q *Queries) DeleteOAuthGrantForUser(ctx context.Context, arg DeleteOAuthGr
 	return err
 }
 
+const getActiveOAuthGrantForUserClient = `-- name: GetActiveOAuthGrantForUserClient :one
+SELECT id, user_id, client_id, scope, resource, created_at, last_used_at, revoked_at FROM oauth_grants
+WHERE user_id = ? AND client_id = ? AND revoked_at IS NULL
+ORDER BY id DESC
+LIMIT 1
+`
+
+type GetActiveOAuthGrantForUserClientParams struct {
+	UserID   int64  `json:"user_id"`
+	ClientID string `json:"client_id"`
+}
+
+// Re-approving an already-connected client reuses its live grant instead of
+// stacking a duplicate row in Settings; the newest unrevoked one wins.
+func (q *Queries) GetActiveOAuthGrantForUserClient(ctx context.Context, arg GetActiveOAuthGrantForUserClientParams) (OauthGrant, error) {
+	row := q.db.QueryRowContext(ctx, getActiveOAuthGrantForUserClient, arg.UserID, arg.ClientID)
+	var i OauthGrant
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.ClientID,
+		&i.Scope,
+		&i.Resource,
+		&i.CreatedAt,
+		&i.LastUsedAt,
+		&i.RevokedAt,
+	)
+	return i, err
+}
+
 const getOAuthAccessTokenBySHA256 = `-- name: GetOAuthAccessTokenBySHA256 :one
 SELECT t.id        AS token_id,
        t.grant_id  AS grant_id,

@@ -519,6 +519,13 @@ func run() error {
 			"rth_window", cfg.IBKR.RTHWindow, "tickle_sec", cfg.IBKR.TickleSec)
 	}
 
+	// Built-in OAuth 2.1 authorization server for /mcp (mcp.oauth). Built
+	// before the handlers so the consent pages can reach it; nil when off.
+	var oauthSrv *oauth.Server
+	if (cfg.MCP.Enabled == nil || *cfg.MCP.Enabled) && cfg.MCP.OAuthEnabled() {
+		oauthSrv = &oauth.Server{Queries: queries, Cfg: oauthConfig(cfg.MCP.OAuth)}
+	}
+
 	h := &handlers.Handlers{
 		LiveData:         liveData,
 		Templates:        web.TemplatesFS,
@@ -535,6 +542,7 @@ func run() error {
 		MarketData:       marketCache,
 		Prefetch:         prefetcher,
 		MCPInstanceLabel: cfg.MCP.InstanceLabel,
+		OAuth:            oauthSrv,
 		AI:               aiClient,
 		AIJobs:           aiJobs,
 		AIModel:          cfg.AI.Model,
@@ -611,6 +619,11 @@ func run() error {
 	// OpenAPI document so the page's link works in a browser; /api/v1/openapi.json
 	// itself stays key-gated for machines.
 	mux.HandleFunc("GET /settings/api-docs", h.APIDocsPage)
+	// OAuth consent (mcp.oauth): on the session/proxy chain on purpose - the
+	// human must be signed in (Authelia / local session) so the grant binds to
+	// the right journal user. The reverse proxy must NOT bypass Authelia here.
+	mux.HandleFunc("GET /oauth/authorize", h.OAuthAuthorizePage)
+	mux.HandleFunc("POST /oauth/authorize", h.OAuthAuthorizeApprove)
 	mux.HandleFunc("GET /settings/api-docs/openapi.json", h.APIOpenAPI)
 	mux.HandleFunc("POST /settings/language", h.SettingsLanguageSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
@@ -707,21 +720,28 @@ func run() error {
 	root.Handle("/api/", apiKeyAuth.Middleware(debugHTTP(h.APIMux())))
 	// MCP server for AI clients - same per-user key auth as /api, no CSRF/session.
 	if cfg.MCP.Enabled == nil || *cfg.MCP.Enabled {
-		root.Handle("/mcp", apiKeyAuth.Middleware(debugHTTP(h.MCPHandler())))
-		slog.Info("MCP server enabled", "path", "/mcp")
-		// OAuth discovery for connectors that cannot hold a static key. The two
-		// well-known documents are public (the reverse proxy must route them
-		// straight to the app, like /mcp); they advertise the issuer-derived
-		// endpoints. The authorize/token/register handlers and the OAuth-aware
-		// /mcp middleware follow in the next change; until then /mcp stays
-		// key-only and these documents simply describe what is coming.
-		if cfg.MCP.OAuthEnabled() {
-			oauthSrv := &oauth.Server{Queries: queries, Cfg: oauthConfig(cfg.MCP.OAuth)}
+		// /mcp accepts tj_ API keys; with mcp.oauth on, MCPAuth also accepts
+		// the tjo_ tokens the built-in authorization server issues and turns
+		// every 401 into an RFC 9728 challenge so OAuth-capable connectors can
+		// discover how to sign in. The machine-facing OAuth endpoints and the
+		// discovery documents are public (the reverse proxy must route them
+		// straight to the app, like /mcp); /oauth/authorize is on the mux above.
+		mcpMW := apiKeyAuth.Middleware
+		if oauthSrv != nil {
+			mcpAuth := &auth.MCPAuth{
+				Keys: apiKeyAuth, Queries: queries,
+				Resource: oauthSrv.Resource(), ResourceMetadataURL: oauthSrv.ProtectedResourceMetadataURL(),
+			}
+			mcpMW = mcpAuth.Middleware
 			root.Handle("/.well-known/oauth-authorization-server", oauthSrv.ASMetadataHandler())
 			root.Handle("/.well-known/oauth-protected-resource", oauthSrv.PRMHandler())
 			root.Handle("/.well-known/oauth-protected-resource/mcp", oauthSrv.PRMHandler())
-			slog.Info("MCP OAuth discovery enabled", "issuer", oauthSrv.Issuer(), "resource", oauthSrv.Resource())
+			root.Handle("/oauth/register", debugHTTP(oauthSrv.RegisterHandler()))
+			root.Handle("/oauth/token", debugHTTP(oauthSrv.TokenHandler()))
+			slog.Info("MCP OAuth enabled", "issuer", oauthSrv.Issuer(), "resource", oauthSrv.Resource(), "consent", oauthSrv.Cfg.Consent)
 		}
+		root.Handle("/mcp", mcpMW(debugHTTP(h.MCPHandler())))
+		slog.Info("MCP server enabled", "path", "/mcp")
 	}
 	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
 
