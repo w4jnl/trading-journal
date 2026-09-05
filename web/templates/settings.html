@@ -14,6 +14,8 @@
 
 {{if eq .Flash "revoked"}}<div class="flash saved mb-16">Key revoked.</div>{{end}}
 {{if eq .Flash "deleted"}}<div class="flash saved mb-16">Key deleted.</div>{{end}}
+{{if eq .Flash "oauth-revoked"}}<div class="flash saved mb-16">Connected app revoked — its tokens no longer work.</div>{{end}}
+{{if eq .Flash "oauth-deleted"}}<div class="flash saved mb-16">Connected app removed.</div>{{end}}
 {{if eq .Flash "language"}}<div class="flash saved mb-16">Language saved.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
@@ -319,6 +321,58 @@
       </tbody>
     </table>
   </div>
+  {{end}}
+</div>
+{{end}}
+
+{{if .OAuthEnabled}}
+<div class="card">
+  <div class="card-title-row">
+    <div class="card-title">Connected apps</div>
+    <span class="muted" style="font-size: 11px;">ChatGPT · claude.ai · Claude Code</span>
+  </div>
+  <p class="muted" style="font-size: 12px;">
+    Apps that signed in with OAuth to use the MCP server at <code>/mcp</code>. Nothing to copy:
+    point the app at this journal's <code>/mcp</code> address, log in, click <strong>Allow</strong>.
+    Revoking cuts the app off immediately — its access and refresh tokens stop working.
+  </p>
+
+  {{if .OAuthGrants}}
+  <div class="table-scroll mt-8">
+    <table>
+      <thead>
+        <tr><th>App</th><th>Sends you back to</th><th>Authorized</th><th>Last used</th><th>Status</th><th></th></tr>
+      </thead>
+      <tbody>
+      {{range .OAuthGrants}}
+        <tr>
+          <td>{{.ClientName}}</td>
+          <td class="muted"><code>{{.RedirectHost}}</code></td>
+          <td class="num muted">{{ltime .CreatedAt "datetime"}}</td>
+          <td class="num muted">{{if .LastUsedAt}}{{ltimep .LastUsedAt "datetime"}}{{else}}never{{end}}</td>
+          <td>{{if .RevokedAt}}<span class="pill">revoked</span>{{else}}<span class="pill dir-long">connected</span>{{end}}</td>
+          <td class="tar">
+            {{if .RevokedAt}}
+            <form method="post" action="/settings/oauth/{{.ID}}/delete" style="display: inline;"
+                  onsubmit="return confirm('Remove this revoked connection from the list?');">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+            </form>
+            {{else}}
+            <form method="post" action="/settings/oauth/{{.ID}}/revoke" style="display: inline;"
+                  onsubmit="return confirm('Disconnect this app? It will stop working immediately and must sign in again.');">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn--ghost btn--sm">Revoke</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="muted">No connected apps yet.</p>
   {{end}}
 </div>
 {{end}}

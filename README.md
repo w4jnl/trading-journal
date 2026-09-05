@@ -251,7 +251,12 @@ app on the stats endpoint is in
 For AI agents the app also speaks **MCP** (Model Context Protocol) at
 `/mcp`, authenticated by the same per-user keys — so Claude Code, the
 Claude app, and ChatGPT can read trades/journal and write entries with
-the key held in the connector config, never in a prompt. A ready-made
+the key held in the connector config, never in a prompt. Connectors that
+cannot hold a static key (ChatGPT's MCP connector, claude.ai, Claude Code)
+can instead sign in with **OAuth**: enable `mcp.oauth` and the journal acts
+as its own authorization server — point the client at `/mcp`, log in,
+click Allow; manage connections under Settings → Connected apps (see
+[docs/mcp-oauth-setup.md](docs/mcp-oauth-setup.md)). A ready-made
 analysis workflow ships as the **`trading-journal-analyst`** skill
 (`.claude/skills/trading-journal-analyst/`): it reviews a trading day,
 groups copytrader fan-out, writes the per-trade/group analysis once, and

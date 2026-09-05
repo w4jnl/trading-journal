@@ -127,6 +127,7 @@ TOK=$(curl -s -X POST "$BASE/oauth/token" --data "grant_type=authorization_code&
 AT=$(printf %s "$TOK" | sed -n 's/.*"access_token":"\([^"]*\)".*/\1/p')
 RT=$(printf %s "$TOK" | sed -n 's/.*"refresh_token":"\([^"]*\)".*/\1/p')
 check "token endpoint issued a tjo_ access token"   "$(yesno "$AT" tjo_)" yes
+check "Settings lists the connected app"            "$(curl -s "${H[@]}" "$BASE/settings" | grep -c '<td>smoke</td>')" 1
 MCPINIT='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"smoke","version":"0"}}}'
 check "/mcp accepts the OAuth access token"         "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/mcp" -H "Authorization: Bearer $AT" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d "$MCPINIT")" 200
 check "/api/v1 rejects the OAuth token (audience)"  "$(code -H "Authorization: Bearer $AT" "$BASE/api/v1/trades")" 401

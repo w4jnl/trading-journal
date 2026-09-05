@@ -615,6 +615,9 @@ func run() error {
 	mux.HandleFunc("POST /settings/api-keys", h.APIKeyCreate)
 	mux.HandleFunc("POST /settings/api-keys/{id}/revoke", h.APIKeyRevoke)
 	mux.HandleFunc("POST /settings/api-keys/{id}/delete", h.APIKeyDelete)
+	// Connected apps (OAuth grants for /mcp): revoke cuts the app off at once.
+	mux.HandleFunc("POST /settings/oauth/{id}/revoke", h.OAuthGrantRevoke)
+	mux.HandleFunc("POST /settings/oauth/{id}/delete", h.OAuthGrantDelete)
 	// In-app API reference (API.md rendered) + a session-auth alias for the
 	// OpenAPI document so the page's link works in a browser; /api/v1/openapi.json
 	// itself stays key-gated for machines.
@@ -763,6 +766,9 @@ func run() error {
 
 	// Background session sweep — purge expired rows every hour.
 	go sessions.StartJanitor(ctx, time.Hour)
+	if oauthSrv != nil {
+		go oauthSrv.StartJanitor(ctx, time.Hour) // expired OAuth codes/tokens
+	}
 
 	// Periodic backup — one snapshot at startup (deduped per day) and one
 	// daily at the configured hour. Failures are logged, never fatal.

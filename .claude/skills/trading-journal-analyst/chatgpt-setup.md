@@ -1,11 +1,26 @@
 # Using the trading-journal analyst in ChatGPT
 
-Same workflow as [SKILL.md](SKILL.md); only the transport differs. ChatGPT reaches the
-trading-journal over its own tool mechanism, with the API key stored in the tool config
-(never pasted into a chat). The recommended path is a **Custom GPT with an Action** against
-the REST API.
+Same workflow as [SKILL.md](SKILL.md); only the transport differs. Two ways to connect:
+the **MCP connector** (recommended when the journal has `mcp.oauth` enabled — same tools as
+Claude, nothing to copy) or a **Custom GPT with an Action** against the REST API (works
+without OAuth; the API key is stored in the tool config, never pasted into a chat).
 
-## Option A — Custom GPT with an Action (works on most plans)
+## Option 0 — MCP connector with OAuth (recommended)
+
+ChatGPT's MCP connector cannot use a static key, so the journal signs it in with OAuth
+(see `docs/mcp-oauth-setup.md` for the one-time server setup).
+
+1. ChatGPT → **Settings → Connectors → Create** (developer mode / custom connector).
+2. MCP server URL: `https://YOUR_HOST/mcp`. Authentication: **OAuth**. Nothing else to fill
+   in — the connector registers itself.
+3. ChatGPT opens the journal's authorize page → log in as usual → **Allow** for "ChatGPT".
+4. The 14 tools (`list_trades`, `get_daily_stats`, `prepare_day`, …) appear, with the same
+   names and behaviour described in [SKILL.md](SKILL.md). Paste the instructions from
+   [chatgpt-instructions.md](chatgpt-instructions.md) as before.
+5. To disconnect: journal **Settings → Connected apps → Revoke** (and remove the connector
+   in ChatGPT).
+
+## Option A — Custom GPT with an Action (works on most plans, no OAuth needed)
 
 1. **Get a key.** In the web UI at `https://YOUR_HOST/settings`, generate a per-user API
    key (`tj_…`). It's full-access to your own data; revoke it there if exposed.

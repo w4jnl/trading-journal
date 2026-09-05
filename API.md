@@ -650,6 +650,37 @@ skill (`.claude/skills/trading-journal-analyst/`) — it clusters copytrader
 fan-out into group entries, writes each analysis once (idempotent via a marker),
 and synthesizes the daily journal.
 
+## OAuth for MCP connectors
+
+Some MCP clients cannot hold a static key: ChatGPT's MCP connector, claude.ai
+custom connectors and Claude Code (`claude mcp add --transport http`) expect
+the server to offer **OAuth 2.1** and register themselves with it. When
+`mcp.oauth` is enabled in the config, the journal is its own authorization
+server for `/mcp`:
+
+- **Discovery**: `/.well-known/oauth-protected-resource` (RFC 9728) and
+  `/.well-known/oauth-authorization-server` (RFC 8414). An unauthenticated
+  call to `/mcp` answers `401` with
+  `WWW-Authenticate: Bearer resource_metadata="…"`, which is how a client
+  finds the rest.
+- **Registration**: `POST /oauth/register` (RFC 7591). Public clients only;
+  PKCE S256 is mandatory; redirect URIs must be https (optionally
+  allow-listed) or loopback http (Claude Code's local callback).
+- **Authorization**: the client opens `GET /oauth/authorize` in your browser.
+  You log in as usual and click **Allow** on a page naming the app; the app
+  then calls `POST /oauth/token` to exchange the one-time code, and later to
+  rotate its refresh token.
+- **Tokens** are opaque — `tjo_…` access tokens (1 h) and `tjr_…` rotating
+  refresh tokens (30 d) — and are valid **only on `/mcp`**; the REST API at
+  `/api/v1` stays key-only. Reusing a refresh token or replaying a code
+  revokes that app's whole grant.
+- **Revoking**: Settings → **Connected apps** lists each approved app with a
+  Revoke button; revocation is immediate.
+- `tj_` API keys keep working everywhere, including `/mcp`.
+
+Operator setup (config block, reverse-proxy routing, per-client steps):
+`docs/mcp-oauth-setup.md`.
+
 ## Status codes
 
 | Code | Meaning |
