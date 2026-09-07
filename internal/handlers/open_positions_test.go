@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -76,9 +77,24 @@ func TestOpenPositionRowsAvgEntry(t *testing.T) {
 	}
 
 	h := &Handlers{DB: conn, Queries: q}
-	rows := h.openPositionRows(auth.WithUser(ctx, &auth.User{ID: u.ID, Username: "trader"}), open)
+	uctx := auth.WithUser(ctx, &auth.User{ID: u.ID, Username: "trader"})
+	rows := h.openPositionRows(uctx, open)
 	if len(rows) != 1 || rows[0].AvgEntry == nil || *rows[0].AvgEntry != 6530 {
 		t.Fatalf("rows = %+v (avg=%v)", rows, rows[0].AvgEntry)
+	}
+	if rows[0].LastPrice != nil || rows[0].Unrealized != nil {
+		t.Errorf("without market data the row must carry no price/P&L: %+v", rows[0])
+	}
+
+	// With market data: last cached ES=F close 6545.25 -> 61 ticks x 12.50 x 1 contract.
+	bar := time.Now().Add(-10 * time.Minute).Truncate(time.Minute)
+	h.MarketData = &marketdata.CachingSource{DB: conn, Loc: time.UTC, Source: barsAt{t: bar, close: 6545.25}}
+	rows = h.openPositionRows(uctx, open)
+	if rows[0].LastPrice == nil || *rows[0].LastPrice != 6545.25 || rows[0].LastAt == nil || !rows[0].LastAt.Equal(bar) {
+		t.Fatalf("last price = %v @ %v", rows[0].LastPrice, rows[0].LastAt)
+	}
+	if rows[0].Unrealized == nil || *rows[0].Unrealized != 61*12.5 {
+		t.Errorf("unrealized = %v, want %v", rows[0].Unrealized, 61*12.5)
 	}
 
 	// Closing the last contract removes the position entirely.
@@ -92,3 +108,49 @@ func TestOpenPositionRowsAvgEntry(t *testing.T) {
 		t.Errorf("flat account still listed: %+v", open)
 	}
 }
+
+// barsAt is a BarSource that always knows exactly one bar (used to seed the
+// market-data cache in tests without a vendor).
+type barsAt struct {
+	t     time.Time
+	close float64
+}
+
+func (b barsAt) FetchBars(_ context.Context, _ string, _ marketdata.Timeframe, from, to time.Time) ([]marketdata.Bar, error) {
+	if b.t.Unix() < from.Unix() || b.t.Unix() >= to.Unix() {
+		return nil, marketdata.ErrNoData
+	}
+	return []marketdata.Bar{{Time: b.t.Unix(), Open: b.close, High: b.close, Low: b.close, Close: b.close, Volume: 1}}, nil
+}
+
+// Pending P&L follows the instrument's tick specs and the position's sign; a
+// stub instrument (no tick specs) yields nothing rather than a guess.
+func TestUnrealizedPnL(t *testing.T) {
+	tick, val := 0.25, 12.5
+	es := models.Instrument{SymbolRoot: "ES", TickSize: &tick, TickValue: &val}
+	cases := []struct {
+		name           string
+		avg, last, qty float64
+		inst           models.Instrument
+		want           *float64
+	}{
+		{"long gains on rise", 6530, 6545.25, 2, es, f(1525)}, // 61 ticks x 12.5 x 2
+		{"long loses on fall", 6530, 6525, 1, es, f(-250)},    // -20 ticks x 12.5
+		{"short gains on fall", 6530, 6525, -2, es, f(500)},   // -20 ticks x 12.5 x -2
+		{"short loses on rise", 6530, 6531, -1, es, f(-50)},   // 4 ticks x 12.5 x -1
+		{"flat price", 6530, 6530, 3, es, f(0)},
+		{"stub instrument", 6530, 6545, 1, models.Instrument{SymbolRoot: "MGC"}, nil},
+		{"zero qty", 6530, 6545, 0, es, nil},
+	}
+	for _, c := range cases {
+		got := unrealizedPnL(c.avg, c.last, c.qty, c.inst)
+		switch {
+		case (got == nil) != (c.want == nil):
+			t.Errorf("%s: got %v, want %v", c.name, got, c.want)
+		case got != nil && *got != *c.want:
+			t.Errorf("%s: got %g, want %g", c.name, *got, *c.want)
+		}
+	}
+}
+
+func f(v float64) *float64 { return &v }

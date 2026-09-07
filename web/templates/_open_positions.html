@@ -19,6 +19,8 @@
         <span class="open-pos__sym">{{.Symbol}}</span>
         <span class="pill {{if gt .NetQty 0.0}}dir-long{{else}}dir-short{{end}}">{{posLabel .NetQty}}</span>
         {{if .AvgEntry}}<span class="open-pos__avg muted" title="Volume-weighted average entry of the contracts still open (FIFO)">avg <span class="num">{{printf "%.2f" (deref .AvgEntry)}}</span></span>{{end}}
+        {{if .LastPrice}}<span class="open-pos__avg muted" title="Last cached price of the front-month contract (bar time shown; refreshes on the market-data schedule)">last <span class="num">{{printf "%.2f" (deref .LastPrice)}}</span> <span class="open-pos__asof">{{ltimep .LastAt "datetime"}}</span></span>{{end}}
+        {{if .Unrealized}}<span class="open-pos__pnl num {{if ge (deref .Unrealized) 0.0}}pnl-pos{{else}}pnl-neg{{end}}" title="Pending (unrealized) P&amp;L at the last price: ticks from the average entry × tick value × contracts">{{if ge (deref .Unrealized) 0.0}}+{{end}}{{printf "%.2f" (deref .Unrealized)}}</span>{{end}}
       </a>
     </li>
     {{end}}

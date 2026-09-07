@@ -4,11 +4,18 @@ import (
 	"context"
 	"net/url"
 	"strconv"
+	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
 )
+
+// latestPriceTimeout bounds the market-data lookup per contract root on a
+// dashboard render: the cache answers instantly, and a vendor refresh that
+// takes longer than this is abandoned in favour of whatever is cached.
+const latestPriceTimeout = 4 * time.Second
 
 // openPositionRow is one open-position line with its link resolved for the
 // viewer. The reconcile editor (/admin/transactions) is admin-only, so a
@@ -21,19 +28,33 @@ import (
 // rule (positions.OpenFromFills) - so after a partial close it reflects the
 // contracts actually left, not every fill ever made. Nil when the fills could
 // not be loaded or the replay nets flat despite the SQL net (data gap).
+//
+// LastPrice/LastAt is the newest cached close for the contract's root (front
+// month quote via marketdata.YahooSymbol) and Unrealized the pending P&L at
+// that price: (last - avg) in ticks x tick value x signed net qty, so a short
+// gains when price falls. Nil when market data is off, the root is not
+// mapped, nothing is cached yet, or the instrument has no tick specs (stub
+// awaiting setup) - the same rule as realized P&L, never a price-difference
+// guess.
 type openPositionRow struct {
 	models.ListOpenPositionsRow
-	Href     string
-	Title    string
-	AvgEntry *float64
+	Href       string
+	Title      string
+	AvgEntry   *float64
+	LastPrice  *float64
+	LastAt     *time.Time
+	Unrealized *float64
 }
 
-// openPositionRows resolves the per-viewer links and the open average entry
-// for the open_positions partial (dashboard + /admin/transactions). Nil-safe
-// on h.Queries (link-only) so the partial's callers and tests need no DB.
+// openPositionRows resolves the per-viewer links, the open average entry and
+// the pending P&L for the open_positions partial (dashboard +
+// /admin/transactions). Nil-safe on h.Queries / h.MarketData (link-only,
+// then avg-only) so the partial's callers and tests need no DB or vendor.
 func (h *Handlers) openPositionRows(ctx context.Context, rows []models.ListOpenPositionsRow) []openPositionRow {
 	u := auth.UserFrom(ctx)
 	admin := u != nil && u.IsAdmin
+	quotes := map[string]*marketdata.LatestQuote{} // per root: copytrader accounts share contracts
+	insts := map[string]*models.Instrument{}
 	out := make([]openPositionRow, 0, len(rows))
 	for _, r := range rows {
 		row := openPositionRow{ListOpenPositionsRow: r}
@@ -44,6 +65,13 @@ func (h *Handlers) openPositionRows(ctx context.Context, rows []models.ListOpenP
 			} else if pos := positions.OpenFromFills(fills); pos.NetQty != 0 {
 				avg := pos.AvgPrice
 				row.AvgEntry = &avg
+				if q := h.latestQuote(ctx, r.SymbolRoot, quotes); q != nil {
+					price, at := q.Price, q.At
+					row.LastPrice, row.LastAt = &price, &at
+					if inst := h.instrument(ctx, r.SymbolRoot, insts); inst != nil {
+						row.Unrealized = unrealizedPnL(avg, q.Price, pos.NetQty, *inst)
+					}
+				}
 			}
 		}
 		acct := strconv.FormatInt(r.AccountID, 10)
@@ -59,4 +87,59 @@ func (h *Handlers) openPositionRows(ctx context.Context, rows []models.ListOpenP
 		out = append(out, row)
 	}
 	return out
+}
+
+// latestQuote fetches (once per root per render) the newest cached close for
+// the root's front-month vendor symbol. nil when market data is disabled, the
+// root is unmapped, or nothing could be obtained within latestPriceTimeout.
+func (h *Handlers) latestQuote(ctx context.Context, root string, memo map[string]*marketdata.LatestQuote) *marketdata.LatestQuote {
+	if h.MarketData == nil {
+		return nil
+	}
+	if q, seen := memo[root]; seen {
+		return q
+	}
+	memo[root] = nil
+	sym, ok := marketdata.YahooSymbol(root)
+	if !ok {
+		return nil
+	}
+	tctx, cancel := context.WithTimeout(ctx, latestPriceTimeout)
+	defer cancel()
+	q, err := h.MarketData.LatestPrice(tctx, sym)
+	if err != nil {
+		h.logger().Debug("open positions: latest price unavailable", "root", root, "symbol", sym, "err", err)
+		return nil
+	}
+	memo[root] = &q
+	return &q
+}
+
+// instrument loads (once per root per render) the instrument row for tick
+// specs; nil when unknown.
+func (h *Handlers) instrument(ctx context.Context, root string, memo map[string]*models.Instrument) *models.Instrument {
+	if inst, seen := memo[root]; seen {
+		return inst
+	}
+	memo[root] = nil
+	inst, err := h.Queries.GetInstrument(ctx, root)
+	if err != nil {
+		return nil
+	}
+	memo[root] = &inst
+	return &inst
+}
+
+// unrealizedPnL prices the open position at last: the move from the average
+// entry in ticks, times the tick value, times the signed net quantity (long
+// positive, short negative - so a short profits from a falling price). nil
+// when the instrument lacks tick specs: a stub instrument shows no P&L rather
+// than a price-difference guess, exactly like realized trades.
+func unrealizedPnL(avg, last, netQty float64, inst models.Instrument) *float64 {
+	if inst.TickSize == nil || inst.TickValue == nil || *inst.TickSize <= 0 || *inst.TickValue <= 0 || netQty == 0 {
+		return nil
+	}
+	ticks := (last - avg) / *inst.TickSize
+	pnl := ticks * *inst.TickValue * netQty
+	return &pnl
 }
