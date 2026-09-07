@@ -86,15 +86,29 @@ func TestOpenPositionRowsAvgEntry(t *testing.T) {
 		t.Errorf("without market data the row must carry no price/P&L: %+v", rows[0])
 	}
 
-	// With market data: last cached ES=F close 6545.25 -> 61 ticks x 12.50 x 1 contract.
+	// With market data (bars only): last cached ES=F close 6545.25 -> 61 ticks x 12.50 x 1 contract.
 	bar := time.Now().Add(-10 * time.Minute).Truncate(time.Minute)
 	h.MarketData = &marketdata.CachingSource{DB: conn, Loc: time.UTC, Source: barsAt{t: bar, close: 6545.25}}
 	rows = h.openPositionRows(uctx, open)
-	if rows[0].LastPrice == nil || *rows[0].LastPrice != 6545.25 || rows[0].LastAt == nil || !rows[0].LastAt.Equal(bar) {
-		t.Fatalf("last price = %v @ %v", rows[0].LastPrice, rows[0].LastAt)
+	if rows[0].LastPrice == nil || *rows[0].LastPrice != 6545.25 || rows[0].LastAt == nil || !rows[0].LastAt.Equal(bar) || rows[0].PriceSource != "Yahoo" {
+		t.Fatalf("last price = %v @ %v via %q", rows[0].LastPrice, rows[0].LastAt, rows[0].PriceSource)
 	}
 	if rows[0].Unrealized == nil || *rows[0].Unrealized != 61*12.5 {
 		t.Errorf("unrealized = %v, want %v", rows[0].Unrealized, 61*12.5)
+	}
+
+	// A source with a live quote wins over bars, and the quote is memoized:
+	// swapping the source within the cache TTL does not change the answer.
+	live := time.Now().Add(-30 * time.Second).Truncate(time.Second)
+	h.MarketData = &marketdata.CachingSource{DB: conn, Loc: time.UTC, Source: quoteAt{barsAt: barsAt{t: bar, close: 6545.25}, price: 6550, at: live}}
+	rows = h.openPositionRows(uctx, open)
+	if *rows[0].LastPrice != 6545.25 {
+		t.Errorf("memoized quote should still be served: %v", *rows[0].LastPrice)
+	}
+	h.quoteCache.Delete("ESZ6")
+	rows = h.openPositionRows(uctx, open)
+	if rows[0].LastPrice == nil || *rows[0].LastPrice != 6550 || !rows[0].LastAt.Equal(live) || *rows[0].Unrealized != 80*12.5 {
+		t.Errorf("live quote row = %+v", rows[0])
 	}
 
 	// Closing the last contract removes the position entirely.
@@ -121,6 +135,17 @@ func (b barsAt) FetchBars(_ context.Context, _ string, _ marketdata.Timeframe, f
 		return nil, marketdata.ErrNoData
 	}
 	return []marketdata.Bar{{Time: b.t.Unix(), Open: b.close, High: b.close, Low: b.close, Close: b.close, Volume: 1}}, nil
+}
+
+// quoteAt is barsAt plus a live quote (marketdata.QuoteSource).
+type quoteAt struct {
+	barsAt
+	price float64
+	at    time.Time
+}
+
+func (q quoteAt) Quote(context.Context, string) (marketdata.LatestQuote, error) {
+	return marketdata.LatestQuote{Price: q.price, At: q.at}, nil
 }
 
 // Pending P&L follows the instrument's tick specs and the position's sign; a

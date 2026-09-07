@@ -115,6 +115,11 @@ type Handlers struct {
 	// distinguish page renders ("page:<name>") from partial renders
 	// ("partial:<name>") since the file sets differ.
 	templateCache sync.Map
+
+	// quoteCache memoizes open-position quotes per contract symbol for a few
+	// seconds (see quoteCacheTTL) so the dashboard's live refresh does not
+	// re-query TopstepX / Yahoo on every render.
+	quoteCache sync.Map
 }
 
 // renderPage parses base.html + the named page + every _*.html partial in the
