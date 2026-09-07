@@ -1857,6 +1857,10 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .open-pos__list a:hover { border-color: var(--border-strong); }
 .open-pos__acct { min-width: 160px; }
 .open-pos__sym { font-weight: var(--fw-semibold); }
+.open-pos__avg { font-size: var(--fs-12); }
+.open-pos__avg .num { color: var(--fg); font-weight: var(--fw-semibold); }
+.open-pos__asof { font-size: var(--fs-11); opacity: 0.8; }
+.open-pos__pnl { font-weight: var(--fw-semibold); margin-left: auto; }
 
 /* Reconcile editor: filter bar, create/edit form grid, transaction rows. */
 .txn-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }
