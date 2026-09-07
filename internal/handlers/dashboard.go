@@ -165,7 +165,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 
 	data := map[string]any{
 		"NavActive":     "dashboard",
-		"OpenPositions": openPositionRows(ctx, openPositions),
+		"OpenPositions": h.openPositionRows(ctx, openPositions),
 		"BackHref":      validBackHref(r),
 		"Stats":         stats,
 		"Equity":        equity,

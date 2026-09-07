@@ -18,6 +18,7 @@
         <span class="open-pos__acct">{{.AccountName}}{{if .Firm}} · <code>{{derefStr .Firm}}</code>{{end}}</span>
         <span class="open-pos__sym">{{.Symbol}}</span>
         <span class="pill {{if gt .NetQty 0.0}}dir-long{{else}}dir-short{{end}}">{{posLabel .NetQty}}</span>
+        {{if .AvgEntry}}<span class="open-pos__avg muted" title="Volume-weighted average entry of the contracts still open (FIFO)">avg <span class="num">{{printf "%.2f" (deref .AvgEntry)}}</span></span>{{end}}
       </a>
     </li>
     {{end}}
