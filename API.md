@@ -618,10 +618,14 @@ polls `/version` still keeps the underlying data moving.
 ## MCP server (for AI agents)
 
 Beyond the REST API, the app exposes an **MCP** (Model Context Protocol) server at
-`POST /mcp`, authenticated by the **same per-user keys** (`Authorization: Bearer
-tj_...`). It's a thin tool surface over the same logic, so AI clients call tools
-with the key held in the connector config — never pasted into a prompt. Toggle it
-with `mcp.enabled` (default true) in `config.yaml`.
+`POST /mcp`. AI clients — Claude Code, the Claude app, ChatGPT — connect to it by
+**signing in with OAuth** (the journal is its own authorization server; see the
+next section): point the client at `/mcp`, log in, click Allow. No key is copied
+anywhere, and each connection can be revoked under Settings → Connected apps.
+The same per-user API keys (`Authorization: Bearer tj_...`) are also accepted on
+`/mcp` for scripts and clients that prefer them. Toggle the server with
+`mcp.enabled` (default true) and the sign-in flow with `mcp.oauth` in
+`config.yaml`.
 
 Tools: `prepare_day` (cluster a day's copytrader fan-out + create the journal
 entries to analyze - the daily-review entry point), `server_info`, `list_trades`,
@@ -631,19 +635,23 @@ entries to analyze - the daily-review entry point), `server_info`, `list_trades`
 only-if-unset, never overwrite), and `get_daily_stats` (the daily P&L / trade
 stats above).
 
-Connect:
+Connect (all three sign in through the browser; nothing to paste):
 
 ```bash
 # Claude Code
-claude mcp add trading-journal --transport http https://YOUR_HOST/mcp \
-  --header "Authorization: Bearer tj_..."
+claude mcp add --transport http trading-journal https://YOUR_HOST/mcp
+claude mcp login trading-journal      # browser -> your login -> Allow
 ```
 
-- **Claude app**: add a custom connector pointing at `https://YOUR_HOST/mcp` with
-  the `Authorization` header. (Header-key auth; OAuth on `/mcp` is not implemented
-  yet, so if your app build requires OAuth use Claude Code / ChatGPT for now.)
-- **ChatGPT**: use the OpenAPI spec as a Custom GPT Action (or an MCP connector on
-  plans that support it).
+- **Claude app** (claude.ai / desktop): Settings → Connectors → *Add custom
+  connector* → URL `https://YOUR_HOST/mcp`, leave client ID/secret empty →
+  *Connect* → log in → **Allow**.
+- **ChatGPT**: Settings → Connectors (Plugins) → *Create* → server URL
+  `https://YOUR_HOST/mcp`, authentication **OAuth** → *Create* → log in →
+  **Allow**. Registration is dynamic; keep the discovered advanced settings as
+  they are. (The former Custom GPT + Action route is retired.)
+- **Scripts / anything that holds a key**: `Authorization: Bearer tj_...` on
+  `/mcp` works as before.
 
 A ready-made daily-review workflow ships as the **`trading-journal-analyst`**
 skill (`.claude/skills/trading-journal-analyst/`) — it clusters copytrader
