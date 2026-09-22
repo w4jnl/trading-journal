@@ -29,12 +29,12 @@
   <meta name="trading-tz" content="{{tradingTZ}}">
   <link rel="preload" href="/static/fonts/Inter-Variable.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="preload" href="/static/fonts/JetBrainsMono-Variable.woff2" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/app.css{{assetVer}}">
 
   {{/* Brand chrome. SVG-only for now; see web/static/img/brand/README.md
        for the rsvg-convert commands that produce .ico / .png fallbacks. */}}
-  <link rel="icon" href="/static/img/brand/favicon.svg" type="image/svg+xml">
-  <link rel="apple-touch-icon" href="/static/img/brand/apple-touch-icon.svg">
+  <link rel="icon" href="/static/img/brand/favicon.svg{{assetVer}}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/static/img/brand/apple-touch-icon.svg{{assetVer}}">
   <meta name="theme-color" content="#12999D">
 
   <meta property="og:type"        content="website">
@@ -44,7 +44,7 @@
   <meta property="og:image"       content="/static/img/brand/og-image.svg">
   <meta name="twitter:card"       content="summary_large_image">
 
-  <script src="/static/vendor/htmx-2.0.3.min.js"></script>
+  <script src="/static/vendor/htmx-2.0.3.min.js{{assetVer}}"></script>
   <script>
     // Inject the CSRF token into every same-origin POST/DELETE/PUT/PATCH:
     //   - <form method=post> gets a hidden input named csrf_token added on submit
@@ -324,15 +324,15 @@
       });
     })();
   </script>
-  <script src="/static/js/toast.js" defer></script>
-  <script src="/static/js/app_feedback.js" defer></script>
-  <script src="/static/js/live_refresh.js" defer></script>
-  <script src="/static/js/dirty_table.js" defer></script>
-  <script src="/static/js/journal_editor.js" defer></script>
-  <script src="/static/js/journal_view.js" defer></script>
-  <script src="/static/js/id_copy.js" defer></script>
-  <script src="/static/js/trade_sheet.js" defer></script>
-  <script src="/static/js/trade-chart.js" defer></script>
+  <script src="/static/js/toast.js{{assetVer}}" defer></script>
+  <script src="/static/js/app_feedback.js{{assetVer}}" defer></script>
+  <script src="/static/js/live_refresh.js{{assetVer}}" defer></script>
+  <script src="/static/js/dirty_table.js{{assetVer}}" defer></script>
+  <script src="/static/js/journal_editor.js{{assetVer}}" defer></script>
+  <script src="/static/js/journal_view.js{{assetVer}}" defer></script>
+  <script src="/static/js/id_copy.js{{assetVer}}" defer></script>
+  <script src="/static/js/trade_sheet.js{{assetVer}}" defer></script>
+  <script src="/static/js/trade-chart.js{{assetVer}}" defer></script>
 </body>
 </html>
 {{end}}

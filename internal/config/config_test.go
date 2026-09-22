@@ -50,3 +50,16 @@ func TestAPISyncThrottleDefaultAndDisable(t *testing.T) {
 		t.Errorf("negative must be rejected naming the key, got %v", err)
 	}
 }
+
+// sync_log_retention_days defaults to 2, 0 disables, negatives are rejected.
+func TestSyncLogRetentionConfig(t *testing.T) {
+	if cfg := loadYAML(t, "timezone: UTC\n"); cfg.SyncLogRetentionDays != 2 {
+		t.Errorf("default = %d, want 2", cfg.SyncLogRetentionDays)
+	}
+	if cfg := loadYAML(t, "sync_log_retention_days: 0\n"); cfg.SyncLogRetentionDays != 0 || cfg.Validate() != nil {
+		t.Errorf("0 must be accepted as disabled")
+	}
+	if err := loadYAML(t, "sync_log_retention_days: -1\n").Validate(); err == nil || !strings.Contains(err.Error(), "sync_log_retention_days") {
+		t.Errorf("negative must be rejected naming the key, got %v", err)
+	}
+}

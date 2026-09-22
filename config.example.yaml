@@ -214,6 +214,14 @@ mw_email:
 # Storage is always UTC.
 timezone: "America/Chicago"
 
+# Housekeeping for the sync history (Settings/Dashboard "last sync" panels read
+# it). API polls write one sync_log row per account, thousands a day. Rows that
+# added nothing and did not error are purged after this many days; rows that
+# added fills or errored stay 90 days; the newest row per type and per account
+# and all CSV import rows are kept forever. 0 keeps everything (not advised:
+# the dashboard slows down as the table grows).
+sync_log_retention_days: 2
+
 # Authentication. The app is multi-user; every request resolves to a user
 # row, even on a single-trader deploy where there's only one of them.
 auth:

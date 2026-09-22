@@ -274,6 +274,7 @@ func (h *Handlers) funcMap() template.FuncMap {
 		"heldFor":      heldFor,
 		"lower":        strings.ToLower,
 		"appVersion":   func() string { return h.Version }, // build string in the sidebar footer
+		"assetVer":     h.assetQuery,                       // "?v=<build>" on /static URLs; "" for dev builds
 		// tradingTZ is the configured trading timezone as an IANA name (e.g.
 		// "America/Chicago"), exposed to the client so chart libraries can render
 		// their time axes in it instead of UTC. See web/static/js/trade-chart.js.

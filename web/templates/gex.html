@@ -272,7 +272,7 @@
 <div class="muted" style="font-size: 12px;" id="gx-conv">{{.View.ConvLine}} · snapshot {{.View.AsOfET}}</div>
 
 {{template "uplot_assets" .}}
-<script src="/static/js/gex-chips.js"></script>
+<script src="/static/js/gex-chips.js{{assetVer}}"></script>
 <script>
   // The initial view model is rendered into the page as inline JSON by the
   // handler; the scrub slider fetches sibling moments from /gex/data and

@@ -5,7 +5,7 @@ charts (dashboard, trades, analytics) so the CDN reference and helper code
 live in exactly one place.
 */}}
 {{define "uplot_assets"}}
-<link rel="stylesheet" href="/static/vendor/uplot-1.6.32.min.css">
-<script src="/static/vendor/uplot-1.6.32.iife.min.js"></script>
-<script src="/static/js/uplot-helpers.js"></script>
+<link rel="stylesheet" href="/static/vendor/uplot-1.6.32.min.css{{assetVer}}">
+<script src="/static/vendor/uplot-1.6.32.iife.min.js{{assetVer}}"></script>
+<script src="/static/js/uplot-helpers.js{{assetVer}}"></script>
 {{end}}
