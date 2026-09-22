@@ -58,13 +58,14 @@ func (q *Queries) CreateSyncLog(ctx context.Context, arg CreateSyncLogParams) (S
 }
 
 const listLastAPISyncPerAccount = `-- name: ListLastAPISyncPerAccount :many
-SELECT s1.account_id, s1.synced_at, s1.status, s1.message, s1.execs_added
-FROM sync_log s1
-WHERE s1.user_id = ? AND s1.sync_type = ? AND s1.account_id IS NOT NULL
-  AND s1.id = (SELECT MAX(s2.id) FROM sync_log s2
-               WHERE s2.user_id = s1.user_id AND s2.sync_type = s1.sync_type
-                 AND s2.account_id = s1.account_id)
-ORDER BY s1.synced_at DESC
+SELECT s.account_id, s.synced_at, s.status, s.message, s.execs_added
+FROM sync_log s
+JOIN (
+    SELECT MAX(l.id) AS id FROM sync_log l
+    WHERE l.user_id = ? AND l.sync_type = ? AND l.account_id IS NOT NULL
+    GROUP BY l.account_id
+) latest ON latest.id = s.id
+ORDER BY s.synced_at DESC
 `
 
 type ListLastAPISyncPerAccountParams struct {
@@ -81,7 +82,8 @@ type ListLastAPISyncPerAccountRow struct {
 }
 
 // Latest API-sync row per account for one sync_type ('topstepx_api' /
-// 'ibkr_api'), for settings/accounts display.
+// 'ibkr_api'), for settings/accounts display. Grouped MAX(id) for the same
+// reason as ListLastSyncByType.
 func (q *Queries) ListLastAPISyncPerAccount(ctx context.Context, arg ListLastAPISyncPerAccountParams) ([]ListLastAPISyncPerAccountRow, error) {
 	rows, err := q.db.QueryContext(ctx, listLastAPISyncPerAccount, arg.UserID, arg.SyncType)
 	if err != nil {
@@ -112,12 +114,16 @@ func (q *Queries) ListLastAPISyncPerAccount(ctx context.Context, arg ListLastAPI
 }
 
 const listLastSyncByType = `-- name: ListLastSyncByType :many
-SELECT id, account_id, sync_type, status, source_file, trades_added, execs_added, message, synced_at, user_id FROM sync_log s1
-WHERE s1.user_id = ?
-  AND s1.id = (SELECT MAX(s2.id) FROM sync_log s2 WHERE s2.sync_type = s1.sync_type AND s2.user_id = s1.user_id)
-ORDER BY s1.synced_at DESC
+SELECT s.id, s.account_id, s.sync_type, s.status, s.source_file, s.trades_added, s.execs_added, s.message, s.synced_at, s.user_id FROM sync_log s
+JOIN (
+    SELECT MAX(l.id) AS id FROM sync_log l WHERE l.user_id = ? GROUP BY l.sync_type
+) latest ON latest.id = s.id
+ORDER BY s.synced_at DESC
 `
 
+// Newest row per sync_type for the user (the dashboard's last-sync panel).
+// Grouped MAX(id) instead of a correlated subquery: the old form rescanned
+// the whole per-user history once per row (quadratic in table size).
 func (q *Queries) ListLastSyncByType(ctx context.Context, userID *int64) ([]SyncLog, error) {
 	rows, err := q.db.QueryContext(ctx, listLastSyncByType, userID)
 	if err != nil {
@@ -193,4 +199,41 @@ func (q *Queries) ListSyncLogRecent(ctx context.Context, arg ListSyncLogRecentPa
 		return nil, err
 	}
 	return items, nil
+}
+
+const purgeSyncLogBatch = `-- name: PurgeSyncLogBatch :execrows
+DELETE FROM sync_log WHERE id IN (
+    SELECT id FROM sync_log
+    WHERE sync_type IN ('topstepx_api', 'ibkr_api')
+      AND (
+            (synced_at < datetime('now', ?1)
+             AND execs_added = 0 AND trades_added = 0 AND status <> 'error')
+         OR synced_at < datetime('now', ?2)
+      )
+      AND id NOT IN (SELECT MAX(id) FROM sync_log GROUP BY user_id, sync_type)
+      AND id NOT IN (SELECT MAX(id) FROM sync_log WHERE account_id IS NOT NULL GROUP BY user_id, sync_type, account_id)
+    LIMIT ?3
+)
+`
+
+type PurgeSyncLogBatchParams struct {
+	NoopAge  interface{} `json:"noop_age"`
+	EventAge interface{} `json:"event_age"`
+	Batch    int64       `json:"batch"`
+}
+
+// Retention for API polling rows (topstepx_api / ibkr_api). Each poll writes
+// one row per account, thousands a day, so without this the table grows
+// without bound and every reader slows down. Deleted: rows older than the
+// no-op cutoff that added nothing and did not error, and rows older than the
+// event cutoff regardless. Always kept: CSV import rows (an audit trail of
+// files), the newest row per user and type (dashboard panel) and the newest
+// per user, type and account (settings page). Batched so the write lock
+// stays short; the caller loops until a batch deletes nothing.
+func (q *Queries) PurgeSyncLogBatch(ctx context.Context, arg PurgeSyncLogBatchParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, purgeSyncLogBatch, arg.NoopAge, arg.EventAge, arg.Batch)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

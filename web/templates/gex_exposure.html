@@ -155,7 +155,7 @@
   <span id="gxe-regime">{{if .Regime}}regime {{.Regime}} · {{end}}</span>{{if .NetTotal}}net total <span id="gxe-nettotal">{{.NetTotal}}</span> · {{end}}snapshot <span id="gxe-snap-asof">{{.AsOfET}}</span><span id="gxe-stale">{{if .Stale}} · options session closed — showing the last profile{{end}}</span>
 </div>
 
-<script src="/static/js/gex-chips.js"></script>
+<script src="/static/js/gex-chips.js{{assetVer}}"></script>
 <script>
   const gexExpoInit = {{$.ExpoJSON}};
   const GEX_EXPO_MARKET = {{$.Market}};

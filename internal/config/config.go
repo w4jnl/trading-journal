@@ -29,6 +29,14 @@ type Config struct {
 	IBKR         IBKR         `yaml:"ibkr"`
 	MWEmail      MWEmail      `yaml:"mw_email"`
 	Timezone     string       `yaml:"timezone"`
+	// SyncLogRetentionDays bounds the API polling history in sync_log: rows
+	// from topstepx_api / ibkr_api runs that added nothing and did not error
+	// are deleted after this many days (default 2). Rows that added fills or
+	// errored are kept for 90 days, the newest row per type and per account
+	// forever (they drive the dashboard and settings panels), and CSV import
+	// rows forever. Polls write one row per account, thousands a day, so
+	// without retention the table grows without bound. 0 disables the purge.
+	SyncLogRetentionDays int `yaml:"sync_log_retention_days"`
 }
 
 // MWEmail configures the embedded SMTP listener that captures MotiveWave
@@ -378,6 +386,8 @@ func defaults() Config {
 		MWEmail:  MWEmail{ListenAddr: ":2525", TLSMode: "off", ArchiveDir: "data/mw-raw"},
 		MCP:      MCP{OAuth: MCPOAuth{AccessTokenTTLSec: 3600, RefreshTokenTTLSec: 2592000, CodeTTLSec: 60}},
 		Timezone: "America/Chicago",
+
+		SyncLogRetentionDays: 2,
 	}
 }
 
@@ -519,6 +529,9 @@ func (c Config) Validate() error {
 		if c.MCP.Enabled != nil && !*c.MCP.Enabled {
 			return fmt.Errorf("mcp.oauth.enabled requires mcp.enabled (the OAuth server only protects /mcp)")
 		}
+	}
+	if c.SyncLogRetentionDays < 0 {
+		return fmt.Errorf("sync_log_retention_days must be >= 0 (0 disables), got %d", c.SyncLogRetentionDays)
 	}
 	if c.MWEmail.Enabled {
 		switch c.MWEmail.TLSMode {

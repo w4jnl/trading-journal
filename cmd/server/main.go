@@ -222,6 +222,32 @@ func oauthConfig(o config.MCPOAuth) oauth.Config {
 	}
 }
 
+// staticCacheHeaders sets the cache policy for embedded /static assets. With
+// a release build the asset URLs carry ?v=<assetVersion> (see the assetVer
+// template func), so the content behind a URL never changes: a year-long
+// immutable cache is correct and an ETag lets a stale-but-present copy
+// revalidate with a 304 (http.ServeContent honours a pre-set ETag). A
+// development build ("dev" or a dirty checkout) has no stable version, so
+// its assets are served no-cache. Cutting asset requests matters here
+// because each one otherwise pays the reverse proxy's forward-auth round trip.
+// Assets referenced without ?v= (fonts from app.css url(), the vendored
+// chart library) must change filename when their content changes.
+func staticCacheHeaders(assetVersion string, next http.Handler) http.Handler {
+	etag := ""
+	if assetVersion != "" {
+		etag = `"` + assetVersion + `"`
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if etag == "" {
+			w.Header().Set("Cache-Control", "no-cache")
+		} else {
+			w.Header().Set("ETag", etag)
+			w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
 // debugHTTP logs each API/MCP request (method, path, status, duration, user) at
 // debug level. Mounted inside the key-auth chain so the user is resolved; a
 // near no-op when debug logging is off.
@@ -705,7 +731,11 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("static sub-fs: %w", err)
 	}
-	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	// Embedded assets: long-lived cache keyed to the build (templates append
+	// ?v=<build> so a new release is fetched at once); every asset request
+	// otherwise pays the reverse proxy's forward-auth round trip.
+	mux.Handle("GET /static/", staticCacheHeaders(handlers.AssetVersion(h.Version),
+		http.StripPrefix("/static/", http.FileServer(http.FS(staticSub)))))
 
 	// Root redirects to the dashboard.
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
@@ -766,6 +796,11 @@ func run() error {
 
 	// Background session sweep — purge expired rows every hour.
 	go sessions.StartJanitor(ctx, time.Hour)
+	if cfg.SyncLogRetentionDays > 0 {
+		// Bound the API polling history (one sync_log row per account per poll,
+		// thousands a day); runs once at start so a backlog clears at once.
+		go (&importer.SyncLogRetention{Queries: queries, NoOpDays: cfg.SyncLogRetentionDays}).Start(ctx, time.Hour)
+	}
 	if oauthSrv != nil {
 		go oauthSrv.StartJanitor(ctx, time.Hour) // expired OAuth codes/tokens
 	}
