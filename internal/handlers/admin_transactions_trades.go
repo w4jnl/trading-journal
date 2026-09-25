@@ -529,3 +529,27 @@ func (h *Handlers) tombstoneTrade(ctx context.Context, uid, tradeID int64) (int6
 	}
 	return n, tx.Commit()
 }
+
+// reconRow is one line of the trades table: either a live trade or, with
+// "show deleted" on, a trade-level delete group rendered in place at its
+// chronological position (the fills view shows deleted fills inline the same
+// way; a separate section below a 500-row table is where nobody looks).
+type reconRow struct {
+	Trade *reconTrade
+	Group *reconDeletedGroup
+	At    time.Time
+}
+
+// mergeReconRows interleaves live trades (by entry time) and deleted groups
+// (by first fill), newest first.
+func mergeReconRows(trades []reconTrade, groups []reconDeletedGroup) []reconRow {
+	rows := make([]reconRow, 0, len(trades)+len(groups))
+	for i := range trades {
+		rows = append(rows, reconRow{Trade: &trades[i], At: trades[i].EntryTime})
+	}
+	for i := range groups {
+		rows = append(rows, reconRow{Group: &groups[i], At: groups[i].First})
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].At.After(rows[j].At) })
+	return rows
+}

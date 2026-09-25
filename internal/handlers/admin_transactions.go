@@ -126,14 +126,16 @@ func (h *Handlers) AdminTransactionsPage(w http.ResponseWriter, r *http.Request)
 		}
 		data["TradeGroups"] = trades
 		data["Truncated"] = len(trades) == reconTradesLimit
+		var groups []reconDeletedGroup
 		if f.IncludeDeleted {
-			groups, err := h.listDeletedTradeGroups(ctx, uid, f)
+			groups, err = h.listDeletedTradeGroups(ctx, uid, f)
 			if err != nil {
 				h.serverError(w, fmt.Errorf("list deleted groups: %w", err))
 				return
 			}
-			data["DeletedGroups"] = groups
 		}
+		data["DeletedGroups"] = groups
+		data["TradeRows"] = mergeReconRows(trades, groups)
 	} else {
 		rows, err := h.listExecutionsFiltered(ctx, uid, f)
 		if err != nil {

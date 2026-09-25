@@ -216,7 +216,7 @@
 {{else}}
 {{/* ================= Trades view ================= */}}
 <div class="row-sm" style="margin:14px 0 8px; align-items:center;">
-  <strong>Trades</strong> <span class="muted">({{len .TradeGroups}})</span>
+  <strong>Trades</strong> <span class="muted">({{len .TradeGroups}}{{if .Filter.IncludeDeleted}} + {{len .DeletedGroups}} deleted{{end}})</span>
   {{if .Truncated}}<span class="muted" style="font-size:12px;">showing the newest {{len .TradeGroups}} - narrow the filter</span>{{end}}
 </div>
 
@@ -236,7 +236,8 @@
       </tr>
     </thead>
     <tbody>
-      {{range .TradeGroups}}
+      {{range .TradeRows}}
+      {{if .Trade}}{{with .Trade}}
       <tr data-trade-id="{{.ID}}" data-fills="{{len .Fills}}" data-flip="{{range .FlipLinks}}#{{.}} {{end}}" data-journal="{{if .JournalEntryID}}1{{end}}" data-groups="{{.GroupCount}}" data-open="{{if .OpenShare}}1{{end}}">
         <td class="num muted">{{ltime .EntryTime "datetime-sec"}}</td>
         <td class="num muted">{{if .ExitTime}}{{ltimep .ExitTime "datetime-sec"}}{{else}}&mdash;{{end}}</td>
@@ -282,32 +283,20 @@
           {{end}}
         </td>
       </tr>
-      {{else}}
-      <tr><td colspan="11" class="muted" style="text-align:center; padding:20px;">No closed trades match the filter.</td></tr>
-      {{end}}
-    </tbody>
-  </table>
-</div>
-
-{{if .Filter.IncludeDeleted}}
-<div class="row-sm" style="margin:18px 0 8px; align-items:center;">
-  <strong>Deleted trades</strong> <span class="muted">({{len .DeletedGroups}})</span>
-  <span class="muted" style="font-size:12px;">fills tombstoned together by a trade-level delete; Restore brings back whatever is still tombstoned</span>
-</div>
-<div class="table-scroll">
-  <table class="reconcile recon-trades">
-    <thead>
-      <tr><th>Deleted at</th><th>Account</th><th>Contract</th><th>Fills</th><th>First</th><th>Last</th><th class="tabular">Buy / sell qty</th><th class="recon-del-col"></th></tr>
-    </thead>
-    <tbody>
-      {{range .DeletedGroups}}
-      <tr class="txn-item--deleted">
-        <td class="num muted">{{ltime .DeletedAt "datetime-sec"}}</td>
-        <td class="muted" style="font-size:12px;">{{.AccountName}}</td>
+      {{end}}{{else}}{{with .Group}}
+      {{/* A trade deleted as a unit: shown in place, dimmed, restorable. */}}
+      <tr class="txn-item--deleted" data-group-id="{{.GroupID}}">
+        <td class="num muted">{{ltime .First "datetime-sec"}}</td>
+        <td class="num muted">{{ltime .Last "datetime-sec"}}</td>
         <td><strong>{{.Symbol}}</strong> <span class="muted" style="font-size:11px;">{{.SymbolRoot}}</span></td>
+        <td><span class="pill dir-short" title="Deleted {{ltime .DeletedAt "datetime-sec"}} as one trade; its fills are tombstoned">deleted</span></td>
+        <td class="tabular num" title="buy / sell quantity of the tombstoned fills">{{formatQty .BuyQty}} / {{formatQty .SellQty}}</td>
+        <td class="tabular num muted">&mdash;</td>
+        <td class="tabular muted">&mdash;</td>
+        <td class="muted" style="font-size:12px;">{{.AccountName}}</td>
         <td>
           <details class="recon-fills-wrap">
-            <summary class="muted" style="cursor:pointer; font-size:12px;" title="Restore restores the remaining fill(s); fills already restored individually are live in the Fills view">{{.FillCount}} fill(s)</summary>
+            <summary class="muted" style="cursor:pointer; font-size:12px;" title="Restore brings back the remaining fill(s); fills already restored individually are live in the Fills view">{{.FillCount}} fill(s)</summary>
             <table class="recon-fills">
               <thead><tr><th>Time</th><th>Side</th><th class="tabular">Qty</th><th class="tabular">Price</th><th>Via</th><th>Broker ID</th></tr></thead>
               <tbody>
@@ -325,18 +314,16 @@
             </table>
           </details>
         </td>
-        <td class="num muted">{{ltime .First "datetime-sec"}}</td>
-        <td class="num muted">{{ltime .Last "datetime-sec"}}</td>
-        <td class="tabular num">{{formatQty .BuyQty}} / {{formatQty .SellQty}}</td>
+        <td class="muted" style="font-size:12px; white-space:nowrap;">deleted {{ltime .DeletedAt "datetime-sec"}}</td>
         <td class="recon-del-col"><label class="recon-del"><input type="checkbox" form="trade-form" name="group.{{.GroupID}}.restore"> restore</label></td>
       </tr>
+      {{end}}{{end}}
       {{else}}
-      <tr><td colspan="8" class="muted" style="text-align:center; padding:20px;">No trade-level deletes match the filter. Fills deleted one by one are listed in the Fills view.</td></tr>
+      <tr><td colspan="11" class="muted" style="text-align:center; padding:20px;">No closed trades match the filter.{{if not .Filter.IncludeDeleted}} Tick "show deleted" to see trades deleted as a unit.{{end}}</td></tr>
       {{end}}
     </tbody>
   </table>
 </div>
-{{end}}
 
 <div class="save-bar" data-dirty-savebar="trade-form">
   <span class="muted"><strong data-dirty-count class="num">0</strong> trade(s) selected.</span>

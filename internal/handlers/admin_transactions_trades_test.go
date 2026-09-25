@@ -213,10 +213,24 @@ func TestTradesSave_DeleteThenRestoreGroup(t *testing.T) {
 	if g.FillCount != 2 || g.BuyQty != 2 || g.SellQty != 5 || !g.First.Equal(fx.t0) || !g.Last.Equal(fx.t0.Add(5*time.Minute)) || g.Symbol != "ESM6" {
 		t.Errorf("group = %+v", g)
 	}
-	// The deleted-groups section renders with show-deleted on.
+	// With show-deleted on, the deleted trade is a dimmed row IN the trades
+	// table at its chronological position (newest first: the remaining trade
+	// starts at t10, the deleted one at t0, so it comes after), not a
+	// separate section nobody scrolls to.
 	body := fx.page(t, "/admin/transactions?view=trades&deleted=1")
 	if !strings.Contains(body, `name="group.`+g.GroupID+`.restore"`) {
 		t.Errorf("restore checkbox for %s not rendered", g.GroupID)
+	}
+	rowIdx := strings.Index(body, `<tr class="txn-item--deleted" data-group-id="`+g.GroupID+`"`)
+	liveIdx := strings.Index(body, `data-trade-id="`+itoa64(after[0].ID)+`"`)
+	if rowIdx < 0 || liveIdx < 0 || rowIdx < liveIdx {
+		t.Errorf("deleted row must be inline after the newer live trade (deleted at %d, live at %d)", rowIdx, liveIdx)
+	}
+	if strings.Contains(body, "Deleted trades</strong>") {
+		t.Errorf("separate deleted-trades section should be gone")
+	}
+	if !strings.Contains(body, "+ 1 deleted") {
+		t.Errorf("header should count the deleted trade")
 	}
 
 	form = url.Values{}
