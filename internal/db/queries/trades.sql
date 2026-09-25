@@ -141,3 +141,12 @@ ORDER BY t.exit_time ASC;
 -- sqlc.narg pattern produces broken positional indexing for SQLite (each narg
 -- becomes ?N which doesn't line up with the 1-based variadic args), so we
 -- skip sqlc for these two queries.
+
+-- name: ListTradesForExecution :many
+-- Every trade one fill participates in. A flip fill sits in two (exit of one
+-- trade, entry of the next); a fill whose qty_used sums below its qty also
+-- feeds a still-open lot. Used by the trades reconcile view for its warnings.
+SELECT te.trade_id, te.role, te.qty_used
+FROM trade_executions te
+WHERE te.execution_id = ?
+ORDER BY te.trade_id;

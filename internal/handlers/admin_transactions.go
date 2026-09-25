@@ -73,6 +73,7 @@ type txnFilter struct {
 	To             string // YYYY-MM-DD
 	Side           string // "", buy, sell
 	IncludeDeleted bool
+	View           string // "" = fills (default) | "trades" (see admin_transactions_trades.go)
 }
 
 // AdminTransactionsPage: GET /admin/transactions - filter form + open-position summary +
@@ -94,18 +95,11 @@ func (h *Handlers) AdminTransactionsPage(w http.ResponseWriter, r *http.Request)
 	}
 
 	f := parseTxnFilter(r)
-	rows, err := h.listExecutionsFiltered(ctx, uid, f)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("list executions: %w", err))
-		return
-	}
-
-	h.renderPage(w, r, "admin_transactions.html", map[string]any{
+	data := map[string]any{
 		"NavActive":     "admin_transactions",
 		"BackHref":      validBackHref(r),
 		"Accounts":      accounts,
 		"OpenPositions": h.openPositionRows(ctx, openPositions),
-		"Rows":          rows,
 		"Filter":        f,
 		// FilterQuery is the already-encoded filter query string the POST forms
 		// append to their action ("...?{{.FilterQuery}}"); redirectTransactions
@@ -117,7 +111,39 @@ func (h *Handlers) AdminTransactionsPage(w http.ResponseWriter, r *http.Request)
 		"NowLocal":    time.Now().In(tz).Format("2006-01-02T15:04"),
 		"Flash":       r.URL.Query().Get("flash"),
 		"FlashErr":    r.URL.Query().Get("err"),
-	})
+	}
+	// The Fills | Trades toggle links carry the rest of the filter across.
+	fillsF, tradesF := f, f
+	fillsF.View, tradesF.View = "", "trades"
+	data["ViewFillsQS"] = template.URL(fillsF.query().Encode())
+	data["ViewTradesQS"] = template.URL(tradesF.query().Encode())
+
+	if f.View == "trades" {
+		trades, err := h.listTradesForReconcile(ctx, uid, f)
+		if err != nil {
+			h.serverError(w, fmt.Errorf("list trades: %w", err))
+			return
+		}
+		data["TradeGroups"] = trades
+		data["Truncated"] = len(trades) == reconTradesLimit
+		if f.IncludeDeleted {
+			groups, err := h.listDeletedTradeGroups(ctx, uid, f)
+			if err != nil {
+				h.serverError(w, fmt.Errorf("list deleted groups: %w", err))
+				return
+			}
+			data["DeletedGroups"] = groups
+		}
+	} else {
+		rows, err := h.listExecutionsFiltered(ctx, uid, f)
+		if err != nil {
+			h.serverError(w, fmt.Errorf("list executions: %w", err))
+			return
+		}
+		data["Rows"] = rows
+		data["Truncated"] = len(rows) == 1000
+	}
+	h.renderPage(w, r, "admin_transactions.html", data)
 }
 
 // query renders the filter as url.Values (for a form action's query string).
@@ -140,6 +166,9 @@ func (f txnFilter) query() url.Values {
 	}
 	if f.IncludeDeleted {
 		v.Set("deleted", "1")
+	}
+	if f.View == "trades" {
+		v.Set("view", "trades")
 	}
 	return v
 }
@@ -509,6 +538,9 @@ func parseTxnFilter(r *http.Request) txnFilter {
 		IncludeDeleted: q.Get("deleted") == "1",
 	}
 	f.AccountID, _ = strconv.ParseInt(q.Get("account_id"), 10, 64)
+	if q.Get("view") == "trades" {
+		f.View = "trades"
+	}
 	return f
 }
 
@@ -519,7 +551,7 @@ func parseTxnFilter(r *http.Request) txnFilter {
 func (h *Handlers) redirectTransactions(w http.ResponseWriter, r *http.Request, flash, errMsg string) {
 	v := url.Values{}
 	q := r.URL.Query()
-	for _, k := range []string{"account_id", "symbol", "from", "to", "side", "deleted"} {
+	for _, k := range []string{"account_id", "symbol", "from", "to", "side", "deleted", "view"} {
 		if val := q.Get(k); val != "" {
 			v.Set(k, val)
 		}

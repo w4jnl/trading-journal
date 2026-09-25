@@ -723,6 +723,7 @@ func run() error {
 	mux.Handle("GET /admin/transactions", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionsPage)))
 	mux.Handle("POST /admin/transactions", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionCreate)))
 	mux.Handle("POST /admin/transactions/save", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionsBulkSave)))
+	mux.Handle("POST /admin/transactions/trades/save", auth.RequireAdmin(http.HandlerFunc(h.AdminTransactionsTradesSave)))
 
 	mux.Handle("GET /admin/market-data", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataPage)))
 	mux.Handle("POST /admin/market-data/backfill", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataBackfill)))

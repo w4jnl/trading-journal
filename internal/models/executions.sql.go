@@ -69,7 +69,7 @@ func (q *Queries) DeleteProvisionalByOrderID(ctx context.Context, arg DeleteProv
 }
 
 const getExecutionByBrokerID = `-- name: GetExecutionByBrokerID :one
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions WHERE account_id = ? AND broker_exec_id = ?
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group FROM executions WHERE account_id = ? AND broker_exec_id = ?
 `
 
 type GetExecutionByBrokerIDParams struct {
@@ -97,12 +97,13 @@ func (q *Queries) GetExecutionByBrokerID(ctx context.Context, arg GetExecutionBy
 		&i.EditedAt,
 		&i.OrderID,
 		&i.ImportMethod,
+		&i.DeletedGroup,
 	)
 	return i, err
 }
 
 const getExecutionByOrderID = `-- name: GetExecutionByOrderID :one
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group FROM executions
 WHERE account_id = ? AND order_id = ?
 ORDER BY CASE WHEN import_method = 'mw_email' THEN 1 ELSE 0 END, id
 LIMIT 1
@@ -137,12 +138,13 @@ func (q *Queries) GetExecutionByOrderID(ctx context.Context, arg GetExecutionByO
 		&i.EditedAt,
 		&i.OrderID,
 		&i.ImportMethod,
+		&i.DeletedGroup,
 	)
 	return i, err
 }
 
 const getExecutionForUser = `-- name: GetExecutionForUser :one
-SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, e.order_id, e.import_method, a.account_ref, a.commission_source, a.user_id AS owner_id
+SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, e.order_id, e.import_method, e.deleted_group, a.account_ref, a.commission_source, a.user_id AS owner_id
 FROM executions e
 JOIN accounts a ON a.id = e.account_id
 WHERE e.id = ? AND a.user_id = ?
@@ -170,6 +172,7 @@ type GetExecutionForUserRow struct {
 	EditedAt         *time.Time `json:"edited_at"`
 	OrderID          *string    `json:"order_id"`
 	ImportMethod     string     `json:"import_method"`
+	DeletedGroup     *string    `json:"deleted_group"`
 	AccountRef       string     `json:"account_ref"`
 	CommissionSource string     `json:"commission_source"`
 	OwnerID          int64      `json:"owner_id"`
@@ -197,6 +200,7 @@ func (q *Queries) GetExecutionForUser(ctx context.Context, arg GetExecutionForUs
 		&i.EditedAt,
 		&i.OrderID,
 		&i.ImportMethod,
+		&i.DeletedGroup,
 		&i.AccountRef,
 		&i.CommissionSource,
 		&i.OwnerID,
@@ -278,7 +282,7 @@ INSERT INTO executions (
 ) VALUES (
     ?, ?, ?, ?, ?, ?, ?, ?, 1, 'manual'
 )
-RETURNING id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method
+RETURNING id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group
 `
 
 type InsertManualExecutionParams struct {
@@ -323,12 +327,88 @@ func (q *Queries) InsertManualExecution(ctx context.Context, arg InsertManualExe
 		&i.EditedAt,
 		&i.OrderID,
 		&i.ImportMethod,
+		&i.DeletedGroup,
 	)
 	return i, err
 }
 
+const listDeletedGroupExecutions = `-- name: ListDeletedGroupExecutions :many
+SELECT e.id, e.account_id, a.name AS account_name, a.commission_source,
+       e.symbol, e.symbol_root, e.side, e.qty, e.price, e.exec_time,
+       e.broker_exec_id, e.order_id, e.import_method, e.manual, e.edited_at,
+       e.deleted_at, e.deleted_group
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE a.user_id = ? AND e.deleted_group IS NOT NULL AND e.deleted_at IS NOT NULL
+ORDER BY e.deleted_at DESC, e.deleted_group, e.exec_time, e.id
+`
+
+type ListDeletedGroupExecutionsRow struct {
+	ID               int64      `json:"id"`
+	AccountID        int64      `json:"account_id"`
+	AccountName      string     `json:"account_name"`
+	CommissionSource string     `json:"commission_source"`
+	Symbol           string     `json:"symbol"`
+	SymbolRoot       string     `json:"symbol_root"`
+	Side             string     `json:"side"`
+	Qty              float64    `json:"qty"`
+	Price            float64    `json:"price"`
+	ExecTime         time.Time  `json:"exec_time"`
+	BrokerExecID     string     `json:"broker_exec_id"`
+	OrderID          *string    `json:"order_id"`
+	ImportMethod     string     `json:"import_method"`
+	Manual           int64      `json:"manual"`
+	EditedAt         *time.Time `json:"edited_at"`
+	DeletedAt        *time.Time `json:"deleted_at"`
+	DeletedGroup     *string    `json:"deleted_group"`
+}
+
+// Every tombstoned fill that belongs to a trade-level delete group, for the
+// "Deleted trades" section. Grouping and sums are done in Go (groups are few,
+// and sqlc types MIN/MAX over DATETIME as interface{}).
+func (q *Queries) ListDeletedGroupExecutions(ctx context.Context, userID int64) ([]ListDeletedGroupExecutionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listDeletedGroupExecutions, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListDeletedGroupExecutionsRow
+	for rows.Next() {
+		var i ListDeletedGroupExecutionsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.AccountID,
+			&i.AccountName,
+			&i.CommissionSource,
+			&i.Symbol,
+			&i.SymbolRoot,
+			&i.Side,
+			&i.Qty,
+			&i.Price,
+			&i.ExecTime,
+			&i.BrokerExecID,
+			&i.OrderID,
+			&i.ImportMethod,
+			&i.Manual,
+			&i.EditedAt,
+			&i.DeletedAt,
+			&i.DeletedGroup,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listExecutionsByAccount = `-- name: ListExecutionsByAccount :many
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions WHERE account_id = ? ORDER BY exec_time, id
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group FROM executions WHERE account_id = ? ORDER BY exec_time, id
 `
 
 func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) ([]Execution, error) {
@@ -357,7 +437,51 @@ func (q *Queries) ListExecutionsByAccount(ctx context.Context, accountID int64) 
 			&i.EditedAt,
 			&i.OrderID,
 			&i.ImportMethod,
+			&i.DeletedGroup,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listExecutionsInDeletedGroup = `-- name: ListExecutionsInDeletedGroup :many
+SELECT e.id, e.account_id, e.symbol
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE e.deleted_group = ? AND a.user_id = ?
+`
+
+type ListExecutionsInDeletedGroupParams struct {
+	DeletedGroup *string `json:"deleted_group"`
+	UserID       int64   `json:"user_id"`
+}
+
+type ListExecutionsInDeletedGroupRow struct {
+	ID        int64  `json:"id"`
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+// Fills of one group (restore path: resolves the (account, symbol) keys to
+// rebuild before the tombstones are cleared). User-scoped.
+func (q *Queries) ListExecutionsInDeletedGroup(ctx context.Context, arg ListExecutionsInDeletedGroupParams) ([]ListExecutionsInDeletedGroupRow, error) {
+	rows, err := q.db.QueryContext(ctx, listExecutionsInDeletedGroup, arg.DeletedGroup, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListExecutionsInDeletedGroupRow
+	for rows.Next() {
+		var i ListExecutionsInDeletedGroupRow
+		if err := rows.Scan(&i.ID, &i.AccountID, &i.Symbol); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -502,9 +626,34 @@ func (q *Queries) SoftDeleteExecution(ctx context.Context, arg SoftDeleteExecuti
 	return err
 }
 
+const softDeleteExecutionInGroup = `-- name: SoftDeleteExecutionInGroup :execrows
+UPDATE executions
+SET deleted_at = CURRENT_TIMESTAMP, deleted_group = ?1
+WHERE executions.id = ?2 AND executions.deleted_at IS NULL
+  AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?3)
+`
+
+type SoftDeleteExecutionInGroupParams struct {
+	DeletedGroup *string `json:"deleted_group"`
+	ID           int64   `json:"id"`
+	UserID       int64   `json:"user_id"`
+}
+
+// Trade-level delete: tombstone one fill and stamp the group id shared by the
+// other fills of the same trade (restored together by UndeleteExecutionGroup).
+// Only live rows are touched: a fill already tombstoned in the fills view keeps
+// its own state, and the row count tells the caller how many fills it removed.
+func (q *Queries) SoftDeleteExecutionInGroup(ctx context.Context, arg SoftDeleteExecutionInGroupParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, softDeleteExecutionInGroup, arg.DeletedGroup, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const undeleteExecution = `-- name: UndeleteExecution :exec
 UPDATE executions
-SET deleted_at = NULL
+SET deleted_at = NULL, deleted_group = NULL
 WHERE executions.id = ? AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?)
 `
 
@@ -513,9 +662,32 @@ type UndeleteExecutionParams struct {
 	UserID int64 `json:"user_id"`
 }
 
+// Per-fill restore. Also detaches the fill from any trade-level delete group
+// it was part of, so a group only ever lists fills that are still tombstoned.
 func (q *Queries) UndeleteExecution(ctx context.Context, arg UndeleteExecutionParams) error {
 	_, err := q.db.ExecContext(ctx, undeleteExecution, arg.ID, arg.UserID)
 	return err
+}
+
+const undeleteExecutionGroup = `-- name: UndeleteExecutionGroup :execrows
+UPDATE executions
+SET deleted_at = NULL, deleted_group = NULL
+WHERE executions.deleted_group = ?1
+  AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?2)
+`
+
+type UndeleteExecutionGroupParams struct {
+	DeletedGroup *string `json:"deleted_group"`
+	UserID       int64   `json:"user_id"`
+}
+
+// Restore every fill a trade-level delete tombstoned together. User-scoped.
+func (q *Queries) UndeleteExecutionGroup(ctx context.Context, arg UndeleteExecutionGroupParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, undeleteExecutionGroup, arg.DeletedGroup, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }
 
 const updateExecution = `-- name: UpdateExecution :exec

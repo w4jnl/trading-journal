@@ -1977,3 +1977,14 @@ details.disclose > summary::-webkit-details-marker { display: none; }
 .sidebar-version { padding: 6px 12px 2px; font-size: var(--fs-10); color: var(--fg-subtle);
                    text-align: center; letter-spacing: 0.02em; user-select: text;
                    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+/* Reconcile: Fills | Trades mode toggle (same chrome as the GEX market seg,
+   which is page-local) and the per-trade fills sub-table. */
+.recon-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.recon-seg a { padding: 5px 14px; font-size: var(--fs-13); text-decoration: none; color: var(--fg-muted); }
+.recon-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold); }
+table.recon-trades .recon-del { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+table.recon-trades td { vertical-align: top; }
+table.recon-fills { width: auto; margin-top: 6px; border-collapse: collapse; }
+table.recon-fills th, table.recon-fills td { font-size: var(--fs-11); padding: 2px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.recon-fills th { text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }

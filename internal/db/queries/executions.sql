@@ -126,6 +126,46 @@ SET deleted_at = CURRENT_TIMESTAMP
 WHERE executions.id = ? AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?);
 
 -- name: UndeleteExecution :exec
+-- Per-fill restore. Also detaches the fill from any trade-level delete group
+-- it was part of, so a group only ever lists fills that are still tombstoned.
 UPDATE executions
-SET deleted_at = NULL
+SET deleted_at = NULL, deleted_group = NULL
 WHERE executions.id = ? AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?);
+
+-- name: SoftDeleteExecutionInGroup :execrows
+-- Trade-level delete: tombstone one fill and stamp the group id shared by the
+-- other fills of the same trade (restored together by UndeleteExecutionGroup).
+-- Only live rows are touched: a fill already tombstoned in the fills view keeps
+-- its own state, and the row count tells the caller how many fills it removed.
+UPDATE executions
+SET deleted_at = CURRENT_TIMESTAMP, deleted_group = sqlc.arg(deleted_group)
+WHERE executions.id = sqlc.arg(id) AND executions.deleted_at IS NULL
+  AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = sqlc.arg(user_id));
+
+-- name: UndeleteExecutionGroup :execrows
+-- Restore every fill a trade-level delete tombstoned together. User-scoped.
+UPDATE executions
+SET deleted_at = NULL, deleted_group = NULL
+WHERE executions.deleted_group = sqlc.arg(deleted_group)
+  AND executions.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = sqlc.arg(user_id));
+
+-- name: ListDeletedGroupExecutions :many
+-- Every tombstoned fill that belongs to a trade-level delete group, for the
+-- "Deleted trades" section. Grouping and sums are done in Go (groups are few,
+-- and sqlc types MIN/MAX over DATETIME as interface{}).
+SELECT e.id, e.account_id, a.name AS account_name, a.commission_source,
+       e.symbol, e.symbol_root, e.side, e.qty, e.price, e.exec_time,
+       e.broker_exec_id, e.order_id, e.import_method, e.manual, e.edited_at,
+       e.deleted_at, e.deleted_group
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE a.user_id = ? AND e.deleted_group IS NOT NULL AND e.deleted_at IS NOT NULL
+ORDER BY e.deleted_at DESC, e.deleted_group, e.exec_time, e.id;
+
+-- name: ListExecutionsInDeletedGroup :many
+-- Fills of one group (restore path: resolves the (account, symbol) keys to
+-- rebuild before the tombstones are cleared). User-scoped.
+SELECT e.id, e.account_id, e.symbol
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE e.deleted_group = ? AND a.user_id = ?;

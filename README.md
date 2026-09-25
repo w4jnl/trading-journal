@@ -439,6 +439,19 @@ CSV import supersedes them. Accounts live-synced via a broker API
 (IBKR) skip email ingest automatically — their fills arrive through the
 API; the email copy is archive-only.
 
+**Reconcile by fills or by trades.** `/admin/transactions` has two modes.
+*Fills* (default) edits, soft-deletes and restores individual executions.
+*Trades* lists the closed trades the FIFO builder matched, each with its
+fills, and deletes a whole trade in one action: every fill of the trade is
+tombstoned and the contract is rebuilt, so neighbouring trades keep their
+entry times and journal links. The fills of one such delete are grouped, and
+with *show deleted* on the Trades view lists them under *Deleted trades*
+with a one-click Restore. A trade that shares a fill with a neighbour (a
+position flip) is flagged `flip-linked`: deleting it removes the shared fill
+and the neighbour is rebuilt from what remains. Trades-CSV (TopstepX)
+accounts are read-only in both modes, and open lots are only visible in the
+Fills view since open positions never materialise as trades.
+
 Setup:
 
 1. Enable the `mw_email:` section in `config.yaml` (see
