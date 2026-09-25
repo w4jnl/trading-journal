@@ -1868,8 +1868,9 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .txn-new > summary { list-style: none; cursor: pointer; }
 .txn-new > summary::-webkit-details-marker { display: none; }
 .txn-form-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; }
-/* Reconcile table: read-only by default; the Edit button adds #recon.editing, which hides
-   the .tv view spans and reveals the .te inputs/checkboxes (one Save posts the whole form). */
+/* Reconcile tables (fills and trades views): read-only by default; the Edit button adds
+   .editing to the .recon-editable wrapper, which hides the .tv view spans and reveals the
+   .te inputs/checkboxes (one Save/Apply posts the whole form). */
 table.reconcile { width: 100%; border-collapse: collapse; }
 table.reconcile th, table.reconcile td { padding: 6px 8px; font-size: var(--fs-13); vertical-align: middle;
                                           border-bottom: 1px solid var(--border); text-align: left; }
@@ -1880,9 +1881,9 @@ table.reconcile input, table.reconcile select { height: 28px; padding: 4px 6px; 
 /* The Side <select> needs room for "sell" plus the native dropdown arrow, else the text
    clips to "se"/"bu" in the narrow column. min-width also widens the column in edit mode. */
 table.reconcile select { min-width: 80px; padding-right: 4px; }
-#recon.editing .tv { display: none; }
-#recon.editing .te { display: inline-block; }
-#recon.editing .recon-del { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.recon-editable.editing .tv { display: none; }
+.recon-editable.editing .te { display: inline-block; }
+.recon-editable.editing .recon-del { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 table.reconcile .recon-del input[type=checkbox] { width: auto; height: auto; }
 .recon-del-col { width: 84px; }
 
@@ -1983,8 +1984,13 @@ details.disclose > summary::-webkit-details-marker { display: none; }
 .recon-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
 .recon-seg a { padding: 5px 14px; font-size: var(--fs-13); text-decoration: none; color: var(--fg-muted); }
 .recon-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: var(--fw-semibold); }
-table.recon-trades .recon-del { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
-table.recon-trades td { vertical-align: top; }
-table.recon-fills { width: auto; margin-top: 6px; border-collapse: collapse; }
-table.recon-fills th, table.recon-fills td { font-size: var(--fs-11); padding: 2px 8px; border-bottom: 1px solid var(--border); vertical-align: middle; }
-table.recon-fills th { text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+/* Fills of a trade expand into their own full-width row under the trade (a nested
+   table inside the narrow Fills cell squeezed into a sliver and wrapped every cell). */
+.recon-fills-toggle { white-space: nowrap; }
+.recon-fills-toggle::before { content: "\25B8"; display: inline-block; width: 1em; font-size: var(--fs-11); }
+.recon-fills-toggle[aria-expanded="true"]::before { content: "\25BE"; }
+tr.recon-fills-row > td { background: var(--bg-sunken); padding: 6px 12px 10px 40px; }
+table.recon-fills { width: 100%; border-collapse: collapse; }
+table.recon-fills th, table.recon-fills td { font-size: var(--fs-12); padding: 3px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
+table.recon-fills tr:last-child td { border-bottom: 0; }
+table.recon-fills th { font-size: var(--fs-11); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }

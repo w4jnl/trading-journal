@@ -113,7 +113,7 @@
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 </form>
 
-<div id="recon" class="table-scroll">
+<div id="recon" class="table-scroll recon-editable">
   <table class="reconcile">
     <thead>
       <tr>
@@ -191,33 +191,16 @@
   </div>
 </div>
 
-<script>
-  (function () {
-    var wrap = document.getElementById('recon');
-    var editBtn = document.getElementById('recon-edit');
-    var doneBtn = document.getElementById('recon-cancel');
-    var form = document.getElementById('txn-form');
-    if (!wrap || !editBtn || !doneBtn) return;
-    editBtn.addEventListener('click', function () {
-      wrap.classList.add('editing');
-      editBtn.style.display = 'none';
-      doneBtn.style.display = '';
-    });
-    // Done: restore the loaded values via the shared tracker (no page reload)
-    // and hide the inputs again.
-    doneBtn.addEventListener('click', function () {
-      if (form && form.__dirtyReset) form.__dirtyReset();
-      wrap.classList.remove('editing');
-      doneBtn.style.display = 'none';
-      editBtn.style.display = '';
-    });
-  })();
-</script>
 {{else}}
 {{/* ================= Trades view ================= */}}
 <div class="row-sm" style="margin:14px 0 8px; align-items:center;">
   <strong>Trades</strong> <span class="muted">({{len .TradeGroups}}{{if .Filter.IncludeDeleted}} + {{len .DeletedGroups}} deleted{{end}})</span>
   {{if .Truncated}}<span class="muted" style="font-size:12px;">showing the newest {{len .TradeGroups}} - narrow the filter</span>{{end}}
+  <div class="row-sm" style="margin-left:auto;">
+    <button type="button" class="btn btn--ghost btn--sm" id="recon-fills-all" aria-expanded="false">Expand fills</button>
+    <button type="button" class="btn btn--secondary btn--sm" id="recon-trades-edit">Edit</button>
+    <button type="button" class="btn btn--ghost btn--sm" id="recon-trades-done" style="display:none;">Done</button>
+  </div>
 </div>
 
 {{/* One submit for the whole view; row inputs bind via form="trade-form" (see the
@@ -227,7 +210,7 @@
   <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
 </form>
 
-<div class="table-scroll">
+<div id="recon-trades" class="table-scroll recon-editable">
   <table class="reconcile recon-trades">
     <thead>
       <tr>
@@ -247,27 +230,7 @@
         <td class="tabular num">{{printf "%.2f" .EntryPrice}} &rarr; {{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}&mdash;{{end}}</td>
         <td class="tabular">{{pnlClass .NetPnl}}</td>
         <td class="muted" style="font-size:12px;">{{.AccountName}}{{if .AccountFirm}} <code>{{derefStr .AccountFirm}}</code>{{end}}</td>
-        <td>
-          <details class="recon-fills-wrap">
-            <summary class="muted" style="cursor:pointer; font-size:12px;">{{len .Fills}} fill(s)</summary>
-            <table class="recon-fills">
-              <thead><tr><th>Role</th><th class="tabular">Used / qty</th><th>Time</th><th>Side</th><th class="tabular">Price</th><th>Via</th><th>Broker ID</th></tr></thead>
-              <tbody>
-              {{range .Fills}}
-              <tr>
-                <td><code>{{.Role}}</code></td>
-                <td class="tabular num">{{formatQty .QtyUsed}} / {{formatQty .Qty}}{{if .SharedWith}} <span class="muted" title="This fill also belongs to the listed trade(s)">also in{{range .SharedWith}} #{{.}}{{end}}</span>{{end}}</td>
-                <td class="num muted">{{ltime .ExecTime "datetime-sec"}}</td>
-                <td><span class="pill {{if eq .Side "buy"}}dir-long{{else}}dir-short{{end}}">{{.Side}}</span></td>
-                <td class="tabular num">{{printf "%.2f" .Price}}</td>
-                <td>{{if .Provisional}}<span class="pill dir-long" title="Provisional MotiveWave email fill">email</span>{{else}}<span class="pill pill--retired">{{.MethodLabel}}</span>{{end}}{{if .Edited}} <span class="pill pill--retired">edited</span>{{end}}</td>
-                <td><code class="num muted" style="font-size:11px;">{{.BrokerExecID}}</code></td>
-              </tr>
-              {{end}}
-              </tbody>
-            </table>
-          </details>
-        </td>
+        <td><button type="button" class="btn btn--ghost btn--sm recon-fills-toggle" data-target="fills-{{.ID}}" aria-expanded="false" aria-controls="fills-{{.ID}}">{{len .Fills}} fill(s)</button></td>
         <td style="white-space:nowrap;">
           {{if .JournalEntryID}}<span class="pill accent" title="A trade-scope journal entry points at this trade; after a delete it stays as a day note">journal</span>{{end}}
           {{if gt .GroupCount 0}}<span class="pill info" title="Member of group journal entries; those links are dropped on delete">in {{.GroupCount}} group{{if ne .GroupCount 1}}s{{end}}</span>{{end}}
@@ -278,9 +241,29 @@
         </td>
         <td class="recon-del-col">
           {{if not .Inline}}
-          <label class="recon-del"><input type="checkbox" form="trade-form" name="trade.{{.ID}}.delete"> delete</label>
+          <label class="te recon-del"><input type="checkbox" form="trade-form" name="trade.{{.ID}}.delete"> delete</label>
           <input type="hidden" form="trade-form" name="trade.{{.ID}}.sig" value="{{.Sig}}">
           {{end}}
+        </td>
+      </tr>
+      <tr class="recon-fills-row" id="fills-{{.ID}}" hidden>
+        <td colspan="11">
+          <table class="recon-fills">
+          <thead><tr><th>Role</th><th class="tabular">Used / qty</th><th>Time</th><th>Side</th><th class="tabular">Price</th><th>Via</th><th>Broker ID</th></tr></thead>
+          <tbody>
+          {{range .Fills}}
+          <tr>
+          <td><code>{{.Role}}</code></td>
+          <td class="tabular num">{{formatQty .QtyUsed}} / {{formatQty .Qty}}{{if .SharedWith}} <span class="muted" title="This fill also belongs to the listed trade(s)">also in{{range .SharedWith}} #{{.}}{{end}}</span>{{end}}</td>
+          <td class="num muted">{{ltime .ExecTime "datetime-sec"}}</td>
+          <td><span class="pill {{if eq .Side "buy"}}dir-long{{else}}dir-short{{end}}">{{.Side}}</span></td>
+          <td class="tabular num">{{printf "%.2f" .Price}}</td>
+          <td>{{if .Provisional}}<span class="pill dir-long" title="Provisional MotiveWave email fill">email</span>{{else}}<span class="pill pill--retired">{{.MethodLabel}}</span>{{end}}{{if .Edited}} <span class="pill pill--retired">edited</span>{{end}}</td>
+          <td><code class="num muted" style="font-size:11px;">{{.BrokerExecID}}</code></td>
+          </tr>
+          {{end}}
+          </tbody>
+          </table>
         </td>
       </tr>
       {{end}}{{else}}{{with .Group}}
@@ -294,28 +277,28 @@
         <td class="tabular num muted">&mdash;</td>
         <td class="tabular muted">&mdash;</td>
         <td class="muted" style="font-size:12px;">{{.AccountName}}</td>
-        <td>
-          <details class="recon-fills-wrap">
-            <summary class="muted" style="cursor:pointer; font-size:12px;" title="Restore brings back the remaining fill(s); fills already restored individually are live in the Fills view">{{.FillCount}} fill(s)</summary>
-            <table class="recon-fills">
-              <thead><tr><th>Time</th><th>Side</th><th class="tabular">Qty</th><th class="tabular">Price</th><th>Via</th><th>Broker ID</th></tr></thead>
-              <tbody>
-              {{range .Fills}}
-              <tr>
-                <td class="num muted">{{ltime .ExecTime "datetime-sec"}}</td>
-                <td><span class="pill {{if eq .Side "buy"}}dir-long{{else}}dir-short{{end}}">{{.Side}}</span></td>
-                <td class="tabular num">{{formatQty .Qty}}</td>
-                <td class="tabular num">{{printf "%.2f" .Price}}</td>
-                <td><span class="pill pill--retired">{{.MethodLabel}}</span></td>
-                <td><code class="num muted" style="font-size:11px;">{{.BrokerExecID}}</code></td>
-              </tr>
-              {{end}}
-              </tbody>
-            </table>
-          </details>
-        </td>
+        <td><button type="button" class="btn btn--ghost btn--sm recon-fills-toggle" data-target="fills-g-{{.GroupID}}" aria-expanded="false" aria-controls="fills-g-{{.GroupID}}" title="Restore brings back the remaining fill(s); fills already restored individually are live in the Fills view">{{.FillCount}} fill(s)</button></td>
         <td class="muted" style="font-size:12px; white-space:nowrap;">deleted {{ltime .DeletedAt "datetime-sec"}}</td>
-        <td class="recon-del-col"><label class="recon-del"><input type="checkbox" form="trade-form" name="group.{{.GroupID}}.restore"> restore</label></td>
+        <td class="recon-del-col"><label class="te recon-del"><input type="checkbox" form="trade-form" name="group.{{.GroupID}}.restore"> restore</label></td>
+      </tr>
+      <tr class="recon-fills-row txn-item--deleted" id="fills-g-{{.GroupID}}" hidden>
+        <td colspan="11">
+          <table class="recon-fills">
+          <thead><tr><th>Time</th><th>Side</th><th class="tabular">Qty</th><th class="tabular">Price</th><th>Via</th><th>Broker ID</th></tr></thead>
+          <tbody>
+          {{range .Fills}}
+          <tr>
+          <td class="num muted">{{ltime .ExecTime "datetime-sec"}}</td>
+          <td><span class="pill {{if eq .Side "buy"}}dir-long{{else}}dir-short{{end}}">{{.Side}}</span></td>
+          <td class="tabular num">{{formatQty .Qty}}</td>
+          <td class="tabular num">{{printf "%.2f" .Price}}</td>
+          <td><span class="pill pill--retired">{{.MethodLabel}}</span></td>
+          <td><code class="num muted" style="font-size:11px;">{{.BrokerExecID}}</code></td>
+          </tr>
+          {{end}}
+          </tbody>
+          </table>
+        </td>
       </tr>
       {{end}}{{end}}
       {{else}}
@@ -333,14 +316,53 @@
   </div>
 </div>
 
+{{end}}
+
 <script>
-  // Confirm before applying: summarise what the checked rows will do, from
-  // the data attributes the server rendered. Cmd-S in dirty_table.js uses
-  // requestSubmit(), so it passes through this handler too.
+  // Shared page behaviour for whichever view rendered:
+  //  - Edit/Done toggles .editing on the .recon-editable wrapper (reveals the
+  //    .te inputs and the delete/restore checkboxes; Done restores the loaded
+  //    values through dirty_table.js and hides them again).
+  //  - Fill rows expand under their trade (per row, or all at once).
+  //  - The trades form confirms before applying, summarising the checked rows
+  //    from their data attributes (Cmd-S uses requestSubmit(), so it passes
+  //    through here too).
   (function () {
-    var form = document.getElementById('trade-form');
-    if (!form) return;
-    form.addEventListener('submit', function (e) {
+    function wireEdit(wrapId, editId, doneId, formId) {
+      var wrap = document.getElementById(wrapId), editBtn = document.getElementById(editId),
+          doneBtn = document.getElementById(doneId), form = document.getElementById(formId);
+      if (!wrap || !editBtn || !doneBtn) return;
+      editBtn.addEventListener('click', function () {
+        wrap.classList.add('editing'); editBtn.style.display = 'none'; doneBtn.style.display = '';
+      });
+      doneBtn.addEventListener('click', function () {
+        if (form && form.__dirtyReset) form.__dirtyReset();
+        wrap.classList.remove('editing'); doneBtn.style.display = 'none'; editBtn.style.display = '';
+      });
+    }
+    wireEdit('recon', 'recon-edit', 'recon-cancel', 'txn-form');
+    wireEdit('recon-trades', 'recon-trades-edit', 'recon-trades-done', 'trade-form');
+
+    function setOpen(btn, open) {
+      var row = document.getElementById(btn.getAttribute('data-target'));
+      if (!row) return;
+      row.hidden = !open;
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    var toggles = document.querySelectorAll('.recon-fills-toggle');
+    toggles.forEach(function (btn) {
+      btn.addEventListener('click', function () { setOpen(btn, btn.getAttribute('aria-expanded') !== 'true'); });
+    });
+    var all = document.getElementById('recon-fills-all');
+    if (all) all.addEventListener('click', function () {
+      var open = all.getAttribute('aria-expanded') !== 'true';
+      toggles.forEach(function (btn) { setOpen(btn, open); });
+      all.setAttribute('aria-expanded', open ? 'true' : 'false');
+      all.textContent = open ? 'Collapse fills' : 'Expand fills';
+    });
+
+    var tradeForm = document.getElementById('trade-form');
+    if (tradeForm) tradeForm.addEventListener('submit', function (e) {
       var rows = [];
       document.querySelectorAll('input[form="trade-form"][name^="trade."][name$=".delete"]:checked').forEach(function (cb) {
         var tr = cb.closest('tr'); if (tr) rows.push(tr);
@@ -363,5 +385,4 @@
     });
   })();
 </script>
-{{end}}
 {{end}}

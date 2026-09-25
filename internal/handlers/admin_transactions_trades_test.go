@@ -166,6 +166,19 @@ func TestTradesPage_RendersTradesView(t *testing.T) {
 	if !strings.Contains(body, `data-trade-id="`+itoa64(fx.inlTrd.ID)+`"`) {
 		t.Errorf("inline trade not listed")
 	}
+	// Fills expand into a full-width row under the trade, toggled per row; the
+	// delete checkbox is gated behind Edit like the fills view (.te class).
+	for _, want := range []string{
+		`data-target="fills-` + itoa64(t1.ID) + `"`,
+		`<tr class="recon-fills-row" id="fills-` + itoa64(t1.ID) + `" hidden>`,
+		`<td colspan="11">`,
+		`<label class="te recon-del"><input type="checkbox" form="trade-form" name="trade.` + itoa64(t1.ID) + `.delete">`,
+		`id="recon-trades-edit"`, `id="recon-fills-all"`, `class="table-scroll recon-editable"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing %q", want)
+		}
+	}
 	if strings.Contains(body, `name="trade.`+itoa64(fx.inlTrd.ID)+`.delete"`) {
 		t.Errorf("inline trade must not offer delete")
 	}
