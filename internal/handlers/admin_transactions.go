@@ -9,6 +9,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"html/template"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -106,10 +107,16 @@ func (h *Handlers) AdminTransactionsPage(w http.ResponseWriter, r *http.Request)
 		"OpenPositions": h.openPositionRows(ctx, openPositions),
 		"Rows":          rows,
 		"Filter":        f,
-		"FilterQuery":   f.query().Encode(), // carried on POST actions to preserve the view
-		"NowLocal":      time.Now().In(tz).Format("2006-01-02T15:04"),
-		"Flash":         r.URL.Query().Get("flash"),
-		"FlashErr":      r.URL.Query().Get("err"),
+		// FilterQuery is the already-encoded filter query string the POST forms
+		// append to their action ("...?{{.FilterQuery}}"); redirectTransactions
+		// reads it back from the action URL. template.URL marks it pre-escaped:
+		// as a plain string after a literal "?" html/template percent-encodes the
+		// "&" and "=", the server then sees one bogus key and every filter is lost
+		// on save.
+		"FilterQuery": template.URL(f.query().Encode()),
+		"NowLocal":    time.Now().In(tz).Format("2006-01-02T15:04"),
+		"Flash":       r.URL.Query().Get("flash"),
+		"FlashErr":    r.URL.Query().Get("err"),
 	})
 }
 

@@ -106,3 +106,49 @@ func TestBulkSave_NoPhantomEditOnRoundMinute(t *testing.T) {
 func itoa64(v int64) string {
 	return strconv.FormatInt(v, 10)
 }
+
+// A save must send the user back to the same filtered view: the filter rides
+// on the form action's query string and redirectTransactions copies it (plus
+// the flash) onto the redirect.
+func TestBulkSave_RedirectKeepsFilter(t *testing.T) {
+	conn := dbtest.Open(t, "test")
+	q := models.New(conn)
+	uid := dbtest.BootstrapUserID(t, conn, "test")
+	firm := "apex"
+	acct, err := q.CreateAccount(context.Background(), models.CreateAccountParams{
+		UserID: uid, Name: "recon", Firm: &firm, ImportSource: "motivewave_csv",
+		AccountRef: "APEX-RECON-2", Currency: "USD", CommissionSource: "rate",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := q.InsertExecution(context.Background(), models.InsertExecutionParams{
+		AccountID: acct.ID, BrokerExecID: "T9", Symbol: "MESU6", SymbolRoot: "MES",
+		Side: "buy", Qty: 1, Price: 7500, ExecTime: time.Date(2026, 6, 10, 14, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	exec, _ := q.GetExecutionByBrokerID(context.Background(), models.GetExecutionByBrokerIDParams{AccountID: acct.ID, BrokerExecID: "T9"})
+	h := &Handlers{DB: conn, Queries: q, Timezone: time.UTC,
+		ImportSvc: &importer.ImportService{DB: conn, Queries: q, Timezone: time.UTC, UserID: uid}}
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: uid})
+
+	form := url.Values{}
+	form.Set("txn."+itoa64(exec.ID)+".delete", "on")
+	target := "/admin/transactions/save?account_id=" + itoa64(acct.ID) + "&from=2026-06-01&to=2026-06-30&deleted=1"
+	req := httptest.NewRequest("POST", target, strings.NewReader(form.Encode()))
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	req = req.WithContext(ctx)
+	rec := httptest.NewRecorder()
+	h.AdminTransactionsBulkSave(rec, req)
+
+	loc := rec.Result().Header.Get("Location")
+	for _, want := range []string{"/admin/transactions?", "account_id=" + itoa64(acct.ID), "from=2026-06-01", "to=2026-06-30", "deleted=1", "flash=saved+1+change"} {
+		if !strings.Contains(loc, want) {
+			t.Errorf("redirect %q missing %q", loc, want)
+		}
+	}
+	if after, _ := q.GetExecutionByBrokerID(context.Background(), models.GetExecutionByBrokerIDParams{AccountID: acct.ID, BrokerExecID: "T9"}); after.DeletedAt == nil {
+		t.Errorf("fill was not soft-deleted")
+	}
+}
