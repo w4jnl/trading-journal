@@ -52,9 +52,23 @@
     </select>
   </label>
   {{else}}<input type="hidden" name="side" value="{{.Filter.Side}}">{{end}}
-  <label class="field" style="flex-direction:row; align-items:center; gap:6px;">
-    <input type="checkbox" name="deleted" value="1" {{if .Filter.IncludeDeleted}}checked{{end}}>
-    <span class="field-label" style="margin:0;">show deleted</span></label>
+  {{if eq .Filter.View "trades"}}
+  <label class="field"><span class="field-label">Outcome</span>
+    <select name="outcome" title="By net P&amp;L. Deleted trades have no P&amp;L and are left out while this is set.">
+      <option value="">any</option>
+      <option value="win" {{if eq .Filter.Outcome "win"}}selected{{end}}>winners</option>
+      <option value="loss" {{if eq .Filter.Outcome "loss"}}selected{{end}}>losers</option>
+      <option value="flat" {{if eq .Filter.Outcome "flat"}}selected{{end}}>breakeven</option>
+    </select>
+  </label>
+  {{else}}<input type="hidden" name="outcome" value="{{.Filter.Outcome}}">{{end}}
+  <label class="field"><span class="field-label">Deleted</span>
+    <select name="deleted" title="Tombstoned fills (Fills view) / trades deleted as a unit (Trades view)">
+      <option value="">hide</option>
+      <option value="1" {{if and .Filter.IncludeDeleted (not .Filter.OnlyDeleted)}}selected{{end}}>include</option>
+      <option value="only" {{if .Filter.OnlyDeleted}}selected{{end}}>only</option>
+    </select>
+  </label>
   <div class="row-sm">
     <button type="submit" class="btn btn--primary btn--sm">Apply</button>
     <a href="/admin/transactions{{if eq .Filter.View "trades"}}?view=trades{{end}}" class="btn btn--ghost btn--sm">Clear</a>
@@ -302,7 +316,7 @@
       </tr>
       {{end}}{{end}}
       {{else}}
-      <tr><td colspan="11" class="muted" style="text-align:center; padding:20px;">No closed trades match the filter.{{if not .Filter.IncludeDeleted}} Tick "show deleted" to see trades deleted as a unit.{{end}}</td></tr>
+      <tr><td colspan="11" class="muted" style="text-align:center; padding:20px;">{{if .Filter.OnlyDeleted}}No deleted trades match the filter.{{if .Filter.Outcome}} Deleted trades have no P&amp;L - clear the Outcome filter.{{end}}{{else}}No closed trades match the filter.{{if not .Filter.IncludeDeleted}} Set Deleted to "include" or "only" to see trades deleted as a unit.{{end}}{{end}}</td></tr>
       {{end}}
     </tbody>
   </table>

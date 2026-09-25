@@ -381,3 +381,43 @@ func TestTradesSave_JournalLinksWarnAndDetach(t *testing.T) {
 		t.Errorf("group links = %d, want 0", links)
 	}
 }
+
+// Outcome filters live trades by net P&L sign; the three-way deleted filter's
+// "only" mode shows just the deleted trades (and, in the fills view, just the
+// tombstoned fills). Deleted trades carry no P&L, so an outcome filter hides them.
+func TestTradesView_OutcomeAndOnlyDeletedFilters(t *testing.T) {
+	fx := newTradesFixture(t)
+	// Both fixture trades are winners (+2 pts long 2, +1 pt short 3 on ES).
+	if body := fx.page(t, "/admin/transactions?view=trades&outcome=win"); strings.Count(body, `data-trade-id="`) != 3 { // 2 + the inline account's imported trade (net 250)
+		t.Errorf("winners: %d rows, want 3", strings.Count(body, `data-trade-id="`))
+	}
+	if body := fx.page(t, "/admin/transactions?view=trades&outcome=loss"); strings.Contains(body, `data-trade-id="`) {
+		t.Errorf("losers: expected no rows")
+	}
+	if body := fx.page(t, "/admin/transactions?view=trades&outcome=win"); !strings.Contains(body, `<option value="win" selected>winners</option>`) {
+		t.Errorf("outcome select not round-tripped")
+	}
+
+	t1 := fx.trades[0]
+	form := url.Values{}
+	form.Set("trade."+itoa64(t1.ID)+".delete", "on")
+	form.Set("trade."+itoa64(t1.ID)+".sig", tradeSig(t1.EntryTime))
+	if loc := fx.save(t, "/admin/transactions/trades/save?view=trades&deleted=only", form); !strings.Contains(loc, "deleted=only") {
+		t.Errorf("redirect lost deleted=only: %q", loc)
+	}
+	body := fx.page(t, "/admin/transactions?view=trades&deleted=only")
+	if strings.Contains(body, `data-trade-id="`) || strings.Count(body, `data-group-id="`) != 1 {
+		t.Errorf("deleted=only: live rows present or deleted row missing")
+	}
+	if !strings.Contains(body, `<option value="only" selected>only</option>`) {
+		t.Errorf("deleted select not round-tripped")
+	}
+	if body := fx.page(t, "/admin/transactions?view=trades&deleted=only&outcome=win"); strings.Contains(body, `data-group-id="`) || !strings.Contains(body, "clear the Outcome filter") {
+		t.Errorf("deleted trades must be hidden under an outcome filter, with a hint")
+	}
+	// Fills view: only the two tombstoned fills.
+	body = fx.page(t, "/admin/transactions?deleted=only&account_id="+itoa64(fx.acct.ID))
+	if !strings.Contains(body, `name="txn.`+itoa64(fx.exec["T1"])+`.restore"`) || strings.Contains(body, `name="txn.`+itoa64(fx.exec["T3"])+`.delete"`) {
+		t.Errorf("fills view deleted=only must list only tombstoned fills")
+	}
+}

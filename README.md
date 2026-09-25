@@ -445,8 +445,10 @@ API; the email copy is archive-only.
 fills, and deletes a whole trade in one action: every fill of the trade is
 tombstoned and the contract is rebuilt, so neighbouring trades keep their
 entry times and journal links. The fills of one such delete are grouped, and
-with *show deleted* on the Trades view lists them under *Deleted trades*
-with a one-click Restore. A trade that shares a fill with a neighbour (a
+with the *Deleted* filter set to *include* or *only* the Trades view lists
+them in place, dimmed, with a one-click Restore (the same filter shows
+tombstoned fills in the Fills view). The Trades view also filters by
+outcome: winners, losers or breakeven by net P&L. A trade that shares a fill with a neighbour (a
 position flip) is flagged `flip-linked`: deleting it removes the shared fill
 and the neighbour is rebuilt from what remains. Trades-CSV (TopstepX)
 accounts are read-only in both modes, and open lots are only visible in the

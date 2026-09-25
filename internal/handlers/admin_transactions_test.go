@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
@@ -53,5 +54,17 @@ func TestTxnFilterQuery(t *testing.T) {
 	// Empty filter encodes to nothing (so a clean view has no stray query string).
 	if got := (txnFilter{}).query().Encode(); got != "" {
 		t.Errorf("empty filter query = %q, want empty", got)
+	}
+	// Three-way deleted filter, outcome and view round-trip through query() and parseTxnFilter.
+	f2 := txnFilter{IncludeDeleted: true, OnlyDeleted: true, Outcome: "loss", View: "trades"}
+	if q := f2.query(); q.Get("deleted") != "only" || q.Get("outcome") != "loss" || q.Get("view") != "trades" {
+		t.Errorf("query() = %v", q)
+	}
+	back := parseTxnFilter(httptest.NewRequest("GET", "/admin/transactions?"+f2.query().Encode(), nil))
+	if back != f2 {
+		t.Errorf("round trip = %+v, want %+v", back, f2)
+	}
+	if p := parseTxnFilter(httptest.NewRequest("GET", "/admin/transactions?deleted=1&outcome=bogus", nil)); !p.IncludeDeleted || p.OnlyDeleted || p.Outcome != "" {
+		t.Errorf("deleted=1 / bogus outcome parsed as %+v", p)
 	}
 }

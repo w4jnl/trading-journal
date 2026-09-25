@@ -130,6 +130,15 @@ func (h *Handlers) listTradesForReconcile(ctx context.Context, uid int64, f txnF
 		b.WriteString(" AND substr(t.entry_time,1,10) <= ?")
 		args = append(args, f.To)
 	}
+	// Outcome by net P&L sign; stub instruments (NULL P&L) match none of them.
+	switch f.Outcome {
+	case "win":
+		b.WriteString(" AND t.net_pnl > 0")
+	case "loss":
+		b.WriteString(" AND t.net_pnl < 0")
+	case "flat":
+		b.WriteString(" AND t.net_pnl = 0")
+	}
 	b.WriteString(" ORDER BY t.entry_time DESC, t.id DESC LIMIT ?")
 	args = append(args, reconTradesLimit)
 
