@@ -172,8 +172,10 @@ func TestTradesPage_RendersTradesView(t *testing.T) {
 		`data-target="fills-` + itoa64(t1.ID) + `"`,
 		`<tr class="recon-fills-row" id="fills-` + itoa64(t1.ID) + `" hidden>`,
 		`<td colspan="11">`,
-		`<label class="te recon-del"><input type="checkbox" form="trade-form" name="trade.` + itoa64(t1.ID) + `.delete">`,
+		`<label class="te recon-del"><input type="checkbox" class="recon-row-box" data-kind="delete" form="trade-form" name="trade.` + itoa64(t1.ID) + `.delete">`,
 		`id="recon-trades-edit"`, `id="recon-fills-all"`, `class="table-scroll recon-editable"`,
+		`<input type="checkbox" class="recon-select-all" aria-label="Select all"> all</label></th>`,
+		`class="recon-row-box" data-kind="delete" form="trade-form" name="trade.` + itoa64(t1.ID) + `.delete"`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page missing %q", want)

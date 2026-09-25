@@ -132,7 +132,7 @@
     <thead>
       <tr>
         <th>Time</th><th>Contract</th><th>Root</th><th>Side</th>
-        <th class="tabular">Qty</th><th class="tabular">Price</th><th>Account</th><th title="How this row was imported. 'MW email' rows are provisional near-real-time fills, replaced when the MotiveWave CSV export is imported.">Via</th><th>Broker ID</th><th class="recon-del-col"></th>
+        <th class="tabular">Qty</th><th class="tabular">Price</th><th>Account</th><th title="How this row was imported. 'MW email' rows are provisional near-real-time fills, replaced when the MotiveWave CSV export is imported.">Via</th><th>Broker ID</th><th class="recon-del-col"><label class="te recon-del" title="Select every delete box on this page (with Deleted = only: every restore box)"><input type="checkbox" class="recon-select-all" aria-label="Select all"> all</label></th>
       </tr>
     </thead>
     <tbody>
@@ -179,9 +179,9 @@
         <td class="recon-del-col">
           {{if not .Inline}}
             {{if .Deleted}}
-            <label class="te recon-del"><input type="checkbox" form="txn-form" name="txn.{{.ID}}.restore"> restore</label>
+            <label class="te recon-del"><input type="checkbox" class="recon-row-box" data-kind="restore" form="txn-form" name="txn.{{.ID}}.restore"> restore</label>
             {{else}}
-            <label class="te recon-del"><input type="checkbox" form="txn-form" name="txn.{{.ID}}.delete"> delete</label>
+            <label class="te recon-del"><input type="checkbox" class="recon-row-box" data-kind="delete" form="txn-form" name="txn.{{.ID}}.delete"> delete</label>
             {{end}}
           {{end}}
         </td>
@@ -229,7 +229,7 @@
     <thead>
       <tr>
         <th>Entry</th><th>Exit</th><th>Contract</th><th>Dir</th><th class="tabular">Qty</th>
-        <th class="tabular">Entry &rarr; Exit</th><th class="tabular">Net P&amp;L</th><th>Account</th><th>Fills</th><th>Flags</th><th class="recon-del-col"></th>
+        <th class="tabular">Entry &rarr; Exit</th><th class="tabular">Net P&amp;L</th><th>Account</th><th>Fills</th><th>Flags</th><th class="recon-del-col"><label class="te recon-del" title="Select every delete box on this page (with Deleted = only: every restore box)"><input type="checkbox" class="recon-select-all" aria-label="Select all"> all</label></th>
       </tr>
     </thead>
     <tbody>
@@ -255,7 +255,7 @@
         </td>
         <td class="recon-del-col">
           {{if not .Inline}}
-          <label class="te recon-del"><input type="checkbox" form="trade-form" name="trade.{{.ID}}.delete"> delete</label>
+          <label class="te recon-del"><input type="checkbox" class="recon-row-box" data-kind="delete" form="trade-form" name="trade.{{.ID}}.delete"> delete</label>
           <input type="hidden" form="trade-form" name="trade.{{.ID}}.sig" value="{{.Sig}}">
           {{end}}
         </td>
@@ -293,7 +293,7 @@
         <td class="muted" style="font-size:12px;">{{.AccountName}}</td>
         <td><button type="button" class="btn btn--ghost btn--sm recon-fills-toggle" data-target="fills-g-{{.GroupID}}" aria-expanded="false" aria-controls="fills-g-{{.GroupID}}" title="Restore brings back the remaining fill(s); fills already restored individually are live in the Fills view">{{.FillCount}} fill(s)</button></td>
         <td class="muted" style="font-size:12px; white-space:nowrap;">deleted {{ltime .DeletedAt "datetime-sec"}}</td>
-        <td class="recon-del-col"><label class="te recon-del"><input type="checkbox" form="trade-form" name="group.{{.GroupID}}.restore"> restore</label></td>
+        <td class="recon-del-col"><label class="te recon-del"><input type="checkbox" class="recon-row-box" data-kind="restore" form="trade-form" name="group.{{.GroupID}}.restore"> restore</label></td>
       </tr>
       <tr class="recon-fills-row txn-item--deleted" id="fills-g-{{.GroupID}}" hidden>
         <td colspan="11">
@@ -352,10 +352,49 @@
       doneBtn.addEventListener('click', function () {
         if (form && form.__dirtyReset) form.__dirtyReset();
         wrap.classList.remove('editing'); doneBtn.style.display = 'none'; editBtn.style.display = '';
+        resetSelectAll(wrap);
       });
     }
     wireEdit('recon', 'recon-edit', 'recon-cancel', 'txn-form');
     wireEdit('recon-trades', 'recon-trades-edit', 'recon-trades-done', 'trade-form');
+
+    // "all" in the action column header toggles the page's delete boxes, or
+    // its restore boxes when only deleted rows are shown. The header box is
+    // not a form field; each row box gets a change event so dirty_table.js
+    // sees it (it only tracks form.elements and listens for change).
+    function resetSelectAll(wrap) {
+      wrap.querySelectorAll('.recon-select-all').forEach(function (all) { all.checked = false; all.indeterminate = false; });
+    }
+    function wireSelectAll(wrapId) {
+      var wrap = document.getElementById(wrapId);
+      if (!wrap) return;
+      var all = wrap.querySelector('.recon-select-all');
+      if (!all) return;
+      function targets() {
+        var del = Array.prototype.slice.call(wrap.querySelectorAll('input.recon-row-box[data-kind="delete"]'));
+        return del.length ? del : Array.prototype.slice.call(wrap.querySelectorAll('input.recon-row-box[data-kind="restore"]'));
+      }
+      function sync() {
+        var t = targets(), n = t.filter(function (cb) { return cb.checked; }).length;
+        all.checked = n > 0 && n === t.length;
+        all.indeterminate = n > 0 && n < t.length;
+      }
+      all.addEventListener('change', function () {
+        var on = all.checked;
+        targets().forEach(function (cb) {
+          if (cb.checked !== on) { cb.checked = on; cb.dispatchEvent(new Event('change', { bubbles: true })); }
+        });
+        all.indeterminate = false;
+      });
+      wrap.addEventListener('change', function (e) {
+        if (e.target && e.target.classList && e.target.classList.contains('recon-row-box')) sync();
+      });
+      document.querySelectorAll('[data-dirty-reset]').forEach(function (btn) {
+        btn.addEventListener('click', function () { resetSelectAll(wrap); });
+      });
+    }
+    wireSelectAll('recon');
+    wireSelectAll('recon-trades');
 
     function setOpen(btn, open) {
       var row = document.getElementById(btn.getAttribute('data-target'));
