@@ -129,6 +129,16 @@ type Snapshot struct {
 	// fields are independently null when the book lacks the expiry or the
 	// nearest wing is too far from 25 delta.
 	Skew *Skew `json:"skew"`
+	// PCVolumeLegs splits the session put/call volume per blend leg
+	// ("SPX", "SPY", ...; engine v0.11.0) so index and ETF contract counts
+	// stop mixing in one ratio. Blend markets only; null elsewhere and on
+	// rows persisted before v0.11.0.
+	PCVolumeLegs map[string]PCVolume `json:"pc_volume_legs"`
+	// DataQuality and Provenance are the engine's per-row trust verdict and
+	// origin (v0.11.0, update 009; see quality.go). Nil = persisted before
+	// v0.11.0: not assessed, read as measured - never as degraded.
+	DataQuality *DataQuality `json:"data_quality"`
+	Provenance  *Provenance  `json:"provenance"`
 }
 
 // PCVolume is a put/call session-volume aggregate. Ratio = put/call,
@@ -315,6 +325,11 @@ type ProfileDetail struct {
 	// param, so key presence is the only honest capability probe.
 	ExpiryFilter   []string `json:"expiry_filter"`
 	SupportsExpiry bool     `json:"-"`
+
+	// DataQuality / Provenance mirror the snapshot's (v0.11.0; the same
+	// row, so the same verdict). Nil on pre-v0.11.0 rows.
+	DataQuality *DataQuality `json:"data_quality"`
+	Provenance  *Provenance  `json:"provenance"`
 }
 
 // ProfileQuery narrows a ProfileDetail request. Zero value = live whole book
