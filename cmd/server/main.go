@@ -675,6 +675,9 @@ func run() error {
 	mux.HandleFunc("POST /journal/week/{week}", h.WeekJournalSave)
 	mux.HandleFunc("POST /journal/week/{week}/delete", h.WeekJournalDelete)
 	mux.HandleFunc("GET /journal/trade/{id}", h.JournalTradePage)
+	// Re-fetch a trade/group entry's gamma-context block (engine update 009:
+	// outage gaps get backfilled with reconstructed rows after the fact).
+	mux.HandleFunc("POST /journal/{id}/gex/refresh", h.JournalGexRefresh)
 	mux.HandleFunc("POST /journal/group/new", h.GroupJournalCreate)
 	mux.HandleFunc("GET /journal/group/{id}", h.GroupJournalPage)
 	mux.HandleFunc("POST /journal/group/{id}", h.GroupJournalSave)

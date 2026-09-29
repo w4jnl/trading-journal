@@ -18,8 +18,15 @@
   {{else if eq .Flash "deleted"}}Entry deleted.
   {{else if eq .Flash "linked"}}Trade added.
   {{else if eq .Flash "unlinked"}}Trade removed.
+  {{else if eq .Flash "gex-refreshed"}}Gamma context refreshed from the engine.
+  {{else if eq .Flash "gex-unchanged"}}Gamma context unchanged — the engine still serves the same rows for these trades.
+  {{else if eq .Flash "gex-failed"}}Gamma context refresh failed — engine unreachable, or no closed trade to look up.
   {{end}}
 </div>
+{{end}}
+
+{{if .GexRefresh}}
+{{template "gex_refresh_form" .Entry.ID}}
 {{end}}
 
 <!-- Body / tag editor — primary action of the page, sits above the

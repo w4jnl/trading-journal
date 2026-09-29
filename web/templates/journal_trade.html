@@ -25,8 +25,15 @@
   {{if eq .Flash "saved"}}Entry saved.
   {{else if eq .Flash "deleted"}}Entry deleted (body was empty).
   {{else if eq .Flash "empty"}}Nothing to save — body was empty.
+  {{else if eq .Flash "gex-refreshed"}}Gamma context refreshed from the engine.
+  {{else if eq .Flash "gex-unchanged"}}Gamma context unchanged — the engine still serves the same rows for this trade.
+  {{else if eq .Flash "gex-failed"}}Gamma context refresh failed — engine unreachable, or no closed trade to look up.
   {{end}}
 </div>
+{{end}}
+
+{{if .GexRefresh}}
+{{template "gex_refresh_form" .JournalEntryID}}
 {{end}}
 
 <section class="journal-entry" data-journal-entry>

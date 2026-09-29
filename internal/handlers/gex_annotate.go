@@ -32,6 +32,13 @@ const gexMarker = "tj-gex:v1"
 // must be honest about it).
 const gexStaleAfter = 15 * time.Minute
 
+// gexCleanSteps caps how many degraded rows the annotator steps past before
+// settling for the degraded one (engine update 009: the engine's own history
+// statistics skip degraded rows the same way). Three rows is 15 minutes of
+// grid - the same distance gexStaleAfter allows, so a clean row is never
+// bought at the price of a stale one.
+const gexCleanSteps = 3
+
 // gexMarket folds a journal symbol root onto an engine market: micros fold
 // into the parent (same idea as copyClusterKey) and EP is CQG's name for ES.
 // Journal fill prices for all of these are ES/NQ futures prices, so they
@@ -91,14 +98,9 @@ func (a *gexAnnotator) annotate(ctx context.Context, entryID int64, t prepDayTra
 		return
 	}
 
-	enSnap, err := h.GEX.Snapshot(ctx, market, t.EntryTime)
+	enSnap, exSnap, err := h.gexMomentSnapshots(ctx, market, t)
 	if err != nil {
-		a.fail(err, t.ID, "entry")
-		return
-	}
-	exSnap, err := h.GEX.Snapshot(ctx, market, t.ExitTime)
-	if err != nil {
-		a.fail(err, t.ID, "exit")
+		a.fail(err, t.ID, "entry/exit")
 		return
 	}
 
@@ -118,6 +120,26 @@ func (a *gexAnnotator) fail(err error, tradeID int64, moment string) {
 	a.h.logger().Warn("gex annotate: fetch failed, skipping gamma context this pass",
 		"trade", tradeID, "moment", moment, "err", err)
 	a.broken = true
+}
+
+// gexMomentSnapshots fetches the rows live at the trade's entry and exit,
+// stepping past degraded rows (CleanSnapshot) so a zeroed-quote window or a
+// mismatched leg does not become the trade's recorded context when a clean
+// row sits one grid step earlier. Skips are logged at debug level (-d).
+func (h *Handlers) gexMomentSnapshots(ctx context.Context, market string, t prepDayTrade) (en, ex *gex.Snapshot, err error) {
+	en, enSkipped, err := h.GEX.CleanSnapshot(ctx, market, t.EntryTime, gexCleanSteps, gexStaleAfter)
+	if err != nil {
+		return nil, nil, err
+	}
+	ex, exSkipped, err := h.GEX.CleanSnapshot(ctx, market, t.ExitTime, gexCleanSteps, gexStaleAfter)
+	if err != nil {
+		return nil, nil, err
+	}
+	if enSkipped > 0 || exSkipped > 0 {
+		h.logger().Debug("gex annotate: stepped past degraded rows",
+			"trade", t.ID, "entrySkipped", enSkipped, "exitSkipped", exSkipped)
+	}
+	return en, ex, nil
 }
 
 // gexTickSize resolves the tick size for distance math. The instruments row
@@ -141,6 +163,10 @@ type gexMoment struct {
 	cwT   *float64 // ticks to the call wall (nil when absent / cold basis)
 	pwT   *float64
 	stale bool
+	// degraded / recon carry the engine's per-row verdict (update 009):
+	// the header cell names them and a footnote explains each.
+	degraded bool
+	recon    bool
 }
 
 func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tick float64) gexMoment {
@@ -152,6 +178,12 @@ func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tic
 		cw:    gexWall(s, "call_wall"),
 		pw:    gexWall(s, "put_wall"),
 		stale: at.Sub(s.AsOf) > gexStaleAfter,
+		// Degraded means the engine found at least one degraded-severity
+		// warning on this row; recon means the row was rebuilt from an
+		// older chain after an outage (walls near-exact, flip/regime
+		// carrying that chain's IVs). Pre-v0.11.0 rows are neither.
+		degraded: s.IsDegraded(),
+		recon:    s.ProvenanceKind() == "reconstructed",
 	}
 	if m.cw != nil {
 		m.cwT = gexTicks(price, m.cw.Futures, tick)
@@ -251,7 +283,10 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 	// futures-priced (matching the trade's own fill prices), while the
 	// engine also publishes index values for the same levels.
 	b.WriteString("_Gamma context (GEX) — futures prices_\n\n")
-	b.WriteString("|  | " + en.label + " | " + ex.label + " |\n|---|---|---|\n")
+	// The header names each moment's verdict inline ("exit 14:40 ET
+	// (degraded)") so a reader scanning the table sees it before the
+	// numbers; the footnotes below carry the engine's reasons.
+	b.WriteString("|  | " + en.label + gexMomentFlags(en) + " | " + ex.label + gexMomentFlags(ex) + " |\n|---|---|---|\n")
 	b.WriteString("| regime | " + regimeCell(en) + " | " + regimeCell(ex) + " |\n")
 	b.WriteString("| flip " + gexLevelLabel(enSnap.Flip.Futures) + " | " + flipCell(en.flip, en.snap.Flip.Futures, nil) + " | " + flipCell(ex.flip, ex.snap.Flip.Futures, enSnap.Flip.Futures) + " |\n")
 	// The intraday (<=5 DTE) flip is the front-week hedging line - for day
@@ -266,14 +301,52 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 	b.WriteString("| put wall " + gexWallLabel(en.pw) + " | " + wallCell(en.pwT, en.pw, nil) + " | " + wallCell(ex.pwT, ex.pw, gexWallFutures(en.pw)) + " |\n")
 
 	for _, m := range []gexMoment{en, ex} {
+		word := strings.Fields(m.label)[0]
 		if m.stale {
-			b.WriteString("\n_" + strings.Fields(m.label)[0] + " context stale: levels as of " +
+			b.WriteString("\n_" + word + " context stale: levels as of " +
 				m.snap.AsOf.In(gexEastern()).Format("Jan 2 15:04 ET") + " (prior session)_\n")
+		}
+		if m.degraded {
+			b.WriteString("\n_" + word + " context degraded: " + gexWarningList(m.snap.DataQuality) + "_\n")
+		}
+		if m.recon {
+			b.WriteString("\n_" + word + " context " + gexReconstructedNote(m.snap.Provenance) + "_\n")
 		}
 	}
 
 	b.WriteString("\n" + gexComment(market, en))
 	return b.String()
+}
+
+// gexMomentFlags is the header-cell suffix naming a moment's verdict:
+// " (degraded)", " (reconstructed)" or both; "" for a clean measured row.
+func gexMomentFlags(m gexMoment) string {
+	var flags []string
+	if m.degraded {
+		flags = append(flags, "degraded")
+	}
+	if m.recon {
+		flags = append(flags, "reconstructed")
+	}
+	if len(flags) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(flags, ", ") + ")"
+}
+
+// gexWarningList joins the degraded-severity findings ("STALE_LEG SPY - SPY
+// leg 18 min older than SPX; FROZEN_SPOT SPX - ..."); when the engine flagged
+// the row without naming a degraded finding, says so.
+func gexWarningList(dq *gex.DataQuality) string {
+	ws := dq.DegradedWarnings()
+	if len(ws) == 0 {
+		return "engine flagged this row as degraded"
+	}
+	parts := make([]string, 0, len(ws))
+	for _, w := range ws {
+		parts = append(parts, w.Summary())
+	}
+	return strings.Join(parts, "; ")
 }
 
 // gexDrift annotates an exit cell whose level moved between the two
@@ -351,5 +424,24 @@ func gexComment(market string, m gexMoment) string {
 		" dist_pw_ticks=" + ticks(m.pwT) +
 		" em=" + num(m.snap.ExpectedMove1D) +
 		" stale=" + strconv.FormatBool(m.stale) +
+		// Update 009: the engine's verdict on the row (null = persisted
+		// before v0.11.0, never assessed) and how the row came to be
+		// (measured | recomputed | reconstructed; null provenance reads as
+		// measured per the contract). Appended, so the v1 marker and every
+		// earlier key keep their positions for existing greps.
+		" quality=" + gexQualityToken(m.snap) +
+		" provenance=" + m.snap.ProvenanceKind() +
 		" -->"
+}
+
+// gexQualityToken is the machine-comment value for data_quality: "null"
+// when the engine never assessed the row, else "degraded" or "ok".
+func gexQualityToken(s *gex.Snapshot) string {
+	switch {
+	case s.DataQuality == nil:
+		return "null"
+	case s.DataQuality.Degraded:
+		return "degraded"
+	}
+	return "ok"
 }
