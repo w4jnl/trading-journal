@@ -110,6 +110,10 @@ type gexExpo struct {
 	// fallback=1 request dropped ("bucket", "expiry", or both).
 	LevelsNote string `json:"levelsNote,omitempty"`
 	Degraded   string `json:"degraded,omitempty"`
+	// Quality is the moment's trust verdict + provenance (engine update
+	// 009), from the profile payload (same row as the snapshot, so the same
+	// verdict) with the snapshot as fallback; the strip above the chart.
+	Quality gexQuality `json:"quality"`
 }
 
 // gexExpoBucketOpt is one width in the bucket control.
@@ -450,6 +454,11 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 
 	e.SupportsExpiry = pd.SupportsExpiry
 	e.Today = now.In(tz).Format("2006-01-02")
+	dq, prov := pd.DataQuality, pd.Provenance
+	if dq == nil && prov == nil && s != nil {
+		dq, prov = s.DataQuality, s.Provenance
+	}
+	e.Quality = gexBuildQuality(dq, prov)
 	e.IndexName = "index"
 	if len(pd.Sources) > 0 && pd.Sources[0] != "" {
 		e.IndexName = pd.Sources[0]

@@ -118,7 +118,7 @@
 
 {{if .EngineError}}
 <div class="flash error mb-16" role="alert">
-  gex-engine unreachable — {{.EngineError}}
+  gex-engine unreachable — {{.EngineError}}{{if .EngineNotes}} · engine reports: {{range $i, $n := .EngineNotes}}{{if $i}}; {{end}}{{$n}}{{end}}{{end}}
 </div>
 {{end}}
 
@@ -133,8 +133,16 @@
 {{if .SessionClosed}}
 <div class="flash info mb-16" role="status">
   Options session closed — showing the last snapshot, as of {{.View.AsOfET}}.
+  {{- /* Engine v0.11.0 /health reasons: during a feed outage the live row
+        goes stale mid-session, and the engine's own explanation belongs
+        next to the claim that the session is closed. */ -}}
+  {{if .EngineNotes}} Engine reports: {{range $i, $n := .EngineNotes}}{{if $i}}; {{end}}{{$n}}{{end}}.{{end}}
 </div>
 {{end}}
+
+{{/* Data-quality strip (engine update 009): hidden for clean measured rows;
+     the scrub repaints it per slot (gex-quality.js) from the view JSON. */}}
+<div id="gx-quality" class="gex-quality mb-16"{{if not .View.Quality.Show}} hidden{{end}}>{{template "gex_quality_strip" .View.Quality}}</div>
 
 <div class="stat-strip">
   <div class="card stat-tile">
@@ -182,6 +190,7 @@
     <div class="num--lg {{.View.PCRatioClass}}" id="gx-pcratio">{{.View.PCRatio}}</div>
     <div class="sub" id="gx-pcsub">{{.View.PCSub}}</div>
     <div class="sub" id="gx-pc0">{{.View.PC0DTE}}</div>
+    <div class="sub" id="gx-pclegs" title="Put/call ratio per blend leg — index and ETF contracts counted apart (engine v0.11.0)">{{.View.PCLegs}}</div>
   </div>
   <div class="card stat-tile" title="25Δ risk reversal / ATM IV, index leg · positive = puts richer (engine decision #35)">
     <div class="label">Skew · 0DTE</div>
@@ -273,6 +282,7 @@
 
 {{template "uplot_assets" .}}
 <script src="/static/js/gex-chips.js{{assetVer}}"></script>
+<script src="/static/js/gex-quality.js{{assetVer}}"></script>
 <script>
   // The initial view model is rendered into the page as inline JSON by the
   // handler; the scrub slider fetches sibling moments from /gex/data and
@@ -1291,6 +1301,8 @@
     pcr.className = 'num--lg ' + (v.pcRatioClass || '');
     $id('gx-pcsub').textContent = v.pcSub || '';
     $id('gx-pc0').textContent = v.pc0dte || '';
+    $id('gx-pclegs').textContent = v.pcLegs || '';
+    if (window.gexQuality) gexQuality.render($id('gx-quality'), v.quality);
     $id('gx-skew0').textContent = v.skewDte0;
     $id('gx-skewm1').textContent = '1M ' + v.skewM1;
     $id('gx-spot').textContent = v.spotIndex;

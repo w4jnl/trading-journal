@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -360,6 +361,13 @@ type gexView struct {
 	PCRatioClass string `json:"pcRatioClass"`
 	PCSub        string `json:"pcSub"`
 	PC0DTE       string `json:"pc0dte"`
+	// PCLegs is the per-leg ratio line ("SPX 1.16 · SPY 1.14"; engine
+	// v0.11.0 pc_volume_legs) so index and ETF contract counts stop
+	// mixing in the blended ratio above it. "" when the engine has none.
+	PCLegs string `json:"pcLegs"`
+	// Quality is the row's trust verdict + provenance as the strip under
+	// the banners renders it (update 009); Show=false hides the strip.
+	Quality gexQuality `json:"quality"`
 	// Skew tenors, engine-defined 25-delta risk reversal / ATM IV.
 	SkewDTE0    string `json:"skewDte0"`
 	SkewM1      string `json:"skewM1"`
@@ -498,6 +506,7 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		h.logger().Warn("gex page: snapshot fetch failed", "market", market, "err", err)
 		data["EngineError"] = err.Error()
+		data["EngineNotes"] = h.gexHealthNotes(r.Context())
 	default:
 		ref := at
 		if latest {
@@ -512,6 +521,13 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		h.gexAttachAnalysis(r.Context(), &view, market, s.AsOf)
 		data["View"] = view
 		data["SessionClosed"] = latest && view.Stale
+		if latest && view.Stale {
+			// A stale live row is usually just the closed options session
+			// - but during a feed outage it is the engine falling behind,
+			// and its /health says so (v0.11.0 reasons). Ask, so the
+			// banner does not call an outage "session closed".
+			data["EngineNotes"] = h.gexHealthNotes(r.Context())
+		}
 		data["AIEnabled"] = h.AI != nil
 		if b, err := json.Marshal(view); err == nil {
 			data["ViewJSON"] = template.JS(b)
@@ -698,6 +714,8 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 	if pc := s.PCVolume0DTE; pc != nil && pc.Call > 0 {
 		v.PC0DTE = fmt.Sprintf("0DTE %.2f", pc.Ratio)
 	}
+	v.PCLegs = gexPCLegsLine(s.PCVolumeLegs)
+	v.Quality = gexBuildQuality(s.DataQuality, s.Provenance)
 	if sk := s.Skew; sk != nil {
 		if p := sk.DTE0Pct; p != nil {
 			v.SkewDTE0 = fmt.Sprintf("%+.1f%%", *p)
@@ -845,6 +863,27 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 	v.HasProfile = len(s.Profile.StrikesIndex) > 1 &&
 		len(s.Profile.StrikesIndex) == len(s.Profile.NetGex)
 	return v
+}
+
+// gexPCLegsLine renders the per-leg put/call ratios, legs in name order
+// (which puts the index leg first for SPX/SPY and NDX/QQQ). Legs without
+// call volume are skipped rather than shown as a division by zero.
+func gexPCLegsLine(legs map[string]gex.PCVolume) string {
+	if len(legs) == 0 {
+		return ""
+	}
+	names := make([]string, 0, len(legs))
+	for n := range legs {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	parts := make([]string, 0, len(names))
+	for _, n := range names {
+		if pc := legs[n]; pc.Call > 0 {
+			parts = append(parts, fmt.Sprintf("%s %.2f", n, pc.Ratio))
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // gexSpotFutures resolves spot in futures terms. The engine publishes it

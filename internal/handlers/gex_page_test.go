@@ -43,6 +43,12 @@ func TestGEXPage(t *testing.T) {
 			fmt.Fprint(w, gexProfileJSON("2026-07-31T19:50:02.722581Z"))
 			return
 		}
+		if r.URL.Path == "/health" {
+			// The stale live view asks /health for an explanation (update
+			// 009); a healthy engine adds nothing to the banner.
+			fmt.Fprint(w, `{"status":"ok","reasons":[],"notices":[]}`)
+			return
+		}
 		calls.Add(1)
 		lastPath, lastAt = r.URL.Path, r.URL.Query().Get("at")
 		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
