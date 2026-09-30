@@ -81,7 +81,7 @@ func (q *Queries) ListDistinctSymbolsForAccount(ctx context.Context, accountID i
 }
 
 const listExecutionsForAccountSymbol = `-- name: ListExecutionsForAccountSymbol :many
-SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method FROM executions
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group FROM executions
 WHERE account_id = ? AND symbol = ? AND deleted_at IS NULL
 ORDER BY exec_time, id
 `
@@ -119,6 +119,7 @@ func (q *Queries) ListExecutionsForAccountSymbol(ctx context.Context, arg ListEx
 			&i.EditedAt,
 			&i.OrderID,
 			&i.ImportMethod,
+			&i.DeletedGroup,
 		); err != nil {
 			return nil, err
 		}

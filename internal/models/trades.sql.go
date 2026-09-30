@@ -414,7 +414,7 @@ func (q *Queries) ListDistinctSymbolRoots(ctx context.Context, userID int64) ([]
 }
 
 const listExecutionsForTrade = `-- name: ListExecutionsForTrade :many
-SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, e.order_id, e.import_method, te.role, te.qty_used
+SELECT e.id, e.account_id, e.broker_exec_id, e.symbol, e.symbol_root, e.side, e.qty, e.price, e.commission, e.exec_time, e.raw_data, e.deleted_at, e.manual, e.edited_at, e.order_id, e.import_method, e.deleted_group, te.role, te.qty_used
 FROM executions e
 JOIN trade_executions te ON te.execution_id = e.id
 WHERE te.trade_id = ?
@@ -438,6 +438,7 @@ type ListExecutionsForTradeRow struct {
 	EditedAt     *time.Time `json:"edited_at"`
 	OrderID      *string    `json:"order_id"`
 	ImportMethod string     `json:"import_method"`
+	DeletedGroup *string    `json:"deleted_group"`
 	Role         string     `json:"role"`
 	QtyUsed      float64    `json:"qty_used"`
 }
@@ -468,6 +469,7 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 			&i.EditedAt,
 			&i.OrderID,
 			&i.ImportMethod,
+			&i.DeletedGroup,
 			&i.Role,
 			&i.QtyUsed,
 		); err != nil {
@@ -650,6 +652,52 @@ func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]
 			&i.CreatedAt,
 			&i.BrokerTradeID,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTradesForExecution = `-- name: ListTradesForExecution :many
+
+SELECT te.trade_id, te.role, te.qty_used
+FROM trade_executions te
+WHERE te.execution_id = ?
+ORDER BY te.trade_id
+`
+
+type ListTradesForExecutionRow struct {
+	TradeID int64   `json:"trade_id"`
+	Role    string  `json:"role"`
+	QtyUsed float64 `json:"qty_used"`
+}
+
+// ListTradesFiltered + CountTradesFiltered are intentionally NOT defined here.
+// Their dynamic WHERE clauses (account, symbol, direction, date range) are
+// built in Go and run via *sql.DB -- see internal/handlers/trades.go. sqlc's
+// sqlc.narg pattern produces broken positional indexing for SQLite (each narg
+// becomes ?N which doesn't line up with the 1-based variadic args), so we
+// skip sqlc for these two queries.
+// Every trade one fill participates in. A flip fill sits in two (exit of one
+// trade, entry of the next); a fill whose qty_used sums below its qty also
+// feeds a still-open lot. Used by the trades reconcile view for its warnings.
+func (q *Queries) ListTradesForExecution(ctx context.Context, executionID int64) ([]ListTradesForExecutionRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTradesForExecution, executionID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTradesForExecutionRow
+	for rows.Next() {
+		var i ListTradesForExecutionRow
+		if err := rows.Scan(&i.TradeID, &i.Role, &i.QtyUsed); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

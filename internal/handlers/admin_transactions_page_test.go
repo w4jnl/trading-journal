@@ -41,6 +41,10 @@ func TestAdminTransactionsPage_FilterQueryKeepsSeparators(t *testing.T) {
 			t.Errorf("page missing %q", want)
 		}
 	}
+	// The action column header carries the edit-gated select-all box.
+	if !strings.Contains(body, `<label class="te recon-del" title="Select every delete box on this page`) {
+		t.Errorf("fills view missing the select-all header")
+	}
 	for _, bad := range []string{"%3D", "%3d", "%26"} {
 		if strings.Contains(body, bad) {
 			t.Errorf("filter query was percent-encoded (%q present)", bad)

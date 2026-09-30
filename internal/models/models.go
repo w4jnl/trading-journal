@@ -93,6 +93,7 @@ type Execution struct {
 	EditedAt     *time.Time `json:"edited_at"`
 	OrderID      *string    `json:"order_id"`
 	ImportMethod string     `json:"import_method"`
+	DeletedGroup *string    `json:"deleted_group"`
 }
 
 type GexAnalysis struct {
