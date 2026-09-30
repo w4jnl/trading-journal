@@ -147,6 +147,9 @@
     {{end}}
   </div>
   <div id="gxe-levelsnote" class="muted" style="font-size: 12px; margin-bottom: 6px;{{if not .LevelsNote}} display: none;{{end}}">{{.LevelsNote}}</div>
+  {{/* Data-quality strip (engine update 009); syncChrome repaints it per
+       viewed moment from the chrome blob. */}}
+  <div id="gxe-quality" class="gex-quality" style="margin-bottom: 6px;"{{if not .Quality.Show}} hidden{{end}}>{{template "gex_quality_strip" .Quality}}</div>
   <div id="gxe-note" class="muted" style="font-size: 12px; margin-bottom: 6px; display: none;"></div>
   <div id="gxe-chart"></div>
 </div>
@@ -156,6 +159,7 @@
 </div>
 
 <script src="/static/js/gex-chips.js{{assetVer}}"></script>
+<script src="/static/js/gex-quality.js{{assetVer}}"></script>
 <script>
   const gexExpoInit = {{$.ExpoJSON}};
   const GEX_EXPO_MARKET = {{$.Market}};
@@ -609,6 +613,7 @@
         ln.textContent = gexExpoChrome.levelsNote || '';
         ln.style.display = gexExpoChrome.levelsNote ? '' : 'none';
       }
+      if (window.gexQuality) gexQuality.render(document.getElementById('gxe-quality'), gexExpoChrome.quality);
       // Bucket seg: active = the width the ACTIVE blob was served at
       // (authoritative bucketIndex, not the optimistic request).
       if (bseg) {

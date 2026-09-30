@@ -813,6 +813,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		"JournalBody":      journalBody,
 		"JournalTag":       journalTag,
 		"JournalEntryID":   journalEntryID,
+		"GexRefresh":       h.GEX != nil && gexRefreshable(journalBody),
 		"Summary":          summary,
 		"Trades":           trades,
 		"Flash":            r.URL.Query().Get("flash"),

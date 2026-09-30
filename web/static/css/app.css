@@ -788,6 +788,14 @@ select:not(.no-style), .select {
 .pill.info    { background: var(--info-soft); color: var(--info); }
 .pill.accent  { background: var(--accent-soft); color: var(--accent); }
 
+/* GEX data-quality strip (engine update 009): pills per finding under the
+   page banners, the reconstructed note on its own line. Hidden attribute
+   wins over the flex display. */
+.gex-quality { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; font-size: var(--fs-12); }
+.gex-quality[hidden] { display: none; }
+.gex-quality .gex-q-item { display: inline-flex; align-items: center; gap: 4px; }
+.gex-quality .gex-q-note { flex-basis: 100%; }
+
 /* Direction pills used in trade lists. Distinct hue family on purpose so a
    short isn't mistaken for a long at a glance. */
 .dir-long  { background: var(--info-soft);  color: var(--info); }
@@ -814,6 +822,9 @@ select:not(.no-style), .select {
 .flash.warn    { background: var(--warn-soft); color: var(--warn); border-color: var(--warn-border); }
 .flash.empty,
 .flash.info    { background: var(--info-soft); color: var(--info); border-color: transparent; }
+.flash.gex-refreshed { background: var(--pos-soft); color: var(--pos); border-color: var(--pos-border); }
+.flash.gex-unchanged { background: var(--info-soft); color: var(--info); border-color: transparent; }
+.flash.gex-failed    { background: var(--neg-soft); color: var(--neg); border-color: var(--neg-border); }
 
 /* ---- Table ---------------------------------------------------------------- */
 

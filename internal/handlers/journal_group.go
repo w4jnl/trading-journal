@@ -480,6 +480,7 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		"ChartEndpoint":    fmt.Sprintf("/charts/group/%d", id),
 		"ChartCached":      h.chartCached(ctx, trades),
 		"Entry":            entry,
+		"GexRefresh":       h.GEX != nil && gexRefreshable(entry.Body),
 		"EntryDate":        entry.EntryDate.In(tz).Format("2006-01-02"),
 		"EntryDateNice":    entry.EntryDate.In(tz).Format("Mon, 2 Jan 2006"),
 		"Trades":           trades,

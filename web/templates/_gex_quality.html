@@ -1,0 +1,26 @@
+{{/* Data-quality strip (engine update 009): the per-row trust verdict as
+     pills - "degraded" plus each finding (code · leg, then the engine's
+     message), and "reconstructed" with its one-line explanation. The host
+     element is hidden when .Show is false; gex-quality.js repaints the same
+     shape per scrub slot from the view JSON. */}}
+{{define "gex_quality_strip"}}
+{{- if .Degraded}}<span class="pill error" title="At least one degraded finding: the percentile, the 1h/1d changes and the flip times of this row are unreliable">degraded</span>{{end -}}
+{{- if .Kind}}<span class="pill warn">{{.Kind}}</span>{{end -}}
+{{- range .Warnings}}<span class="gex-q-item"><span class="pill {{.Class}}">{{.Code}}{{if .Symbol}} · {{.Symbol}}{{end}}</span>{{if .Message}} <span class="muted">{{.Message}}</span>{{end}}</span>{{end -}}
+{{- if .KindNote}}<span class="muted gex-q-note">{{.KindNote}}</span>{{end -}}
+{{end}}
+
+{{/* "Refresh gamma context" - shown on trade/group entries whose gamma block
+     was written stale (an outage resolved the moment to a prior session) or
+     against a degraded row. The engine backfills outage gaps with
+     reconstructed rows after the fact; this re-fetches both moments and
+     replaces the block in place. Argument: the journal entry id. */}}
+{{define "gex_refresh_form"}}
+<form method="post" action="/journal/{{.}}/gex/refresh" class="row-sm mb-8" data-gex-refresh>
+  <button type="submit" class="btn btn--secondary btn--sm"
+          title="Re-fetch the gamma snapshots for this entry's trade moments and replace the gamma-context block. Use it after the engine backfills an outage (reconstructed rows), or when the block was flagged stale or degraded.">
+    Refresh gamma context
+  </button>
+  <span class="muted" style="font-size: 12px;">gamma block was written stale or from a degraded row</span>
+</form>
+{{end}}

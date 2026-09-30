@@ -104,6 +104,33 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 	line := func(f string, a ...any) { fmt.Fprintf(&b, f+"\n", a...) }
 	line("market: %s futures", market)
 	line("snapshot time: %s", s.AsOf.In(et).Format("Mon Jan 2 2006, 15:04 ET"))
+	// Trust verdict and origin (engine v0.11.0, update 009): emitted only
+	// when the row carries them, so retained reads of older snapshots stay
+	// byte-identical. Degraded rows keep their walls (OI-driven) but their
+	// percentile, deltas and flip times are suspect; a reconstructed row
+	// was rebuilt from an older chain, so its flip and regime inherit that
+	// chain's implied vols.
+	if s.IsDegraded() {
+		line("DATA QUALITY: DEGRADED - %s. Treat the regime percentile, the 1h/1d changes and any flip timing as unreliable for this row; the walls (open-interest driven) are the most trustworthy part", gexWarningList(s.DataQuality))
+	} else if s.DataQuality != nil {
+		if ws := s.DataQuality.Warnings; len(ws) > 0 {
+			parts := make([]string, 0, len(ws))
+			for _, w := range ws {
+				parts = append(parts, w.Summary())
+			}
+			line("data quality notices (not degrading): %s", strings.Join(parts, "; "))
+		}
+	}
+	switch s.ProvenanceKind() {
+	case "reconstructed":
+		vintage := "an older option chain"
+		if p := s.Provenance; p != nil && !p.ChainAsOf.IsZero() {
+			vintage = "the option chain as of " + p.ChainAsOf.In(et).Format("15:04 ET")
+		}
+		line("PROVENANCE: RECONSTRUCTED - this row was rebuilt after a feed outage from %s repriced at this moment's spot; the walls are near-exact, but the flip and the regime carry that chain's implied volatilities, so lean on the walls and treat the flip as approximate", vintage)
+	case "recomputed":
+		line("provenance: recomputed exactly from this slot's archived payloads (equivalent to a live measurement)")
+	}
 	line("all prices below are %s-denominated", denom)
 	line("regime: %s", s.Regime.State)
 	if p := s.Regime.Percentile20D; p != nil {
