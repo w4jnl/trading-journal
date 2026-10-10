@@ -48,15 +48,6 @@ func gexAnalyzePost(t *testing.T, h *Handlers, target string) *httptest.Response
 // must reuse the stored text without calling the model again.
 func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 	db := gexTestDB(t)
-	if _, err := db.Exec(`CREATE TABLE gex_analyses (
-		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, market TEXT NOT NULL,
-		as_of TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', body TEXT NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := db.Exec(`CREATE UNIQUE INDEX idx_gex_analyses_snapshot ON gex_analyses(user_id, market, as_of)`); err != nil {
-		t.Fatal(err)
-	}
 
 	var engineCalls atomic.Int64
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -130,12 +121,6 @@ func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 // engine, a model error, and the feature being switched off.
 func TestGEXAnalyzeFailures(t *testing.T) {
 	db := gexTestDB(t)
-	if _, err := db.Exec(`CREATE TABLE gex_analyses (
-		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, market TEXT NOT NULL,
-		as_of TEXT NOT NULL, model TEXT NOT NULL DEFAULT '', body TEXT NOT NULL,
-		created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP)`); err != nil {
-		t.Fatal(err)
-	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, gexSnapshotJSON("2026-07-31T19:50:02Z"))
 	}))

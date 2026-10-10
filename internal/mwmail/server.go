@@ -41,6 +41,10 @@ type Server struct {
 
 	archive *archive
 	ctx     context.Context // Run's ctx; scopes ingest DB work to app lifetime
+
+	// replayed, when set, runs once the boot replay has finished (or been
+	// skipped). Tests use it to wait for the sweep instead of sleeping.
+	replayed func()
 }
 
 func (s *Server) logger() *slog.Logger {
@@ -128,14 +132,15 @@ func (s *Server) Run(ctx context.Context) error {
 	rctx, rcancel := context.WithCancel(ctx)
 	defer rcancel()
 	replayDone := make(chan struct{})
-	if s.Ingest != nil {
-		go func() {
-			defer close(replayDone)
+	go func() {
+		defer close(replayDone)
+		if s.Ingest != nil {
 			s.replayArchive(rctx)
-		}()
-	} else {
-		close(replayDone)
-	}
+		}
+		if s.replayed != nil {
+			s.replayed()
+		}
+	}()
 
 	select {
 	case <-ctx.Done():

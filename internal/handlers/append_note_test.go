@@ -2,16 +2,13 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/models"
-
-	_ "modernc.org/sqlite"
 )
 
 // TestAppendOrSeedJournalNote covers the placeholder behavior: the first note on a
@@ -19,24 +16,17 @@ import (
 // divider, dropping the "pending" line), while every later note - and any note on an
 // entry that already holds real content - is appended without clobbering.
 func TestAppendOrSeedJournalNote(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "notes.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.SetMaxOpenConns(1)
-	defer db.Close()
-
-	if _, err := db.Exec(`CREATE TABLE journal_entries (
-		id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, body TEXT NOT NULL, updated_at DATETIME)`); err != nil {
+	db := dbtest.Open(t, "notes")
+	if _, err := db.Exec(`INSERT INTO users (id, username) VALUES (7, 'seven')`); err != nil {
 		t.Fatal(err)
 	}
 	// id 1: a freshly prepared, not-yet-analyzed entry (the placeholder).
 	// id 2: an entry that already holds real content.
-	if _, err := db.Exec(`INSERT INTO journal_entries (id, user_id, body) VALUES (1, 7, ?)`, aiPlaceholderBody); err != nil {
+	day := time.Date(2026, 5, 12, 0, 0, 0, 0, time.UTC)
+	if _, err := db.Exec(`INSERT INTO journal_entries (id, user_id, body, entry_date, scope) VALUES (1, 7, ?, ?, 'day')`, aiPlaceholderBody, day); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := db.Exec(`INSERT INTO journal_entries (id, user_id, body) VALUES (2, 7, 'pre-existing content')`); err != nil {
+	if _, err := db.Exec(`INSERT INTO journal_entries (id, user_id, body, entry_date, scope) VALUES (2, 7, 'pre-existing content', ?, 'day')`, day); err != nil {
 		t.Fatal(err)
 	}
 

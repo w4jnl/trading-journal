@@ -6,48 +6,38 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/models"
-
-	_ "modernc.org/sqlite"
 )
 
-// gexTestDB builds the minimal schema the annotator touches: journal_entries
-// (full column set - GetJournalEntryByID is SELECT *) and instruments.
+// gexTestDB opens a fully migrated database (the real schema, so column
+// drift between hand-written DDL and the migrations cannot hide) and seeds
+// what every GEX test assumes: users 7 and 8, one account each, and user 7's
+// closed MES trade 42 (the window gexTestTrade uses). Instruments come from
+// the seed migration (MES tick 0.25).
 func gexTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "gex.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	for _, stmt := range []string{
-		`CREATE TABLE journal_entries (
-			id INTEGER PRIMARY KEY, trade_id INTEGER, account_id INTEGER,
-			entry_date DATE NOT NULL, body TEXT NOT NULL, mood INTEGER,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			tag TEXT, scope TEXT NOT NULL DEFAULT 'trade',
-			user_id INTEGER, strategy_id INTEGER)`,
-		`CREATE TABLE instruments (
-			symbol_root TEXT PRIMARY KEY, exchange TEXT, tick_size REAL,
-			tick_value REAL, multiplier REAL, currency TEXT NOT NULL DEFAULT 'USD',
-			needs_setup INTEGER NOT NULL DEFAULT 0, asset_class TEXT, size_class TEXT)`,
-		`INSERT INTO instruments (symbol_root, tick_size) VALUES ('MES', 0.25)`,
-		`CREATE TABLE user_view_prefs (
-			user_id INTEGER NOT NULL, page TEXT NOT NULL, value TEXT NOT NULL,
-			updated_at TEXT NOT NULL, PRIMARY KEY (user_id, page))`,
+	db := dbtest.Open(t, "gexboot")
+	tr := gexTestTrade("MES")
+	for _, stmt := range []struct {
+		sql  string
+		args []any
+	}{
+		{`INSERT INTO users (id, username, display_name) VALUES (7, 'seven', 'Seven'), (8, 'eight', 'Eight')`, nil},
+		{`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES
+			(1, 7, 'Apex 1', 'motivewave_csv', 'APEX-1'), (2, 8, 'Someone else', 'motivewave_csv', 'APEX-2')`, nil},
+		{`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_time, entry_price, exit_time, exit_price, status, net_pnl)
+			VALUES (?, 1, ?, ?, ?, 1, ?, ?, ?, ?, 'closed', 12.5)`,
+			[]any{tr.ID, tr.Symbol, tr.SymbolRoot, tr.Direction, tr.EntryTime, tr.EntryPrice, tr.ExitTime, *tr.ExitPrice}},
 	} {
-		if _, err := db.Exec(stmt); err != nil {
+		if _, err := db.Exec(stmt.sql, stmt.args...); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -3,11 +3,10 @@ package marketdata
 import (
 	"context"
 	"database/sql"
-	"path/filepath"
 	"testing"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 )
 
 // fakeSource returns the configured bars that fall within [from,to); empty -> ErrNoData.
@@ -34,30 +33,25 @@ func (f *fakeSource) FetchBars(_ context.Context, _ string, _ Timeframe, from, t
 	return out, nil
 }
 
+// testDB is a migrated database with one account (id 1) for the bootstrap
+// user; seedTrade adds closed ES trades to it with the real NOT NULL set.
 func testDB(t *testing.T) *sql.DB {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "t.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatalf("open: %v", err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	stmts := []string{
-		`CREATE TABLE price_bars (yahoo_symbol TEXT, timeframe TEXT, bar_time INTEGER,
-			open REAL, high REAL, low REAL, close REAL, volume REAL, fetched_at INTEGER,
-			PRIMARY KEY (yahoo_symbol, timeframe, bar_time))`,
-		`CREATE TABLE price_bar_days (yahoo_symbol TEXT, timeframe TEXT, day TEXT,
-			fetched_at INTEGER, PRIMARY KEY (yahoo_symbol, timeframe, day))`,
-		`CREATE TABLE trades (id INTEGER PRIMARY KEY, account_id INTEGER, symbol_root TEXT,
-			entry_time DATETIME NOT NULL, exit_time DATETIME)`,
-	}
-	for _, s := range stmts {
-		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("schema: %v", err)
-		}
+	db := dbtest.Open(t, "mkt")
+	uid := dbtest.BootstrapUserID(t, db, "mkt")
+	if _, err := db.Exec(`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (1, ?, 'Acct', 'motivewave_csv', 'A-1')`, uid); err != nil {
+		t.Fatalf("seed account: %v", err)
 	}
 	return db
+}
+
+func seedTrade(t *testing.T, db *sql.DB, entry, exit time.Time) {
+	t.Helper()
+	if _, err := db.Exec(
+		`INSERT INTO trades (account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status)
+		 VALUES (1, 'ESU6', 'ES', 'long', 1, 100, 101, ?, ?, 'closed')`, entry, exit); err != nil {
+		t.Fatalf("insert trade: %v", err)
+	}
 }
 
 func dayBars(day time.Time, n int) []Bar {
@@ -132,11 +126,7 @@ func TestPrefetcherSkipsCovered(t *testing.T) {
 	loc := time.UTC
 	pastDay := startOfDay(now.AddDate(0, 0, -3), loc)
 
-	if _, err := db.Exec(
-		`INSERT INTO trades (account_id, symbol_root, entry_time, exit_time) VALUES (1,'ES',?,?)`,
-		pastDay.Add(10*time.Hour), pastDay.Add(11*time.Hour)); err != nil {
-		t.Fatalf("insert trade: %v", err)
-	}
+	seedTrade(t, db, pastDay.Add(10*time.Hour), pastDay.Add(11*time.Hour))
 
 	fake := &fakeSource{bars: dayBars(pastDay, 30)}
 	c := &CachingSource{DB: db, Source: fake, Loc: loc}
@@ -184,11 +174,7 @@ func TestPrefetcherForceRefetchesRecent(t *testing.T) {
 	now := time.Now()
 	loc := time.UTC
 	recent := startOfDay(now.AddDate(0, 0, -1), loc) // yesterday
-	if _, err := db.Exec(
-		`INSERT INTO trades (account_id, symbol_root, entry_time, exit_time) VALUES (1,'ES',?,?)`,
-		recent.Add(10*time.Hour), recent.Add(11*time.Hour)); err != nil {
-		t.Fatalf("insert trade: %v", err)
-	}
+	seedTrade(t, db, recent.Add(10*time.Hour), recent.Add(11*time.Hour))
 	fake := &fakeSource{bars: dayBars(recent, 30)}
 	c := &CachingSource{DB: db, Source: fake, Loc: loc}
 	p := NewPrefetcher(c, db, loc)
