@@ -473,7 +473,7 @@ Inspect any captured message (and what the parser makes of it) with:
 ./trading-journal mwmail parse data/mw-raw/<file>.eml
 ```
 
-## Backup
+## Backup and restore
 
 Everything mutable lives in two places:
 
@@ -482,9 +482,29 @@ Everything mutable lives in two places:
 - `imports/` — CSV history; `processed/` keeps a record of every
   successful import.
 
-A nightly `tar czf data-$(date +%F).tar.gz data/` is the single backup
-that matters; `imports/processed/` is reproducible from the broker
-exports you already have on hand.
+With `backup.enabled: true` the server writes `backups/backup-YYYY-MM-DD.tar.gz`
+once per day (at `backup.hour`, plus once at startup if today's is missing).
+Each archive holds a consistent `VACUUM INTO` snapshot of the database
+(`trading.db`), `attachments/`, `imports/processed/` and `imports/failed/`,
+and the `config.yaml` in force. Archives are created mode 0600 because the
+config carries secrets; keep the backup directory off the database's disk
+(rsync it elsewhere). Retention keeps the ten newest daily archives plus one
+per month. Before any schema migration runs, the server also writes
+`backups/pre-migrate-YYYY-MM-DD-<version>.tar.gz` (the three newest are
+kept), so a release can be rolled back to the exact pre-upgrade state.
+
+Restore:
+
+1. Stop the server (or the container).
+2. Unpack the archive somewhere: `mkdir restore && tar xzf backups/backup-YYYY-MM-DD.tar.gz -C restore`.
+3. Check the snapshot: `sqlite3 restore/trading.db "PRAGMA integrity_check"` must print `ok`.
+4. Move the live files aside and put the snapshot in place: `trading.db`
+   (delete any stale `trading.db-wal` / `trading.db-shm` next to it),
+   `data/attachments/`, and `config.yaml` if you need the old one.
+5. Start the server. It applies any migrations newer than the snapshot on
+   boot; a binary OLDER than the snapshot's schema refuses to start with
+   "database schema is ahead of this binary" — roll the binary forward
+   instead. The sidebar footer shows the running version.
 
 ## Further reading
 
