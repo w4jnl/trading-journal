@@ -56,6 +56,20 @@ func RunMigrations(conn *sql.DB, vars MigrationVars) error {
 	if err != nil {
 		return err
 	}
+	// Refuse to run an older binary against a newer database. A version in
+	// schema_migrations that this build does not ship means a later build
+	// already changed the schema; old code on that schema fails in
+	// confusing ways later (missing columns, wrong semantics) instead of
+	// here, where the operator can still roll the binary forward.
+	known := map[string]bool{}
+	for _, path := range files {
+		known[versionFromFilename(path)] = true
+	}
+	for v := range applied {
+		if !known[v] {
+			return fmt.Errorf("database schema is ahead of this binary: migration %s is applied but not shipped by this build; refusing to start (running an older build against a newer database?)", v)
+		}
+	}
 
 	for _, path := range files {
 		version := versionFromFilename(path)
@@ -109,6 +123,31 @@ func loadAppliedVersions(conn *sql.DB) (map[string]bool, error) {
 		out[v] = true
 	}
 	return out, rows.Err()
+}
+
+// PendingMigrations lists the embedded migration versions not yet applied to
+// conn, oldest first. main consults it before RunMigrations to take a
+// pre-upgrade backup only when the schema is about to change.
+func PendingMigrations(conn *sql.DB) ([]string, error) {
+	if _, err := conn.Exec(`CREATE TABLE IF NOT EXISTS schema_migrations (version TEXT PRIMARY KEY)`); err != nil {
+		return nil, fmt.Errorf("create schema_migrations: %w", err)
+	}
+	files, err := fs.Glob(migrationsFS, "migrations/*.sql")
+	if err != nil {
+		return nil, fmt.Errorf("glob migrations: %w", err)
+	}
+	sort.Strings(files)
+	applied, err := loadAppliedVersions(conn)
+	if err != nil {
+		return nil, err
+	}
+	var pending []string
+	for _, path := range files {
+		if v := versionFromFilename(path); v != "" && !applied[v] {
+			pending = append(pending, v)
+		}
+	}
+	return pending, nil
 }
 
 func applyOne(conn *sql.DB, version, upSQL string) error {

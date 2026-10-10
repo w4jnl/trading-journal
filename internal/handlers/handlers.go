@@ -34,12 +34,16 @@ import (
 // Handlers groups every HTTP handler with its shared deps. main.go injects
 // concrete values; tests can swap any field.
 type Handlers struct {
-	Templates       fs.FS   // embedded template tree; pages live at templates/<name>
-	DB              *sql.DB // raw connection for hand-written dynamic queries
-	ImportSvc       *importer.ImportService
-	Queries         *models.Queries
-	UploadsDir      string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
-	AttachmentsDir  string // where journal-attached images are stored on disk
+	Templates      fs.FS   // embedded template tree; pages live at templates/<name>
+	DB             *sql.DB // raw connection for hand-written dynamic queries
+	ImportSvc      *importer.ImportService
+	Queries        *models.Queries
+	UploadsDir     string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
+	AttachmentsDir string // where journal-attached images are stored on disk
+	// ExternalURL is cfg.Server.ExternalURL: the public origin the API docs
+	// and OpenAPI servers list advertise. "" falls back to the request's
+	// forwarded host (publicBaseURL).
+	ExternalURL     string
 	OIDashboardsDir string // root folder containing daily OI dashboards (dashboard-YYYY-MM-DD.{html,pdf})
 	Timezone        *time.Location
 	Logger          *slog.Logger
@@ -790,4 +794,22 @@ func (a accountAdmission) admits(accountID int64) bool {
 		return a.allowed[accountID]
 	}
 	return !a.excluded[accountID]
+}
+
+// publicBaseURL is the scheme://host to advertise in copy-pasteable URLs:
+// the configured external URL when set, else what the request arrived on
+// (X-Forwarded-* from the reverse proxy, which an attacker on the same
+// network segment could set - hence the preference for configuration).
+func (h *Handlers) publicBaseURL(r *http.Request) string {
+	if u := strings.TrimRight(strings.TrimSpace(h.ExternalURL), "/"); u != "" {
+		return u
+	}
+	return requestBaseURL(r)
+}
+
+// clearWriteDeadline lifts the server's WriteTimeout for a response that
+// legitimately takes longer: the synchronous AI reads wait up to the AI
+// client's own timeout (120 s by default) for a local model.
+func clearWriteDeadline(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 }

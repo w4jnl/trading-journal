@@ -1,5 +1,8 @@
 server:
   port: 8080
+  # Public origin users reach the app on; advertised by the API docs and
+  # OpenAPI servers list instead of trusting X-Forwarded-Host. Optional.
+  # external_url: "https://trading.example"
 
 database:
   path: "./data/trading.db"
@@ -51,6 +54,9 @@ market_data:
   # a session only seen mid-day is completed once it closes) and backfills any
   # missing recent days. Empty string disables it. Default "00:30".
   nightly_refresh: "00:30"
+  # Prune cached intraday bars (1m/5m/1h) older than this many days, daily;
+  # daily bars are kept. 0 disables. The cache grows ~2.5M rows/year otherwise.
+  bar_retention_days: 90
 
 # Model Context Protocol (MCP) server for AI agents, at POST /mcp. When enabled
 # (default true), it is authenticated by the SAME per-user API keys as /api -- so
@@ -211,7 +217,10 @@ mw_email:
   # tls_key: ""
   # smtp_username: ""        # both set => AUTH (PLAIN/LOGIN) required
   # smtp_password: ""
-  archive_dir: "data/mw-raw" # verbatim .eml audit trail + parser corpus
+  archive_dir: "data/mw-raw"
+  # Delete archived .eml files older than this many days (daily sweep).
+  # 0 keeps them forever. The raw archive is NOT part of the backup.
+  archive_retention_days: 0 # verbatim .eml audit trail + parser corpus
   # ingest: true             # false = capture/archive only, no DB writes
 
 # Trading timezone -- used for day boundaries on calendar/dashboard.

@@ -142,6 +142,7 @@ type JournalAttachment struct {
 	Mime       string    `json:"mime"`
 	ByteSize   int64     `json:"byte_size"`
 	CreatedAt  time.Time `json:"created_at"`
+	UserID     *int64    `json:"user_id"`
 }
 
 type JournalEntry struct {

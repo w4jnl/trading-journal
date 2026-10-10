@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"syscall"
 	"time"
@@ -114,14 +115,64 @@ func main() {
 type statusRecorder struct {
 	http.ResponseWriter
 	status int
+	wrote  bool
 }
 
-func (s *statusRecorder) WriteHeader(code int) { s.status = code; s.ResponseWriter.WriteHeader(code) }
+func (s *statusRecorder) WriteHeader(code int) {
+	s.status = code
+	s.wrote = true
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusRecorder) Write(b []byte) (int, error) {
+	s.wrote = true
+	return s.ResponseWriter.Write(b)
+}
 
 func (s *statusRecorder) Flush() {
 	if f, ok := s.ResponseWriter.(http.Flusher); ok {
 		f.Flush()
 	}
+}
+
+// recoverAndLog is the outermost middleware: a handler panic becomes a
+// logged 500 with a stack instead of a dropped connection (net/http's
+// default only logs it), and any response that took over a second or ended
+// in a 5xx gets one Warn line - the request log the HTML routes never had.
+// http.ErrAbortHandler is re-panicked, as the contract requires.
+func recoverAndLog(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		defer func() {
+			if p := recover(); p != nil {
+				if p == http.ErrAbortHandler {
+					panic(p)
+				}
+				slog.Error("panic serving request", "method", r.Method, "path", r.URL.Path,
+					"panic", fmt.Sprint(p), "stack", string(debug.Stack()))
+				if !rec.wrote {
+					http.Error(rec, "internal server error", http.StatusInternalServerError)
+				}
+				return
+			}
+			if dur := time.Since(start); rec.status >= 500 || dur > time.Second {
+				slog.Warn("request", "method", r.Method, "path", r.URL.Path,
+					"status", rec.status, "dur", dur.String())
+			}
+		}()
+		next.ServeHTTP(rec, r)
+	})
+}
+
+// noWriteDeadline lifts the server's WriteTimeout for one route. The MCP
+// transport holds a streamable-HTTP (SSE) response open for as long as the
+// client keeps the session; the 120 s server default would sever it.
+func noWriteDeadline(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+		next.ServeHTTP(w, r)
+	})
 }
 
 // contentSecurityPolicy is deliberately permissive on inline script/style
@@ -296,6 +347,31 @@ func run() error {
 		return fmt.Errorf("open db: %w", err)
 	}
 	defer conn.Close()
+	backupOpts := backup.Options{
+		Dir:         cfg.Backup.Dir,
+		Hour:        cfg.Backup.Hour,
+		Loc:         tz,
+		DBPath:      cfg.Database.Path,
+		ConfigPath:  *cfgPath,
+		ImportsRoot: cfg.Imports.Root,
+		DB:          conn,
+	}
+	// A schema change is the one moment a rollback needs the exact prior
+	// state, and the daily archive may already be hours old (or taken after
+	// the migration, on a restart). Snapshot first when anything is pending.
+	pending, err := db.PendingMigrations(conn)
+	if err != nil {
+		return fmt.Errorf("check migrations: %w", err)
+	}
+	if len(pending) > 0 && cfg.Backup.Enabled {
+		preCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		if err := backup.RunPreMigration(preCtx, backupOpts, pending[len(pending)-1]); err != nil {
+			slog.Error("pre-migration backup failed; continuing with the migration", "err", err)
+		} else {
+			slog.Info("pre-migration backup written", "pending", len(pending), "through", pending[len(pending)-1])
+		}
+		cancel()
+	}
 	if err := db.RunMigrations(conn, db.MigrationVars{BootstrapUsername: cfg.Auth.BootstrapUser}); err != nil {
 		return fmt.Errorf("run migrations: %w", err)
 	}
@@ -560,6 +636,7 @@ func run() error {
 		Queries:          queries,
 		UploadsDir:       uploads,
 		AttachmentsDir:   attachments,
+		ExternalURL:      cfg.Server.ExternalURL,
 		OIDashboardsDir:  cfg.OIDashboards.Root,
 		Timezone:         tz,
 		Version:          appVersion(),
@@ -588,7 +665,17 @@ func run() error {
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
+		// A locked or corrupt database must not read as healthy; one
+		// trivial statement with a short deadline is the probe.
+		pingCtx, cancel := context.WithTimeout(r.Context(), time.Second)
+		defer cancel()
+		var one int
+		if err := conn.QueryRowContext(pingCtx, "SELECT 1").Scan(&one); err != nil {
+			slog.Warn("healthz: database probe failed", "err", err)
+			http.Error(w, "database unavailable", http.StatusServiceUnavailable)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte("ok"))
 	})
@@ -781,7 +868,7 @@ func run() error {
 			root.Handle("/oauth/token", debugHTTP(oauthSrv.TokenHandler()))
 			slog.Info("MCP OAuth enabled", "issuer", oauthSrv.Issuer(), "resource", oauthSrv.Resource(), "consent", oauthSrv.Cfg.Consent)
 		}
-		root.Handle("/mcp", mcpMW(debugHTTP(h.MCPHandler())))
+		root.Handle("/mcp", noWriteDeadline(mcpMW(debugHTTP(h.MCPHandler()))))
 		slog.Info("MCP server enabled", "path", "/mcp")
 	}
 	root.Handle("/", csrf.Middleware(auth.RequireUser(authn, actAs, mux)))
@@ -792,7 +879,7 @@ func run() error {
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           securityHeaders(appCSP, root),
+		Handler:           securityHeaders(appCSP, recoverAndLog(root)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,
@@ -816,15 +903,15 @@ func run() error {
 	// Periodic backup — one snapshot at startup (deduped per day) and one
 	// daily at the configured hour. Failures are logged, never fatal.
 	if cfg.Backup.Enabled {
-		go backup.Schedule(ctx, backup.Options{
-			Dir:         cfg.Backup.Dir,
-			Hour:        cfg.Backup.Hour,
-			Loc:         tz,
-			DBPath:      cfg.Database.Path,
-			ConfigPath:  *cfgPath,
-			ImportsRoot: cfg.Imports.Root,
-			DB:          conn,
-		})
+		go backup.Schedule(ctx, backupOpts)
+	}
+	// Retention sweeps: intraday bar cache and the raw MotiveWave e-mail
+	// archive, both of which otherwise grow without bound.
+	if marketCache != nil {
+		go marketdata.Retention{Cache: marketCache, Days: cfg.MarketData.BarRetentionDays}.Start(ctx)
+	}
+	if cfg.MWEmail.Enabled {
+		go mwmail.RunArchiveRetention(ctx, cfg.MWEmail.ArchiveDir, cfg.MWEmail.ArchiveRetentionDays, nil)
 	}
 
 	// Background market-data prefetch worker - warms the chart bar cache for
@@ -907,5 +994,10 @@ func run() error {
 		slog.Warn("http shutdown", "err", err)
 	}
 	<-watcherDone
+	// Let SQLite refresh its planner statistics while nothing is writing;
+	// cheap, and the only ANALYZE this database ever gets.
+	if _, err := conn.ExecContext(shutdownCtx, "PRAGMA optimize"); err != nil {
+		slog.Debug("pragma optimize", "err", err)
+	}
 	return nil
 }

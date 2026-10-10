@@ -1,9 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/url"
 	"os"
@@ -60,6 +62,10 @@ type MWEmail struct {
 	Password   string `yaml:"smtp_password"`
 	ArchiveDir string `yaml:"archive_dir"` // default "data/mw-raw"; verbatim .eml audit trail
 	Ingest     *bool  `yaml:"ingest"`      // nil = true; false = capture/archive only, no DB writes
+	// ArchiveRetentionDays deletes archived .eml files older than this many
+	// days once a day. 0 (default) keeps them forever; the archive is not
+	// part of the backup, so set this only if you do not need the raw trail.
+	ArchiveRetentionDays int `yaml:"archive_retention_days"`
 }
 
 // IngestEnabled resolves the tri-state Ingest flag (nil defaults to on).
@@ -281,6 +287,10 @@ type MarketData struct {
 	// ("" disables it; default "00:30").
 	IntradayRefreshMin int    `yaml:"intraday_refresh_min"`
 	NightlyRefresh     string `yaml:"nightly_refresh"`
+	// BarRetentionDays prunes cached INTRADAY bars (1m/5m/1h) older than this
+	// many days once a day; daily bars are kept. The cache is otherwise
+	// unbounded (~2.5M rows a year at one minute). Default 90; 0 disables.
+	BarRetentionDays int `yaml:"bar_retention_days"`
 }
 
 // NightlyRefreshHM parses NightlyRefresh ("HH:MM") into hour+minute. ok is false
@@ -342,6 +352,11 @@ type ProxyAuth struct {
 
 type Server struct {
 	Port int `yaml:"port"`
+	// ExternalURL is the public origin users reach the app on
+	// ("https://trading.example"). When set it is what the API docs and
+	// OpenAPI servers list advertise, instead of trusting the request's
+	// X-Forwarded-Host. Optional.
+	ExternalURL string `yaml:"external_url"`
 }
 
 type Database struct {
@@ -378,7 +393,7 @@ func defaults() Config {
 			},
 		},
 		Backup:     Backup{Dir: "./backups", Hour: 4, Enabled: true},
-		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30"},
+		MarketData: MarketData{Source: "yahoo", HTTPTimeoutSec: 10, IntradayRefreshMin: 15, NightlyRefresh: "00:30", BarRetentionDays: 90},
 		AI:         AI{Provider: "openai", BaseURL: "http://0.0.0.0:8080/v1", TimeoutSec: 120, MaxTokens: 1024, Temperature: 0.4},
 		GEX:        GEX{TimeoutSec: 5},
 		TopstepX: TopstepX{
@@ -422,6 +437,18 @@ func (c Config) Validate() error {
 	}
 	if c.Backup.Enabled && (c.Backup.Hour < 0 || c.Backup.Hour > 23) {
 		return fmt.Errorf("backup.hour must be 0-23, got %d", c.Backup.Hour)
+	}
+	if c.Server.Port <= 0 || c.Server.Port > 65535 {
+		return fmt.Errorf("server.port must be 1-65535, got %d", c.Server.Port)
+	}
+	if strings.TrimSpace(c.Database.Path) == "" {
+		return fmt.Errorf("database.path is required")
+	}
+	if c.MarketData.BarRetentionDays < 0 {
+		return fmt.Errorf("market_data.bar_retention_days must be >= 0, got %d", c.MarketData.BarRetentionDays)
+	}
+	if c.MWEmail.ArchiveRetentionDays < 0 {
+		return fmt.Errorf("mw_email.archive_retention_days must be >= 0, got %d", c.MWEmail.ArchiveRetentionDays)
 	}
 	switch c.MarketData.Source {
 	case "", "yahoo":
@@ -585,8 +612,16 @@ func Load(cfgPath string) (Config, error) {
 		// No file is OK; we still consult env overrides below.
 	} else if err != nil {
 		return cfg, fmt.Errorf("read config %s: %w", abs, err)
-	} else if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return cfg, fmt.Errorf("parse config: %w", err)
+	} else {
+		// Strict: an unknown key is almost always a typo or a misplaced
+		// block (an "mcp:" nested under "auth:" was once silently ignored
+		// for a whole deploy), and silently falling back to the default is
+		// the worst outcome for a security setting like trusted_proxies.
+		dec := yaml.NewDecoder(bytes.NewReader(data))
+		dec.KnownFields(true)
+		if err := dec.Decode(&cfg); err != nil && !errors.Is(err, io.EOF) {
+			return cfg, fmt.Errorf("parse config: %w", err)
+		}
 	}
 
 	if v := os.Getenv("TJ_SESSION_SECRET"); v != "" {
