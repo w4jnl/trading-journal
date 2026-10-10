@@ -558,7 +558,7 @@ func TestGexBucketOpts(t *testing.T) {
 		{"NQ", 20, "10:false 20:true 50:false 100:true"},
 		{"NDX", 10, "10:true 20:true 50:true 100:true"},
 		{"ES", 20, "20:true 5:false 10:false 25:false 50:false"}, // odd base still offered
-		{"RTY", 25, "25:true 50:true 125:false 250:false"},      // unknown market: base x1/2/5/10, capped at 100
+		{"RTY", 25, "25:true 50:true 125:false 250:false"},       // unknown market: base x1/2/5/10, capped at 100
 	} {
 		if got := flat(gexBucketOpts(tc.market, tc.base)); got != tc.want {
 			t.Errorf("%s base %d: %q, want %q", tc.market, tc.base, got, tc.want)
