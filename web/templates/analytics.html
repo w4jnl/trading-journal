@@ -49,9 +49,12 @@
   .kpi-hero .card--hero { padding: 18px 20px; }
   .kpi-supporting {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr)); /* four tiles per row: payoff, R, day win, best day; drawdown, current, streaks */
     gap: 12px;
     margin-bottom: 20px;
+  }
+  @media (max-width: 1100px) {
+    .kpi-supporting { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 800px) {
     .kpi-hero, .kpi-supporting { grid-template-columns: 1fr; }
@@ -308,6 +311,45 @@
   </div>
 </div>
 
+<!-- Drawdown and streaks: how deep the curve fell, where it stands, and
+     how runs cluster. -->
+{{with $.Drawdown}}
+<div class="kpi-supporting">
+  <div class="card">
+    <div class="label" title="Deepest peak-to-trough fall of cumulative net P&amp;L in this range">Max drawdown</div>
+    {{if gt .MaxDD 0.0}}
+    <div class="num--lg pnl-neg">−{{printf "%.2f" .MaxDD}}</div>
+    <div class="sub">{{if .MaxDDPeakAt}}{{ltimep .MaxDDPeakAt "date"}} → {{ltimep .MaxDDTrough "date"}}{{end}} · {{if .MaxDDRecover}}recovered in <span class="num">{{.MaxDDDays}}</span> days{{else}}<span class="warn-text">still open</span> after <span class="num">{{.MaxDDDays}}</span> days{{end}}</div>
+    {{else}}
+    <div class="num--lg muted">—</div>
+    <div class="sub">the curve never fell below a peak</div>
+    {{end}}
+  </div>
+  <div class="card">
+    <div class="label" title="Distance below the range's equity high right now">Current drawdown</div>
+    {{if .Underwater}}
+    <div class="num--lg pnl-neg">−{{printf "%.2f" .CurrentDD}}</div>
+    <div class="sub">below the high of {{if .PeakAt}}{{ltimep .PeakAt "date"}}{{end}}</div>
+    {{else}}
+    <div class="num--lg pnl-pos">at the high</div>
+    <div class="sub">cumulative P&amp;L is at its range peak</div>
+    {{end}}
+  </div>
+  {{with $.Streaks}}
+  <div class="card">
+    <div class="label">Trade streaks</div>
+    <div class="num--lg"><span class="pnl-pos">{{.LongestWinTrades}}W</span> <span class="muted">/</span> <span class="pnl-neg">{{.LongestLossTrades}}L</span></div>
+    <div class="sub">longest runs · now {{if gt .CurrentTrades 0}}<span class="pnl-pos num">{{.CurrentTrades}} wins</span>{{else if lt .CurrentTrades 0}}<span class="pnl-neg num">{{.CurrentTradesAbs}} losses</span>{{else}}flat{{end}}</div>
+  </div>
+  <div class="card">
+    <div class="label">Day streaks</div>
+    <div class="num--lg"><span class="pnl-pos">{{.LongestGreenDays}}</span> <span class="muted">/</span> <span class="pnl-neg">{{.LongestRedDays}}</span></div>
+    <div class="sub">longest green / red runs · now {{if gt .CurrentDays 0}}<span class="pnl-pos num">{{.CurrentDays}} green</span>{{else if lt .CurrentDays 0}}<span class="pnl-neg num">{{.CurrentDaysAbs}} red</span>{{else}}flat{{end}}</div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+
 <!-- Account equity breakdown (per-type, end-of-range) -->
 <div class="card mb-16">
   <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· at end of filter range</span></div>
@@ -506,6 +548,14 @@
   <section>
     <h3>By direction</h3>
     {{template "bucket_table" (dict "Buckets" .ByDirection "LinkBase" "/trades?direction=")}}
+  </section>
+  <section>
+    <h3>By strategy</h3>
+    {{template "bucket_table" (dict "Buckets" .ByStrategy "LinkBase" "")}}
+  </section>
+  <section>
+    <h3>By tag</h3>
+    {{template "bucket_table" (dict "Buckets" .ByTag "LinkBase" "")}}
   </section>
   <section>
     <h3>By day of week (entry)</h3>

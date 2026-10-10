@@ -191,6 +191,15 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id.")),
 		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday 'today' questions.")),
 	), h.mcpGetDailyStats)
+	s.AddTool(mcpgo.NewTool("get_analytics_summary",
+		mcpgo.WithReadOnlyHintAnnotation(true),
+		mcpgo.WithDescription("The /analytics page as one JSON object for a date range: totals (trades, win rate, net/gross/commission, avg win/loss, payoff ratio, profit factor, expectancy), R (over trades that carry a planned risk), drawdown (max peak-to-trough, dates, days to recover, current), streaks (trades and days), and breakdowns by symbol, direction, strategy, tag, weekday and entry hour. Use it for 'how is my edge / where do I lose' questions instead of summing trade lists. Same date keywords and account rules as get_daily_stats; default range = last 30 days."),
+		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
+		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive, trading tz); default = to minus 29 days.")),
+		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive); default = today. Span at most 400 days.")),
+		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id (also lifts the excluded-from-stats rule for it).")),
+		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s).")),
+	), h.mcpGetAnalyticsSummary)
 }
 
 // ---- tool handlers (reuse the same ctx-based logic as the REST API) ----
@@ -277,6 +286,28 @@ func (h *Handlers) mcpGetDailyStats(ctx context.Context, req mcpgo.CallToolReque
 	out, err := h.dailyStats(ctx, af, rng)
 	if err != nil {
 		return mcpgo.NewToolResultError("could not load daily stats"), nil
+	}
+	return mcpJSON(out)
+}
+
+func (h *Handlers) mcpGetAnalyticsSummary(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	tz := h.localTZ()
+	fromStr, toStr := req.GetString("from", ""), req.GetString("to", "")
+	if day := req.GetString("day", ""); day != "" {
+		fromStr, toStr = day, day
+	}
+	rng, err := parseAPIDateRange(h.resolveDayKeyword(ctx, fromStr, tz), h.resolveDayKeyword(ctx, toStr, tz), tz, todayLocal(tz))
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
+	var af accountFilter
+	if v := mcpOptInt(req, "accountId"); v != nil {
+		af = accountFilter{Active: true, AccountIDs: []int64{*v}}
+	}
+	h.syncForAPIRead(ctx, req.GetBool("refresh", false))
+	out, err := h.analyticsSummaryFor(ctx, af, rng)
+	if err != nil {
+		return mcpgo.NewToolResultError("could not load analytics"), nil
 	}
 	return mcpJSON(out)
 }

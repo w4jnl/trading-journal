@@ -139,6 +139,7 @@ surface:
 | `GET`  | `/api/v1/openapi.json` | OpenAPI 3.1 spec |
 | `GET`  | `/api/v1/version` | Data version for change detection |
 | `GET`  | `/api/v1/stats/daily` | Daily P&L + trade stats with range totals |
+| `GET`  | `/api/v1/analytics/summary` | The analytics page for a range as one object (totals, R, drawdown, streaks, breakdowns) |
 | `GET`  | `/api/v1/strategies` | List your strategies |
 | `GET`  | `/api/v1/strategies/{id}` | One strategy |
 | `GET`  | `/api/v1/journal` | List journal entries (summary rows) |
@@ -601,6 +602,61 @@ Semantics:
 
 Errors: `400` for a malformed `from`/`to`, `to` before `from`, or a span
 over 400 days (the message says which).
+
+### Analytics summary
+
+`GET /api/v1/analytics/summary` - everything the **Analytics** page shows
+for a date range and account filter, as one object: totals (trades, win
+rate, net/gross/commission, average win and loss, payoff ratio, profit
+factor, expectancy), **R** over the trades that carry a planned risk,
+**drawdown** (deepest peak-to-trough fall of cumulative net P&L, its
+dates, days to recover, where the curve stands now), **streaks** (by trade
+and by trading day) and **breakdowns** by symbol, direction, strategy,
+tag, weekday and entry hour. Built for "how is my edge, where do I lose"
+questions - use it instead of summing `/api/v1/trades` yourself. The MCP
+tool `get_analytics_summary` returns the same object.
+
+Query parameters are those of `/api/v1/stats/daily` (`from`, `to`, `day`,
+`filter`, `account_id`, `refresh`), same defaults (last 30 days), same
+400-day cap, same account rules.
+
+```jsonc
+// GET /api/v1/analytics/summary?from=2026-08-01&to=2026-08-31
+{
+  "from": "2026-08-01", "to": "2026-08-31", "timezone": "America/Chicago",
+  "totals": {
+    "trades": 41, "wins": 24, "losses": 15, "winRate": 0.615,
+    "net": 1834.5, "gross": 2011.0, "commission": 176.5,
+    "avgWin": 118.2, "avgLoss": -66.9,            // avgLoss is negative
+    "payoffRatio": 1.77,                          // avgWin / |avgLoss|; null without losses
+    "profitFactor": 2.83,                         // sum wins / sum losses; null without losses
+    "expectancy": 44.7,                           // per trade, in money
+    "largestWin": 402.5, "largestLoss": -210.0
+  },
+  "r": { "plannedTrades": 9, "avgR": 0.62, "winRate": 0.67, "avgWinR": 1.45, "avgLossR": -1.03 },
+  "drawdown": {
+    "maxDrawdown": 612.0,                         // positive magnitude
+    "maxDrawdownPeakAt": "2026-08-11T20:01:00Z", "maxDrawdownTroughAt": "2026-08-14T19:12:00Z",
+    "maxDrawdownRecoverAt": "2026-08-20T18:40:00Z",   // null while the fall is still open
+    "maxDrawdownDays": 9, "currentDrawdown": 0, "underwater": false, "peakAt": "2026-08-29T20:00:00Z"
+  },
+  "streaks": { "longestWinTrades": 7, "longestLossTrades": 3, "currentTrades": 2,   // signed: +wins / -losses
+               "longestGreenDays": 5, "longestRedDays": 2, "currentDays": 1 },
+  "breakdowns": {
+    "bySymbol":    [ { "key": "ES", "trades": 30, "wins": 18, "losses": 12, "net": 1500.0, "gross": 1620.0, "best": 402.5, "worst": -210.0 } ],
+    "byDirection": [ /* long, short */ ],
+    "byStrategy":  [ /* strategy names; "(no strategy)" for the rest */ ],
+    "byTag":       [ /* good, neutral, bad, "(untagged)" */ ],
+    "byDayOfWeek": [ /* Mon..Fri */ ],
+    "byHour":      [ /* "09:00" .. by entry hour, trading timezone */ ]
+  }
+}
+```
+
+Semantics: trades belong to the day of their exit; `r.*` is meaningless
+when `plannedTrades` is 0 (plans are set on the trade sheet); a strategy
+or tag reaches a trade through its own entry or a group entry it is in.
+Errors as for `/stats/daily`.
 
 ### Data version (change detection)
 
