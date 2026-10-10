@@ -1791,8 +1791,14 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
 .trade-stat-strip > div:last-child { border-right: 0; }
 .trade-stat-strip .label { margin: 0 0 2px; font-size: var(--fs-10); }
 .trade-stat-strip .num   { font-size: var(--fs-14); font-weight: var(--fw-semibold); font-family: var(--font-mono); }
+.trade-stat-strip--4 { grid-template-columns: repeat(4, 1fr); }
+.trade-stat-strip--path { margin-top: 6px; }
 @media (max-width: 560px) {
   .trade-stat-strip { grid-template-columns: repeat(3, 1fr); }
+  .trade-stat-strip--4 { grid-template-columns: repeat(2, 1fr); }
+  .trade-stat-strip--4 > div:nth-child(2) { border-right: 0; }
+  .trade-stat-strip--4 > div:nth-child(-n+2) { border-bottom: 1px solid var(--border); }
+  .trade-stat-strip--4 > div:nth-child(3) { border-right: 1px solid var(--border); border-bottom: 0; }
   .trade-stat-strip > div:nth-child(3) { border-right: 0; }
   .trade-stat-strip > div:nth-child(-n+3) { border-bottom: 1px solid var(--border); }
 }

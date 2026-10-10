@@ -192,3 +192,30 @@ WHERE account_id = ? AND symbol = ?
 
 -- name: RestoreTradePlan :exec
 UPDATE trades SET planned_stop = ?, planned_risk = ? WHERE id = ?;
+
+-- name: SetTradeExcursion :exec
+-- MAE / MFE read off cached bars (internal/excursion). Points are always
+-- set together with the timeframe; money is NULL on a stub instrument.
+UPDATE trades SET mae_points = ?, mfe_points = ?, mae_pnl = ?, mfe_pnl = ?, excursion_tf = ? WHERE id = ?;
+
+-- name: ListTradeExcursionsForAccountSymbol :many
+-- The excursions a rebuild may carry over (positions.Builder): kept only
+-- when the rebuilt trade has the same boundaries, else recomputed later.
+SELECT id, entry_time, exit_time, entry_price, qty, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf
+FROM trades
+WHERE account_id = ? AND symbol = ? AND excursion_tf IS NOT NULL;
+
+-- name: ListTradesMissingExcursion :many
+-- Closed trades of one account without an excursion yet, newest first,
+-- no older than the given exit time (bars older than the cache retention
+-- never arrive, so there is no point re-reading those every night).
+SELECT id, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time
+FROM trades
+WHERE account_id = ? AND status = 'closed' AND exit_time IS NOT NULL
+  AND excursion_tf IS NULL AND exit_time >= ?
+ORDER BY exit_time DESC
+LIMIT ?;
+
+-- name: ListAccountsMissingExcursion :many
+SELECT DISTINCT account_id FROM trades
+WHERE status = 'closed' AND exit_time IS NOT NULL AND excursion_tf IS NULL AND exit_time >= ?;

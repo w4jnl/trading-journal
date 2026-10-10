@@ -342,6 +342,11 @@ type Trade struct {
 	BrokerTradeID *string    `json:"broker_trade_id"`
 	PlannedStop   *float64   `json:"planned_stop"`
 	PlannedRisk   *float64   `json:"planned_risk"`
+	MaePoints     *float64   `json:"mae_points"`
+	MfePoints     *float64   `json:"mfe_points"`
+	MaePnl        *float64   `json:"mae_pnl"`
+	MfePnl        *float64   `json:"mfe_pnl"`
+	ExcursionTf   *string    `json:"excursion_tf"`
 }
 
 type TradeExecution struct {

@@ -21,6 +21,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
@@ -96,6 +97,9 @@ type Handlers struct {
 	// Prefetch is the background bar-cache warmer. The admin backfill action
 	// enqueues missing symbol-days through it. Nil when prefetch is disabled.
 	Prefetch *marketdata.Prefetcher
+	// Excursions measures MAE/MFE from cached bars; nil when market data
+	// is off. The trade sheet fills a closed trade on first view.
+	Excursions *excursion.Service
 
 	// MCPInstanceLabel is surfaced by the MCP server_info tool (e.g. "prod" /
 	// "dev") so an AI client can tell which instance it is connected to when
@@ -349,6 +353,14 @@ func (h *Handlers) funcMap() template.FuncMap {
 		},
 		// importNote: the import log's message, read for people (import_message.go).
 		"importNote": humanizeImportMessage,
+		// exitEfficiency: realized over MFE (internal/excursion), nil until
+		// the trade is closed and measured or when it never went its way.
+		"exitEfficiency": func(direction string, entry float64, exit, mfe *float64) *float64 {
+			if exit == nil || mfe == nil {
+				return nil
+			}
+			return excursion.Efficiency(direction, entry, *exit, *mfe)
+		},
 		// Review-label vocabulary for the editors' chips and the view's pills.
 		"labelOptions": journal.LabelOptions,
 		"labelName":    journal.LabelName,

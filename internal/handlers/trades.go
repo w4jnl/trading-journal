@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
@@ -80,6 +81,11 @@ type tradeRow struct {
 	NetPnl         *float64
 	PlannedStop    *float64 // the trade's plan (trade_plan.go); nil when none recorded
 	PlannedRisk    *float64 // money at risk; R = NetPnl / PlannedRisk
+	MaePoints      *float64 // excursion off cached bars (internal/excursion); nil until measured
+	MfePoints      *float64
+	MaePnl         *float64
+	MfePnl         *float64
+	ExcursionTf    *string
 	Status         string
 	AccountName    string
 	AccountFirm    *string
@@ -441,6 +447,21 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		http.Error(w, "trade not found", http.StatusNotFound)
 		return
 	}
+	// First view of a closed trade measures its MAE/MFE from cached bars
+	// (no fetch); the filler covers the rest in the background.
+	if h.Excursions != nil && trade.ExcursionTf == nil && trade.ExitTime != nil {
+		_, ok, err := h.Excursions.Fill(ctx, excursion.Trade{
+			ID: trade.ID, SymbolRoot: trade.SymbolRoot, Direction: trade.Direction, Qty: trade.Qty,
+			EntryPrice: trade.EntryPrice, EntryTime: trade.EntryTime, ExitTime: *trade.ExitTime,
+		})
+		if err != nil {
+			h.logger().Warn("excursion on view", "trade", id, "err", err)
+		} else if ok {
+			if t, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)}); err == nil {
+				trade = t
+			}
+		}
+	}
 	execs, err := h.Queries.ListExecutionsForTrade(ctx, id)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list executions: %w", err))
@@ -569,7 +590,8 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 
 	q := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
-	             t.gross_pnl, t.commission, t.net_pnl, t.planned_stop, t.planned_risk, t.status,
+	             t.gross_pnl, t.commission, t.net_pnl, t.planned_stop, t.planned_risk,
+	             t.mae_points, t.mfe_points, t.mae_pnl, t.mfe_pnl, t.excursion_tf, t.status,
 	             a.name, a.firm, a.active,
 	             je.id, je.tag,
 	             (SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count
@@ -595,7 +617,8 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 		if err := rs.Scan(
 			&r.ID, &r.AccountID, &r.Symbol, &r.SymbolRoot, &r.Direction, &r.Qty,
 			&r.EntryPrice, &r.ExitPrice, &r.EntryTime, &r.ExitTime,
-			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.PlannedStop, &r.PlannedRisk, &r.Status,
+			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.PlannedStop, &r.PlannedRisk,
+			&r.MaePoints, &r.MfePoints, &r.MaePnl, &r.MfePnl, &r.ExcursionTf, &r.Status,
 			&r.AccountName, &r.AccountFirm, &accountActive,
 			&journalID, &journalTag,
 			&r.GroupCount,

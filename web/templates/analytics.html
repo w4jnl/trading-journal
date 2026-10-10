@@ -53,11 +53,12 @@
     gap: 12px;
     margin-bottom: 20px;
   }
+  .kpi-supporting--3 { grid-template-columns: repeat(3, minmax(0, 1fr)); } /* price path: efficiency, heat, given back */
   @media (max-width: 1100px) {
-    .kpi-supporting { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .kpi-supporting, .kpi-supporting--3 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
   @media (max-width: 800px) {
-    .kpi-hero, .kpi-supporting { grid-template-columns: 1fr; }
+    .kpi-hero, .kpi-supporting, .kpi-supporting--3 { grid-template-columns: 1fr; }
   }
 
   /* Legacy classes — keep so the page still renders cleanly. */
@@ -347,6 +348,43 @@
     <div class="sub">longest green / red runs · now {{if gt .CurrentDays 0}}<span class="pnl-pos num">{{.CurrentDays}} green</span>{{else if lt .CurrentDays 0}}<span class="pnl-neg num">{{.CurrentDaysAbs}} red</span>{{else}}flat{{end}}</div>
   </div>
   {{end}}
+</div>
+{{end}}
+
+<!-- Price path: what the trades saw while open (MAE / MFE off cached
+     bars) and how much of it the exits kept. -->
+{{with $.Headline}}
+<div class="kpi-supporting kpi-supporting--3">
+  <div class="card">
+    <div class="label" title="Total gross P&amp;L over the total best-seen profit (MFE) across measured trades: the share of what was on the table the exits kept">Exit efficiency</div>
+    {{if .ExcTrades}}
+    <div class="num--lg {{pnlSign .ExitEfficiency}}">{{printf "%.0f%%" (mul .ExitEfficiency 100.0)}}</div>
+    <div class="sub"><span class="num">{{.ExcTrades}}</span> measured trades · avg best seen <span class="pnl-pos num">+{{printf "%.2f" .AvgMFE}}</span> · avg heat <span class="pnl-neg num">−{{printf "%.2f" .AvgMAE}}</span></div>
+    {{else}}
+    <div class="num--lg muted">—</div>
+    <div class="sub">measured from cached bars once a trade's chart data is in (open the trade, or wait for the nightly prefetch)</div>
+    {{end}}
+  </div>
+  <div class="card">
+    <div class="label" title="Mean maximum adverse excursion of winning trades: how far under water a good trade went before working">Heat on winners</div>
+    {{if .HeatWinners}}
+    <div class="num--lg pnl-neg">−{{printf "%.2f" .Heat}}</div>
+    <div class="sub">avg over <span class="num">{{.HeatWinners}}</span> winners · a stop tighter than this cuts winners</div>
+    {{else}}
+    <div class="num--lg muted">—</div>
+    <div class="sub">no measured winners in range</div>
+    {{end}}
+  </div>
+  <div class="card">
+    <div class="label" title="Mean maximum favourable excursion of losing trades: the profit a loser had on the table before it turned">Given back by losers</div>
+    {{if .GaveBackLosers}}
+    <div class="num--lg pnl-pos">+{{printf "%.2f" .GaveBack}}</div>
+    <div class="sub">avg over <span class="num">{{.GaveBackLosers}}</span> losers · high means exits came too late</div>
+    {{else}}
+    <div class="num--lg muted">—</div>
+    <div class="sub">no measured losers in range</div>
+    {{end}}
+  </div>
 </div>
 {{end}}
 

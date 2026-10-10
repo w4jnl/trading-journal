@@ -14,16 +14,8 @@ import (
 // distance is ignored: a stop on the wrong side of the entry is the
 // trader's plan to record, not ours to refuse.
 func PlannedRisk(entry, stop, qty float64, inst models.Instrument) *float64 {
-	var mult float64
-	switch {
-	case inst.TickSize != nil && inst.TickValue != nil && *inst.TickSize > 0:
-		mult = *inst.TickValue / *inst.TickSize
-	case inst.Multiplier != nil:
-		mult = *inst.Multiplier
-	default:
-		return nil
-	}
-	if entry <= 0 || stop <= 0 || qty <= 0 || mult <= 0 {
+	mult, ok := PointValue(inst)
+	if !ok || entry <= 0 || stop <= 0 || qty <= 0 {
 		return nil
 	}
 	risk := math.Abs(entry-stop) * mult * qty
@@ -31,6 +23,25 @@ func PlannedRisk(entry, stop, qty float64, inst models.Instrument) *float64 {
 		return nil
 	}
 	return &risk
+}
+
+// PointValue is the money one contract makes per one point of price: the
+// tick value over the tick size, else the bare multiplier. ok is false on
+// a stub instrument (no specs yet) or a non-positive value.
+func PointValue(inst models.Instrument) (float64, bool) {
+	var mult float64
+	switch {
+	case inst.TickSize != nil && inst.TickValue != nil && *inst.TickSize > 0:
+		mult = *inst.TickValue / *inst.TickSize
+	case inst.Multiplier != nil:
+		mult = *inst.Multiplier
+	default:
+		return 0, false
+	}
+	if mult <= 0 {
+		return 0, false
+	}
+	return mult, true
 }
 
 // RMultiple is net P&L over planned risk, nil when either is missing or

@@ -31,8 +31,9 @@ around it.
   streak.
 - **Analytics** auto-surfaces findings (best/worst day-of-week + hour,
   most-traded vs most-profitable symbol, profit-factor and R-multiple
-  flags) and lets you drill into `/trades` from breakdown rows by
-  symbol or direction.
+  flags), measures every trade's path from cached bars (max heat, best
+  seen, how much of it the exit kept), and lets you drill into `/trades`
+  from breakdown rows by symbol or direction.
 - **Calendar** is the at-a-glance month view with per-day P&L heat and
   weekly summaries — clicking a day pivots to the trades on it.
 - **Exports** to Markdown and PDF, filterable by the same controls as

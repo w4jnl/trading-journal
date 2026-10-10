@@ -44,9 +44,26 @@
     <div class="label">Net</div>
     <div class="num">{{pnlClass .NetPnl}}</div>
   </div>
+</div>
+{{/* Risk and path: R from the plan, then how far price ran against and
+     for the trade while it was open (cached bars; "—" until the bars are
+     there) and how much of the best price the exit kept. */}}
+<div class="trade-stat-strip trade-stat-strip--4 trade-stat-strip--path">
   <div>
     <div class="label" title="Net P&amp;L over the planned risk">R</div>
     <div class="num">{{with rMultiple .NetPnl .PlannedRisk}}<span class="{{pnlSign (deref $.Trade.NetPnl)}}">{{.}}</span>{{else}}<span class="muted">—</span>{{end}}</div>
+  </div>
+  <div>
+    <div class="label" title="Maximum adverse excursion: the most the trade was under water, from the average entry{{if .ExcursionTf}} ({{derefStr .ExcursionTf}} bars){{end}}">Max heat</div>
+    <div class="num">{{if .MaePnl}}<span class="pnl-neg">−{{printf "%.2f" (deref .MaePnl)}}</span> <span class="muted" style="font-weight:400;">{{printf "%g" (deref .MaePoints)}} pts</span>{{else if .MaePoints}}{{printf "%g" (deref .MaePoints)}} pts{{else}}<span class="muted">—</span>{{end}}</div>
+  </div>
+  <div>
+    <div class="label" title="Maximum favourable excursion: the best the trade ever looked, from the average entry{{if .ExcursionTf}} ({{derefStr .ExcursionTf}} bars){{end}}">Best seen</div>
+    <div class="num">{{if .MfePnl}}<span class="pnl-pos">+{{printf "%.2f" (deref .MfePnl)}}</span> <span class="muted" style="font-weight:400;">{{printf "%g" (deref .MfePoints)}} pts</span>{{else if .MfePoints}}{{printf "%g" (deref .MfePoints)}} pts{{else}}<span class="muted">—</span>{{end}}</div>
+  </div>
+  <div>
+    <div class="label" title="Exit efficiency: realized move over the best move available (MFE). 100% = out at the best price; negative = had profit, closed red">Exit kept</div>
+    <div class="num">{{with exitEfficiency .Direction .EntryPrice .ExitPrice .MfePoints}}<span class="{{pnlSign .}}">{{printf "%.0f%%" (mul . 100.0)}}</span>{{else}}<span class="muted">—</span>{{end}}</div>
   </div>
 </div>
 {{/* The plan: stop price and money at risk. Risk follows the stop through

@@ -35,7 +35,7 @@ INSERT INTO trades (
     ?, ?, ?, ?,
     ?, ?, ?, 'closed', ?
 )
-RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk
+RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf
 `
 
 type CreateImportedTradeParams struct {
@@ -95,6 +95,11 @@ func (q *Queries) CreateImportedTrade(ctx context.Context, arg CreateImportedTra
 		&i.BrokerTradeID,
 		&i.PlannedStop,
 		&i.PlannedRisk,
+		&i.MaePoints,
+		&i.MfePoints,
+		&i.MaePnl,
+		&i.MfePnl,
+		&i.ExcursionTf,
 	)
 	return i, err
 }
@@ -109,7 +114,7 @@ INSERT INTO trades (
     ?, ?, ?, ?,
     ?, ?, ?, ?
 )
-RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk
+RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf
 `
 
 type CreateTradeParams struct {
@@ -166,6 +171,11 @@ func (q *Queries) CreateTrade(ctx context.Context, arg CreateTradeParams) (Trade
 		&i.BrokerTradeID,
 		&i.PlannedStop,
 		&i.PlannedRisk,
+		&i.MaePoints,
+		&i.MfePoints,
+		&i.MaePnl,
+		&i.MfePnl,
+		&i.ExcursionTf,
 	)
 	return i, err
 }
@@ -247,7 +257,7 @@ func (q *Queries) FirstEntryExecutionForTrade(ctx context.Context, tradeID int64
 }
 
 const getTradeByBrokerID = `-- name: GetTradeByBrokerID :one
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk FROM trades WHERE account_id = ? AND broker_trade_id = ?
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf FROM trades WHERE account_id = ? AND broker_trade_id = ?
 `
 
 type GetTradeByBrokerIDParams struct {
@@ -279,12 +289,17 @@ func (q *Queries) GetTradeByBrokerID(ctx context.Context, arg GetTradeByBrokerID
 		&i.BrokerTradeID,
 		&i.PlannedStop,
 		&i.PlannedRisk,
+		&i.MaePoints,
+		&i.MfePoints,
+		&i.MaePnl,
+		&i.MfePnl,
+		&i.ExcursionTf,
 	)
 	return i, err
 }
 
 const getTradeByID = `-- name: GetTradeByID :one
-SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, t.broker_trade_id, t.planned_stop, t.planned_risk, a.name AS account_name, a.firm AS account_firm
+SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, t.broker_trade_id, t.planned_stop, t.planned_risk, t.mae_points, t.mfe_points, t.mae_pnl, t.mfe_pnl, t.excursion_tf, a.name AS account_name, a.firm AS account_firm
 FROM trades t
 JOIN accounts a ON a.id = t.account_id
 WHERE t.id = ? AND a.user_id = ?
@@ -316,6 +331,11 @@ type GetTradeByIDRow struct {
 	BrokerTradeID *string    `json:"broker_trade_id"`
 	PlannedStop   *float64   `json:"planned_stop"`
 	PlannedRisk   *float64   `json:"planned_risk"`
+	MaePoints     *float64   `json:"mae_points"`
+	MfePoints     *float64   `json:"mfe_points"`
+	MaePnl        *float64   `json:"mae_pnl"`
+	MfePnl        *float64   `json:"mfe_pnl"`
+	ExcursionTf   *string    `json:"excursion_tf"`
 	AccountName   string     `json:"account_name"`
 	AccountFirm   *string    `json:"account_firm"`
 }
@@ -346,6 +366,11 @@ func (q *Queries) GetTradeByID(ctx context.Context, arg GetTradeByIDParams) (Get
 		&i.BrokerTradeID,
 		&i.PlannedStop,
 		&i.PlannedRisk,
+		&i.MaePoints,
+		&i.MfePoints,
+		&i.MaePnl,
+		&i.MfePnl,
+		&i.ExcursionTf,
 		&i.AccountName,
 		&i.AccountFirm,
 	)
@@ -388,6 +413,34 @@ func (q *Queries) LinkTradeExecution(ctx context.Context, arg LinkTradeExecution
 		arg.QtyUsed,
 	)
 	return err
+}
+
+const listAccountsMissingExcursion = `-- name: ListAccountsMissingExcursion :many
+SELECT DISTINCT account_id FROM trades
+WHERE status = 'closed' AND exit_time IS NOT NULL AND excursion_tf IS NULL AND exit_time >= ?
+`
+
+func (q *Queries) ListAccountsMissingExcursion(ctx context.Context, exitTime *time.Time) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listAccountsMissingExcursion, exitTime)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var account_id int64
+		if err := rows.Scan(&account_id); err != nil {
+			return nil, err
+		}
+		items = append(items, account_id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listClosedTradeDeltasOrdered = `-- name: ListClosedTradeDeltasOrdered :many
@@ -630,6 +683,66 @@ func (q *Queries) ListJournalLinksForAccountSymbol(ctx context.Context, arg List
 	return items, nil
 }
 
+const listTradeExcursionsForAccountSymbol = `-- name: ListTradeExcursionsForAccountSymbol :many
+SELECT id, entry_time, exit_time, entry_price, qty, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf
+FROM trades
+WHERE account_id = ? AND symbol = ? AND excursion_tf IS NOT NULL
+`
+
+type ListTradeExcursionsForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+type ListTradeExcursionsForAccountSymbolRow struct {
+	ID          int64      `json:"id"`
+	EntryTime   time.Time  `json:"entry_time"`
+	ExitTime    *time.Time `json:"exit_time"`
+	EntryPrice  float64    `json:"entry_price"`
+	Qty         float64    `json:"qty"`
+	MaePoints   *float64   `json:"mae_points"`
+	MfePoints   *float64   `json:"mfe_points"`
+	MaePnl      *float64   `json:"mae_pnl"`
+	MfePnl      *float64   `json:"mfe_pnl"`
+	ExcursionTf *string    `json:"excursion_tf"`
+}
+
+// The excursions a rebuild may carry over (positions.Builder): kept only
+// when the rebuilt trade has the same boundaries, else recomputed later.
+func (q *Queries) ListTradeExcursionsForAccountSymbol(ctx context.Context, arg ListTradeExcursionsForAccountSymbolParams) ([]ListTradeExcursionsForAccountSymbolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTradeExcursionsForAccountSymbol, arg.AccountID, arg.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTradeExcursionsForAccountSymbolRow
+	for rows.Next() {
+		var i ListTradeExcursionsForAccountSymbolRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntryTime,
+			&i.ExitTime,
+			&i.EntryPrice,
+			&i.Qty,
+			&i.MaePoints,
+			&i.MfePoints,
+			&i.MaePnl,
+			&i.MfePnl,
+			&i.ExcursionTf,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTradePlansForAccountSymbol = `-- name: ListTradePlansForAccountSymbol :many
 SELECT id, entry_time, planned_stop, planned_risk
 FROM trades
@@ -680,7 +793,7 @@ func (q *Queries) ListTradePlansForAccountSymbol(ctx context.Context, arg ListTr
 }
 
 const listTradesByDate = `-- name: ListTradesByDate :many
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk FROM trades
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf FROM trades
 WHERE account_id = ? AND status = 'closed' AND exit_time IS NOT NULL
 ORDER BY exit_time, id
 `
@@ -715,6 +828,11 @@ func (q *Queries) ListTradesByDate(ctx context.Context, accountID int64) ([]Trad
 			&i.BrokerTradeID,
 			&i.PlannedStop,
 			&i.PlannedRisk,
+			&i.MaePoints,
+			&i.MfePoints,
+			&i.MaePnl,
+			&i.MfePnl,
+			&i.ExcursionTf,
 		); err != nil {
 			return nil, err
 		}
@@ -730,7 +848,7 @@ func (q *Queries) ListTradesByDate(ctx context.Context, accountID int64) ([]Trad
 }
 
 const listTradesForAccount = `-- name: ListTradesForAccount :many
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk FROM trades WHERE account_id = ? ORDER BY entry_time, id
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk, mae_points, mfe_points, mae_pnl, mfe_pnl, excursion_tf FROM trades WHERE account_id = ? ORDER BY entry_time, id
 `
 
 func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]Trade, error) {
@@ -763,6 +881,11 @@ func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]
 			&i.BrokerTradeID,
 			&i.PlannedStop,
 			&i.PlannedRisk,
+			&i.MaePoints,
+			&i.MfePoints,
+			&i.MaePnl,
+			&i.MfePnl,
+			&i.ExcursionTf,
 		); err != nil {
 			return nil, err
 		}
@@ -810,6 +933,67 @@ func (q *Queries) ListTradesForExecution(ctx context.Context, executionID int64)
 	for rows.Next() {
 		var i ListTradesForExecutionRow
 		if err := rows.Scan(&i.TradeID, &i.Role, &i.QtyUsed); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTradesMissingExcursion = `-- name: ListTradesMissingExcursion :many
+SELECT id, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time
+FROM trades
+WHERE account_id = ? AND status = 'closed' AND exit_time IS NOT NULL
+  AND excursion_tf IS NULL AND exit_time >= ?
+ORDER BY exit_time DESC
+LIMIT ?
+`
+
+type ListTradesMissingExcursionParams struct {
+	AccountID int64      `json:"account_id"`
+	ExitTime  *time.Time `json:"exit_time"`
+	Limit     int64      `json:"limit"`
+}
+
+type ListTradesMissingExcursionRow struct {
+	ID         int64      `json:"id"`
+	SymbolRoot string     `json:"symbol_root"`
+	Direction  string     `json:"direction"`
+	Qty        float64    `json:"qty"`
+	EntryPrice float64    `json:"entry_price"`
+	ExitPrice  *float64   `json:"exit_price"`
+	EntryTime  time.Time  `json:"entry_time"`
+	ExitTime   *time.Time `json:"exit_time"`
+}
+
+// Closed trades of one account without an excursion yet, newest first,
+// no older than the given exit time (bars older than the cache retention
+// never arrive, so there is no point re-reading those every night).
+func (q *Queries) ListTradesMissingExcursion(ctx context.Context, arg ListTradesMissingExcursionParams) ([]ListTradesMissingExcursionRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTradesMissingExcursion, arg.AccountID, arg.ExitTime, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTradesMissingExcursionRow
+	for rows.Next() {
+		var i ListTradesMissingExcursionRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.SymbolRoot,
+			&i.Direction,
+			&i.Qty,
+			&i.EntryPrice,
+			&i.ExitPrice,
+			&i.EntryTime,
+			&i.ExitTime,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -934,6 +1118,33 @@ type RestoreTradePlanParams struct {
 
 func (q *Queries) RestoreTradePlan(ctx context.Context, arg RestoreTradePlanParams) error {
 	_, err := q.db.ExecContext(ctx, restoreTradePlan, arg.PlannedStop, arg.PlannedRisk, arg.ID)
+	return err
+}
+
+const setTradeExcursion = `-- name: SetTradeExcursion :exec
+UPDATE trades SET mae_points = ?, mfe_points = ?, mae_pnl = ?, mfe_pnl = ?, excursion_tf = ? WHERE id = ?
+`
+
+type SetTradeExcursionParams struct {
+	MaePoints   *float64 `json:"mae_points"`
+	MfePoints   *float64 `json:"mfe_points"`
+	MaePnl      *float64 `json:"mae_pnl"`
+	MfePnl      *float64 `json:"mfe_pnl"`
+	ExcursionTf *string  `json:"excursion_tf"`
+	ID          int64    `json:"id"`
+}
+
+// MAE / MFE read off cached bars (internal/excursion). Points are always
+// set together with the timeframe; money is NULL on a stub instrument.
+func (q *Queries) SetTradeExcursion(ctx context.Context, arg SetTradeExcursionParams) error {
+	_, err := q.db.ExecContext(ctx, setTradeExcursion,
+		arg.MaePoints,
+		arg.MfePoints,
+		arg.MaePnl,
+		arg.MfePnl,
+		arg.ExcursionTf,
+		arg.ID,
+	)
 	return err
 }
 

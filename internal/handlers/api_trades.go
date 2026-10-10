@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
 )
@@ -36,11 +37,20 @@ type apiTradeRow struct {
 	PlannedStop *float64 `json:"plannedStop"`
 	PlannedRisk *float64 `json:"plannedRisk"`
 	RMultiple   *float64 `json:"r"`
-	Status      string   `json:"status"`
-	Retired     bool     `json:"retired"`
-	HasJournal  bool     `json:"hasJournal"`
-	JournalTag  string   `json:"journalTag,omitempty"`
-	GroupCount  int64    `json:"groupCount"`
+	// The price path while open (internal/excursion), null until measured
+	// from cached bars: heat and best-seen in money and points, the share
+	// of the best move the exit kept, and the bar size it was read from.
+	Mae            *float64 `json:"mae"`
+	Mfe            *float64 `json:"mfe"`
+	MaePoints      *float64 `json:"maePoints"`
+	MfePoints      *float64 `json:"mfePoints"`
+	ExitEfficiency *float64 `json:"exitEfficiency"`
+	ExcursionBars  *string  `json:"excursionBars"`
+	Status         string   `json:"status"`
+	Retired        bool     `json:"retired"`
+	HasJournal     bool     `json:"hasJournal"`
+	JournalTag     string   `json:"journalTag,omitempty"`
+	GroupCount     int64    `json:"groupCount"`
 }
 
 type apiExecution struct {
@@ -70,6 +80,12 @@ type apiTradeDetail struct {
 	PlannedStop    *float64       `json:"plannedStop"`
 	PlannedRisk    *float64       `json:"plannedRisk"`
 	RMultiple      *float64       `json:"r"`
+	Mae            *float64       `json:"mae"`
+	Mfe            *float64       `json:"mfe"`
+	MaePoints      *float64       `json:"maePoints"`
+	MfePoints      *float64       `json:"mfePoints"`
+	ExitEfficiency *float64       `json:"exitEfficiency"`
+	ExcursionBars  *string        `json:"excursionBars"`
 	Status         string         `json:"status"`
 	BrokerTradeID  *string        `json:"brokerTradeId"`
 	HasJournal     bool           `json:"hasJournal"`
@@ -81,6 +97,14 @@ type apiTradeDetail struct {
 	ChartPng       string         `json:"chartPng"`
 }
 
+// apiExitEfficiency is excursion.Efficiency over nullable columns.
+func apiExitEfficiency(direction string, entry float64, exit, mfe *float64) *float64 {
+	if exit == nil || mfe == nil {
+		return nil
+	}
+	return excursion.Efficiency(direction, entry, *exit, *mfe)
+}
+
 func apiTradeRowFrom(t tradeRow) apiTradeRow {
 	return apiTradeRow{
 		ID: t.ID, AccountID: t.AccountID, Account: t.AccountName, Firm: t.AccountFirm,
@@ -88,7 +112,9 @@ func apiTradeRowFrom(t tradeRow) apiTradeRow {
 		EntryPrice: t.EntryPrice, ExitPrice: t.ExitPrice, EntryTime: t.EntryTime, ExitTime: t.ExitTime,
 		GrossPnl: t.GrossPnl, Commission: t.Commission, NetPnl: t.NetPnl, Status: t.Status,
 		PlannedStop: t.PlannedStop, PlannedRisk: t.PlannedRisk, RMultiple: positions.RMultiple(t.NetPnl, t.PlannedRisk),
-		Retired: t.AccountRetired, HasJournal: t.HasJournal, JournalTag: t.JournalTag, GroupCount: t.GroupCount,
+		Mae: t.MaePnl, Mfe: t.MfePnl, MaePoints: t.MaePoints, MfePoints: t.MfePoints, ExcursionBars: t.ExcursionTf,
+		ExitEfficiency: apiExitEfficiency(t.Direction, t.EntryPrice, t.ExitPrice, t.MfePoints),
+		Retired:        t.AccountRetired, HasJournal: t.HasJournal, JournalTag: t.JournalTag, GroupCount: t.GroupCount,
 	}
 }
 
@@ -162,8 +188,10 @@ func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, e
 		EntryPrice: t.EntryPrice, ExitPrice: t.ExitPrice, EntryTime: t.EntryTime, ExitTime: t.ExitTime,
 		GrossPnl: t.GrossPnl, Commission: t.Commission, NetPnl: t.NetPnl, Status: t.Status,
 		PlannedStop: t.PlannedStop, PlannedRisk: t.PlannedRisk, RMultiple: positions.RMultiple(t.NetPnl, t.PlannedRisk),
-		BrokerTradeID: t.BrokerTradeID,
-		ChartPng:      fmt.Sprintf("/api/v1/trades/%d/chart.png", id),
+		Mae: t.MaePnl, Mfe: t.MfePnl, MaePoints: t.MaePoints, MfePoints: t.MfePoints, ExcursionBars: t.ExcursionTf,
+		ExitEfficiency: apiExitEfficiency(t.Direction, t.EntryPrice, t.ExitPrice, t.MfePoints),
+		BrokerTradeID:  t.BrokerTradeID,
+		ChartPng:       fmt.Sprintf("/api/v1/trades/%d/chart.png", id),
 	}
 	if e, err := h.rq().GetJournalEntryByTradeID(ctx, &id); err == nil {
 		d.HasJournal = true

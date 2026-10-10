@@ -660,6 +660,8 @@ Query parameters are those of `/api/v1/stats/daily` (`from`, `to`, `day`,
     "largestWin": 402.5, "largestLoss": -210.0
   },
   "r": { "plannedTrades": 9, "avgR": 0.62, "winRate": 0.67, "avgWinR": 1.45, "avgLossR": -1.03 },
+  "excursion": { "trades": 120, "exitEfficiency": 0.58, "avgMae": 41.2, "avgMfe": 96.5,   // MAE/MFE off cached bars
+                 "winnersAvgMae": 28.0, "losersAvgMfe": 44.7 },
   "drawdown": {
     "maxDrawdown": 612.0,                         // positive magnitude
     "maxDrawdownPeakAt": "2026-08-11T20:01:00Z", "maxDrawdownTroughAt": "2026-08-14T19:12:00Z",
@@ -684,7 +686,10 @@ Query parameters are those of `/api/v1/stats/daily` (`from`, `to`, `day`,
 Semantics: trades belong to the day of their exit; `r.*` is meaningless
 when `plannedTrades` is 0 (plans are set on the trade sheet); a strategy
 or tag reaches a trade through its own entry or a group entry it is in, and
-a label also through the day entry of the day the trade closed.
+a label also through the day entry of the day the trade closed. `excursion`
+covers only trades measured from cached bars (every trade row carries
+`mae`, `mfe`, `maePoints`, `mfePoints`, `exitEfficiency`, `excursionBars`;
+all null until the bars are cached).
 Errors as for `/stats/daily`.
 
 ### Data version (change detection)
