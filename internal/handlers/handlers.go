@@ -312,6 +312,8 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return *s
 		},
+		// importNote: the import log's message, read for people (import_message.go).
+		"importNote": humanizeImportMessage,
 		"deref": func(p *float64) float64 {
 			if p == nil {
 				return 0

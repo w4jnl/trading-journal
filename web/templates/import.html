@@ -112,8 +112,10 @@
       </tr>
     </thead>
     <tbody>
-    {{range .Recent}}
-      <tr>
+    {{/* The newest five rows (and every failure) show; older successes fold
+         behind the button below, so a long history does not bury today's. */}}
+    {{range $i, $row := .Recent}}
+      <tr{{if and (ge $i 5) (eq .Status "success")}} class="import-older" hidden{{end}}>
         <td class="num muted">{{ltime .SyncedAt "datetime-sec"}}</td>
         <td><code>{{.SyncType}}</code></td>
         <td>
@@ -123,7 +125,8 @@
         <td class="tabular num">{{.ExecsAdded}}</td>
         <td class="tabular num">{{.TradesAdded}}</td>
         <td><span class="muted">{{derefStr .SourceFile}}</span></td>
-        <td><span class="muted">{{derefStr .Message}}</span></td>
+        {{$n := importNote .Message}}
+        <td>{{if $n.Raw}}<span class="{{if eq .Status "success"}}muted{{else}}import-problem{{end}}" title="{{$n.Raw}}">{{$n.Summary}}</span>{{end}}</td>
       </tr>
     {{else}}
       <tr><td colspan="7" class="muted" style="text-align:center; padding: 24px;">No imports yet.</td></tr>
@@ -131,4 +134,25 @@
     </tbody>
   </table>
 </div>
+<button type="button" class="btn btn--secondary btn--sm mt-8" id="import-older-toggle" hidden>Show older imports</button>
+<script>
+  (function () {
+    var btn = document.getElementById('import-older-toggle');
+    var rows = document.querySelectorAll('tr.import-older');
+    if (!btn || !rows.length) return;
+    var label = 'Show ' + rows.length + ' older import' + (rows.length === 1 ? '' : 's');
+    btn.textContent = label;
+    btn.hidden = false;
+    btn.addEventListener('click', function () {
+      var show = rows[0].hidden;
+      rows.forEach(function (r) { r.hidden = !show; });
+      btn.textContent = show ? 'Hide older imports' : label;
+    });
+  })();
+</script>
+<style>
+  .import-problem { color: var(--neg-text); }
+  /* A humanised message can run long; keep the column readable. */
+  .import-problem, td .muted[title] { display: inline-block; max-width: 520px; white-space: normal; }
+</style>
 {{end}}
