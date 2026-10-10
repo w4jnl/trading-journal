@@ -25,7 +25,11 @@ type chartMarker struct {
 	Price float64 `json:"price"` // fill price
 	Side  string  `json:"side"`  // buy|sell
 	Role  string  `json:"role"`  // entry|exit
-	Qty   float64 `json:"qty"`   // qty of this fill used by the trade
+	Qty   float64 `json:"qty"`   // qty of this fill used by the trade (summed across a folded group)
+	// Count > 1 marks a folded marker: copy-trader fan-out fills the same
+	// price at the same second on several accounts, which used to stack
+	// identical arrows and labels on top of each other.
+	Count int `json:"count,omitempty"`
 }
 
 type chartPanel struct {
@@ -336,6 +340,39 @@ func (h *Handlers) buildChartPanel(ctx context.Context, g chartGroup, load bool,
 	return panel, "ok"
 }
 
+// foldMarkers sorts markers by time and merges those identical in (time,
+// price, side, role) into one carrying the summed qty and a count.
+func foldMarkers(ms []chartMarker) []chartMarker {
+	sort.Slice(ms, func(i, j int) bool {
+		if ms[i].T != ms[j].T {
+			return ms[i].T < ms[j].T
+		}
+		if ms[i].Price != ms[j].Price {
+			return ms[i].Price < ms[j].Price
+		}
+		if ms[i].Side != ms[j].Side {
+			return ms[i].Side < ms[j].Side
+		}
+		return ms[i].Role < ms[j].Role
+	})
+	out := ms[:0]
+	for _, m := range ms {
+		if n := len(out); n > 0 {
+			last := &out[n-1]
+			if last.T == m.T && last.Price == m.Price && last.Side == m.Side && last.Role == m.Role {
+				last.Qty += m.Qty
+				if last.Count == 0 {
+					last.Count = 1
+				}
+				last.Count++
+				continue
+			}
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 // tradeMarkers collects per-fill markers across a group's trades and the
 // qty-weighted average entry/exit prices.
 func (h *Handlers) tradeMarkers(ctx context.Context, tradeIDs []int64) (markers []chartMarker, entryAvg, exitAvg float64) {
@@ -364,7 +401,7 @@ func (h *Handlers) tradeMarkers(ctx context.Context, tradeIDs []int64) (markers 
 			}
 		}
 	}
-	sort.Slice(markers, func(i, j int) bool { return markers[i].T < markers[j].T })
+	markers = foldMarkers(markers)
 	if entryQ > 0 {
 		entryAvg = entryPV / entryQ
 	}
