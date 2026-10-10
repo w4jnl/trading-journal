@@ -32,11 +32,12 @@ type mdCoverageRow struct {
 func (h *Handlers) AdminMarketDataPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.MarketData == nil {
-		h.renderPage(w, r, "admin_market_data.html", map[string]any{
+		h.renderPage(w, r, "admin_market_data.html", mergeData(map[string]any{
 			"NavActive": "admin_market_data",
 			"BackHref":  validBackHref(r),
 			"Disabled":  true,
-		})
+			"Flash":     r.URL.Query().Get("flash"),
+		}, h.gexAdminData(r)))
 		return
 	}
 	loc := h.localTZ()
@@ -131,7 +132,7 @@ func (h *Handlers) AdminMarketDataPage(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(list, func(i, j int) bool { return list[i].Symbol < list[j].Symbol })
 
-	h.renderPage(w, r, "admin_market_data.html", map[string]any{
+	h.renderPage(w, r, "admin_market_data.html", mergeData(map[string]any{
 		"NavActive":    "admin_market_data",
 		"BackHref":     validBackHref(r),
 		"WindowDays":   mdWindowDays,
@@ -141,7 +142,15 @@ func (h *Handlers) AdminMarketDataPage(w http.ResponseWriter, r *http.Request) {
 		"TotalMissing": totMissing,
 		"PrefetchOn":   h.Prefetch != nil,
 		"Flash":        r.URL.Query().Get("flash"),
-	})
+	}, h.gexAdminData(r)))
+}
+
+// mergeData folds extra template keys into a page's data map.
+func mergeData(data map[string]any, extra map[string]any) map[string]any {
+	for k, v := range extra {
+		data[k] = v
+	}
+	return data
 }
 
 // AdminMarketDataBackfill enqueues every account for a background cache warm.

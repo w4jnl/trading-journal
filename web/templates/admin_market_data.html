@@ -9,6 +9,30 @@
   are excluded; days older than the horizon can't get intraday data.
 </p>
 
+{{/* Gamma context (gex-engine, update 010): the engine repairs or backfills
+     history in place, and every gamma block written from the old rows keeps
+     the old levels until it is re-read. This re-reads all of them in a date
+     window; the per-entry button on trade/group pages does one. */}}
+{{if .GexEnabled}}
+{{if eq .Flash "gexrefresh"}}<div class="flash {{if .GexAborted}}error{{else if gt .GexFailed 0}}warn{{else}}saved{{end}}" style="margin-bottom:16px;">
+  Gamma context {{.GexFrom}} → {{.GexTo}}: {{.GexTotal}} entr{{if eq .GexTotal 1}}y{{else}}ies{{end}} with a gamma block — {{.GexChanged}} rewritten, {{.GexSame}} unchanged, {{.GexFailed}} failed{{if .GexAborted}}; stopped early — the engine is not answering{{end}}.
+</div>{{end}}
+{{if eq .Flash "gexbad"}}<div class="flash error" style="margin-bottom:16px;">Gamma context: dates must be YYYY-MM-DD.</div>{{end}}
+<div class="card mb-16">
+  <div class="card-title">Gamma context (gex-engine)</div>
+  <p class="muted" style="font-size: 13px; margin: 6px 0 12px;">
+    Re-reads the gamma snapshots for every trade and group journal entry in the window and rewrites its gamma-context block in place; the rest of each entry is untouched. Use it after the engine repairs or backfills history — v0.12.0 recomputed every session since {{.GexFrom}} with corrected 0DTE numerics. Entries whose rows did not change are left alone.
+  </p>
+  <form method="post" action="/admin/market-data/gex-refresh" class="row-sm" style="gap: 12px; align-items: flex-end; flex-wrap: wrap;"
+        onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Refreshing…';">
+    <label><span class="label">From</span><input type="date" name="from" value="{{.GexFrom}}" required></label>
+    <label><span class="label">To</span><input type="date" name="to" value="{{.GexTo}}" required></label>
+    <button type="submit" class="btn btn--primary">Refresh gamma context</button>
+  </form>
+</div>
+{{else if eq .Flash "gexoff"}}<div class="flash empty" style="margin-bottom:16px;">Gamma context: the gex-engine is not configured (<code>gex.enabled = false</code>).</div>
+{{end}}
+
 {{if .Disabled}}
 <div class="card">Charting is disabled in config (<code>market_data.enabled = false</code>).</div>
 {{else}}

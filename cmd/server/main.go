@@ -730,6 +730,9 @@ func run() error {
 
 	mux.Handle("GET /admin/market-data", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataPage)))
 	mux.Handle("POST /admin/market-data/backfill", auth.RequireAdmin(http.HandlerFunc(h.AdminMarketDataBackfill)))
+	// Bulk re-read of gamma-context blocks after the engine repairs or
+	// backfills history (update 010 recomputed every session since 2026-09-29).
+	mux.Handle("POST /admin/market-data/gex-refresh", auth.RequireAdmin(http.HandlerFunc(h.AdminGexRefresh)))
 
 	staticSub, err := fs.Sub(web.StaticFS, "static")
 	if err != nil {

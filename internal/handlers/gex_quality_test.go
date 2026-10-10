@@ -127,7 +127,7 @@ func TestGexAnnotateKeepsDegradedRowWhenNoCleanOne(t *testing.T) {
 		"| entry 15:52 ET (degraded) | exit 15:58 ET (degraded) |",
 		"_entry context degraded: STALE_LEG SPY - SPY leg 18 min older than SPX_",
 		"_exit context degraded: STALE_LEG SPY - SPY leg 18 min older than SPX_",
-		" quality=degraded provenance=measured -->", // null provenance reads as measured
+		" quality=degraded provenance=measured em_next=null -->", // null provenance reads as measured
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q:\n%s", want, body)
@@ -161,7 +161,7 @@ func TestGexAnnotateReconstructedRow(t *testing.T) {
 	for _, want := range []string{
 		"| entry 15:52 ET (reconstructed) | exit 15:58 ET (reconstructed) |",
 		"_entry context reconstructed after a feed outage: the Jul 31 14:50 ET chain repriced at this moment's spot — walls near-exact, flip/regime carry that chain's IVs_",
-		" quality=ok provenance=reconstructed -->",
+		" quality=ok provenance=reconstructed em_next=null -->",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q:\n%s", want, body)
@@ -341,7 +341,7 @@ func TestGexAnalysisFactsQuality(t *testing.T) {
 	facts = gexAnalysisFacts(s, "ES")
 	for _, want := range []string{
 		"data quality notices (not degrading): STALE_PAYLOAD - payload age 900s",
-		"provenance: recomputed exactly from this slot's archived payloads",
+		"provenance: recomputed from this slot's archived payloads - as trustworthy as a live measurement",
 	} {
 		if !strings.Contains(facts, want) {
 			t.Errorf("facts missing %q:\n%s", want, facts)
