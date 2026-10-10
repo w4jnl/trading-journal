@@ -262,14 +262,9 @@ func listGroupOptions(ctx context.Context, db *sql.DB) ([]groupOption, error) {
 			return nil, err
 		}
 		label := entryDate.Format("2006-01-02")
-		excerpt := strings.TrimSpace(body)
-		if excerpt != "" {
-			// Single line, ≤48 chars. Newlines in the body become spaces.
-			excerpt = strings.ReplaceAll(excerpt, "\n", " ")
-			excerpt = strings.ReplaceAll(excerpt, "\r", " ")
-			if len(excerpt) > 48 {
-				excerpt = excerpt[:47] + "…"
-			}
+		// Single line, <=48 runes, machine blocks and markdown stripped
+		// (preview.go) so a gamma table never masquerades as the note.
+		if excerpt := previewText(body, 47); excerpt != "" {
 			label = label + " · " + excerpt
 		} else {
 			label = label + " · (empty)"
