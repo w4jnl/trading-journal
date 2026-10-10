@@ -424,13 +424,26 @@ func (h *Handlers) funcMap() template.FuncMap {
 			return ""
 		},
 		// snippet truncates s to at most n runes, appending "…" if cut.
-		"snippet": func(s string, n int) string {
-			r := []rune(s)
-			if len(r) <= n {
-				return s
+		// snippet is the one-line preview of a journal body: machine blocks
+		// and markdown syntax stripped (preview.go), then cut to n runes.
+		"snippet":       previewText,
+		"hasAIReview":   hasAIReview,
+		"hasGexContext": hasGexContext,
+		// pnlSign is the sentiment class for a signed amount: colour follows
+		// the SIGN, never the column - a "worst" that is positive is green.
+		"pnlSign": func(v float64) string {
+			switch {
+			case v > 0:
+				return "pnl-pos"
+			case v < 0:
+				return "pnl-neg"
 			}
-			return string(r[:n]) + "…"
+			return ""
 		},
+		// groupTrades folds copy-trader fan-out (the same decision filled on
+		// several accounts within two seconds) into one row per decision for
+		// the journal trade tables; see groupLinkedTrades.
+		"groupTrades": groupLinkedTrades,
 		// cellClass picks a calendar-cell color class based on net P&L magnitude.
 		// Threshold is rough: $100 / $-100 separates "regular day" from "big day".
 		"cellClass": func(netPnl float64, hasData bool) string {

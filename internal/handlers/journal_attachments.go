@@ -298,10 +298,7 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 	tz := h.localTZ()
 	for _, row := range rows {
 		d := row.EntryDate.In(tz)
-		snip := strings.TrimSpace(row.Body)
-		if rs := []rune(snip); len(rs) > 140 {
-			snip = string(rs[:140]) + "…"
-		}
+		snip := previewText(row.Body, 140) // machine blocks + markdown stripped
 		entry := recent{
 			ID:        row.ID,
 			EntryDate: d.Format("2006-01-02"),
