@@ -5,11 +5,10 @@ import (
 	"database/sql"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
+	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/models"
-	_ "modernc.org/sqlite"
 )
 
 func TestHashAPIKeyDeterministic(t *testing.T) {
@@ -65,27 +64,13 @@ func TestParseBearer(t *testing.T) {
 	}
 }
 
+// apikeyTestDB is a migrated database whose bootstrap user "trader" is id 1
+// (the first row in a fresh users table); the tests below hard-code that id.
 func apikeyTestDB(t *testing.T) *sql.DB {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "t.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	db.SetMaxOpenConns(1)
-	t.Cleanup(func() { db.Close() })
-	for _, s := range []string{
-		`CREATE TABLE users (id INTEGER PRIMARY KEY, username TEXT NOT NULL, email TEXT,
-			password_hash TEXT, is_admin INTEGER NOT NULL DEFAULT 0, is_active INTEGER NOT NULL DEFAULT 1,
-			display_name TEXT, created_at DATETIME, last_login_at DATETIME)`,
-		`CREATE TABLE api_keys (id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL, name TEXT NOT NULL,
-			key_prefix TEXT NOT NULL, key_sha256 TEXT NOT NULL UNIQUE,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP, last_used_at DATETIME, revoked_at DATETIME)`,
-		`INSERT INTO users (id, username, display_name, is_active) VALUES (1, 'trader', 'Trader', 1)`,
-	} {
-		if _, err := db.Exec(s); err != nil {
-			t.Fatalf("schema: %v", err)
-		}
+	db := dbtest.Open(t, "trader")
+	if id := dbtest.BootstrapUserID(t, db, "trader"); id != 1 {
+		t.Fatalf("bootstrap user id = %d, want 1", id)
 	}
 	return db
 }

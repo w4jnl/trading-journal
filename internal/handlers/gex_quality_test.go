@@ -408,31 +408,11 @@ func TestReplaceGexBlock(t *testing.T) {
 	}
 }
 
-// gexRefreshDB extends the gex test schema with the trade tables the refresh
-// handler joins: one account for user 7 and closed trade 42 (MES, the same
-// window gexTestTrade uses).
+// gexRefreshDB is the refresh tests' fixture: gexTestDB already carries the
+// account/trade/users the refresh handler joins (user 7's closed trade 42).
 func gexRefreshDB(t *testing.T) *sql.DB {
 	t.Helper()
-	db := gexTestDB(t)
-	for _, stmt := range []string{
-		`CREATE TABLE accounts (id INTEGER PRIMARY KEY, user_id INTEGER, name TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1)`,
-		`CREATE TABLE trades (id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL, symbol TEXT, symbol_root TEXT,
-			direction TEXT, entry_time DATETIME, entry_price REAL, exit_time DATETIME, exit_price REAL,
-			status TEXT NOT NULL DEFAULT 'closed', net_pnl REAL)`,
-		`CREATE TABLE journal_entry_trades (journal_entry_id INTEGER NOT NULL, trade_id INTEGER NOT NULL)`,
-		`INSERT INTO accounts (id, user_id, name) VALUES (1, 7, 'Apex 1'), (2, 8, 'Someone else')`,
-	} {
-		if _, err := db.Exec(stmt); err != nil {
-			t.Fatal(err)
-		}
-	}
-	tr := gexTestTrade("MES")
-	if _, err := db.Exec(`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, entry_time, entry_price, exit_time, exit_price, status, net_pnl)
-		VALUES (?, 1, ?, ?, ?, ?, ?, ?, ?, 'closed', 12.5)`,
-		tr.ID, tr.Symbol, tr.SymbolRoot, tr.Direction, tr.EntryTime, tr.EntryPrice, tr.ExitTime, *tr.ExitPrice); err != nil {
-		t.Fatal(err)
-	}
-	return db
+	return gexTestDB(t)
 }
 
 func gexRefreshPost(t *testing.T, h *Handlers, entryID any) *httptest.ResponseRecorder {
