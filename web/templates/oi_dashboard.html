@@ -28,7 +28,7 @@
     <p style="margin: 0 0 8px 0;">No OI dashboards available yet.</p>
     <p class="muted" style="margin: 0; font-size: 12px;">
       Drop daily HTML + PDF pairs into
-      <code>{{.Root}}</code> using the naming convention
+      {{if and .CurrentUser .CurrentUser.IsAdmin}}<code>{{.Root}}</code>{{else}}the OI dashboards folder (ask an admin for the path){{end}} using the naming convention
       <code>dashboard-YYYY-MM-DD.html</code> /
       <code>dashboard-YYYY-MM-DD.pdf</code>. Refresh this page to pick them up.
     </p>

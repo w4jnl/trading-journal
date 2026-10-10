@@ -54,6 +54,9 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 		if err != nil {
 			return nil, fmt.Errorf("row %d: parse quantity: %w", line, err)
 		}
+		if qty <= 0 {
+			return nil, fmt.Errorf("row %d: quantity must be positive, got %v", line, qty)
+		}
 		price, err := strconv.ParseFloat(strings.TrimSpace(row[cols["Price"]]), 64)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: parse price: %w", line, err)

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -117,15 +116,19 @@ func (h *Handlers) JournalAttachmentUpload(w http.ResponseWriter, r *http.Reques
 
 	scope := strings.TrimSpace(r.FormValue("scope"))
 	entryIDStr := strings.TrimSpace(r.FormValue("entry_id"))
+	uid := userID(ctx)
 	var entryID int64
 	if entryIDStr != "" {
 		if v, err := strconv.ParseInt(entryIDStr, 10, 64); err == nil && v > 0 {
-			entryID = v
+			// Client-supplied: keep it only when the entry is the caller's.
+			if _, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: v, UserID: userIDPtr(ctx)}); err == nil {
+				entryID = v
+			}
 		}
 	}
 
-	res, err := h.DB.ExecContext(ctx, `INSERT INTO journal_attachments (entry_id, entry_scope, file_path, mime, byte_size) VALUES (?, ?, ?, ?, ?)`,
-		entryID, scope, relPath, mt, written)
+	res, err := h.DB.ExecContext(ctx, `INSERT INTO journal_attachments (user_id, entry_id, entry_scope, file_path, mime, byte_size) VALUES (?, ?, ?, ?, ?, ?)`,
+		uid, entryID, scope, relPath, mt, written)
 	if err != nil {
 		_ = os.Remove(absPath)
 		h.serverError(w, fmt.Errorf("insert attachment: %w", err))
@@ -152,40 +155,30 @@ func (h *Handlers) JournalAttachmentServe(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	h.serveAttachmentBytes(w, r, id, userID(r.Context()), false)
+	h.serveAttachmentBytes(w, r, id, userID(r.Context()))
 }
 
-// serveAttachmentBytes streams a journal-attachment image with user scoping and
-// a path-traversal guard. Shared by the session route (requireOwnedRef=false)
-// and the API route (true). requireOwnedRef closes a gap for the stateless API:
-// an attachment with entry_id = 0 (uploaded before its entry was saved, or
-// pasted into a strategy) is otherwise readable by ANY authenticated principal
-// that guesses the id - acceptable for a freshly-minted session URL, not for a
-// long-lived API key. When true, an entry_id = 0 attachment is served only if
-// its id is referenced by a strategy or journal body the caller owns.
-func (h *Handlers) serveAttachmentBytes(w http.ResponseWriter, r *http.Request, id, uid int64, requireOwnedRef bool) {
+// serveAttachmentBytes streams a journal-attachment image with user scoping
+// and a path-traversal guard. Shared by the session route and the API route.
+// Ownership is the row's user_id (stamped at upload; backfilled for older
+// rows from the body that references the image): an attachment is served to
+// its uploader only, never by guessing a sequential id. entry_id is
+// informational - the save handlers never fill it in, and bodies are the
+// source of truth for which images an entry uses.
+func (h *Handlers) serveAttachmentBytes(w http.ResponseWriter, r *http.Request, id, uid int64) {
 	var (
 		filePath string
 		mt       string
-		entryID  int64
 	)
 	row := h.DB.QueryRowContext(r.Context(),
-		`SELECT a.file_path, a.mime, a.entry_id
-		 FROM journal_attachments a
-		 LEFT JOIN journal_entries je ON je.id = a.entry_id
-		 WHERE a.id = ?
-		   AND (a.entry_id = 0 OR je.user_id = ?)`,
+		`SELECT a.file_path, a.mime FROM journal_attachments a WHERE a.id = ? AND a.user_id = ?`,
 		id, uid)
-	if err := row.Scan(&filePath, &mt, &entryID); err != nil {
+	if err := row.Scan(&filePath, &mt); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			http.NotFound(w, r)
 			return
 		}
 		h.serverError(w, fmt.Errorf("load attachment: %w", err))
-		return
-	}
-	if requireOwnedRef && entryID == 0 && !h.userReferencesAttachment(r.Context(), uid, id) {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -228,23 +221,6 @@ func (h *Handlers) serveAttachmentBytes(w http.ResponseWriter, r *http.Request, 
 	} else {
 		_, _ = io.Copy(w, f)
 	}
-}
-
-// userReferencesAttachment reports whether attachment id appears in any of the
-// user's own strategy or journal bodies. The GLOB digit-boundary "[^0-9]"
-// prevents id 8 from matching ".../attachments/88"; in-body refs are markdown
-// image URLs always followed by ")", so a non-digit always trails the id.
-// (SQLite GLOB negates a character class with "^", not "!" - "!" is a literal.)
-func (h *Handlers) userReferencesAttachment(ctx context.Context, uid, id int64) bool {
-	pat := "*/journal/attachments/" + strconv.FormatInt(id, 10) + "[^0-9]*"
-	var one int
-	err := h.DB.QueryRowContext(ctx,
-		`SELECT 1 FROM strategies WHERE user_id = ? AND body GLOB ?
-		 UNION ALL
-		 SELECT 1 FROM journal_entries WHERE user_id = ? AND body GLOB ?
-		 LIMIT 1`,
-		uid, pat, uid, pat).Scan(&one)
-	return err == nil
 }
 
 // JournalRecentList handles GET /journal/recent — returns recent journal
@@ -298,10 +274,7 @@ func (h *Handlers) JournalRecentList(w http.ResponseWriter, r *http.Request) {
 	tz := h.localTZ()
 	for _, row := range rows {
 		d := row.EntryDate.In(tz)
-		snip := strings.TrimSpace(row.Body)
-		if rs := []rune(snip); len(rs) > 140 {
-			snip = string(rs[:140]) + "…"
-		}
+		snip := previewText(row.Body, 140) // machine blocks + markdown stripped
 		entry := recent{
 			ID:        row.ID,
 			EntryDate: d.Format("2006-01-02"),

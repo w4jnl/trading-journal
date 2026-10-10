@@ -180,6 +180,29 @@ func (q *Queries) DeleteTradesForAccountSymbol(ctx context.Context, arg DeleteTr
 	return err
 }
 
+const findTradeByEntryExecution = `-- name: FindTradeByEntryExecution :one
+SELECT te.trade_id
+FROM trade_executions te
+JOIN trades t ON t.id = te.trade_id
+WHERE te.execution_id = ? AND te.role = 'entry' AND t.account_id = ? AND t.symbol = ?
+LIMIT 1
+`
+
+type FindTradeByEntryExecutionParams struct {
+	ExecutionID int64  `json:"execution_id"`
+	AccountID   int64  `json:"account_id"`
+	Symbol      string `json:"symbol"`
+}
+
+// The (rebuilt) trade this execution opened. Scoped to the account/symbol
+// being rebuilt for safety; the execution already pins both.
+func (q *Queries) FindTradeByEntryExecution(ctx context.Context, arg FindTradeByEntryExecutionParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, findTradeByEntryExecution, arg.ExecutionID, arg.AccountID, arg.Symbol)
+	var trade_id int64
+	err := row.Scan(&trade_id)
+	return trade_id, err
+}
+
 const findTradeBySignal = `-- name: FindTradeBySignal :one
 SELECT id FROM trades
 WHERE account_id = ? AND symbol = ? AND entry_time = ?
@@ -197,6 +220,26 @@ func (q *Queries) FindTradeBySignal(ctx context.Context, arg FindTradeBySignalPa
 	var id int64
 	err := row.Scan(&id)
 	return id, err
+}
+
+const firstEntryExecutionForTrade = `-- name: FirstEntryExecutionForTrade :one
+SELECT te.execution_id
+FROM trade_executions te
+JOIN executions e ON e.id = te.execution_id
+WHERE te.trade_id = ? AND te.role = 'entry'
+ORDER BY e.exec_time ASC, e.id ASC
+LIMIT 1
+`
+
+// The execution that opened the trade: entry-role junction row with the
+// earliest fill. Execution ids survive a rebuild (trade ids do not), and a
+// fill opens exactly one trade - a flip fill is the EXIT of one trade and
+// the ENTRY of the next, so the role keeps the two apart.
+func (q *Queries) FirstEntryExecutionForTrade(ctx context.Context, tradeID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, firstEntryExecutionForTrade, tradeID)
+	var execution_id int64
+	err := row.Scan(&execution_id)
+	return execution_id, err
 }
 
 const getTradeByBrokerID = `-- name: GetTradeByBrokerID :one
@@ -487,7 +530,7 @@ func (q *Queries) ListExecutionsForTrade(ctx context.Context, tradeID int64) ([]
 }
 
 const listGroupLinksForAccountSymbol = `-- name: ListGroupLinksForAccountSymbol :many
-SELECT jet.journal_entry_id, t.entry_time
+SELECT jet.journal_entry_id, jet.trade_id, t.entry_time
 FROM journal_entry_trades jet
 JOIN trades t ON t.id = jet.trade_id
 WHERE t.account_id = ? AND t.symbol = ?
@@ -500,6 +543,7 @@ type ListGroupLinksForAccountSymbolParams struct {
 
 type ListGroupLinksForAccountSymbolRow struct {
 	JournalEntryID int64     `json:"journal_entry_id"`
+	TradeID        int64     `json:"trade_id"`
 	EntryTime      time.Time `json:"entry_time"`
 }
 
@@ -517,7 +561,7 @@ func (q *Queries) ListGroupLinksForAccountSymbol(ctx context.Context, arg ListGr
 	var items []ListGroupLinksForAccountSymbolRow
 	for rows.Next() {
 		var i ListGroupLinksForAccountSymbolRow
-		if err := rows.Scan(&i.JournalEntryID, &i.EntryTime); err != nil {
+		if err := rows.Scan(&i.JournalEntryID, &i.TradeID, &i.EntryTime); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -532,7 +576,7 @@ func (q *Queries) ListGroupLinksForAccountSymbol(ctx context.Context, arg ListGr
 }
 
 const listJournalLinksForAccountSymbol = `-- name: ListJournalLinksForAccountSymbol :many
-SELECT je.id AS journal_id, t.entry_time
+SELECT je.id AS journal_id, t.id AS trade_id, t.entry_time
 FROM journal_entries je
 JOIN trades t ON je.trade_id = t.id
 WHERE t.account_id = ? AND t.symbol = ?
@@ -545,9 +589,14 @@ type ListJournalLinksForAccountSymbolParams struct {
 
 type ListJournalLinksForAccountSymbolRow struct {
 	JournalID int64     `json:"journal_id"`
+	TradeID   int64     `json:"trade_id"`
 	EntryTime time.Time `json:"entry_time"`
 }
 
+// Trade-scope journal links for this (account, symbol), captured before the
+// FIFO rebuild deletes the trades. trade_id lets the builder look up the
+// trade's first entry fill (FirstEntryExecutionForTrade), which is the
+// stable identity across rebuilds; entry_time is the fallback signal.
 func (q *Queries) ListJournalLinksForAccountSymbol(ctx context.Context, arg ListJournalLinksForAccountSymbolParams) ([]ListJournalLinksForAccountSymbolRow, error) {
 	rows, err := q.db.QueryContext(ctx, listJournalLinksForAccountSymbol, arg.AccountID, arg.Symbol)
 	if err != nil {
@@ -557,7 +606,7 @@ func (q *Queries) ListJournalLinksForAccountSymbol(ctx context.Context, arg List
 	var items []ListJournalLinksForAccountSymbolRow
 	for rows.Next() {
 		var i ListJournalLinksForAccountSymbolRow
-		if err := rows.Scan(&i.JournalID, &i.EntryTime); err != nil {
+		if err := rows.Scan(&i.JournalID, &i.TradeID, &i.EntryTime); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

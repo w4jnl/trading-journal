@@ -59,29 +59,80 @@
       </tr>
     </thead>
     <tbody>
-      {{range .Trades}}
-      <tr>
-        <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
-        <td>{{.AccountName}}</td>
-        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
-        <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
-        <td>{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
-        <td class="tabular num">{{.Qty}}</td>
-        <td class="tabular num">{{pnlChip .NetPnl}}</td>
-        {{if $allowUnlink}}
-        <td class="tar" onclick="event.stopPropagation();">
-          <form method="post" action="/journal/group/{{$entryID}}/unlink"
-                onsubmit="return confirm('Remove trade {{.ID}} from this group note?');"
-                style="display: inline;">
-            <input type="hidden" name="trade_id" value="{{.ID}}">
-            <button type="submit" class="btn btn--ghost btn--sm" title="Remove from group">×</button>
-          </form>
+      {{/* Copy-trader fan-out (the same decision filled on several accounts
+           within two seconds) folds into one row per decision with the
+           members behind a toggle; see groupLinkedTrades. */}}
+      {{range $gi, $g := groupTrades .Trades}}
+      {{if gt $g.Accounts 1}}
+      <tr class="fanout" data-fanout-toggle="{{$gi}}">
+        <td class="num muted">{{ltime $g.Lead.EntryTime "datetime"}}</td>
+        <td>
+          <button type="button" class="fanout-btn" aria-expanded="false" aria-controls="fanout-{{$gi}}"
+                  title="Same decision filled on {{$g.Accounts}} accounts — show them">
+            <span class="fanout-caret" aria-hidden="true"></span><span class="num">{{$g.Accounts}}</span> accounts
+          </button>
         </td>
-        {{end}}
+        <td class="num">{{if $g.Symbols}}{{$g.Lead.SymbolRoot}} <span class="subtle">({{$g.Symbols}})</span>{{else}}{{$g.Lead.Symbol}} <span class="subtle">({{$g.Lead.SymbolRoot}})</span>{{end}}</td>
+        <td>{{if eq $g.Lead.Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td>{{$hz := tradeHorizon $g.Lead.EntryTime $g.Lead.ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor $g.Lead.EntryTime $g.Lead.ExitTime}}">{{$hz}}</span>{{end}}</td>
+        <td class="tabular num">{{$g.Qty}}</td>
+        <td class="tabular num">{{pnlChip $g.Net}}</td>
+        {{if $allowUnlink}}<td></td>{{end}}
       </tr>
+      {{range $g.Members}}
+      {{template "journal_trade_row" (dict "T" . "EntryID" $entryID "AllowUnlink" $allowUnlink "Group" $gi)}}
+      {{end}}
+      {{else}}
+      {{template "journal_trade_row" (dict "T" $g.Lead "EntryID" $entryID "AllowUnlink" $allowUnlink "Group" -1)}}
+      {{end}}
       {{end}}
     </tbody>
   </table>
 </div>
+{{end}}
+<script>
+  // Fan-out toggles: delegated once per page so live-refresh swaps of this
+  // partial neither stack listeners nor lose them.
+  (function () {
+    if (window.__fanoutBound) return;
+    window.__fanoutBound = true;
+    document.addEventListener('click', function (e) {
+      var b = e.target.closest('.fanout-btn');
+      if (!b) return;
+      var tr = b.closest('tr');
+      var id = tr && tr.getAttribute('data-fanout-toggle');
+      if (id == null) return;
+      var open = b.getAttribute('aria-expanded') === 'true';
+      b.setAttribute('aria-expanded', String(!open));
+      tr.classList.toggle('open', !open);
+      tr.parentNode.querySelectorAll('tr[data-fanout="' + id + '"]').forEach(function (r) { r.hidden = open; });
+    });
+  })();
+</script>
+{{end}}
+
+{{/* journal_trade_row is one trade line. .Group >= 0 marks a fan-out member
+     (hidden until its group row is expanded). */}}
+{{define "journal_trade_row"}}
+{{with .T}}
+<tr{{if ge $.Group 0}} class="fanout-member" data-fanout="{{$.Group}}" hidden{{end}}>
+  <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
+  <td>{{.AccountName}}</td>
+  <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+  <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+  <td>{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
+  <td class="tabular num">{{.Qty}}</td>
+  <td class="tabular num">{{pnlChip .NetPnl}}</td>
+  {{if $.AllowUnlink}}
+  <td class="tar" onclick="event.stopPropagation();">
+    <form method="post" action="/journal/group/{{$.EntryID}}/unlink"
+          onsubmit="return confirm('Remove trade {{.ID}} from this group note?');"
+          style="display: inline;">
+      <input type="hidden" name="trade_id" value="{{.ID}}">
+      <button type="submit" class="btn btn--ghost btn--sm" title="Remove from group">×</button>
+    </form>
+  </td>
+  {{end}}
+</tr>
 {{end}}
 {{end}}

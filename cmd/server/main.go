@@ -641,6 +641,7 @@ func run() error {
 		Timezone:         tz,
 		Version:          appVersion(),
 		CSRF:             csrf,
+		IbkrGatewayHosts: cfg.IBKR.AllowedGatewayHosts,
 		ActAs:            actAs,
 		MarketData:       marketCache,
 		Prefetch:         prefetcher,

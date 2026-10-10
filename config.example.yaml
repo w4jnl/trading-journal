@@ -187,6 +187,10 @@ ibkr:
   session_sync_min: 60   # cadence during Globex hours (Sun 17:00 - Fri 16:00 CT, minus the daily break)
   rth_sync_min: 15       # faster cadence inside rth_window
   rth_window: "07:30-16:00"  # Chicago time, Mon-Fri (RTH 08:30-15:00 CT +/- 1h)
+  # Gateway hosts non-admin users may register (hostnames, IPs or CIDRs).
+  # The server calls the gateway URL itself, so this is the SSRF boundary;
+  # admins can register any host. Empty = only admins can add gateways.
+  # allowed_gateway_hosts: ["ibgw.example.internal", "192.168.30.0/24"]
 
 # MotiveWave email capture + ingest: an embedded SMTP listener for MW's
 # "Send Email On Filled Order" notifications (Preferences -> Orders). Point

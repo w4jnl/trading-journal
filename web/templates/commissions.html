@@ -117,7 +117,7 @@
               <label class="field"><span class="field-label">Effective from (trading tz)</span>
                 <input type="datetime-local" name="effective_from" step="1" value="{{$.NowLocal}}"></label>
               <label class="field"><span class="field-label">New rate (USD / side)</span>
-                <input type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;"></label>
+                <input lang="en" type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;"></label>
               <button type="submit" class="btn btn--secondary btn--sm">+ Add change</button>
             </form>
             {{end}}
@@ -158,7 +158,7 @@
         <input type="datetime-local" name="effective_from" step="1">
       </label>
       <label class="field"><span class="field-label">Rate (USD per side)</span>
-        <input type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;">
+        <input lang="en" type="number" name="per_contract_per_side" step="0.01" min="0" required placeholder="0.62" style="width: 110px;">
       </label>
       <button type="submit" class="btn btn--primary">Add</button>
     </div>
@@ -192,15 +192,15 @@
         <tr id="instr-{{$i.SymbolRoot}}" data-symbol="{{$i.SymbolRoot}}">
           <td><strong>{{$i.SymbolRoot}}</strong></td>
           <td class="muted">{{if $i.Exchange}}{{derefStr $i.Exchange}}{{else}}—{{end}}</td>
-          <td><input form="commissions-form" type="number" step="0.0001" min="0"
+          <td><input form="commissions-form" lang="en" type="number" step="0.0001" min="0"
                      name="instrument.{{$i.SymbolRoot}}.tick_size"
                      value="{{if $i.TickSize}}{{deref $i.TickSize}}{{end}}"
                      class="num" style="width: 80px; text-align: right;" {{if not $.CanEdit}}disabled{{end}}></td>
-          <td><input form="commissions-form" type="number" step="0.01" min="0"
+          <td><input form="commissions-form" lang="en" type="number" step="0.01" min="0"
                      name="instrument.{{$i.SymbolRoot}}.tick_value"
                      value="{{if $i.TickValue}}{{deref $i.TickValue}}{{end}}"
                      class="num" style="width: 80px; text-align: right;" {{if not $.CanEdit}}disabled{{end}}></td>
-          <td><input form="commissions-form" type="number" step="0.01" min="0"
+          <td><input form="commissions-form" lang="en" type="number" step="0.01" min="0"
                      name="instrument.{{$i.SymbolRoot}}.multiplier"
                      value="{{if $i.Multiplier}}{{deref $i.Multiplier}}{{end}}"
                      class="num" style="width: 80px; text-align: right;" {{if not $.CanEdit}}disabled{{end}}></td>
@@ -249,7 +249,7 @@
         <label class="field"><span class="field-label">Label</span>
           <input type="text" name="label" required placeholder="e.g. Agricultural Futures" style="width: 180px;"></label>
         <label class="field"><span class="field-label">Sort</span>
-          <input type="number" name="sort_order" value="100" style="width: 64px;"></label>
+          <input lang="en" type="number" name="sort_order" value="100" style="width: 64px;"></label>
         <button type="submit" class="btn btn--secondary btn--sm">+ Add asset class</button>
       </form>
       {{end}}
@@ -269,7 +269,7 @@
         <label class="field"><span class="field-label">Label</span>
           <input type="text" name="label" required placeholder="e.g. Nano" style="width: 180px;"></label>
         <label class="field"><span class="field-label">Sort</span>
-          <input type="number" name="sort_order" value="100" style="width: 64px;"></label>
+          <input lang="en" type="number" name="sort_order" value="100" style="width: 64px;"></label>
         <button type="submit" class="btn btn--secondary btn--sm">+ Add size class</button>
       </form>
       {{end}}
