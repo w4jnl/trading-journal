@@ -75,7 +75,7 @@ func TestGEXPage(t *testing.T) {
 		"&#43;74.5B",                  // net gex tile (html/template escapes the plus)
 		"7465.79",                     // flip futures
 		"Call wall",                   // levels table
-		`const gexData`,               // chart blob
+		`id="gex-page-data"`,          // the JSON island gex-overview.js reads
 		`"strikes":[7327.74,7558.614`, // futures-scaled strike axis (index x 1.0038)
 		"ET",                          // as-of label
 		`class="active">Overview`,     // tabs partial, Overview active here
@@ -296,7 +296,7 @@ func TestGEXPageScrubSlider(t *testing.T) {
 	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
 
 	body := gexPageGet(t, h, "/gex").Body.String()
-	for _, want := range []string{`id="gx-scrub"`, "const grid =", "/gex/data/ES?at="} {
+	for _, want := range []string{`id="gx-scrub"`, `"grid":[`, `"gridPos":`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("body missing %q", want)
 		}
@@ -348,8 +348,7 @@ func TestGEXPageDenominations(t *testing.T) {
 	// Reference lines use the engine's PUBLISHED futures values (flip
 	// 7465.788..., not index 7437.55 x ratio = 7465.82), and the strike axis
 	// is index x the snapshot's stored ratio (7300 x 1.0038 = 7327.74).
-	i := strings.Index(body, "const gexInit")
-	blob := body[i : i+strings.Index(body[i:], "\n")]
+	blob := gexIsland(t, body, "gex-page-data")
 	for _, want := range []string{
 		`"denom":"futures"`,
 		`"flip":7465.788539891167`, // published futures value, verbatim
@@ -502,8 +501,7 @@ func TestGEXPageColdBasis(t *testing.T) {
 	}
 
 	// The ladder must carry the raw, unscaled expected move in index terms.
-	i := strings.Index(body, "const gexInit")
-	blob := body[i : i+strings.Index(body[i:], "\n")]
+	blob := gexIsland(t, body, "gex-page-data")
 	if !strings.Contains(blob, `"emHigh":7545.24`) {
 		t.Errorf("cold-basis EM band not index-denominated: %s", blob)
 	}
@@ -776,4 +774,21 @@ func TestGexViewEMBand(t *testing.T) {
 	if v.EMPct != "0.13% of spot" {
 		t.Errorf("pct = %q", v.EMPct)
 	}
+}
+
+// gexIsland returns the text of the page's JSON data island (the blob the
+// static page script reads), failing the test when it is missing.
+func gexIsland(t *testing.T, body, id string) string {
+	t.Helper()
+	open := `id="` + id + `">`
+	i := strings.Index(body, open)
+	if i < 0 {
+		t.Fatalf("data island %q missing from page", id)
+	}
+	rest := body[i+len(open):]
+	j := strings.Index(rest, "</script>")
+	if j < 0 {
+		t.Fatalf("data island %q not closed", id)
+	}
+	return rest[:j]
 }
