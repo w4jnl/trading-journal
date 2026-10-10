@@ -287,6 +287,7 @@ func TestIngestHook(t *testing.T) {
 	<-done
 	var replayCalls int
 	var rmu sync.Mutex
+	replayed := make(chan struct{})
 	srv2 := &Server{
 		Cfg: config.MWEmail{ArchiveDir: dir, ListenAddr: addr},
 		Ingest: func(ctx context.Context, res Result) (string, error) {
@@ -295,20 +296,16 @@ func TestIngestHook(t *testing.T) {
 			replayCalls++
 			return "inserted", nil
 		},
+		replayed: func() { close(replayed) },
 	}
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	done2 := make(chan error, 1)
 	go func() { done2 <- srv2.Run(ctx2) }()
-	deadline = time.Now().Add(2 * time.Second)
-	for time.Now().Before(deadline) {
-		c, err := net.DialTimeout("tcp", addr, 200*time.Millisecond)
-		if err == nil {
-			c.Close()
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
+	select {
+	case <-replayed: // the boot sweep has walked the whole archive
+	case <-time.After(5 * time.Second):
+		t.Fatal("boot replay did not finish")
 	}
-	time.Sleep(300 * time.Millisecond) // give the background replay a beat
 	cancel2()
 	<-done2
 	rmu.Lock()
