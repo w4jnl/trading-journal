@@ -310,6 +310,9 @@ func loadLinkedTrades(ctx context.Context, db *sql.DB, journalEntryID int64) ([]
 //	trade_id  (one or many, all values are parsed; non-numerics ignored)
 //	back      (optional /-rooted URL to round-trip via the editor save)
 func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	tz := h.localTZ()
 	if err := r.ParseForm(); err != nil {
@@ -565,6 +568,7 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("delete group: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 		http.Redirect(w, r, redirectTo("deleted"), http.StatusSeeOther)
 		return
 	}
@@ -579,6 +583,7 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("update group: %w", err))
 		return
 	}
+	h.journalChanged(ctx)
 	http.Redirect(w, r, redirectTo("saved"), http.StatusSeeOther)
 }
 
@@ -586,6 +591,9 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 // delete from the editor's Delete button. ON DELETE CASCADE on the junction
 // table removes linked-trade rows. Redirects to the feed with flash=deleted.
 func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	entryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -600,6 +608,7 @@ func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("delete group: %w", err))
 		return
 	}
+	h.journalChanged(ctx)
 	q := url.Values{}
 	q.Set("flash", "deleted")
 	target := "/journal"
@@ -626,6 +635,9 @@ func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
 // `?flash=grouplinked=N&group=ID` annotation, so the /trades bulk
 // flow can stay in place rather than navigating into the editor.
 func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	entryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -694,6 +706,7 @@ func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("commit: %w", err))
 		return
 	}
+	h.journalChanged(ctx)
 
 	if back := r.FormValue("back"); back != "" && strings.HasPrefix(back, "/") && !strings.HasPrefix(back, "//") {
 		sep := "?"
@@ -711,6 +724,9 @@ func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 // GroupJournalUnlink handles POST /journal/group/{id}/unlink — removes a
 // trade from the group.
 func (h *Handlers) GroupJournalUnlink(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	entryID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

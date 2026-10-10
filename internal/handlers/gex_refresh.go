@@ -140,6 +140,9 @@ func (h *Handlers) refreshEntryGex(ctx context.Context, e models.JournalEntry) (
 // JournalGexRefresh handles POST /journal/{id}/gex/refresh for one entry and
 // redirects back to its page with the outcome flash.
 func (h *Handlers) JournalGexRefresh(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

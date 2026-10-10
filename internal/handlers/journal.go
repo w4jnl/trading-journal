@@ -693,6 +693,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete day journal: %w", delErr))
 				return
 			}
+			h.journalChanged(ctx)
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			h.serverError(w, fmt.Errorf("get day journal: %w", err))
 			return
@@ -723,6 +724,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("create journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	case err != nil:
 		h.serverError(w, fmt.Errorf("get journal: %w", err))
 		return
@@ -733,6 +735,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete journal: %w", err))
 				return
 			}
+			h.journalChanged(ctx)
 			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 			return
 		}
@@ -747,6 +750,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("update journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	}
 
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
@@ -946,6 +950,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("create week journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	case err != nil:
 		h.serverError(w, fmt.Errorf("get week journal: %w", err))
 		return
@@ -955,6 +960,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 				return
 			}
+			h.journalChanged(ctx)
 			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 			return
 		}
@@ -969,6 +975,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("update week journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	}
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
 }
@@ -976,6 +983,9 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 // WeekJournalDelete handles POST /journal/week/{week}/delete — explicit
 // delete from the week-entry editor's Delete button.
 func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	weekID := r.PathValue("week")
 	monday, _, _, err := parseISOWeek(weekID, h.localTZ())
@@ -993,6 +1003,7 @@ func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		h.serverError(w, fmt.Errorf("get week journal: %w", err))
 		return

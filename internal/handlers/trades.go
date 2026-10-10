@@ -558,6 +558,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("create trade journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	case err != nil:
 		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
 		return
@@ -567,6 +568,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete trade journal: %w", err))
 				return
 			}
+			h.journalChanged(ctx)
 			flash = "deleted"
 		} else {
 			if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
@@ -580,6 +582,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("update trade journal: %w", err))
 				return
 			}
+			h.journalChanged(ctx)
 		}
 	}
 

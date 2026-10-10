@@ -22,7 +22,7 @@ func (h *Handlers) aiJobRunning(ctx context.Context) bool {
 // be cancelled - the day job writes those same entries.
 func (h *Handlers) guardJournalingDuringAI(w http.ResponseWriter, r *http.Request) bool {
 	if h.aiJobRunning(r.Context()) {
-		http.Error(w, "AI analysis is running — cancel it or wait before editing the journal.", http.StatusConflict)
+		http.Error(w, aiBusyMessage, http.StatusConflict)
 		return true
 	}
 	return false
