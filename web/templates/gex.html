@@ -48,7 +48,7 @@
      host takes whatever is left under the title - renderLadder measures it
      and draws to that exact pixel height. */
   .gex-main { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 12px; align-items: stretch; }
-  @media (max-width: 1000px) { .gex-main { grid-template-columns: 1fr; } }
+  @media (max-width: 1000px) { .gex-main { grid-template-columns: minmax(0, 1fr); } }
   .gex-ladder-card { display: flex; flex-direction: column; }
   #gx-ladder { flex: 1; min-height: 320px; user-select: none; } /* SVG labels must not select mid-pan */
   .gex-ladder-svg { width: 100%; display: block; }

@@ -235,5 +235,14 @@
                    color: var(--brand-teal, var(--accent)); max-width: 200px; overflow: hidden;
                    text-overflow: ellipsis; white-space: nowrap; }
   .strategy-chip::before { content: "▦ "; font-size: 10px; opacity: 0.8; }
+  /* Pills wrap and truncate instead of eating half the row; on a phone the
+     pill row drops under the headline and the meta line ellipsizes. */
+  .entry-pills { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; max-width: 40%; }
+  .entry-pills .pill { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  @media (max-width: 600px) {
+    .entry-link { flex-wrap: wrap; }
+    .entry-pills { max-width: 100%; flex-basis: 100%; justify-content: flex-start; margin-top: 4px; }
+    .entry-main .meta { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  }
 </style>
 {{end}}

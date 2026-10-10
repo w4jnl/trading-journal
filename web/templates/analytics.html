@@ -58,15 +58,18 @@
   }
 
   /* Legacy classes — keep so the page still renders cleanly. */
-  .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-  .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+  .row-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .row-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   @media (max-width: 800px) {
     .row-3, .row-2 { grid-template-columns: 1fr; }
   }
   .trade-link { text-decoration: none; border-bottom: 1px dashed currentColor; color: inherit; }
   .trade-link:hover { border-bottom-style: solid; }
-  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
-  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
+  /* minmax(0, 1fr): a six-column table must scroll inside its card, not
+     size the column (and the page) to its content on a phone. */
+  .breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
+  .breakdown-grid > section { min-width: 0; }
+  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: minmax(0, 1fr); } }
   .breakdown-grid h3 { margin-top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; margin-bottom: 8px; }
   .chart-host { width: 100%; }
 

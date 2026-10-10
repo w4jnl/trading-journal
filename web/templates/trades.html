@@ -9,10 +9,15 @@
 
 {{template "trades_chart_live" .}}
 
+{{/* The filter panel is a <details> so a phone sees one "Filters" line
+     instead of seven stacked controls before the first trade; it ships
+     open and a small script closes it under 600px (no JS = open). */}}
+<details class="filters-collapse" id="trades-filters" open>
+<summary class="filters-summary">Filters{{if .FilterCount}} · <span class="num">{{.FilterCount}}</span> account{{if ne .FilterCount 1}}s{{end}}{{end}}</summary>
 <form method="get" action="/trades" class="filter-row">
   {{template "account_filter" .}}
   <label>Symbol
-    <select name="symbol_root">
+    <select name="symbol_root" onchange="this.form.requestSubmit()">
       <option value="">All</option>
       {{$selSym := index .Filters "SymbolRoot"}}
       {{range .SymbolRoots}}
@@ -21,7 +26,7 @@
     </select>
   </label>
   <label>Direction
-    <select name="direction">
+    <select name="direction" onchange="this.form.requestSubmit()">
       <option value="">Any</option>
       {{$selDir := index .Filters "Direction"}}
       <option value="long" {{if eq "long" $selDir}}selected{{end}}>Long</option>
@@ -29,7 +34,7 @@
     </select>
   </label>
   <label>Outcome
-    <select name="outcome">
+    <select name="outcome" onchange="this.form.requestSubmit()">
       <option value="">Any</option>
       {{$selOut := index .Filters "Outcome"}}
       <option value="win" {{if eq "win" $selOut}}selected{{end}}>Winners</option>
@@ -38,7 +43,7 @@
     </select>
   </label>
   <label>Horizon
-    <select name="horizon">
+    <select name="horizon" onchange="this.form.requestSubmit()">
       <option value="">Any</option>
       {{$selHz := index .Filters "Horizon"}}
       <option value="scalp" {{if eq "scalp" $selHz}}selected{{end}}>Scalp</option>
@@ -57,6 +62,13 @@
   {{template "date_presets" .}}
   <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
+</details>
+<script>
+  (function () {
+    var d = document.getElementById('trades-filters');
+    if (d && window.matchMedia && matchMedia('(max-width: 600px)').matches) d.open = false;
+  })();
+</script>
 
 {{template "trades_table_live" .}}
 
@@ -325,57 +337,76 @@
   {{end}}
 </div>
 
-<div class="table-scroll">
-  <table>
+{{/* Header cells sort the WHOLE filtered set server-side (?sort=&dir=);
+     the active column shows its direction and flips on click. The footer
+     totals the filtered set, not the page. Under 600px the table becomes
+     a card per trade (see .trades-table in app.css). */}}
+{{$sort := .Sort}}{{$dir := .Dir}}{{$refs := .SortRefs}}
+<div class="table-scroll sticky-head">
+  <table class="trades-table">
     <thead>
       <tr>
-        <th class="col-sel"><input type="checkbox" id="sel-all" title="Select all on this page"></th>
-        <th></th>
-        <th>Entry time</th>
-        <th>Account</th>
-        <th>Symbol</th>
-        <th>Dir</th>
-        <th>Horizon</th>
-        <th class="tabular">Qty</th>
-        <th class="tabular">Entry</th>
-        <th class="tabular">Exit</th>
-        <th class="tabular">Gross P&amp;L</th>
-        <th class="tabular">Comm</th>
-        <th class="tabular">Net P&amp;L</th>
-        <th class="tabular" title="Account balance after this trade">Bal after</th>
+        <th class="col-sel c-sel"><input type="checkbox" id="sel-all" title="Select all on this page" aria-label="Select all trades on this page"></th>
+        <th class="c-j"></th>
+        {{template "sort_th" (dict "Label" "Entry time" "Col" "entry" "Class" "c-time" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Account" "Col" "account" "Class" "c-acct" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Symbol" "Col" "symbol" "Class" "c-sym" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Dir" "Col" "dir" "Class" "c-dir" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Horizon" "Col" "duration" "Class" "c-hz" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Qty" "Col" "qty" "Class" "tabular c-qty" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Entry" "Col" "entryp" "Class" "tabular c-entry" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Exit" "Col" "exitp" "Class" "tabular c-exit" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Gross P&L" "Col" "gross" "Class" "tabular c-gross" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Comm" "Col" "comm" "Class" "tabular c-comm" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Net P&L" "Col" "net" "Class" "tabular c-net" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        <th class="tabular c-bal" title="Account balance after this trade">Bal after</th>
       </tr>
     </thead>
     <tbody>
     {{range .Trades}}
       <tr class="trade-row{{if .AccountRetired}} trade-row--retired{{end}}"
           data-trade-id="{{.ID}}"
+          tabindex="0"
           hx-get="/trades/{{.ID}}"
           hx-target="#trade-sheet-content"
           hx-swap="innerHTML"
           hx-indicator="closest tr">
-        <td class="col-sel" onclick="event.stopPropagation();">
-          <input type="checkbox" class="trade-sel" value="{{.ID}}" onclick="event.stopPropagation();">
+        <td class="col-sel c-sel" onclick="event.stopPropagation();">
+          <input type="checkbox" class="trade-sel" value="{{.ID}}" aria-label="Select trade {{.Symbol}} {{ltime .EntryTime "datetime"}}" onclick="event.stopPropagation();">
         </td>
-        <td title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
+        <td class="c-j" title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
           <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
-        <td class="num muted">{{ltime .EntryTime "datetime"}}</td>
-        <td>{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
-        <td class="num">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
-        <td>{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
-        <td>{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
-        <td class="tabular num">{{.Qty}}</td>
-        <td class="tabular num">{{printf "%.2f" .EntryPrice}}</td>
-        <td class="tabular num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
-        <td class="tabular num">{{pnlClass .GrossPnl}}</td>
-        <td class="tabular num muted">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
-        <td class="tabular num">{{pnlChip .NetPnl}}</td>
-        <td class="tabular num">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
+        <td class="c-acct" data-label="Account" title="{{.AccountName}}">{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
+        <td class="num c-sym" data-label="Symbol">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
+        <td class="c-dir">{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td class="c-hz">{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
+        <td class="tabular num c-qty" data-label="Qty">{{.Qty}}</td>
+        <td class="tabular num c-entry" data-label="Entry">{{printf "%.2f" .EntryPrice}}</td>
+        <td class="tabular num c-exit" data-label="Exit">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
+        <td class="tabular num c-gross" data-label="Gross">{{pnlClass .GrossPnl}}</td>
+        <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+        <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
+        <td class="tabular num c-bal" data-label="Bal after">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}
       <tr><td colspan="14" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
     {{end}}
     </tbody>
+    {{if .Trades}}
+    <tfoot>
+      <tr class="totals">
+        <td colspan="8" class="c-tot-label"><span class="num">{{.Totals.Count}}</span> trades in this filter · <span class="pnl-pos num">{{.Totals.Wins}}W</span><span class="muted">/</span><span class="pnl-neg num">{{.Totals.Losses}}L</span></td>
+        <td class="c-entry"></td>
+        <td class="c-exit"></td>
+        <td class="tabular num c-gross {{if gt .Totals.Gross 0.0}}pnl-pos{{else if lt .Totals.Gross 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Totals.Gross}}</td>
+        <td class="tabular num muted c-comm">{{printf "%.2f" .Totals.Commission}}</td>
+        <td class="tabular num c-net {{if gt .Totals.Net 0.0}}pnl-pos{{else if lt .Totals.Net 0.0}}pnl-neg{{end}}" data-label="Net">{{printf "%.2f" .Totals.Net}}</td>
+        <td class="c-bal"></td>
+      </tr>
+    </tfoot>
+    {{end}}
   </table>
 </div>
 
@@ -392,4 +423,13 @@
 {{template "trades_table_live" .}}
 {{template "live_refresh_oob" .}}
 {{template "nav_open_badge_oob" .}}
+{{end}}
+
+{{/* sort_th is one sortable header cell: Label, Col (sort key), Class,
+     plus the page's Sort / Dir / Refs. */}}
+{{define "sort_th"}}
+{{- $active := eq .Sort .Col -}}
+<th class="{{.Class}}{{if $active}} sorted{{end}}"{{if $active}} aria-sort="{{if eq .Dir "asc"}}ascending{{else}}descending{{end}}"{{end}}>
+  <a class="sort-link" href="{{index .Refs .Col}}" title="Sort by {{.Label}}">{{.Label}}{{if $active}}<span class="sort-arrow" aria-hidden="true">{{if eq .Dir "asc"}}▲{{else}}▼{{end}}</span>{{end}}</a>
+</th>
 {{end}}
