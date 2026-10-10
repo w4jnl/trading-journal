@@ -60,6 +60,12 @@ type dailyPnL struct {
 	Trades int64
 	Wins   int64
 	Losses int64
+	// SumWins / SumLosses are the day's per-trade positive and negative
+	// nets, so trailing averages divide like with like (trade sums by trade
+	// counts). The day's Net alone cannot give an average win: a day with
+	// +100, +100, -150 nets +50 but its average win is 100.
+	SumWins   float64
+	SumLosses float64
 }
 
 // dashboardEquity is the at-a-glance equity tile shown atop the dashboard.
@@ -193,8 +199,9 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 // (It also dodges a driver quirk where date() over Go's time.Time storage
 // occasionally returned NULL.) Days with no closed trades are omitted.
 func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days int) ([]dailyPnL, error) {
-	end := todayLocal(tz).AddDate(0, 0, 1)
-	start := end.AddDate(0, 0, -days)
+	// Bounds go to SQL as UTC instants (see daybounds.go); bucketing below
+	// stays in the trading timezone.
+	start, end := daysBoundsUTC(todayLocal(tz).AddDate(0, 0, 1-days), days)
 	rows, err := h.Queries.DashboardDailyNetPnL(ctx, models.DashboardDailyNetPnLParams{
 		ExitTime:   &start,
 		ExitTime_2: &end,
@@ -221,8 +228,10 @@ func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days i
 		switch {
 		case *r.NetPnl > 0:
 			row.Wins++
+			row.SumWins += *r.NetPnl
 		case *r.NetPnl < 0:
 			row.Losses++
+			row.SumLosses += *r.NetPnl
 		}
 	}
 	out := make([]dailyPnL, 0, len(bucket))
@@ -284,11 +293,12 @@ func buildTrailingStrip(daily []dailyPnL) dashboardTrailing {
 		tradesSeries = append(tradesSeries, float64(d.Trades))
 		wins += d.Wins
 		losses += d.Losses
-		if d.Net > 0 {
-			grossWin += d.Net
-		} else if d.Net < 0 {
-			grossLoss += d.Net
-		}
+		// Trade-level sums over trade-level counts. Summing positive DAY nets
+		// here (as this once did) mixed units: a day with +100, +100, -150
+		// contributed +50 to "gross win" and 2 to "wins", showing an average
+		// win of 25 against a true 100.
+		grossWin += d.SumWins
+		grossLoss += d.SumLosses
 		t.Trades += d.Trades
 
 		// 7-day rolling win rate, anchored at the end of each daily slice.
@@ -349,11 +359,11 @@ func buildTrailingStrip(daily []dailyPnL) dashboardTrailing {
 // for it, else the latest day with closed trades, else today (empty state).
 func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (time.Time, error) {
 	today := todayLocal(tz)
-	tomorrow := today.AddDate(0, 0, 1)
+	fromU, toU := dayBoundsUTC(today)
 
 	n, err := h.Queries.CountClosedTradesInRange(ctx, models.CountClosedTradesInRangeParams{
-		ExitTime:   &today,
-		ExitTime_2: &tomorrow,
+		ExitTime:   &fromU,
+		ExitTime_2: &toU,
 		UserID:     userID(ctx),
 	})
 	if err != nil {
@@ -377,10 +387,10 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 // dashboardStatsFor pulls the closed trades that exited within `[date, date+1d)`
 // and aggregates them into the summary the dashboard renders.
 func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *time.Location) (dashboardStats, error) {
-	end := date.AddDate(0, 0, 1)
+	fromU, toU := dayBoundsUTC(date)
 	rows, err := h.Queries.ListClosedTradesInRange(ctx, models.ListClosedTradesInRangeParams{
-		ExitTime:   &date,
-		ExitTime_2: &end,
+		ExitTime:   &fromU,
+		ExitTime_2: &toU,
 		UserID:     userID(ctx),
 	})
 	if err != nil {

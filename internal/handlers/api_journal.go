@@ -783,7 +783,7 @@ func (h *Handlers) lastTradingDay(ctx context.Context, tz *time.Location) (time.
 	err := h.DB.QueryRowContext(ctx,
 		`SELECT t.exit_time FROM trades t JOIN accounts a ON a.id = t.account_id
 		 WHERE a.user_id = ? AND a.active = 1 AND t.status = 'closed' AND t.exit_time IS NOT NULL AND t.exit_time < ?
-		 ORDER BY t.exit_time DESC LIMIT 1`, userID(ctx), today).Scan(&et)
+		 ORDER BY t.exit_time DESC LIMIT 1`, userID(ctx), today.UTC()).Scan(&et)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, nil
 	}
@@ -795,13 +795,13 @@ func (h *Handlers) lastTradingDay(ctx context.Context, tz *time.Location) (time.
 }
 
 func (h *Handlers) loadDayTradesForPrep(ctx context.Context, day time.Time, tz *time.Location) ([]prepDayTrade, error) {
-	end := day.AddDate(0, 0, 1)
+	fromU, toU := dayBoundsUTC(day) // local day -> UTC text bounds (daybounds.go)
 	rows, err := h.DB.QueryContext(ctx, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.entry_time, t.entry_price, t.exit_time, t.exit_price, t.account_id, a.name, t.net_pnl
 		FROM trades t JOIN accounts a ON a.id = t.account_id
 		WHERE t.status = 'closed' AND t.exit_time IS NOT NULL AND a.active = 1 AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
-		ORDER BY t.entry_time ASC, t.id ASC`, userID(ctx), day, end)
+		ORDER BY t.entry_time ASC, t.id ASC`, userID(ctx), fromU, toU)
 	if err != nil {
 		return nil, fmt.Errorf("load day trades: %w", err)
 	}
