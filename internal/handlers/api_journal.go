@@ -608,7 +608,7 @@ func (h *Handlers) APIAttachmentServe(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	h.serveAttachmentBytes(w, r, id, userID(r.Context()), true)
+	h.serveAttachmentBytes(w, r, id, userID(r.Context()))
 }
 
 func apiQueryInt(r *http.Request, name string, def, lo, hi int) int {

@@ -50,6 +50,10 @@ type Handlers struct {
 	// the SSO frontend enforces origin checks).
 	CSRF *auth.CSRF
 
+	// IbkrGatewayHosts is cfg.IBKR.AllowedGatewayHosts: where non-admin
+	// users may point a Client Portal Gateway (see ibkrGatewayHostAllowed).
+	IbkrGatewayHosts []string
+
 	// ActAs is the admin "browse as another user" helper. Nil disables
 	// the feature (and the /admin/act-as routes return 500-ish).
 	ActAs *auth.ActAs
@@ -573,9 +577,9 @@ func validBackHref(r *http.Request) string {
 	if s == "" {
 		return ""
 	}
-	// Only allow same-origin relative URLs. Reject "//" (protocol-relative)
-	// and anything not starting with "/" — that excludes "http://…" too.
-	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") {
+	// Only same-origin relative URLs: no scheme/host, no protocol-relative
+	// "//", no backslash (auth.SafeLocalPath has the full rule).
+	if !auth.SafeLocalPath(s) {
 		return ""
 	}
 	return s

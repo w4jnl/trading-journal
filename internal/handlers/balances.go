@@ -311,6 +311,13 @@ func (h *Handlers) AccountsAddBalance(w http.ResponseWriter, r *http.Request) {
 		notePtr = &note
 	}
 
+	// Ownership: the anchor's account must be the caller's. UpsertBalanceAnchor
+	// is keyed on account_id alone and trusts this check.
+	if _, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: accountID, UserID: auth.MustUser(ctx).ID}); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
 	// Upsert: if an anchor already exists for this (account, date) pair the
 	// new value wins. Lets the user fix a same-day typo without first having
 	// to delete the old row.

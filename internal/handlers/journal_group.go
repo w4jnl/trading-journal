@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -390,7 +391,9 @@ func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := fmt.Sprintf("/journal/group/%d", entry.ID)
-	if back := r.FormValue("back"); back != "" && strings.HasPrefix(back, "/") && !strings.HasPrefix(back, "//") {
+	h.LiveData.Bump(userID(ctx))
+
+	if back := r.FormValue("back"); auth.SafeLocalPath(back) {
 		v := url.Values{}
 		v.Set("back", back)
 		target += "?" + v.Encode()
@@ -722,12 +725,23 @@ func (h *Handlers) GroupJournalUnlink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad trade_id", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.DB.ExecContext(ctx,
-		"DELETE FROM journal_entry_trades WHERE journal_entry_id = ? AND trade_id = ?",
-		entryID, tradeID,
-	); err != nil {
+	// Ownership lives in the predicate: the link is removed only when the
+	// group entry is the caller's. Anything else is a 404, like the link
+	// handler's guard above - a foreign id must not confirm or mutate.
+	res, err := h.DB.ExecContext(ctx,
+		`DELETE FROM journal_entry_trades
+		 WHERE journal_entry_id = ? AND trade_id = ?
+		   AND journal_entry_id IN (SELECT id FROM journal_entries WHERE user_id = ? AND scope = 'group')`,
+		entryID, tradeID, userID(ctx),
+	)
+	if err != nil {
 		h.serverError(w, fmt.Errorf("unlink: %w", err))
 		return
 	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	h.LiveData.Bump(userID(ctx))
 	http.Redirect(w, r, fmt.Sprintf("/journal/group/%d?flash=unlinked", entryID), http.StatusSeeOther)
 }
