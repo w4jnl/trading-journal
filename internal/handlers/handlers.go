@@ -50,6 +50,11 @@ type Handlers struct {
 	// the SSO frontend enforces origin checks).
 	CSRF *auth.CSRF
 
+	// ExternalURL is cfg.Server.ExternalURL: the public origin the API docs
+	// and OpenAPI servers list advertise. "" falls back to the request's
+	// forwarded host (publicBaseURL).
+	ExternalURL string
+
 	// ActAs is the admin "browse as another user" helper. Nil disables
 	// the feature (and the /admin/act-as routes return 500-ish).
 	ActAs *auth.ActAs
@@ -773,4 +778,22 @@ func (a accountAdmission) admits(accountID int64) bool {
 		return a.allowed[accountID]
 	}
 	return !a.excluded[accountID]
+}
+
+// publicBaseURL is the scheme://host to advertise in copy-pasteable URLs:
+// the configured external URL when set, else what the request arrived on
+// (X-Forwarded-* from the reverse proxy, which an attacker on the same
+// network segment could set - hence the preference for configuration).
+func (h *Handlers) publicBaseURL(r *http.Request) string {
+	if u := strings.TrimRight(strings.TrimSpace(h.ExternalURL), "/"); u != "" {
+		return u
+	}
+	return requestBaseURL(r)
+}
+
+// clearWriteDeadline lifts the server's WriteTimeout for a response that
+// legitimately takes longer: the synchronous AI reads wait up to the AI
+// client's own timeout (120 s by default) for a local model.
+func clearWriteDeadline(w http.ResponseWriter) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 }
