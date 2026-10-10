@@ -11,6 +11,13 @@
 //    listeners a failed hx-* request (AI analyze 502/409, journal-save-during-
 //    AI 409, bulk saves) just stopped its spinner and told the user nothing.
 //    toast.js already renders kind:"error" with role="alert".
+//
+// 3. Flash bridge: pages still render server-side .flash banners after a
+//    redirect (?flash=saved, ?err=..., ?mwfills=N). When the address carries
+//    one of those transient parameters the banners become toasts and the
+//    parameters leave the URL, so a reload or a bookmark never replays
+//    "Saved." Banners on a page WITHOUT such a parameter are state notices
+//    (stale dashboard, closed options session) and stay inline.
 
 (function () {
   "use strict";
@@ -44,4 +51,43 @@
   document.body.addEventListener("htmx:sendError", function () {
     notify("Network error - the server did not respond.", "error");
   });
+
+  var TRANSIENT = ["flash", "err", "mwfills"];
+
+  function flashKind(el) {
+    var c = el.classList;
+    if (c.contains("error") || c.contains("gex-failed")) return "error";
+    if (c.contains("warn") || c.contains("deleted")) return "warn";
+    if (c.contains("saved") || c.contains("created") || c.contains("moved") ||
+        c.contains("analyzed") || c.contains("gex-refreshed")) return "success";
+    return "info";
+  }
+
+  function bridgeFlashes() {
+    var params = new URLSearchParams(location.search);
+    if (!TRANSIENT.some(function (k) { return params.has(k); })) return;
+    var root = document.querySelector("main") || document.body;
+    root.querySelectorAll(".flash").forEach(function (el) {
+      // A link inside the banner becomes the toast's action ("Open").
+      var link = el.querySelector("a[href]");
+      var action = null;
+      if (link) {
+        action = { label: link.textContent.replace(/\s+/g, " ").trim() || "Open", href: link.getAttribute("href") };
+        link.remove();
+      }
+      var text = (el.textContent || "").replace(/\s+/g, " ").trim();
+      var kind = flashKind(el);
+      el.remove();
+      if (!text || typeof window.toast !== "function") return;
+      // Errors and warnings wait to be read; a long explanation too.
+      var sticky = kind === "error" || kind === "warn" || text.length > 140;
+      window.toast(text, { kind: kind, duration: sticky ? 0 : 6000, action: action });
+    });
+    TRANSIENT.forEach(function (k) { params.delete(k); });
+    var qs = params.toString();
+    try {
+      history.replaceState(history.state, "", location.pathname + (qs ? "?" + qs : "") + location.hash);
+    } catch (_) { /* sandboxed frame: the banner is gone either way */ }
+  }
+  bridgeFlashes();
 })();

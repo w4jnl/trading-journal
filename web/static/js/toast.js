@@ -6,9 +6,13 @@
 //   window.toast("Saved");
 //   window.toast("Could not upload", { kind: "error" });
 //   window.toast("Imported 42 trades", { kind: "success", duration: 6000 });
+//   window.toast("New data available", { duration: 0, action: { label: "Refresh", onClick: reload } });
+//   window.toast("Account cloned", { action: { label: "Open", href: "/accounts#row-7" } });
 //
 // `kind` is one of: success | error | warn | info (default).
 // `duration` is ms before auto-dismiss (default 4000). 0 keeps it open.
+// `action` renders one button (onClick) or link (href) inside the toast; the
+// toast dismisses after the action runs. Clicking anywhere else dismisses.
 (function () {
   function ensureStack() {
     var stack = document.getElementById("toast-stack");
@@ -42,8 +46,32 @@
     node.setAttribute("role", kind === "error" ? "alert" : "status");
 
     var text = document.createElement("span");
+    text.className = "toast-text";
     text.textContent = message;
     node.appendChild(text);
+
+    var action = opts.action;
+    if (action && action.label) {
+      var act;
+      if (action.href) {
+        act = document.createElement("a");
+        act.href = action.href;
+      } else {
+        act = document.createElement("button");
+        act.type = "button";
+      }
+      act.className = "toast-action";
+      act.textContent = action.label;
+      act.addEventListener("click", function (e) {
+        e.stopPropagation();
+        if (typeof action.onClick === "function") {
+          e.preventDefault();
+          action.onClick();
+        }
+        dismiss(node);
+      });
+      node.appendChild(act);
+    }
 
     var close = document.createElement("button");
     close.type = "button";

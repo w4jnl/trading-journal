@@ -5,7 +5,7 @@
 {{template "live_refresh" .}}
 
 <div class="row-between mb-16">
-  <h1 style="margin: 0;">{{.MonthLabel}}</h1>
+  <h1 class="page-title">{{.MonthLabel}}</h1>
   <div class="row-sm">
     <a class="btn btn--secondary btn--sm" href="/calendar?month={{.PrevMonth}}{{if .FilterQS}}&{{.FilterQS}}{{end}}">‹ Prev</a>
     <a class="btn btn--secondary btn--sm" href="/calendar{{if .FilterQS}}?{{.FilterQS}}{{end}}">This month</a>
@@ -93,6 +93,23 @@
   .calendar td.sat-cell.week-pos-strong .week-trades,
   .calendar td.sat-cell.week-neg        .week-trades,
   .calendar td.sat-cell.week-neg-strong .week-trades { color: var(--cal-meta-on-tint); }
+  /* Phone agenda: under 600px the seven-column grid cannot show a number
+     per day, so the month renders as a list of trading days with the week
+     totals between them; the grid is hidden there. */
+  .cal-agenda { display: none; list-style: none; margin: 0; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; background: var(--bg-elev); }
+  .cal-agenda:empty { border: 0; }
+  .cal-agenda:empty::after { content: "No trading days this month."; display: block; color: var(--fg-muted); padding: 16px 0; }
+  .cal-agenda li { display: flex; align-items: center; border-bottom: 1px solid var(--border); }
+  .cal-agenda li:last-child { border-bottom: 0; }
+  .cal-agenda-main { flex: 1; min-width: 0; display: grid; grid-template-columns: 62px minmax(0, 1fr) auto; align-items: center; gap: 8px; padding: 10px 12px; color: inherit; text-decoration: none; }
+  .cal-agenda-date { font-weight: var(--fw-semibold); white-space: nowrap; }
+  .cal-agenda-date .dow { color: var(--fg-muted); font-weight: var(--fw-regular); }
+  .cal-agenda-meta { color: var(--fg-muted); font-size: var(--fs-12); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cal-agenda-pnl { font-weight: var(--fw-semibold); white-space: nowrap; }
+  .cal-agenda-j { display: inline-flex; padding: 10px 12px 10px 4px; }
+  .cal-agenda-j .icon-journal { width: 18px; height: 18px; }
+  .cal-agenda-week { background: var(--bg-sunken); }
+  .cal-agenda-week .cal-agenda-date { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--fg-muted); }
   @media (max-width: 600px) {
     .calendar { border-spacing: 3px; }
     .calendar td { height: 76px; padding: 5px 4px; font-size: 11px; }
@@ -100,6 +117,8 @@
     .day-pnl { font-size: 13px; }
     .week-pnl-val { font-size: 16px; }
     .j-cell-icon { top: 2px; right: 3px; }
+    #cal-live > .table-scroll { display: none; }
+    .cal-agenda { display: block; }
   }
 </style>
 {{end}}
@@ -210,6 +229,33 @@
   </tbody>
 </table>
 </div>
+<ul class="cal-agenda">
+  {{range $wi, $week := .Weeks}}
+  {{$wt := index $.WeeklyTotals $wi}}
+  {{range $di, $day := $week}}
+    {{if and $day.InMonth (ne $di 6) $day.HasData}}
+    {{$dayTo := $day.Date}}{{if eq $di 5}}{{$dayTo = $day.Date.AddDate 0 0 1}}{{end}}
+    <li class="cal-agenda-day">
+      <a class="cal-agenda-main" href="/trades?from={{$day.Date.Format "2006-01-02"}}&to={{$dayTo.Format "2006-01-02"}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
+        <span class="cal-agenda-date"><span class="dow">{{$day.Date.Format "Mon"}}</span> <span class="num">{{$day.Date.Day}}</span></span>
+        <span class="cal-agenda-meta"><span class="num">{{$day.Trades}}</span> trades · <span class="num">{{$day.Wins}}W/{{$day.Losses}}L</span></span>
+        <span class="cal-agenda-pnl num {{if gt $day.NetPnl 0.0}}pnl-pos{{else if lt $day.NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" $day.NetPnl}}</span>
+      </a>
+      <a class="cal-agenda-j" href="/journal/{{$day.Date.Format "2006-01-02"}}?back={{$.CalendarBack}}" title="{{if $day.HasJournal}}Journal entry{{else}}Add journal entry{{end}}">{{template "journal_icon" (journalState $day.HasJournal $day.JournalTag)}}</a>
+    </li>
+    {{end}}
+    {{if and (eq $di 6) $wt.InMonth $wt.HasData}}
+    <li class="cal-agenda-week">
+      <a class="cal-agenda-main" href="/trades?from={{$wt.MondayStr}}&to={{$wt.SundayStr}}{{if $.FilterQS}}&{{$.FilterQS}}{{end}}&back={{$.CalendarBack}}">
+        <span class="cal-agenda-date">Week {{$wt.ISOWeek}}</span>
+        <span class="cal-agenda-meta"><span class="num">{{$wt.Trades}}</span> trades</span>
+        <span class="cal-agenda-pnl num {{if gt $wt.NetPnl 0.0}}pnl-pos{{else if lt $wt.NetPnl 0.0}}pnl-neg{{end}}">{{printf "%.2f" $wt.NetPnl}}</span>
+      </a>
+    </li>
+    {{end}}
+  {{end}}
+  {{end}}
+</ul>
 <script>
   // Highlight today's cell with the accent ring. Done in JS so the template
   // doesn't have to thread a "today" flag through every day struct; the cell

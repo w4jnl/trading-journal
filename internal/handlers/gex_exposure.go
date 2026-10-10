@@ -72,10 +72,13 @@ type gexExpoExpiry struct {
 // The /gex/exposure/data endpoint returns the same shape (minus levels and
 // regime - the client keeps the page-load ones).
 type gexExpo struct {
-	Denom       string                    `json:"denom"`
-	AsOfET      string                    `json:"asOfET"`
-	OIDate      string                    `json:"oiDate"`
-	Spot        float64                   `json:"spot"`
+	Denom  string  `json:"denom"`
+	AsOfET string  `json:"asOfET"`
+	OIDate string  `json:"oiDate"`
+	Spot   float64 `json:"spot"`
+	// EM is half of today's expected-move band in the levels' denomination
+	// (nil when the snapshot has none). The client lands on spot +/- 3 EM.
+	EM          *float64                  `json:"em"`
 	BucketWidth float64                   `json:"bucketWidth"`
 	Profiles    map[string]gexExpoProfile `json:"profiles"`
 	Levels      []gexExpoLevel            `json:"levels"`
@@ -571,6 +574,10 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 	if s != nil {
 		lad := gexBuildLadder(s, spotFut)
 		e.Regime = lad.Regime
+		if lad.EMHigh != nil && lad.EMLow != nil && *lad.EMHigh > *lad.EMLow {
+			em := (*lad.EMHigh - *lad.EMLow) / 2
+			e.EM = &em
+		}
 		add := func(label string, v *float64, kind, family, gexNote string) {
 			if v != nil {
 				e.Levels = append(e.Levels, gexExpoLevel{Label: label, V: *v, Kind: kind, Family: family, Gex: gexNote})

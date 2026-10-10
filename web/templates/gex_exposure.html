@@ -2,17 +2,6 @@
 
 {{define "content"}}
 <style>
-  .gex-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-  .gex-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
-  .gex-seg a { padding: 5px 14px; font-size: 13px; text-decoration: none; color: var(--fg-muted); }
-  .gex-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-
-  /* Time scrub: same chrome as the Overview page (see gex.html - the fixed
-     label width keeps the flex slider from resizing mid-drag). */
-  .gex-scrub { display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
-  .gex-scrub input[type=range] { flex: 1; accent-color: var(--accent); }
-  .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; width: 168px; flex: 0 0 168px; text-align: right; white-space: nowrap; }
-
   /* Chip strip: selectable profile filters left, informational expiry chips
      scrolling horizontally on the right. */
   .gxe-strip { display: flex; align-items: center; gap: 10px; padding: 10px 14px; }
@@ -21,27 +10,7 @@
   .gxe-filters button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .gxe-filters button:disabled { opacity: 0.4; cursor: default; border-style: dashed; }
   .gxe-divider { width: 1px; align-self: stretch; background: var(--border); flex: 0 0 auto; }
-  .gxe-expiries { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
-  .gxe-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; font-size: 11px; white-space: nowrap; border-radius: var(--r-sm); }
-  .gxe-chip b { font-size: 11px; line-height: 1.2; color: var(--fg); font-weight: 600; }
-  .gxe-chip .gxe-chip-nums { display: flex; align-items: baseline; gap: 5px; line-height: 1.2; }
-  .gxe-chip .num { font-size: 10px; }
-  .gxe-chip .gxe-pct { font-size: 10px; color: var(--fg-muted); }
-  .gxe-chip--pos .num { color: var(--pos); }
-  .gxe-chip--neg .num { color: var(--neg); }
-  /* Interactive = bordered pill (matches the profile filter buttons);
-     informational = plain column separated by hairlines, deliberately NOT
-     button-like - only clickable things look clickable. */
-  button.gxe-chip--live { border: 1px solid var(--border); background: none; cursor: pointer; text-align: left; font: inherit; }
-  button.gxe-chip--live:hover { border-color: var(--accent); }
-  button.gxe-chip--live.on { border-color: var(--accent); background: var(--accent-soft); }
-  button.gxe-chip--live.on b { color: var(--accent); }
-  .gxe-chip--locked { border: 0; border-left: 1px solid var(--border); border-radius: 0; opacity: 0.65; }
-  .gxe-chip--locked b { color: var(--fg-muted); font-weight: 500; }
-  /* Ghost chip: a SELECTED date the currently viewed book doesn't offer
-     (scrubbed to a moment before it listed, or past its expiry). Stays
-     clickable so the selection can be dropped. */
-  button.gxe-chip--ghost { border-style: dashed; opacity: 0.75; }
+  /* Expiry chips: shared rules in app.css (GEX shared chrome). */
 
   #gxe-chart { height: 700px; min-height: 480px; user-select: none; } /* JS stretches to the viewport bottom */
   .gxe-svg { width: 100%; display: block; }
@@ -61,10 +30,10 @@
 
 {{template "back_button" .}}
 
-<div class="gex-toolbar">
-  <h1 style="margin: 0;">Gamma (GEX)</h1>
+<div class="toolbar">
+  <h1 class="page-title">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
-  <div class="gex-seg" id="gxe-market-seg">
+  <div class="seg" id="gxe-market-seg">
     <a href="/gex/exposure/ES{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/exposure/NQ{{.QuerySuffix}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
@@ -208,16 +177,19 @@
     return (gexExpoIdxMode && r > 0) ? r : 1;
   }
 
-  // Landing view: spot +/- 15 buckets (MenthorQ-like), clamped to the fit.
-  // Wheel-out / dblclick reach the full strike range.
+  // Landing view: spot +/- 3x today's expected move when the blob carries
+  // one (the band the session is priced to - the same window the Overview
+  // tab lands on), else spot +/- 15 buckets (MenthorQ-like). Clamped to the
+  // fit; wheel-out / dblclick reach the full strike range.
   function gexExpoSeedZoom() {
     const p = gexExpoProfile();
     if (!p || !p.strikes.length) { gexExpoZoom = null; return; }
     const dv = gexExpoDiv();
     const bw = (gexExpoData.bucketWidth || 1) / dv;
     const spot = gexExpoData.spot / dv;
-    const lo = Math.max(p.strikes[0] / dv - bw / 2, spot - 15 * bw);
-    const hi = Math.min(p.strikes[p.strikes.length - 1] / dv + bw / 2, spot + 15 * bw);
+    const half = gexExpoData.em > 0 ? 3 * gexExpoData.em / dv : 15 * bw;
+    const lo = Math.max(p.strikes[0] / dv - bw / 2, spot - half);
+    const hi = Math.min(p.strikes[p.strikes.length - 1] / dv + bw / 2, spot + half);
     gexExpoZoom = hi > lo ? { lo: lo, hi: hi } : null;
   }
 

@@ -185,54 +185,5 @@
     <span>none</span>
   </label>
 </div>
-<style>
-  .tag-picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
-  .tag-picker .chip {
-    padding: 6px 12px;
-    border-width: 2px;
-    font-weight: 500;
-    opacity: 0.55;
-    transition: transform var(--t-fast), opacity var(--t-fast),
-                background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
-  }
-  .tag-picker .chip:hover { opacity: 0.85; }
-  .tag-picker .chip input[type=radio] { display: none; }
-  .tag-picker .chip .icon { width: 14px; height: 14px; }
-
-  /* SELECTED state — full-color fill, white text, full opacity, a leading
-     checkmark, and a slight lift. JS toggles .chip-on live on click so the
-     update doesn't depend on :has() being supported. The server-rendered
-     .chip-on class is also honoured for the initial paint. */
-  .tag-picker .chip.chip-on {
-    color: #ffffff !important;
-    font-weight: 700;
-    opacity: 1;
-    transform: translateY(-1px);
-  }
-  .tag-picker .chip.chip-on::before {
-    content: "✓ ";
-    font-weight: 800;
-  }
-  .tag-picker .chip.chip-on.tag-good    { background: var(--pos);        border-color: var(--pos); }
-  .tag-picker .chip.chip-on.tag-bad     { background: var(--neg);        border-color: var(--neg); }
-  .tag-picker .chip.chip-on.tag-neutral { background: var(--fg-muted);   border-color: var(--fg-muted); }
-  .tag-picker .chip.chip-on.tag-none    { background: var(--fg-subtle);  border-color: var(--fg-subtle); }
-</style>
-
-<script>
-  // Toggle .chip-on on the clicked label and clear it from its siblings.
-  // Browsers that don't fully support :has() still get the right visual; in
-  // browsers that do, this is a redundant-but-cheap belt-and-suspenders.
-  (function () {
-    document.addEventListener('change', (e) => {
-      const input = e.target;
-      if (!input || input.type !== 'radio' || input.name !== 'tag') return;
-      const picker = input.closest('.tag-picker');
-      if (!picker) return;
-      picker.querySelectorAll('.chip').forEach((c) => c.classList.remove('chip-on'));
-      const label = input.closest('label.chip');
-      if (label) label.classList.add('chip-on');
-    });
-  })();
-</script>
+{{/* Styles: app.css "Tag picker"; behaviour: /static/js/tag_picker.js. */}}
 {{end}}

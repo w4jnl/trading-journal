@@ -10,7 +10,7 @@
 {{define "gex_tabs"}}
 {{/* The ids are rewritten client-side while scrubbing (gexSyncMoment on
      both pages), so the viewed moment follows a tab switch. */}}
-<div class="gex-seg">
+<div class="seg">
   {{if .AtParam}}
   <a id="gx-tab-overview" href="/gex/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "overview"}}active{{end}}">Overview</a>
   <a id="gx-tab-exposure" href="/gex/exposure/{{.Market}}?at={{.AtParam}}" class="{{if eq .GexTab "exposure"}}active{{end}}">Exposure</a>
