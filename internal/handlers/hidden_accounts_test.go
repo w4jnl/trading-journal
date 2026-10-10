@@ -35,7 +35,7 @@ func TestHiddenAccountsStayOutOfTheJournal(t *testing.T) {
 	ctx := auth.WithUser(context.Background(), &auth.User{ID: uid})
 	day := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
 
-	prep, err := h.loadDayTradesForPrep(ctx, day, time.UTC)
+	prep, err := h.journalSvc().LoadDayTrades(ctx, uid, day)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -47,11 +47,11 @@ func TestHiddenAccountsStayOutOfTheJournal(t *testing.T) {
 	if err != nil || !last.Equal(day) {
 		t.Errorf("lastTradingDay = %v (%v), want %v", last, err, day)
 	}
-	resp, err := h.prepareDayEntries(ctx, "2026-10-08", time.UTC)
+	resp, err := h.prepareDayEntries(ctx, "2026-10-08")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if entries, _ := resp["entries"].([]preparedEntry); len(entries) != 1 || entries[0].TradeIDs[0] != 10 {
+	if entries := resp.Entries; len(entries) != 1 || entries[0].TradeIDs[0] != 10 {
 		t.Errorf("prepare_day entries = %+v, want one for trade 10", entries)
 	}
 
