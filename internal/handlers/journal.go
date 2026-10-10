@@ -110,7 +110,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 				if meta != "" {
 					meta += " · "
 				}
-				meta += fmt.Sprintf("$%.2f", *row.TradeNetPnl)
+				meta += fmt.Sprintf("%+.2f", *row.TradeNetPnl) // signed, no currency glyph - nothing else in the app shows one
 			}
 			fi.MetaLabel = meta
 			if row.TradeID != nil {

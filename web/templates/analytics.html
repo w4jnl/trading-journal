@@ -58,15 +58,18 @@
   }
 
   /* Legacy classes — keep so the page still renders cleanly. */
-  .row-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 16px; }
-  .row-2 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin-bottom: 16px; }
+  .row-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .row-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
   @media (max-width: 800px) {
     .row-3, .row-2 { grid-template-columns: 1fr; }
   }
   .trade-link { text-decoration: none; border-bottom: 1px dashed currentColor; color: inherit; }
   .trade-link:hover { border-bottom-style: solid; }
-  .breakdown-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
-  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: 1fr; } }
+  /* minmax(0, 1fr): a six-column table must scroll inside its card, not
+     size the column (and the page) to its content on a phone. */
+  .breakdown-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px; margin: 24px 0; }
+  .breakdown-grid > section { min-width: 0; }
+  @media (max-width: 800px) { .breakdown-grid { grid-template-columns: minmax(0, 1fr); } }
   .breakdown-grid h3 { margin-top: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--fg-muted); font-weight: 600; margin-bottom: 8px; }
   .chart-host { width: 100%; }
 
@@ -79,7 +82,7 @@
 
   .bar-row { display: grid; grid-template-columns: 120px 1fr 40px; gap: 8px; align-items: center; padding: 4px 0; font-size: 12px; }
   .bar-row .lbl { color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .bar-row .bar { height: 10px; border-radius: 999px; background: var(--bg-sunken); }
+  .bar-row .bar { height: 10px; border-radius: 999px; background: var(--border-strong); } /* visible on dark cards too; --bg-sunken was 1.05:1 */
   .bar-row .bar.pos { background: var(--pos); }
   .bar-row .bar.neg { background: var(--neg); }
   .bar-row .val { text-align: right; color: var(--fg); }
@@ -216,8 +219,10 @@
         <td class="tabular num">{{.Trades}}</td>
         <td><span class="pnl-pos num">{{.Wins}}</span><span class="muted">/</span><span class="pnl-neg num">{{.Losses}}</span></td>
         <td class="tabular num {{if gt .Net 0.0}}pnl-pos{{else if lt .Net 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Net}}</td>
-        <td class="tabular num pnl-pos">{{printf "%.2f" .Best}}</td>
-        <td class="tabular num pnl-neg">{{printf "%.2f" .Worst}}</td>
+        {{/* Colour follows the sign, not the column: a bucket whose worst
+             trade still made money shows green. */}}
+        <td class="tabular num {{pnlSign .Best}}">{{printf "%.2f" .Best}}</td>
+        <td class="tabular num {{pnlSign .Worst}}">{{printf "%.2f" .Worst}}</td>
       </tr>
       {{else}}
       <tr><td colspan="6" class="muted" style="text-align: center;">no data</td></tr>
@@ -403,7 +408,7 @@
   <div class="card">
     <div class="label">Best Trade</div>
     {{with $.Dash.Best}}
-      <div class="value-lg pnl-pos num">
+      <div class="value-lg {{pnlSign .NetPnl}} num">
         <a class="trade-link" href="#" data-trade-id="{{.ID}}"
            hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
            onclick="return false;">{{printf "%.2f" .NetPnl}}</a>
@@ -419,7 +424,7 @@
   <div class="card">
     <div class="label">Worst Trade</div>
     {{with $.Dash.Worst}}
-      <div class="value-lg pnl-neg num">
+      <div class="value-lg {{pnlSign .NetPnl}} num">
         <a class="trade-link" href="#" data-trade-id="{{.ID}}"
            hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
            onclick="return false;">{{printf "%.2f" .NetPnl}}</a>

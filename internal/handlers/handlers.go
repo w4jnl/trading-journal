@@ -50,6 +50,10 @@ type Handlers struct {
 	// the SSO frontend enforces origin checks).
 	CSRF *auth.CSRF
 
+	// IbkrGatewayHosts is cfg.IBKR.AllowedGatewayHosts: where non-admin
+	// users may point a Client Portal Gateway (see ibkrGatewayHostAllowed).
+	IbkrGatewayHosts []string
+
 	// ActAs is the admin "browse as another user" helper. Nil disables
 	// the feature (and the /admin/act-as routes return 500-ish).
 	ActAs *auth.ActAs
@@ -424,13 +428,26 @@ func (h *Handlers) funcMap() template.FuncMap {
 			return ""
 		},
 		// snippet truncates s to at most n runes, appending "…" if cut.
-		"snippet": func(s string, n int) string {
-			r := []rune(s)
-			if len(r) <= n {
-				return s
+		// snippet is the one-line preview of a journal body: machine blocks
+		// and markdown syntax stripped (preview.go), then cut to n runes.
+		"snippet":       previewText,
+		"hasAIReview":   hasAIReview,
+		"hasGexContext": hasGexContext,
+		// pnlSign is the sentiment class for a signed amount: colour follows
+		// the SIGN, never the column - a "worst" that is positive is green.
+		"pnlSign": func(v float64) string {
+			switch {
+			case v > 0:
+				return "pnl-pos"
+			case v < 0:
+				return "pnl-neg"
 			}
-			return string(r[:n]) + "…"
+			return ""
 		},
+		// groupTrades folds copy-trader fan-out (the same decision filled on
+		// several accounts within two seconds) into one row per decision for
+		// the journal trade tables; see groupLinkedTrades.
+		"groupTrades": groupLinkedTrades,
 		// cellClass picks a calendar-cell color class based on net P&L magnitude.
 		// Threshold is rough: $100 / $-100 separates "regular day" from "big day".
 		"cellClass": func(netPnl float64, hasData bool) string {
@@ -573,9 +590,9 @@ func validBackHref(r *http.Request) string {
 	if s == "" {
 		return ""
 	}
-	// Only allow same-origin relative URLs. Reject "//" (protocol-relative)
-	// and anything not starting with "/" — that excludes "http://…" too.
-	if !strings.HasPrefix(s, "/") || strings.HasPrefix(s, "//") {
+	// Only same-origin relative URLs: no scheme/host, no protocol-relative
+	// "//", no backslash (auth.SafeLocalPath has the full rule).
+	if !auth.SafeLocalPath(s) {
 		return ""
 	}
 	return s

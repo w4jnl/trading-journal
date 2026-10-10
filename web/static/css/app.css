@@ -72,6 +72,18 @@
   --neg-strong: #b91c1c;
   --neg-muted:  #9b3434; /* losses-in-context (calendar history) vs active warning */
   --warn:       #d97706;
+  /* Text-on-surface sentiment colours. --pos/--neg are fills and large
+     numerals; at 11-13px on the page background they measure ~3.2:1, so
+     body-size text uses these darker siblings (>= 4.5:1 on --bg). The
+     --on-* pair is the text colour inside a solid --pos-text/--neg-text
+     fill (the hero chip). */
+  --pos-text:    #15803d;
+  --neg-text:    #b91c1c;
+  --warn-text:   #9a3412;
+  --info-text:   #1e40af;
+  --accent-text: #0f7f84;
+  --on-pos:      #ffffff;
+  --on-neg:      #ffffff;
   --warn-soft:  #fffbeb;
   --warn-border:#fde68a;
   --info:       #2563eb;
@@ -191,7 +203,7 @@
   --border-strong: #3f3f46;
 
   --accent:        #2EBABE;
-  --accent-fg:     #ffffff;
+  --accent-fg:     #0a0a0b; /* near-black on the teal: white measured 2.4:1 */
   --accent-hover:  #A8DCDD;
   --accent-soft:   rgba(46, 186, 190, 0.16);
   --accent-strong: #A8DCDD;
@@ -206,6 +218,15 @@
   --neg-strong: #dc2626;
   --neg-muted:  #c45a5a;
   --warn:       #f59e0b;
+  /* Dark surfaces: the base sentiment colours already clear 4.5:1 on the
+     page background, so text reuses them; solid fills take dark text. */
+  --pos-text:    var(--pos);
+  --neg-text:    var(--neg);
+  --warn-text:   var(--warn);
+  --info-text:   var(--info);
+  --accent-text: var(--accent);
+  --on-pos:      #052e16;
+  --on-neg:      #450a0a;
   --warn-soft:  rgba(245, 158, 11, 0.12);
   --warn-border:rgba(245, 158, 11, 0.30);
   --info:       #60a5fa;
@@ -782,11 +803,11 @@ select:not(.no-style), .select {
   color: var(--fg-muted);
   white-space: nowrap;
 }
-.pill.success { background: var(--pos-soft); color: var(--pos); }
-.pill.error   { background: var(--neg-soft); color: var(--neg); }
-.pill.warn    { background: var(--warn-soft); color: var(--warn); }
-.pill.info    { background: var(--info-soft); color: var(--info); }
-.pill.accent  { background: var(--accent-soft); color: var(--accent); }
+.pill.success { background: var(--pos-soft); color: var(--pos-text); }
+.pill.error   { background: var(--neg-soft); color: var(--neg-text); }
+.pill.warn    { background: var(--warn-soft); color: var(--warn-text); }
+.pill.info    { background: var(--info-soft); color: var(--info-text); }
+.pill.accent  { background: var(--accent-soft); color: var(--accent-text); }
 
 /* GEX data-quality strip (engine update 009): pills per finding under the
    page banners, the reconstructed note on its own line. Hidden attribute
@@ -798,12 +819,12 @@ select:not(.no-style), .select {
 
 /* Direction pills used in trade lists. Distinct hue family on purpose so a
    short isn't mistaken for a long at a glance. */
-.dir-long  { background: var(--info-soft);  color: var(--info); }
-.dir-short { background: var(--warn-soft);  color: var(--warn); }
+.dir-long  { background: var(--info-soft);  color: var(--info-text); }
+.dir-short { background: var(--warn-soft);  color: var(--warn-text); }
 
 /* Sentiment text classes */
-.pnl-pos { color: var(--pos); font-weight: var(--fw-semibold); }
-.pnl-neg { color: var(--neg); font-weight: var(--fw-semibold); }
+.pnl-pos { color: var(--pos-text); font-weight: var(--fw-semibold); }
+.pnl-neg { color: var(--neg-text); font-weight: var(--fw-semibold); }
 
 /* ---- Flash messages ------------------------------------------------------- */
 
@@ -836,7 +857,9 @@ table {
   color: var(--fg);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
-  overflow: hidden;
+  /* clip, not hidden: hidden makes the table a scroll container, which is
+     the box the sticky header would stick to - and it never scrolls. */
+  overflow: clip;
   box-shadow: none;
 }
 th, td {
@@ -1167,8 +1190,8 @@ a:hover > .icon-journal,
   letter-spacing: -0.005em;
   line-height: 1.2;
 }
-.pnl-chip--pos { background: var(--pos); color: var(--accent-fg); }
-.pnl-chip--neg { background: var(--neg); color: var(--accent-fg); }
+.pnl-chip--pos { background: var(--pos-text); color: var(--on-pos); } /* white on --pos measured 2.3:1 */
+.pnl-chip--neg { background: var(--neg-text); color: var(--on-neg); }
 .pnl-chip--flat {
   background: var(--bg-sunken);
   color: var(--fg-muted);
@@ -1303,7 +1326,7 @@ a:hover > .icon-journal,
 
 .grid-12 {
   display: grid;
-  grid-template-columns: repeat(12, 1fr);
+  grid-template-columns: repeat(12, minmax(0, 1fr));
   gap: var(--gap-lg);
 }
 .col-span-3  { grid-column: span 3; }
@@ -2005,3 +2028,120 @@ table.recon-fills { width: 100%; border-collapse: collapse; }
 table.recon-fills th, table.recon-fills td { font-size: var(--fs-12); padding: 3px 10px; border-bottom: 1px solid var(--border); vertical-align: middle; white-space: nowrap; }
 table.recon-fills tr:last-child td { border-bottom: 0; }
 table.recon-fills th { font-size: var(--fs-11); text-transform: uppercase; letter-spacing: 0.04em; color: var(--fg-muted); }
+
+/* ---- Tables: sticky header, sorting, totals, phone cards ----------------- */
+
+/* On a wide screen the trades table fits, so the wrapper need not be a
+   scroll container at all; then position: sticky on the header sticks to
+   the viewport like it was always meant to. Narrow screens keep the
+   horizontal scroll (and lose stickiness, which no CSS can give both). */
+@media (min-width: 1280px) {
+  .table-scroll.sticky-head { overflow: visible; }
+  .table-scroll.sticky-head thead th { top: 0; }
+}
+th .sort-link { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+th .sort-link:hover { color: var(--fg); }
+th.sorted .sort-link { color: var(--fg); }
+.sort-arrow { font-size: 9px; }
+tfoot td {
+  background: var(--bg-sunken);
+  font-weight: var(--fw-semibold);
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 0;
+}
+/* Fourteen columns at desktop width: compact padding, a one-line time, an
+   ellipsized account, and the two least-read money columns yield first so
+   the table fits without a horizontal scroll (which would also cost the
+   sticky header). */
+.trades-table th, .trades-table td { padding: 8px 10px; }
+.trades-table .c-time, .trades-table .c-acct { white-space: nowrap; }
+.trades-table .c-acct { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
+@media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
+tr.trade-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+/* Filters collapse into one line on a phone (trades.html). */
+.filters-collapse > summary { cursor: pointer; font-size: var(--fs-12); color: var(--fg-muted); margin-bottom: 8px; list-style: none; display: inline-flex; align-items: center; gap: 6px; }
+.filters-collapse > summary::-webkit-details-marker { display: none; }
+.filters-collapse > summary::before { content: "▸"; font-size: 10px; transition: transform var(--t-fast); }
+.filters-collapse[open] > summary::before { transform: rotate(90deg); }
+@media (min-width: 601px) {
+  .filters-collapse > summary { display: none; }
+}
+/* Selects in filter forms must not widen the page (the reconcile account
+   select did, by 100px, on a phone). */
+.filter-row select, .txn-filter select { max-width: 100%; }
+
+/* Phone: one card per trade. Columns a trader does not need at a glance
+   (prices, gross, commission, balance) are hidden; Net sits top-right. */
+@media (max-width: 600px) {
+  .trades-table thead { display: none; }
+  .trades-table, .trades-table tbody, .trades-table tfoot { display: block; }
+  .trades-table tbody tr {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    grid-template-areas:
+      "sel time net"
+      "sel acct net"
+      "sel sym  dir";
+    gap: 2px 10px;
+    align-items: center;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .trades-table td { display: block; border: 0; padding: 0; }
+  .trades-table td.c-sel { grid-area: sel; }
+  .trades-table td.c-time { grid-area: time; }
+  .trades-table td.c-acct { grid-area: acct; max-width: none; }
+  .trades-table td.c-sym { grid-area: sym; }
+  .trades-table td.c-dir { grid-area: dir; justify-self: end; }
+  .trades-table td.c-net { grid-area: net; text-align: right; }
+  .trades-table td.c-j, .trades-table td.c-hz, .trades-table td.c-qty, .trades-table td.c-entry,
+  .trades-table td.c-exit, .trades-table td.c-gross, .trades-table td.c-comm, .trades-table td.c-bal { display: none; }
+  .trades-table tfoot tr { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; }
+  .trades-table tfoot td { background: transparent; border: 0; padding: 0; }
+  .trades-table tfoot td:empty, .trades-table tfoot td.c-gross, .trades-table tfoot td.c-comm { display: none; }
+}
+
+/* Grid children default to min-width:auto, i.e. their content's minimum
+   width; a six-column table inside a card then widens the whole page on a
+   phone instead of scrolling inside its .table-scroll. */
+.grid-12 > *, .gex-main > *, .row-2 > *, .row-3 > * { min-width: 0; }
+
+/* Reconcile filter: a long account name in the select must not size the
+   field (and the page) to its longest option. */
+.txn-filter .field { min-width: 0; max-width: 100%; }
+.txn-filter select, .txn-filter input { max-width: 100%; }
+
+/* GEX expiry chip strip: 25 chips never wrapped and pushed the card to
+   2,500px on a phone (the charts then sized themselves to that). The strip
+   scrolls on its own line instead. */
+.gxe-expiries { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+
+/* ---- Review pass (2026-10) ------------------------------------------------ */
+
+/* Calendar: secondary text inside a tinted day cell. The muted grey that
+   works on the card background drops to ~2.5:1 on the green fill in dark
+   mode; inside a coloured cell the secondary text follows the cell's own
+   text colour. */
+[data-theme="dark"] .calendar td.has-pnl-pos .muted,
+[data-theme="dark"] .calendar td.has-pnl-pos-strong .muted,
+[data-theme="dark"] .calendar td.has-pnl-neg .muted,
+[data-theme="dark"] .calendar td.has-pnl-neg-strong .muted { color: rgba(255, 255, 255, 0.78); }
+
+/* Journal trade tables: copy-trader fan-out folded into one row per
+   decision (see _journal_summary.html / groupLinkedTrades). */
+.fanout-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px 2px 4px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--bg-elev); color: var(--fg); font: inherit; font-size: var(--fs-12); cursor: pointer;
+}
+.fanout-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.fanout-caret {
+  display: inline-block; width: 0; height: 0;
+  border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform var(--t-fast);
+}
+tr.fanout.open .fanout-caret { transform: rotate(90deg); }
+tr.fanout-member td { background: var(--bg-sunken); }
+tr.fanout-member td:first-child { padding-left: 28px; }

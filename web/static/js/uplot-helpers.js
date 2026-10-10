@@ -103,9 +103,11 @@
       if (!el || !data.xs || !data.xs.length) return;
       var c = colors();
       var stroke = data.total >= 0 ? c.pos : c.neg;
+      // The hover legend renders below the plot INSIDE el, so the plot
+      // must leave it room or the legend hangs out of the card.
       inst = new uPlot({
         width: el.clientWidth,
-        height: el.clientHeight,
+        height: Math.max(80, el.clientHeight - 30),
         scales: { x: { time: true } },
         series: [
           {},

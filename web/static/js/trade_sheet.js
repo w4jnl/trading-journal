@@ -67,6 +67,15 @@
       // reveal without re-fetching.
       revealSheet(state, id);
     });
+    // Keyboard: a focused row (rows carry tabindex="0") opens on Enter or
+    // Space, the same click HTMX listens for, so no second code path.
+    document.addEventListener("keydown", function (e) {
+      if (e.key !== "Enter" && e.key !== " ") return;
+      var row = e.target && e.target.closest && e.target.closest("tr.trade-row[data-trade-id]");
+      if (!row || e.target !== row) return;
+      e.preventDefault();
+      row.click();
+    });
   }
 
   // revealSheet shows the sheet for a trade ID without fetching content. Use

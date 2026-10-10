@@ -92,7 +92,7 @@
           ys: [{{range $i, $v := .CurveYs}}{{if $i}},{{end}}{{$v}}{{end}}],
           total: {{.CurveTotal}},
         };
-        uplotHelpers.curve('dash-curve', window.__dashCurve);
+        uplotHelpers.curve('dash-curve', window.__dashCurve, { moneyAxis: true }); // 70px gutter: 5-digit totals were clipped to "0,000"
       </script>
     {{else}}
       <div class="empty-state" style="border: 0; padding: 60px 0;">
@@ -122,11 +122,11 @@
       <div class="dash-today__bw">
         <div>
           <div class="label">Best</div>
-          <div class="num pnl-pos">+{{printf "%.2f" .BestNetPnl}}</div>
+          <div class="num {{pnlSign .BestNetPnl}}">{{printf "%+.2f" .BestNetPnl}}</div>
         </div>
         <div>
           <div class="label">Worst</div>
-          <div class="num pnl-neg">{{printf "%.2f" .WorstNetPnl}}</div>
+          <div class="num {{pnlSign .WorstNetPnl}}">{{printf "%+.2f" .WorstNetPnl}}</div>
         </div>
       </div>
     {{else}}

@@ -120,7 +120,7 @@ func (h *Handlers) importOneUploaded(ctx context.Context, header *multipart.File
 	}
 	defer f.Close()
 
-	staged, cleanup, err := stageUpload(f, header.Filename, h.UploadsDir)
+	staged, cleanup, err := stageUpload(f, header.Filename, h.UploadsDir, u.ID)
 	if err != nil {
 		return uploadResult{}, fmt.Errorf("stage upload: %w", err)
 	}
@@ -162,7 +162,7 @@ func (h *Handlers) ImportAssign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	staged := r.FormValue("staged_path")
-	if !h.stagedPathSafe(staged) {
+	if !h.stagedPathSafe(staged, auth.MustUser(ctx).ID) {
 		http.Error(w, "invalid staged_path", http.StatusBadRequest)
 		return
 	}
@@ -243,9 +243,17 @@ func (h *Handlers) detectNeedsAccountPicker(ctx context.Context, stagedPath stri
 	return true, topstep, nil
 }
 
-// stagedPathSafe ensures a client-supplied staged path actually lives under
-// the uploads root — defense against path traversal in the picker form.
-func (h *Handlers) stagedPathSafe(p string) bool {
+// stagedDirPrefix is the staging directory name prefix stageUpload uses;
+// the uploader's id is baked in so the follow-up /import/assign can prove
+// the staged file is the caller's own.
+func stagedDirPrefix(uid int64) string { return fmt.Sprintf("upload-u%d-", uid) }
+
+// stagedPathSafe ensures a client-supplied staged path is exactly what
+// stageUpload produced for THIS user: <uploads root>/upload-u<uid>-*/<file>,
+// one directory deep. A bare prefix check used to be enough against
+// traversal, but it also accepted "<root>/anything", which let a user import
+// another user's staged CSV or hand removeStagedDir the uploads root itself.
+func (h *Handlers) stagedPathSafe(p string, uid int64) bool {
 	if p == "" || h.UploadsDir == "" {
 		return false
 	}
@@ -257,16 +265,36 @@ func (h *Handlers) stagedPathSafe(p string) bool {
 	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(abs, root+string(filepath.Separator))
+	dir := filepath.Dir(abs)
+	if filepath.Dir(dir) != root || abs == dir {
+		return false
+	}
+	return strings.HasPrefix(filepath.Base(dir), stagedDirPrefix(uid))
 }
 
 // removeStagedDir cleans up the temp directory holding a staged upload.
-// Best-effort: failure to remove is logged but doesn't fail the request.
+// Best-effort: failure to remove is logged but doesn't fail the request. It
+// refuses anything that is not a staging directory one level under the
+// uploads root, so a bad path can never take the root (and everyone's
+// in-flight uploads) with it.
 func (h *Handlers) removeStagedDir(stagedFile string) {
-	if stagedFile == "" {
+	if stagedFile == "" || h.UploadsDir == "" {
 		return
 	}
-	if err := os.RemoveAll(filepath.Dir(stagedFile)); err != nil {
+	root, err := filepath.Abs(h.UploadsDir)
+	if err != nil {
+		return
+	}
+	abs, err := filepath.Abs(stagedFile)
+	if err != nil {
+		return
+	}
+	dir := filepath.Dir(abs)
+	if filepath.Dir(dir) != root || !strings.HasPrefix(filepath.Base(dir), "upload-") {
+		h.logger().Warn("cleanup staged dir: refusing non-staging path", "path", stagedFile)
+		return
+	}
+	if err := os.RemoveAll(dir); err != nil {
 		h.logger().Warn("cleanup staged dir", "path", stagedFile, "err", err)
 	}
 }
@@ -326,14 +354,14 @@ func (h *Handlers) createAccountFromForm(ctx context.Context, r *http.Request) (
 // the eventual os.Rename in ImportService doesn't fail with EXDEV (macOS in
 // particular puts os.MkdirTemp("", …) on /private/var which is a different
 // mount than project directories under /Volumes).
-func stageUpload(src io.Reader, originalName, uploadsRoot string) (string, func(), error) {
+func stageUpload(src io.Reader, originalName, uploadsRoot string, uid int64) (string, func(), error) {
 	if uploadsRoot == "" {
 		return "", func() {}, fmt.Errorf("uploads root not configured")
 	}
 	if err := os.MkdirAll(uploadsRoot, 0o755); err != nil {
 		return "", func() {}, fmt.Errorf("ensure uploads root: %w", err)
 	}
-	dir, err := os.MkdirTemp(uploadsRoot, "upload-*")
+	dir, err := os.MkdirTemp(uploadsRoot, stagedDirPrefix(uid)+"*")
 	if err != nil {
 		return "", func() {}, err
 	}
