@@ -155,7 +155,7 @@
 </div>
 
 <div class="muted" style="font-size: 12px;">
-  <span id="gxe-regime">{{if .Regime}}regime {{.Regime}} · {{end}}</span>{{if .NetTotal}}net total <span id="gxe-nettotal">{{.NetTotal}}</span> · {{end}}snapshot <span id="gxe-snap-asof">{{.AsOfET}}</span><span id="gxe-stale">{{if .Stale}} · options session closed — showing the last profile{{end}}</span>
+  <span id="gxe-regime">{{if .Regime}}regime {{.Regime}} · {{end}}</span>{{if .NetTotal}}net total <span id="gxe-nettotal">{{.NetTotal}}</span> · {{end}}snapshot <span id="gxe-snap-asof">{{.AsOfET}}</span><span id="gxe-prov">{{with .ProvLine}} · {{.}}{{end}}</span><span id="gxe-stale">{{if .Stale}} · options session closed — showing the last profile{{end}}</span>
 </div>
 
 <script src="/static/js/gex-chips.js{{assetVer}}"></script>
@@ -607,6 +607,7 @@
       // Footer + level-note chrome follows the viewed moment.
       setText('gxe-regime', gexExpoChrome.regime ? 'regime ' + gexExpoChrome.regime + ' · ' : '');
       setText('gxe-snap-asof', gexExpoChrome.asOfET);
+      setText('gxe-prov', gexExpoChrome.provLine ? ' · ' + gexExpoChrome.provLine : '');
       setText('gxe-stale', gexExpoChrome.stale ? ' · options session closed — showing the last profile' : '');
       const ln = document.getElementById('gxe-levelsnote');
       if (ln) {

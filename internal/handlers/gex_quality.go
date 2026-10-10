@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/gex"
@@ -44,6 +45,13 @@ func gexBuildQuality(dq *gex.DataQuality, prov *gex.Provenance) gexQuality {
 	if dq != nil {
 		q.Degraded = dq.Degraded
 		for _, w := range dq.Warnings {
+			if w.Code == "RECOMPUTED" {
+				// Update 010: every repaired row carries this notice. It is
+				// provenance, not a trust finding - the footer names it
+				// (gexProvLine); a pill on every row since 2026-09-29 would
+				// bury the real warnings.
+				continue
+			}
 			cls := "warn"
 			if w.Severity == "degraded" {
 				cls = "error"
@@ -70,6 +78,27 @@ func gexReconstructedNote(prov *gex.Provenance) string {
 		vintage = "the " + prov.ChainAsOf.In(gexEastern()).Format("Jan 2 15:04 ET") + " chain"
 	}
 	return "reconstructed after a feed outage: " + vintage + " repriced at this moment's spot — walls near-exact, flip/regime carry that chain's IVs"
+}
+
+// gexProvLine is the footer suffix naming where a row's numbers came from
+// when that is worth a word (update 010): a repaired row's reason
+// ("recomputed: v0.12.0 numerics") and the straddle clock-health figure
+// ("straddle +0.4%"). "" for a plain measured row without the check.
+func gexProvLine(prov *gex.Provenance, dq *gex.DataQuality) string {
+	var parts []string
+	if prov != nil && prov.Kind == "recomputed" {
+		p := "recomputed"
+		if prov.Reason != "" {
+			p += ": " + prov.Reason
+		}
+		parts = append(parts, p)
+	}
+	if dq != nil {
+		if l := dq.Straddle.Label(); l != "" {
+			parts = append(parts, l)
+		}
+	}
+	return strings.Join(parts, " · ")
 }
 
 // gexHealthTimeout bounds the best-effort /health lookup the overview makes

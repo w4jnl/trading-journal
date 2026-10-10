@@ -210,7 +210,7 @@ func TestGEXExposurePageV070(t *testing.T) {
 		`"indexName":"SPX"`,
 		`id="gxe-denom-seg"`, // FUT <-> SPX display toggle
 		`>SPX</button>`,
-		`id="gxe-bucket-seg"`, // bucket width control: canonical 5-10-25-50
+		`id="gxe-bucket-seg"`, // bucket width control: the ES ladder 5-10-25-50
 		`"bucketOpts":[{"w":5,"ok":false},{"w":10,"ok":true},{"w":25,"ok":false},{"w":50,"ok":true}]`,
 		`data-bw="10" class="on"`,        // native grid pre-selected
 		`data-bw="50"`,                   // coarser multiple servable
@@ -535,7 +535,8 @@ func TestGEXExposureNoProfile(t *testing.T) {
 	}
 }
 
-// The canonical width ladder: servable = base or a coarser multiple.
+// The per-market width ladder: servable = base or a coarser multiple within
+// the engine's 100-point ceiling.
 func TestGexBucketOpts(t *testing.T) {
 	flat := func(opts []gexExpoBucketOpt) string {
 		var b strings.Builder
@@ -545,20 +546,74 @@ func TestGexBucketOpts(t *testing.T) {
 		return strings.TrimSpace(b.String())
 	}
 	for _, tc := range []struct {
-		base int
-		want string
+		market string
+		base   int
+		want   string
 	}{
-		{5, "5:true 10:true 25:true 50:true"},
-		{10, "5:false 10:true 25:false 50:true"},
-		{25, "5:false 10:false 25:true 50:true"},
-		{20, "20:true 5:false 10:false 25:false 50:false"}, // odd base still offered
+		{"ES", 5, "5:true 10:true 25:true 50:true"},
+		{"ES", 10, "5:false 10:true 25:false 50:true"}, // pre-v0.8.0 row stored at 10
+		{"ES", 25, "5:false 10:false 25:true 50:true"},
+		{"SPX", 5, "5:true 10:true 25:true 50:true"},
+		{"NQ", 10, "10:true 20:true 50:true 100:true"}, // NDX strikes sit 10 apart: no 5, no 25
+		{"NQ", 20, "10:false 20:true 50:false 100:true"},
+		{"NDX", 10, "10:true 20:true 50:true 100:true"},
+		{"ES", 20, "20:true 5:false 10:false 25:false 50:false"}, // odd base still offered
+		{"RTY", 25, "25:true 50:true 125:false 250:false"},       // unknown market: base x1/2/5/10, capped at 100
 	} {
-		if got := flat(gexBucketOpts(tc.base)); got != tc.want {
-			t.Errorf("base %d: %q, want %q", tc.base, got, tc.want)
+		if got := flat(gexBucketOpts(tc.market, tc.base)); got != tc.want {
+			t.Errorf("%s base %d: %q, want %q", tc.market, tc.base, got, tc.want)
 		}
 	}
-	if gexBucketOpts(0) != nil {
+	if gexBucketOpts("ES", 0) != nil {
 		t.Errorf("base 0 should yield no options")
+	}
+	if got := gexCanonLadder("", 0); len(got) != 4 || got[0] != 5 {
+		t.Errorf("fallback ladder = %v", got)
+	}
+}
+
+// NQ is stored at 10 points, so its ladder is 10/20/50/100 - four servable
+// widths instead of the two the ES ladder would leave it.
+func TestGEXExposureNQLadder(t *testing.T) {
+	db := gexTestDB(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/v1/profile/") {
+			// expiry_filter marks a v0.7.0+ engine, which is what shows the
+			// bucket control at all.
+			fmt.Fprint(w, strings.Replace(gexProfileJSONWith("2026-07-31T19:50:02.722581Z", `"expiry_filter": null`), `"market": "ES"`, `"market": "NQ"`, 1))
+			return
+		}
+		fmt.Fprint(w, strings.Replace(gexSnapshotJSON("2026-07-31T19:50:02Z"), `"market": "ES"`, `"market": "NQ"`, 1))
+	}))
+	defer srv.Close()
+	c, _ := gex.New(gex.Options{BaseURL: srv.URL, APIKey: "test", Timeout: 2 * time.Second})
+	h := &Handlers{DB: db, Queries: models.New(db), Templates: web.TemplatesFS, Timezone: time.UTC, GEX: c}
+
+	body := gexExpoGet(t, h, "/gex/exposure/NQ").Body.String()
+	for _, want := range []string{
+		`"bucketOpts":[{"w":10,"ok":true},{"w":20,"ok":true},{"w":50,"ok":true},{"w":100,"ok":true}]`,
+		`data-bw="10" class="on"`, `data-bw="20"`, `data-bw="100"`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("NQ exposure missing %q", want)
+		}
+	}
+	if strings.Contains(body, `data-bw="5"`) || strings.Contains(body, `data-bw="25"`) {
+		t.Error("NQ exposure offers ES widths")
+	}
+	// The overview's bin control gets the same ladder through the chart JSON.
+	page := gexPageGet(t, h, "/gex/NQ").Body.String()
+	if !strings.Contains(page, `"binLadder":[10,20,50,100]`) {
+		t.Errorf("NQ overview chart JSON missing the NQ ladder")
+	}
+	// Same ES fixtures on ES: the ES ladder.
+	srvES := gexExpoEngine(t, http.StatusOK)
+	defer srvES.Close()
+	cES, _ := gex.New(gex.Options{BaseURL: srvES.URL, APIKey: "test", Timeout: 2 * time.Second})
+	h.GEX = cES
+	if page := gexPageGet(t, h, "/gex").Body.String(); !strings.Contains(page, `"binLadder":[5,10,25,50]`) {
+		t.Errorf("ES overview chart JSON missing the ES ladder")
 	}
 }
 

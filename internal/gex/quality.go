@@ -33,6 +33,34 @@ type DataQuality struct {
 	// timestamp minus the vendor's 15-minute delay). Both informational.
 	SnapshotAgeSeconds *float64 `json:"snapshot_age_seconds"`
 	QuoteEffectiveAt   ISOTime  `json:"quote_effective_at"`
+	// Straddle (v0.12.1, update 010) is the engine's clock health check:
+	// the index leg's front ATM straddle repriced with the vendor's IVs on
+	// the engine's clock against the market mid. Within about one percent
+	// when the clock is right; the engine emits a STRADDLE_MISPRICED notice
+	// past ten percent. Nil before v0.12.1.
+	Straddle *Straddle `json:"straddle"`
+}
+
+// Straddle is DataQuality.Straddle. RelErr is a fraction (0.004 = +0.4%),
+// the same convention as the engine's other rel_err figures.
+type Straddle struct {
+	Expiry    string   `json:"expiry"`
+	Root      string   `json:"root"`
+	Strike    *float64 `json:"strike"`
+	MarketMid *float64 `json:"market_mid"`
+	ModelMid  *float64 `json:"model_mid"`
+	RelErr    *float64 `json:"rel_err"`
+	THours    *float64 `json:"t_hours"`
+	AtFloor   bool     `json:"at_floor"`
+}
+
+// Label renders the health check the way the engine's own strip does
+// ("straddle +0.4%"); "" when the error is not known.
+func (st *Straddle) Label() string {
+	if st == nil || st.RelErr == nil {
+		return ""
+	}
+	return fmt.Sprintf("straddle %+.1f%%", *st.RelErr*100)
 }
 
 // QualityWarning is one finding. Severity is "degraded" or "notice"; Symbol
@@ -55,7 +83,14 @@ type Provenance struct {
 	ChainAsOf  ISOTime `json:"chain_as_of"`
 	SpotSource string  `json:"spot_source"`
 	SpotAsOf   ISOTime `json:"spot_as_of"`
-	Reason     string  `json:"reason"`
+	// Reason says why a row is not a plain measurement; since v0.12.0 a
+	// repaired row (recomputed in place with corrected numerics) carries
+	// "v0.12.0 numerics" plus the engine version and settings hash that
+	// produced it. The engine also lists the rows it replaced and any
+	// degraded verdict it carried over; the journal does not decode those.
+	Reason        string `json:"reason"`
+	EngineVersion string `json:"engine_version"`
+	SettingsHash  string `json:"settings_hash"`
 }
 
 // ISOTime is a timestamp that tolerates null, absence and an unparseable

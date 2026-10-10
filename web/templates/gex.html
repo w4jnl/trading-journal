@@ -172,7 +172,11 @@
     <div class="sub" id="gx-flipsub">{{.View.FlipSub}}</div>
   </div>
   <div class="card stat-tile">
-    <div class="label">Expected move 1d</div>
+    {{/* Engine v0.12.0 (update 010): the headline is the next-session move;
+         the front expiry's straddle - intraday only the move left to this
+         session's close - rides the sub line. Older rows show their 1d
+         figure under the old label. */}}
+    <div class="label">Expected move · <span id="gx-emlabel">{{.View.EMLabel}}</span></div>
     <div class="num--lg" id="gx-em">{{.View.EM}}</div>
     <div class="sub" id="gx-empct">{{.View.EMPct}}</div>
     <div class="gx-emband" id="gx-emband" title="Session range (1Di band: open ± 1.25×EM; falls back to spot ± EM) — the marker is spot" {{if lt .View.EMPosPct 0}}style="display:none"{{end}}><i id="gx-emmark" style="left: {{.View.EMPosPct}}%"></i></div>
@@ -196,6 +200,7 @@
     <div class="label">Skew · 0DTE</div>
     <div class="num--lg" id="gx-skew0">{{.View.SkewDTE0}}</div>
     <div class="sub" id="gx-skewm1">1M {{.View.SkewM1}}</div>
+    <div class="sub" id="gx-skewrr" title="The same risk reversal unnormalized: put IV − call IV in vol points (engine v0.12.0)">{{.View.SkewRR}}</div>
   </div>
 </div>
 
@@ -235,7 +240,7 @@
       <button type="button" data-layer="0dte" title="Today's expiring book: its call/put walls, gamma wall, and 0DTE flip">0dte</button>
       <button type="button" data-layer="vol" title="Today's book re-weighted by session volume instead of open interest — a second opinion on the 0DTE walls">vol</button>
       <button type="button" data-layer="magnets" title="Ranked gamma magnets: G1–G3 across the whole book, N1–N3 within ±1% of spot">magnets</button>
-      <button type="button" data-layer="em" title="Expected-move bands: today's (spot ± EM, dashed), the prior session's (close ± its EM, dotted), and the session-open intraday band (1Di, open ± 1.25×EM — MenthorQ's intra 1D Min/Max)">em</button>
+      <button type="button" data-layer="em" title="Expected-move bands: today's (spot ± the move left to the close, dashed), the prior session's (close ± its EM, dotted), and the session-open intraday band (1Di, open ± 1.25×EM — MenthorQ's intra 1D Min/Max)">em</button>
     </div>
     <div id="gx-ladder"></div>
   </div>
@@ -278,7 +283,7 @@
 </div>
 {{end}}
 
-<div class="muted" style="font-size: 12px;" id="gx-conv">{{.View.ConvLine}} · snapshot {{.View.AsOfET}}</div>
+<div class="muted" style="font-size: 12px;" id="gx-conv">{{.View.ConvLine}} · snapshot {{.View.AsOfET}}{{with .View.ProvLine}} · {{.}}{{end}}</div>
 
 {{template "uplot_assets" .}}
 <script src="/static/js/gex-chips.js{{assetVer}}"></script>
@@ -378,12 +383,14 @@
     return gexData.gex.map((v) => (run += v));
   }
 
-  // Profile bin control: the canonical 5/10/25/50-point widths, re-binned
-  // CLIENT-side by summing net GEX into coarser index-space buckets (exact -
-  // GEX is additive; the snapshot endpoint has no ?bucket=). Widths finer
-  // than the snapshot's native grid, or not integer multiples of it, render
-  // disabled. The choice sticks per market for the session. The cumulative
-  // chart always stays native - a finer running sum is strictly better.
+  // Profile bin control: the market's width ladder (server-side
+  // gexCanonLadder: ES 5/10/25/50, NQ 10/20/50/100 - the stored grid and its
+  // 2x/5x/10x), re-binned CLIENT-side by summing net GEX into coarser
+  // index-space buckets (exact - GEX is additive; the snapshot endpoint has
+  // no ?bucket=). Widths finer than the snapshot's native grid, or not
+  // integer multiples of it, render disabled. The choice sticks per market
+  // for the session. The cumulative chart always stays native - a finer
+  // running sum is strictly better.
   let gexBin = 0; // 0 = native grid
   try {
     // localStorage so the choice survives new windows; read the old
@@ -413,19 +420,20 @@
     const seg = document.getElementById('gx-bin-seg');
     if (!seg) return;
     const nw = Math.round((gexData && gexData.nativeW) || 0);
+    const ladder = (gexData && gexData.binLadder && gexData.binLadder.length) ? gexData.binLadder : [5, 10, 25, 50];
     // Hide on degenerate grids (sparse test/legacy profiles): a native
-    // width beyond the canonical ladder has nothing to offer.
-    if (!nw || nw > 50) { seg.style.display = 'none'; return; }
+    // width beyond the market's ladder has nothing to offer.
+    if (!nw || nw > ladder[ladder.length - 1]) { seg.style.display = 'none'; return; }
     seg.style.display = 'inline-flex';
     const act = (gexBin > nw && gexBin % nw === 0) ? gexBin : nw;
     let html = '';
-    [5, 10, 25, 50].forEach(function (w) {
+    ladder.forEach(function (w) {
       const ok = w === nw || (w > nw && w % nw === 0);
       if (ok) {
         html += '<button type="button" data-bin="' + w + '"' + (w === act ? ' class="on"' : '') +
           ' title="' + w + '-point index buckets' + (w === nw ? ' (native grid)' : '') + '">' + w + '</button>';
       } else {
-        html += '<button type="button" disabled title="' + w + '-point buckets need a snapshot stored on a compatible finer grid — 5-point storage starts with engine v0.8.0 data">' + w + '</button>';
+        html += '<button type="button" disabled title="' + w + '-point buckets need a snapshot stored on a finer grid this width is a multiple of — the engine stores ES at 5 points since v0.8.0 (10 before), NQ at 10">' + w + '</button>';
       }
     });
     seg.innerHTML = html;
@@ -1305,11 +1313,13 @@
     if (window.gexQuality) gexQuality.render($id('gx-quality'), v.quality);
     $id('gx-skew0').textContent = v.skewDte0;
     $id('gx-skewm1').textContent = '1M ' + v.skewM1;
+    $id('gx-skewrr').textContent = v.skewRR || '';
     $id('gx-spot').textContent = v.spotIndex;
     $id('gx-spotfut').textContent = 'futures ' + v.spotFutures;
     $id('gx-flip').textContent = v.flipFutures;
     $id('gx-flipidx').textContent = 'index ' + v.flipIndex;
     $id('gx-flipsub').textContent = v.flipSub || '';
+    $id('gx-emlabel').textContent = v.emLabel || '1d';
     $id('gx-em').textContent = v.em;
     $id('gx-empct').textContent = v.emPct || '';
     const emBand = $id('gx-emband');
@@ -1329,7 +1339,7 @@
     }
     $id('gx-chart-asof').textContent = v.asOfET + (v.stale ? ' (prior session close)' : '');
     $id('gx-chart-denom').textContent = (v.chart && v.chart.denom) || '';
-    $id('gx-conv').textContent = v.convLine + ' · snapshot ' + v.asOfET;
+    $id('gx-conv').textContent = v.convLine + ' · snapshot ' + v.asOfET + (v.provLine ? ' · ' + v.provLine : '');
 
     const tb = $id('gx-levels');
     tb.textContent = '';
