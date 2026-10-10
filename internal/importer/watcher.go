@@ -91,16 +91,36 @@ func (w *Watcher) Run(ctx context.Context) error {
 
 	importCh := make(chan importJob, 64)
 	processorDone := make(chan struct{})
+	stop := make(chan struct{}) // closed on return; see the deferred shutdown below
+	var mu sync.Mutex
+	timers := map[string]*time.Timer{}
 	go func() {
 		defer close(processorDone)
-		for p := range importCh {
-			if _, err := w.Service.ImportFileForUser(ctx, p.path, p.dir.UserID, p.dir.Username); err != nil {
-				log.Error("watcher import failed", "path", p.path, "err", err)
+		for {
+			select {
+			case p := <-importCh:
+				if _, err := w.Service.ImportFileForUser(ctx, p.path, p.dir.UserID, p.dir.Username); err != nil {
+					log.Error("watcher import failed", "path", p.path, "err", err)
+				}
+			case <-stop:
+				return
 			}
 		}
 	}()
+	// Shutdown order matters: a debounce timer that fires inside the quiet
+	// window right as we leave would otherwise send on a channel this
+	// function had just closed - a panic, not a dropped job. importCh is
+	// therefore never closed; the processor and every pending timer select
+	// on stop instead, and the timers are stopped under the lock first.
+	// Anything still queued is re-imported by the next boot sweep.
 	defer func() {
-		close(importCh)
+		mu.Lock()
+		for path, t := range timers {
+			t.Stop()
+			delete(timers, path)
+		}
+		mu.Unlock()
+		close(stop)
 		<-processorDone
 	}()
 
@@ -133,9 +153,6 @@ func (w *Watcher) Run(ctx context.Context) error {
 		log.Warn("no watchable inbox dirs resolved; nothing will be auto-imported")
 	}
 
-	var mu sync.Mutex
-	timers := map[string]*time.Timer{}
-
 	enqueueAfterQuiet := func(path string, d watchedDir) {
 		mu.Lock()
 		defer mu.Unlock()
@@ -152,6 +169,7 @@ func (w *Watcher) Run(ctx context.Context) error {
 			select {
 			case importCh <- importJob{path: path, dir: d}:
 			case <-ctx.Done():
+			case <-stop:
 			}
 		})
 	}
