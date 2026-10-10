@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -25,17 +25,10 @@ import (
 // the annotator for the rest of the pass, and nothing ever fails the review.
 const gexMarker = "tj-gex:v1"
 
-// gexStaleAfter is how far as_of may lag the trade moment before the context
-// is labeled stale. Snapshots land on a 5-minute grid during 09:50-16:00 ET,
-// so anything beyond ~15m means the trade sat outside the options session and
-// got the prior close's levels (correct at-or-before behavior, but the block
-// must be honest about it).
-const gexStaleAfter = 15 * time.Minute
-
 // gexCleanSteps caps how many degraded rows the annotator steps past before
 // settling for the degraded one (engine update 009: the engine's own history
 // statistics skip degraded rows the same way). Three rows is 15 minutes of
-// grid - the same distance gexStaleAfter allows, so a clean row is never
+// grid - the same distance gexview.StaleAfter allows, so a clean row is never
 // bought at the price of a stale one.
 const gexCleanSteps = 3
 
@@ -51,25 +44,6 @@ func gexMarket(root string) (string, bool) {
 		return "NQ", true
 	}
 	return "", false
-}
-
-// gexEastern lazily loads the options-session timezone. The gamma grid is an
-// ET concept, so the block's time labels are ET regardless of the journal's
-// trading timezone.
-var (
-	gexETOnce sync.Once
-	gexETLoc  *time.Location
-)
-
-func gexEastern() *time.Location {
-	gexETOnce.Do(func() {
-		if l, err := time.LoadLocation("America/New_York"); err == nil {
-			gexETLoc = l
-		} else {
-			gexETLoc = time.UTC
-		}
-	})
-	return gexETLoc
 }
 
 // gexAnnotator carries one prepare-day pass's annotation state. broken trips
@@ -127,11 +101,11 @@ func (a *gexAnnotator) fail(err error, tradeID int64, moment string) {
 // mismatched leg does not become the trade's recorded context when a clean
 // row sits one grid step earlier. Skips are logged at debug level (-d).
 func (h *Handlers) gexMomentSnapshots(ctx context.Context, market string, t prepDayTrade) (en, ex *gex.Snapshot, err error) {
-	en, enSkipped, err := h.GEX.CleanSnapshot(ctx, market, t.EntryTime, gexCleanSteps, gexStaleAfter)
+	en, enSkipped, err := h.GEX.CleanSnapshot(ctx, market, t.EntryTime, gexCleanSteps, gexview.StaleAfter)
 	if err != nil {
 		return nil, nil, err
 	}
-	ex, exSkipped, err := h.GEX.CleanSnapshot(ctx, market, t.ExitTime, gexCleanSteps, gexStaleAfter)
+	ex, exSkipped, err := h.GEX.CleanSnapshot(ctx, market, t.ExitTime, gexCleanSteps, gexview.StaleAfter)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -171,13 +145,13 @@ type gexMoment struct {
 
 func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tick float64) gexMoment {
 	m := gexMoment{
-		label: kind + " " + at.In(gexEastern()).Format("15:04") + " ET",
+		label: kind + " " + at.In(gexview.Eastern()).Format("15:04") + " ET",
 		snap:  s,
 		flip:  gexTicks(price, s.Flip.Futures, tick),
 		flipI: gexTicks(price, s.FlipIntraday.Futures, tick),
-		cw:    gexWall(s, "call_wall"),
-		pw:    gexWall(s, "put_wall"),
-		stale: at.Sub(s.AsOf) > gexStaleAfter,
+		cw:    gexview.Wall(s, "call_wall"),
+		pw:    gexview.Wall(s, "put_wall"),
+		stale: at.Sub(s.AsOf) > gexview.StaleAfter,
 		// Degraded means the engine found at least one degraded-severity
 		// warning on this row; recon means the row was rebuilt from an
 		// older chain after an outage (walls near-exact, flip/regime
@@ -192,27 +166,6 @@ func newGexMoment(kind string, at time.Time, price float64, s *gex.Snapshot, tic
 		m.pwT = gexTicks(price, m.pw.Futures, tick)
 	}
 	return m
-}
-
-// gexWall picks the snapshot's all-book wall of the given type. Since engine
-// v0.5.0 the wall types also appear with bucket "0dte" (today's expiring
-// book), so matching on type alone would misread a 0DTE wall as the all-book
-// level; the bucket guard is contract-mandated (engine design doc, update
-// 002). Nil when the snapshot has no such level.
-func gexWall(s *gex.Snapshot, typ string) *gex.Level {
-	return gexLevelIn(s, typ, "all")
-}
-
-// gexLevelIn picks the snapshot's level of the given type and bucket; nil
-// when absent.
-func gexLevelIn(s *gex.Snapshot, typ, bucket string) *gex.Level {
-	for i := range s.Levels {
-		l := &s.Levels[i]
-		if l.Type == typ && l.Bucket == bucket {
-			return l
-		}
-	}
-	return nil
 }
 
 // gexTicks is the signed tick distance from the trade price to a level.
@@ -304,13 +257,13 @@ func buildGexNote(t prepDayTrade, market string, enSnap, exSnap *gex.Snapshot, t
 		word := strings.Fields(m.label)[0]
 		if m.stale {
 			b.WriteString("\n_" + word + " context stale: levels as of " +
-				m.snap.AsOf.In(gexEastern()).Format("Jan 2 15:04 ET") + " (prior session)_\n")
+				m.snap.AsOf.In(gexview.Eastern()).Format("Jan 2 15:04 ET") + " (prior session)_\n")
 		}
 		if m.degraded {
 			b.WriteString("\n_" + word + " context degraded: " + gexWarningList(m.snap.DataQuality) + "_\n")
 		}
 		if m.recon {
-			b.WriteString("\n_" + word + " context " + gexReconstructedNote(m.snap.Provenance) + "_\n")
+			b.WriteString("\n_" + word + " context " + gexview.ReconstructedNote(m.snap.Provenance) + "_\n")
 		}
 	}
 
