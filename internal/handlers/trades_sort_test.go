@@ -146,7 +146,7 @@ func TestTradesPageTotalsAndSortableHeaders(t *testing.T) {
 		`aria-label="Select trade MESU26`,
 		`data-label="Net"`,
 		`<details class="filters-collapse" id="trades-filters" open>`,
-		`onchange="this.form.requestSubmit()"`,
+		`data-autosubmit`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("page missing %q", want)

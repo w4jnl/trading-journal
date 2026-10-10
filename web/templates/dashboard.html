@@ -86,7 +86,7 @@
     </div>
     {{if .CurveHasData}}
       <div id="dash-curve" data-total="{{.CurveTotal}}" style="height: 220px; width: 100%;"></div>
-      <script>
+      <script nonce="{{$.Nonce}}">
         window.__dashCurve = {
           xs: [{{range $i, $v := .CurveXs}}{{if $i}},{{end}}{{$v}}{{end}}],
           ys: [{{range $i, $v := .CurveYs}}{{if $i}},{{end}}{{$v}}{{end}}],

@@ -86,7 +86,7 @@
       </form>
     </details>
     <form method="post" action="/library/templates/{{.ID}}/delete" class="lib-item-delete"
-          onsubmit="return confirm('Delete template {{.Name}}?');">
+          data-confirm="Delete template {{.Name}}?">
       <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
       <button type="submit" class="btn btn--danger btn--sm">Delete</button>
     </form>
@@ -190,7 +190,7 @@
       </form>
       {{end}}
       <form method="post" action="/library/strategies/{{.ID}}/delete" class="lib-item-delete"
-            onsubmit="return confirm('Delete strategy {{.Name}}? Entries using it keep their note but lose the link.');">
+            data-confirm="Delete strategy {{.Name}}? Entries using it keep their note but lose the link.">
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
         <button type="submit" class="btn btn--danger btn--sm">Delete</button>
       </form>
@@ -290,7 +290,7 @@
   {{/* .markdown-preview element styles live in app.css (shared ruleset). */}}
 </style>
 
-<script>
+<script nonce="{{$.Nonce}}">
   /* Library row: clicking the row expands a markdown preview; the "Edit"
      button swaps the preview for the editor form, and "Cancel" swaps back.
      One delegated listener handles every row on the page. */

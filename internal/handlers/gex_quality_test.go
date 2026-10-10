@@ -14,6 +14,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -353,7 +354,7 @@ func TestGexAnalysisFactsQuality(t *testing.T) {
 }
 
 func TestGexPCLegsLine(t *testing.T) {
-	if got := gexPCLegsLine(nil); got != "" {
+	if got := gexview.PCLegsLine(nil); got != "" {
 		t.Errorf("nil legs = %q", got)
 	}
 	legs := map[string]gex.PCVolume{
@@ -361,7 +362,7 @@ func TestGexPCLegsLine(t *testing.T) {
 		"SPX": {Put: 1.3e6, Call: 1.1e6, Ratio: 1.1622},
 		"XSP": {Put: 10, Call: 0, Ratio: 0}, // no call volume: skipped, never "0.00"
 	}
-	if got := gexPCLegsLine(legs); got != "SPX 1.16 · SPY 1.14" {
+	if got := gexview.PCLegsLine(legs); got != "SPX 1.16 · SPY 1.14" {
 		t.Errorf("legs line = %q", got)
 	}
 }

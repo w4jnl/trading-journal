@@ -17,7 +17,7 @@
 <form method="get" action="/trades" class="filter-row">
   {{template "account_filter" .}}
   <label>Symbol
-    <select name="symbol_root" onchange="this.form.requestSubmit()">
+    <select name="symbol_root" data-autosubmit>
       <option value="">All</option>
       {{$selSym := index .Filters "SymbolRoot"}}
       {{range .SymbolRoots}}
@@ -26,7 +26,7 @@
     </select>
   </label>
   <label>Direction
-    <select name="direction" onchange="this.form.requestSubmit()">
+    <select name="direction" data-autosubmit>
       <option value="">Any</option>
       {{$selDir := index .Filters "Direction"}}
       <option value="long" {{if eq "long" $selDir}}selected{{end}}>Long</option>
@@ -34,7 +34,7 @@
     </select>
   </label>
   <label>Outcome
-    <select name="outcome" onchange="this.form.requestSubmit()">
+    <select name="outcome" data-autosubmit>
       <option value="">Any</option>
       {{$selOut := index .Filters "Outcome"}}
       <option value="win" {{if eq "win" $selOut}}selected{{end}}>Winners</option>
@@ -43,7 +43,7 @@
     </select>
   </label>
   <label>Horizon
-    <select name="horizon" onchange="this.form.requestSubmit()">
+    <select name="horizon" data-autosubmit>
       <option value="">Any</option>
       {{$selHz := index .Filters "Horizon"}}
       <option value="scalp" {{if eq "scalp" $selHz}}selected{{end}}>Scalp</option>
@@ -63,7 +63,7 @@
   <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 </details>
-<script>
+<script nonce="{{$.Nonce}}">
   (function () {
     var d = document.getElementById('trades-filters');
     if (d && window.matchMedia && matchMedia('(max-width: 600px)').matches) d.open = false;
@@ -111,7 +111,7 @@
 </form>
 
 {{template "trade_sheet" .}}
-<script>
+<script nonce="{{$.Nonce}}">
   // Trade-sheet integration for /trades — most of the behavior lives in
   // trade_sheet.js. This hook decides what to do on close:
   //   - If we got here via /trades?sheet=N&back=URL (or legacy ?modal=N)
@@ -307,7 +307,7 @@
   <div class="label" style="margin-bottom: 8px;">{{.ChartTitle}}</div>
   <div id="perf-chart" data-total="{{.ChartTotal}}" style="height: 240px; width: 100%;"></div>
 </div>
-<script>
+<script nonce="{{$.Nonce}}">
   /* Inline data emitted by the Go handler. Both arrays are aligned and start
      with a (firstExitTime - 1min, 0) baseline so the curve rises from zero. */
   window.__perfChart = {
@@ -371,8 +371,8 @@
           hx-target="#trade-sheet-content"
           hx-swap="innerHTML"
           hx-indicator="closest tr">
-        <td class="col-sel c-sel" onclick="event.stopPropagation();">
-          <input type="checkbox" class="trade-sel" value="{{.ID}}" aria-label="Select trade {{.Symbol}} {{ltime .EntryTime "datetime"}}" onclick="event.stopPropagation();">
+        <td class="col-sel c-sel" data-stop>
+          <input type="checkbox" class="trade-sel" value="{{.ID}}" aria-label="Select trade {{.Symbol}} {{ltime .EntryTime "datetime"}}" data-stop>
         </td>
         <td class="c-j" title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
           <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}

@@ -151,14 +151,7 @@
 {{/* When this partial is swapped in via HTMX (e.g., from /trades/journal POST),
      update the sheet title to reflect the trade. */}}
 {{with .Trade}}
-<script>
-  (function () {
-    var t = document.getElementById('trade-sheet-title');
-    if (t) {
-      t.textContent = '{{.Symbol}} · {{if eq .Direction "long"}}↑{{else}}↓{{end}} {{.Qty}}';
-    }
-  })();
-</script>
+<span class="sheet-title-src" hidden data-sheet-title="{{.Symbol}} · {{if eq .Direction "long"}}↑{{else}}↓{{end}} {{.Qty}}"></span>
 {{end}}
 {{end}}
 

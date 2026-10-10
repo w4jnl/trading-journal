@@ -193,13 +193,18 @@ func noWriteDeadline(next http.Handler) http.Handler {
 // which 303-redirects to the identity provider, and a browser enforces
 // form-action against that final redirect origin - without it listed the
 // logout navigation is blocked and sign-out silently does nothing.
-func buildContentSecurityPolicy(logoutOrigin string) string {
+func buildContentSecurityPolicy(logoutOrigin, nonce string) string {
 	formAction := "form-action 'self'"
 	if logoutOrigin != "" {
 		formAction += " " + logoutOrigin
 	}
+	// Scripts: same-origin files plus this response's nonce. No
+	// 'unsafe-inline': every inline <script> a template renders carries
+	// nonce="{{$.Nonce}}", htmx stamps the same nonce on scripts it swaps in
+	// (inlineScriptNonce), and on* attributes are gone (inline_handlers.js).
+	// Styles keep 'unsafe-inline' for the style="" attributes.
 	return "default-src 'self'; " +
-		"script-src 'self' 'unsafe-inline'; " +
+		"script-src 'self' 'nonce-" + nonce + "'; " +
 		"style-src 'self' 'unsafe-inline'; " +
 		"img-src 'self' data: https:; " +
 		"font-src 'self'; " +
@@ -245,9 +250,10 @@ const oiFileCSP = "default-src 'none'; " +
 // ServeMux, which canonicalizes dirty paths (e.g. /oi/file/../../dashboard)
 // with a 301 only AFTER we run, so matching on the raw path would stamp the
 // relaxed headers onto that redirect.
-func securityHeaders(appCSP string, next http.Handler) http.Handler {
+func securityHeaders(logoutOrigin string, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		frameOptions, csp := "DENY", appCSP
+		nonce := newScriptNonce()
+		frameOptions, csp := "DENY", buildContentSecurityPolicy(logoutOrigin, nonce)
 		if strings.HasPrefix(path.Clean(r.URL.Path), "/oi/file/") {
 			frameOptions, csp = "SAMEORIGIN", oiFileCSP
 		}
@@ -256,8 +262,17 @@ func securityHeaders(appCSP string, next http.Handler) http.Handler {
 		h.Set("Referrer-Policy", "same-origin")
 		h.Set("X-Frame-Options", frameOptions)
 		h.Set("Content-Security-Policy", csp)
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(handlers.WithNonce(r.Context(), nonce)))
 	})
+}
+
+// newScriptNonce is 128 random bits, base64 (the CSP nonce alphabet).
+func newScriptNonce() string {
+	var b [16]byte
+	if _, err := rand.Read(b[:]); err != nil {
+		panic("crypto/rand: " + err.Error()) // the kernel RNG is gone; nothing sane to serve
+	}
+	return base64.StdEncoding.EncodeToString(b[:])
 }
 
 // oauthConfig converts the YAML block into the oauth package's resolved config
@@ -890,11 +905,11 @@ func run() error {
 
 	// Allow the SSO logout redirect (proxy mode) through form-action, so the
 	// sign-out form's 303 to the identity provider isn't blocked by CSP.
-	appCSP := buildContentSecurityPolicy(cspOrigin(cfg.Auth.Proxy.LogoutURL))
+	logoutOrigin := cspOrigin(cfg.Auth.Proxy.LogoutURL)
 
 	srv := &http.Server{
 		Addr:              fmt.Sprintf(":%d", cfg.Server.Port),
-		Handler:           securityHeaders(appCSP, recoverAndLog(root)),
+		Handler:           securityHeaders(logoutOrigin, recoverAndLog(root)),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       60 * time.Second,
 		WriteTimeout:      120 * time.Second,

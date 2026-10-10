@@ -13,6 +13,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -146,7 +147,7 @@ func TestGEXExposurePage(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		">Overview<", ">Exposure<", // tabs
-		"const gexExpoInit",
+		`id="gex-expo-data"`,
 		`"denom":"futures"`,
 		`"strikes":[7327.74`, // 7300 x 1.0038: same futures scaling as the overview
 		"7558.58",            // published futures CW, never re-derived
@@ -159,7 +160,7 @@ func TestGEXExposurePage(t *testing.T) {
 		`+1.9B flow`,
 		"not served by the engine yet",
 		`data-prof="0dte_vol"`,
-		">CALL<", "location.reload",
+		"gex-exposure.js", // the column headers (CALL/PUT) are drawn by it, not the template
 		// Time scrub: shared session grid + slider + moment-carry anchors
 		// (rendered whenever history has slots, i.e. always in practice).
 		`id="gxe-scrub"`,
@@ -503,11 +504,11 @@ func TestGEXExposureData(t *testing.T) {
 func TestGexBuildExpiryChips(t *testing.T) {
 	tz := time.UTC
 	decay := map[string]float64{"2026-08-21": 1e9, "2026-08-24": -1e9}
-	chips := gexBuildExpiryChips(decay, time.Date(2026, 8, 21, 14, 0, 0, 0, tz), tz)
+	chips := gexview.BuildExpiryChips(decay, time.Date(2026, 8, 21, 14, 0, 0, 0, tz), tz)
 	if len(chips) != 2 || chips[0].DTE != 0 || chips[1].DTE != 3 {
 		t.Fatalf("chips = %+v", chips)
 	}
-	chips = gexBuildExpiryChips(decay, time.Date(2026, 8, 24, 14, 0, 0, 0, tz), tz)
+	chips = gexview.BuildExpiryChips(decay, time.Date(2026, 8, 24, 14, 0, 0, 0, tz), tz)
 	if chips[0].DTE != -3 || chips[1].DTE != 0 {
 		t.Errorf("historical anchor: %+v", chips)
 	}
@@ -530,15 +531,15 @@ func TestGEXExposureNoProfile(t *testing.T) {
 	if !strings.Contains(body, ">Overview<") {
 		t.Errorf("tabs missing from degraded page")
 	}
-	if strings.Contains(body, "const gexExpoInit") {
-		t.Errorf("blob rendered despite missing profile")
+	if strings.Contains(body, `id="gex-expo-data"`) {
+		t.Errorf("data island rendered despite missing profile")
 	}
 }
 
 // The per-market width ladder: servable = base or a coarser multiple within
 // the engine's 100-point ceiling.
 func TestGexBucketOpts(t *testing.T) {
-	flat := func(opts []gexExpoBucketOpt) string {
+	flat := func(opts []gexview.ExpoBucketOpt) string {
 		var b strings.Builder
 		for _, o := range opts {
 			fmt.Fprintf(&b, "%d:%v ", o.W, o.Ok)
@@ -560,14 +561,14 @@ func TestGexBucketOpts(t *testing.T) {
 		{"ES", 20, "20:true 5:false 10:false 25:false 50:false"}, // odd base still offered
 		{"RTY", 25, "25:true 50:true 125:false 250:false"},       // unknown market: base x1/2/5/10, capped at 100
 	} {
-		if got := flat(gexBucketOpts(tc.market, tc.base)); got != tc.want {
+		if got := flat(gexview.BucketOpts(tc.market, tc.base)); got != tc.want {
 			t.Errorf("%s base %d: %q, want %q", tc.market, tc.base, got, tc.want)
 		}
 	}
-	if gexBucketOpts("ES", 0) != nil {
+	if gexview.BucketOpts("ES", 0) != nil {
 		t.Errorf("base 0 should yield no options")
 	}
-	if got := gexCanonLadder("", 0); len(got) != 4 || got[0] != 5 {
+	if got := gexview.CanonLadder("", 0); len(got) != 4 || got[0] != 5 {
 		t.Errorf("fallback ladder = %v", got)
 	}
 }
@@ -617,7 +618,7 @@ func TestGEXExposureNQLadder(t *testing.T) {
 	}
 }
 
-// gexBuildExpo is pure: exercise scaling, families, expiry math directly.
+// gexview.BuildExpo is pure: exercise scaling, families, expiry math directly.
 func TestGexBuildExpo(t *testing.T) {
 	pd := &gex.ProfileDetail{
 		AsOf: time.Date(2026, 7, 31, 19, 50, 2, 0, time.UTC), OIDate: "2026-07-31",
@@ -642,7 +643,7 @@ func TestGexBuildExpo(t *testing.T) {
 	tz, _ := time.LoadLocation("America/Chicago")
 	now := time.Date(2026, 8, 1, 9, 30, 0, 0, tz)
 
-	e := gexBuildExpo(pd, s, now, tz)
+	e := gexview.BuildExpo(pd, s, now, tz)
 	if e.Denom != "futures" {
 		t.Fatalf("denom = %q", e.Denom)
 	}
@@ -655,7 +656,7 @@ func TestGexBuildExpo(t *testing.T) {
 	if _, ok := e.Profiles["0dte"]; !ok {
 		t.Errorf("0dte profile missing")
 	}
-	var cw *gexExpoLevel
+	var cw *gexview.ExpoLevel
 	for i := range e.Levels {
 		if e.Levels[i].Label == "CW" {
 			cw = &e.Levels[i]
@@ -679,7 +680,7 @@ func TestGexBuildExpo(t *testing.T) {
 	}
 
 	// Nil snapshot + pre-v0.7.0 payload: index denomination, no levels.
-	e2 := gexBuildExpo(pd, nil, now, tz)
+	e2 := gexview.BuildExpo(pd, nil, now, tz)
 	if e2.Denom != "index" || len(e2.Levels) != 0 || e2.Spot != 7494.55 {
 		t.Errorf("nil-snapshot degrade: denom=%q levels=%d spot=%v", e2.Denom, len(e2.Levels), e2.Spot)
 	}
@@ -697,7 +698,7 @@ func TestGexBuildExpo(t *testing.T) {
 	blend.CallOI = []float64{100, 200}
 	blend.PutOI = []float64{300, 400}
 	pd.Profiles["blend"] = blend
-	e3 := gexBuildExpo(pd, nil, now, tz)
+	e3 := gexview.BuildExpo(pd, nil, now, tz)
 	if e3.Denom != "futures" || e3.Spot != pdFut || e3.Profiles["all"].Strikes[0] != 7300*1.004 {
 		t.Errorf("payload denomination: denom=%q spot=%v strike=%v", e3.Denom, e3.Spot, e3.Profiles["all"].Strikes[0])
 	}
@@ -712,11 +713,11 @@ func TestGexBuildExpo(t *testing.T) {
 	// Mismatched OI lengths are dropped, never rendered off-by-one.
 	blend.PutOI = []float64{300}
 	pd.Profiles["blend"] = blend
-	if e4 := gexBuildExpo(pd, nil, now, tz); e4.Profiles["all"].CallOI != nil {
+	if e4 := gexview.BuildExpo(pd, nil, now, tz); e4.Profiles["all"].CallOI != nil {
 		t.Errorf("malformed OI should be dropped")
 	}
 	// The payload ratio also beats a DIFFERENT snapshot ratio.
-	e5 := gexBuildExpo(pd, s, now, tz)
+	e5 := gexview.BuildExpo(pd, s, now, tz)
 	if e5.Spot != pdFut || e5.BucketWidth != 10*1.004 {
 		t.Errorf("payload-vs-snapshot precedence: spot=%v bw=%v", e5.Spot, e5.BucketWidth)
 	}

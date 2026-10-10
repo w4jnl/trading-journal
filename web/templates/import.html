@@ -47,7 +47,7 @@
     .drop-zone { padding: 36px 16px; min-height: 200px; }
   }
 </style>
-<script>
+<script nonce="{{$.Nonce}}">
   (function () {
     const zone = document.getElementById('drop-zone');
     if (!zone) return;
@@ -135,7 +135,7 @@
   </table>
 </div>
 <button type="button" class="btn btn--secondary btn--sm mt-8" id="import-older-toggle" hidden>Show older imports</button>
-<script>
+<script nonce="{{$.Nonce}}">
   (function () {
     var btn = document.getElementById('import-older-toggle');
     var rows = document.querySelectorAll('tr.import-older');

@@ -13,7 +13,7 @@
   <a href="/journal/{{.PrevDay}}" class="btn btn--secondary btn--sm">‹ Prev</a>
   <a href="/journal/{{.Today}}" class="btn btn--secondary btn--sm">Today</a>
   <a href="/journal/{{.NextDay}}" class="btn btn--secondary btn--sm">Next ›</a>
-  <input type="date" value="{{.Date}}" onchange="if (this.value) window.location.href='/journal/'+this.value" style="margin-left: 8px;">
+  <input type="date" value="{{.Date}}" data-goto="/journal/" style="margin-left: 8px;">
 </div>
 
 {{if aiEnabled}}
@@ -69,7 +69,7 @@
              /journal/{date}/delete clashes with /journal/week/{week} in
              Go 1.22 ServeMux ambiguity resolution. */}}
         <button type="submit" name="_action" value="delete" formnovalidate
-                onclick="return confirm('Delete this journal entry for {{.DateNice}}?');"
+                data-confirm="Delete this journal entry for {{.DateNice}}?"
                 class="btn btn--danger btn--sm ml-auto">
           Delete entry
         </button>

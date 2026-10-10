@@ -125,6 +125,7 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 		JOIN accounts a ON a.id = t.account_id
 		WHERE t.exit_time IS NOT NULL
 		  AND a.active = 1
+		  AND a.excluded_from_stats = 0
 		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
@@ -157,6 +158,7 @@ func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linked
 		JOIN accounts a ON a.id = t.account_id
 		WHERE t.exit_time IS NOT NULL
 		  AND a.active = 1
+		  AND a.excluded_from_stats = 0
 		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
@@ -475,6 +477,7 @@ func loadLinkableTrades(ctx context.Context, db *sql.DB, userID, entryID int64, 
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
 		WHERE a.user_id = ?
+		  AND a.excluded_from_stats = 0
 		  AND t.status = 'closed' AND t.exit_time IS NOT NULL
 		  AND t.id NOT IN (SELECT trade_id FROM journal_entry_trades WHERE journal_entry_id = ?)
 		ORDER BY t.exit_time DESC, t.id DESC

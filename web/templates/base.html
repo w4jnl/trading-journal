@@ -9,7 +9,7 @@
     correct CSS variable set is in scope on first paint. Otherwise a flash of
     light-themed content appears for dark-mode users on slow stylesheet loads.
   */}}
-  <script>
+  <script nonce="{{$.Nonce}}">
     (function () {
       try {
         /* URL ?theme=dark|light overrides for shareable preview links. */
@@ -44,8 +44,11 @@
   <meta property="og:image"       content="/static/img/brand/og-image.svg">
   <meta name="twitter:card"       content="summary_large_image">
 
+  {{/* htmx stamps this nonce on the scripts it swaps in (partials, live
+       fragments), so they run under the same policy as the page. */}}
+  <meta name="htmx-config" content='{"inlineScriptNonce":"{{$.Nonce}}"}'>
   <script src="/static/vendor/htmx-2.0.3.min.js{{assetVer}}"></script>
-  <script>
+  <script nonce="{{$.Nonce}}">
     // Inject the CSRF token into every same-origin POST/DELETE/PUT/PATCH:
     //   - <form method=post> gets a hidden input named csrf_token added on submit
     //     (idempotent: skipped if the form already has one)
@@ -97,7 +100,7 @@
       };
     })();
   </script>
-  <script>
+  <script nonce="{{$.Nonce}}">
     // Localize <time class="lt"> elements to the browser's timezone. The
     // server renders them with a UTC instant in datetime= and a UTC fallback
     // text; we rewrite the text from the Date's local components so the app's
@@ -296,7 +299,7 @@
     [data-theme="dark"]  .theme-icon-light { display: inline-block; }
     html:not([data-theme="dark"]) .theme-icon-dark { display: inline-block; }
   </style>
-  <script>
+  <script nonce="{{$.Nonce}}">
     /* Theme toggle: flip data-theme attribute + persist. */
     (function () {
       var btn = document.getElementById('theme-toggle');
@@ -324,6 +327,7 @@
       });
     })();
   </script>
+  <script src="/static/js/inline_handlers.js{{assetVer}}" defer></script>
   <script src="/static/js/toast.js{{assetVer}}" defer></script>
   <script src="/static/js/app_feedback.js{{assetVer}}" defer></script>
   <script src="/static/js/live_refresh.js{{assetVer}}" defer></script>
@@ -332,6 +336,10 @@
   <script src="/static/js/journal_view.js{{assetVer}}" defer></script>
   <script src="/static/js/id_copy.js{{assetVer}}" defer></script>
   <script src="/static/js/tag_picker.js{{assetVer}}" defer></script>
+  <script src="/static/js/fanout.js{{assetVer}}" defer></script>
+  <script src="/static/js/back_button.js{{assetVer}}" defer></script>
+  <script src="/static/js/account_filter.js{{assetVer}}" defer></script>
+  <script src="/static/js/date_presets.js{{assetVer}}" defer></script>
   <script src="/static/js/trade_sheet.js{{assetVer}}" defer></script>
   <script src="/static/js/trade-chart.js{{assetVer}}" defer></script>
 </body>

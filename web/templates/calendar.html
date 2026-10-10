@@ -256,7 +256,7 @@
   {{end}}
   {{end}}
 </ul>
-<script>
+<script nonce="{{$.Nonce}}">
   // Highlight today's cell with the accent ring. Done in JS so the template
   // doesn't have to thread a "today" flag through every day struct; the cell
   // already carries its date via data-date.

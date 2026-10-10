@@ -16,12 +16,12 @@
             hx-post="/ai/day/{{.DatePath}}/cancel" hx-target="#ai-status" hx-swap="outerHTML">Cancel</button>
   {{else if eq $s.State "done"}}
     <span>✓ AI analysis complete (<span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>).</span>
-    <button type="button" class="btn btn--secondary btn--sm" onclick="window.location.reload()">Show results</button>
+    <button type="button" class="btn btn--secondary btn--sm" data-reload>Show results</button>
   {{else if eq $s.State "cancelled"}}
     <span>Cancelled at <span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>.</span>
     <button type="button" class="btn btn--secondary btn--sm"
             hx-post="/ai/day/{{.DatePath}}" hx-target="#ai-status" hx-swap="outerHTML">Continue</button>
-    <button type="button" class="btn btn--ghost btn--sm" onclick="window.location.reload()">Show results</button>
+    <button type="button" class="btn btn--ghost btn--sm" data-reload>Show results</button>
   {{else if eq $s.State "error"}}
     <span class="ai-status__err">AI error: {{$s.Err}}</span>
     <button type="button" class="btn btn--secondary btn--sm"
