@@ -428,7 +428,7 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trades, err := loadLinkedTrades(ctx, h.DB, id)
+	trades, err := loadLinkedTrades(ctx, h.rdb(), id)
 	if err != nil {
 		h.serverError(w, err)
 		return
@@ -455,7 +455,7 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 
 	// Candidate trades for the "+ Add trades" picker: the user's recent
 	// closed trades not already linked to this group.
-	candidates, err := loadLinkableTrades(ctx, h.DB, userID(ctx), id, 300)
+	candidates, err := loadLinkableTrades(ctx, h.rdb(), userID(ctx), id, 300)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load linkable trades: %w", err))
 		return

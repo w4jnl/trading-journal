@@ -93,12 +93,12 @@ func (h *Handlers) APITradesList(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid filters")
 		return
 	}
-	rows, err := listTradesFiltered(ctx, h.DB, f)
+	rows, err := listTradesFiltered(ctx, h.rdb(), f)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not list trades")
 		return
 	}
-	total, err := countTradesFiltered(ctx, h.DB, f)
+	total, err := countTradesFiltered(ctx, h.rdb(), f)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not count trades")
 		return
@@ -142,7 +142,7 @@ func (h *Handlers) APITradeDetail(w http.ResponseWriter, r *http.Request) {
 // group count, cached chart). Shared by the REST detail endpoint and the MCP
 // get_trade tool. Returns sql.ErrNoRows when the trade isn't owned/found.
 func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, error) {
-	t, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)})
+	t, err := h.rq().GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)})
 	if err != nil {
 		return apiTradeDetail{}, err
 	}
@@ -154,7 +154,7 @@ func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, e
 		BrokerTradeID: t.BrokerTradeID,
 		ChartPng:      fmt.Sprintf("/api/v1/trades/%d/chart.png", id),
 	}
-	if e, err := h.Queries.GetJournalEntryByTradeID(ctx, &id); err == nil {
+	if e, err := h.rq().GetJournalEntryByTradeID(ctx, &id); err == nil {
 		d.HasJournal = true
 		eid := e.ID
 		d.JournalEntryID = &eid
@@ -164,8 +164,8 @@ func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, e
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return apiTradeDetail{}, err
 	}
-	_ = h.DB.QueryRowContext(ctx, "SELECT COUNT(*) FROM journal_entry_trades WHERE trade_id = ?", id).Scan(&d.GroupCount)
-	execs, err := h.Queries.ListExecutionsForTrade(ctx, id)
+	_ = h.rdb().QueryRowContext(ctx, "SELECT COUNT(*) FROM journal_entry_trades WHERE trade_id = ?", id).Scan(&d.GroupCount)
+	execs, err := h.rq().ListExecutionsForTrade(ctx, id)
 	if err != nil {
 		return apiTradeDetail{}, err
 	}
@@ -174,7 +174,7 @@ func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, e
 		d.Executions = append(d.Executions, apiExecution{Time: e.ExecTime, Side: e.Side, Role: e.Role, Qty: e.QtyUsed, Price: e.Price})
 	}
 	if h.MarketData != nil {
-		if trades, err := loadOneTrade(ctx, h.DB, id); err == nil {
+		if trades, err := loadOneTrade(ctx, h.rdb(), id); err == nil {
 			env := h.buildChartEnvelope(ctx, trades, false) // cached bars only; no network
 			d.Chart = &env
 		}
@@ -192,7 +192,7 @@ func (h *Handlers) APITradeChartPNG(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "bad id")
 		return
 	}
-	if _, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)}); err != nil {
+	if _, err := h.rq().GetTradeByID(ctx, models.GetTradeByIDParams{ID: id, UserID: userID(ctx)}); err != nil {
 		writeJSONError(w, http.StatusNotFound, "trade not found")
 		return
 	}
@@ -200,7 +200,7 @@ func (h *Handlers) APITradeChartPNG(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "charting is disabled")
 		return
 	}
-	trades, err := loadOneTrade(ctx, h.DB, id)
+	trades, err := loadOneTrade(ctx, h.rdb(), id)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "could not load trade")
 		return

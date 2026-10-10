@@ -35,7 +35,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 
 	filters := parseJournalFilters(r, tz)
 
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 100)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, 100)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list feed: %w", err))
 		return
@@ -50,7 +50,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 			groupIDs = append(groupIDs, r.ID)
 		}
 	}
-	groupSummaries, err := loadGroupSummaries(ctx, h.DB, groupIDs)
+	groupSummaries, err := loadGroupSummaries(ctx, h.rdb(), groupIDs)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load group summaries: %w", err))
 		return
@@ -567,7 +567,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 
 	// Trades that closed on this day — surfaced in a "Trades · summary" block
 	// so the day view matches the unified content shape of week/group entries.
-	dayTrades, err := loadDayTrades(ctx, h.DB, date)
+	dayTrades, err := loadDayTrades(ctx, h.rdb(), date)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load day trades: %w", err))
 		return
@@ -788,7 +788,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trades, err := loadOneTrade(ctx, h.DB, id)
+	trades, err := loadOneTrade(ctx, h.rdb(), id)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load trade for journal: %w", err))
 		return
@@ -859,7 +859,7 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 	ny, nw := next.ISOWeek()
 	sunday := monday.AddDate(0, 0, 6)
 
-	weekTrades, err := loadWeekTrades(ctx, h.DB, monday)
+	weekTrades, err := loadWeekTrades(ctx, h.rdb(), monday)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load week trades: %w", err))
 		return
@@ -1129,16 +1129,16 @@ func (h *Handlers) tradesForEntry(ctx context.Context, row feedRow, tz *time.Loc
 	day := time.Date(entryDate.Year(), entryDate.Month(), entryDate.Day(), 0, 0, 0, 0, tz)
 	switch row.Scope {
 	case "group":
-		return loadLinkedTrades(ctx, h.DB, row.ID)
+		return loadLinkedTrades(ctx, h.rdb(), row.ID)
 	case "day":
-		return loadDayTrades(ctx, h.DB, day)
+		return loadDayTrades(ctx, h.rdb(), day)
 	case "week":
-		return loadWeekTrades(ctx, h.DB, day)
+		return loadWeekTrades(ctx, h.rdb(), day)
 	case "trade":
 		if row.TradeID == nil {
 			return nil, nil
 		}
-		return loadOneTrade(ctx, h.DB, *row.TradeID)
+		return loadOneTrade(ctx, h.rdb(), *row.TradeID)
 	}
 	return nil, nil
 }
@@ -1153,7 +1153,7 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 	tz := h.localTZ()
 	filters := parseJournalFilters(r, tz)
 
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, 10000)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("export feed: %w", err))
 		return
@@ -1256,7 +1256,7 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 	tz := h.localTZ()
 	filters := parseJournalFilters(r, tz)
 
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, 10000)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("export feed: %w", err))
 		return

@@ -377,6 +377,14 @@ func run() error {
 	}
 
 	queries := models.New(conn)
+	// Second pool, read-only, for page renders and API reads: WAL lets them
+	// run alongside the writer instead of queueing behind imports and syncs.
+	rconn, err := db.OpenReader(cfg.Database.Path)
+	if err != nil {
+		return fmt.Errorf("open reader: %w", err)
+	}
+	defer rconn.Close()
+	rqueries := models.New(rconn)
 
 	// Market-data cache + background prefetch for the trade-replay charts.
 	// Disabled -> nil cache (charts hidden in the UI). Prefetch off -> the cache
@@ -639,6 +647,8 @@ func run() error {
 		DB:               conn,
 		ImportSvc:        importSvc,
 		Queries:          queries,
+		RDB:              rconn,
+		RQ:               rqueries,
 		UploadsDir:       uploads,
 		AttachmentsDir:   attachments,
 		ExternalURL:      cfg.Server.ExternalURL,

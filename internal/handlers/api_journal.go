@@ -59,7 +59,7 @@ func (h *Handlers) APIJournalList(w http.ResponseWriter, r *http.Request) {
 // journalListItems builds the journal-list rows for the given filters + paging.
 // Shared by the REST list endpoint and the MCP list_journal tool.
 func (h *Handlers) journalListItems(ctx context.Context, filters journalFilters, offset, limit int, tz *time.Location) ([]map[string]any, error) {
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, offset+limit)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, offset+limit)
 	if err != nil {
 		return nil, err
 	}

@@ -29,6 +29,27 @@ func Open(t *testing.T, bootstrapUsername string) *sql.DB {
 	return conn
 }
 
+// OpenWithReader is Open plus a read-only pool on the same file
+// (db.OpenReader), for tests that must prove a read path never writes.
+func OpenWithReader(t *testing.T, bootstrapUsername string) (writer, reader *sql.DB) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "test.db")
+	writer, err := db.Open(path)
+	if err != nil {
+		t.Fatalf("db.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = writer.Close() })
+	if err := db.RunMigrations(writer, db.MigrationVars{BootstrapUsername: bootstrapUsername}); err != nil {
+		t.Fatalf("RunMigrations: %v", err)
+	}
+	reader, err = db.OpenReader(path)
+	if err != nil {
+		t.Fatalf("db.OpenReader: %v", err)
+	}
+	t.Cleanup(func() { _ = reader.Close() })
+	return writer, reader
+}
+
 // BootstrapUserID returns the id of the bootstrap user the migrations created
 // for the given username. Fails the test if the row is missing.
 func BootstrapUserID(t *testing.T, conn *sql.DB, username string) int64 {

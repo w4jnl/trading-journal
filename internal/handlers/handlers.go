@@ -31,13 +31,38 @@ import (
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 )
 
+// rdb and rq return the read-only pool, or the writer when none is wired.
+func (h *Handlers) rdb() *sql.DB {
+	if h.RDB != nil {
+		return h.RDB
+	}
+	return h.DB
+}
+
+func (h *Handlers) rq() *models.Queries {
+	if h.RQ != nil {
+		return h.RQ
+	}
+	return h.Queries
+}
+
 // Handlers groups every HTTP handler with its shared deps. main.go injects
 // concrete values; tests can swap any field.
+//
+// Two database pools: DB/Queries write (and read inside transactions);
+// RDB/RQ, reached through rdb()/rq(), serve the read-only handlers. A write
+// through rq() fails with "attempt to write a readonly database".
 type Handlers struct {
-	Templates      fs.FS   // embedded template tree; pages live at templates/<name>
-	DB             *sql.DB // raw connection for hand-written dynamic queries
-	ImportSvc      *importer.ImportService
-	Queries        *models.Queries
+	Templates fs.FS   // embedded template tree; pages live at templates/<name>
+	DB        *sql.DB // WRITER pool (one connection): raw SQL for writes and transactions
+	ImportSvc *importer.ImportService
+	Queries   *models.Queries // sqlc on the writer pool
+	// RDB / RQ are the read-only pool (db.OpenReader) that page renders and
+	// API reads use through rdb() / rq(), so they never queue behind an
+	// import or a sync on the single writer connection. nil (tests) falls
+	// back to the writer.
+	RDB            *sql.DB
+	RQ             *models.Queries
 	UploadsDir     string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
 	AttachmentsDir string // where journal-attached images are stored on disk
 	// ExternalURL is cfg.Server.ExternalURL: the public origin the API docs
@@ -160,7 +185,7 @@ func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page strin
 			// badge is non-critical, so any error just leaves it unset (no badge).
 			if _, exists := m["OpenPositionCount"]; !exists {
 				if u := auth.UserFrom(r.Context()); u != nil {
-					if n, err := h.Queries.CountOpenPositions(r.Context(), u.ID); err == nil {
+					if n, err := h.rq().CountOpenPositions(r.Context(), u.ID); err == nil {
 						m["OpenPositionCount"] = n
 					}
 				}
@@ -736,7 +761,7 @@ func (h *Handlers) resolveAccountFilter(r *http.Request) (accountFilter, error) 
 		}
 	}
 	w.and("("+strings.Join(alts, " OR ")+")", args...)
-	rows, err := h.DB.QueryContext(r.Context(), "SELECT id FROM accounts WHERE "+w.sql()+" ORDER BY id", w.args...)
+	rows, err := h.rdb().QueryContext(r.Context(), "SELECT id FROM accounts WHERE "+w.sql()+" ORDER BY id", w.args...)
 	if err != nil {
 		return af, fmt.Errorf("resolve account filter: %w", err)
 	}

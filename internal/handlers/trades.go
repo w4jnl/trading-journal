@@ -118,12 +118,12 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := listTradesFiltered(ctx, h.DB, filters)
+	rows, err := listTradesFiltered(ctx, h.rdb(), filters)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list trades: %w", err))
 		return
 	}
-	totals, err := totalsTradesFiltered(ctx, h.DB, filters)
+	totals, err := totalsTradesFiltered(ctx, h.rdb(), filters)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("count trades: %w", err))
 		return
@@ -150,7 +150,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 	// day cell, Saturday week link, or hand-set from/to). Outside that case
 	// the page is the global trade log — a cumulative curve over hundreds of
 	// trades is not useful, so we skip rendering the chart entirely.
-	chartXs, chartYs, chartTitle, chartTotal, err := buildPerfChart(ctx, h.DB, h.Queries, filters)
+	chartXs, chartYs, chartTitle, chartTotal, err := buildPerfChart(ctx, h.rdb(), h.rq(), filters)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("perf chart: %w", err))
 		return
@@ -180,7 +180,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		shadow := filters
 		shadow.IncludeRetired = true
 		shadow.Page = 1
-		if all, err := countTradesFiltered(ctx, h.DB, shadow); err == nil {
+		if all, err := countTradesFiltered(ctx, h.rdb(), shadow); err == nil {
 			retiredHidden = all - total
 			if retiredHidden < 0 {
 				retiredHidden = 0
@@ -196,7 +196,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		shadow := filters
 		shadow.IncludeHidden = true
 		shadow.Page = 1
-		if all, err := countTradesFiltered(ctx, h.DB, shadow); err == nil && all > total {
+		if all, err := countTradesFiltered(ctx, h.rdb(), shadow); err == nil && all > total {
 			visibilityHidden = all - total
 		}
 	}

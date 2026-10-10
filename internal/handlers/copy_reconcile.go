@@ -47,7 +47,7 @@ func (h *Handlers) CopyReconcilePage(w http.ResponseWriter, r *http.Request) {
 	uid := userID(ctx)
 	tz := h.localTZ()
 
-	accounts, err := h.Queries.ListAccounts(ctx, uid)
+	accounts, err := h.rq().ListAccounts(ctx, uid)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
@@ -126,11 +126,11 @@ func (h *Handlers) CopyReconcilePage(w http.ResponseWriter, r *http.Request) {
 // over [from, to) (nil bounds = unbounded), from both accounts' live fills.
 func (h *Handlers) compareCopyAccounts(ctx context.Context, leaderID, followerID int64, factor float64, from, to *time.Time) ([]copyLine, error) {
 	tz := h.localTZ()
-	leaderEx, err := h.Queries.ListExecutionsByAccount(ctx, leaderID)
+	leaderEx, err := h.rq().ListExecutionsByAccount(ctx, leaderID)
 	if err != nil {
 		return nil, err
 	}
-	followerEx, err := h.Queries.ListExecutionsByAccount(ctx, followerID)
+	followerEx, err := h.rq().ListExecutionsByAccount(ctx, followerID)
 	if err != nil {
 		return nil, err
 	}

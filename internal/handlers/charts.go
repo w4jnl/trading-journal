@@ -62,7 +62,7 @@ func (h *Handlers) ChartTrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	trades, err := loadOneTrade(r.Context(), h.DB, id)
+	trades, err := loadOneTrade(r.Context(), h.rdb(), id)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load trade for chart: %w", err))
 		return
@@ -84,13 +84,13 @@ func (h *Handlers) ChartGroup(w http.ResponseWriter, r *http.Request) {
 	// loadLinkedTrades is not user-scoped, so verify the entry is the caller's
 	// before exposing its linked trades.
 	var one int
-	if err := h.DB.QueryRowContext(r.Context(),
+	if err := h.rdb().QueryRowContext(r.Context(),
 		`SELECT 1 FROM journal_entries WHERE id = ? AND user_id = ?`,
 		id, userID(r.Context())).Scan(&one); err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	trades, err := loadLinkedTrades(r.Context(), h.DB, id)
+	trades, err := loadLinkedTrades(r.Context(), h.rdb(), id)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load linked trades for chart: %w", err))
 		return
@@ -105,7 +105,7 @@ func (h *Handlers) ChartDay(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad date", http.StatusBadRequest)
 		return
 	}
-	trades, err := loadDayTrades(r.Context(), h.DB, date)
+	trades, err := loadDayTrades(r.Context(), h.rdb(), date)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load day trades for chart: %w", err))
 		return
@@ -120,7 +120,7 @@ func (h *Handlers) ChartWeek(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad week", http.StatusBadRequest)
 		return
 	}
-	trades, err := loadWeekTrades(r.Context(), h.DB, monday)
+	trades, err := loadWeekTrades(r.Context(), h.rdb(), monday)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load week trades for chart: %w", err))
 		return
@@ -378,7 +378,7 @@ func foldMarkers(ms []chartMarker) []chartMarker {
 func (h *Handlers) tradeMarkers(ctx context.Context, tradeIDs []int64) (markers []chartMarker, entryAvg, exitAvg float64) {
 	var entryPV, entryQ, exitPV, exitQ float64
 	for _, id := range tradeIDs {
-		execs, err := h.Queries.ListExecutionsForTrade(ctx, id)
+		execs, err := h.rq().ListExecutionsForTrade(ctx, id)
 		if err != nil {
 			h.logger().Warn("chart executions", "trade_id", id, "err", err)
 			continue

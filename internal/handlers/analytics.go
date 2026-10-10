@@ -145,7 +145,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"balance":  balYs,
 	})
 
-	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
+	accounts, err := h.rq().ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
@@ -232,7 +232,7 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 
 	// Resolve account set in the filter and capture each account's type slug
 	// so we can break the end-of-range equity down per type at the end.
-	accounts, listErr := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
+	accounts, listErr := h.rq().ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if listErr != nil {
 		err = listErr
 		return
@@ -285,7 +285,7 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 
 	// Walk daily_stats inside [start, end). Group rows by date in trading tz;
 	// apply each day's deltas to the running balances, then snapshot the total.
-	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+	rows, err := h.rq().ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
 		StatDate:   startDay,
 		StatDate_2: end,
@@ -374,7 +374,7 @@ func (h *Handlers) earliestExitForFilter(ctx context.Context, af accountFilter) 
 		w.and("t.account_id IN (SELECT id FROM accounts WHERE excluded_from_stats = 0)")
 	}
 	var earliest time.Time
-	row := h.DB.QueryRowContext(ctx, "SELECT t.exit_time FROM trades t WHERE "+w.sql()+" ORDER BY t.exit_time ASC LIMIT 1", w.args...)
+	row := h.rdb().QueryRowContext(ctx, "SELECT t.exit_time FROM trades t WHERE "+w.sql()+" ORDER BY t.exit_time ASC LIMIT 1", w.args...)
 	if err := row.Scan(&earliest); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return time.Time{}, nil
@@ -399,7 +399,7 @@ func (h *Handlers) dailyRollupForFilter(ctx context.Context, af accountFilter, f
 	if to != nil {
 		end = *to
 	}
-	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+	rows, err := h.rq().ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
 		StatDate:   start,
 		StatDate_2: end,
@@ -491,7 +491,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	          JOIN accounts a ON a.id = t.account_id
 	          WHERE ` + where + `
 	          ORDER BY t.exit_time`
-	rows, err := h.DB.QueryContext(ctx, query, args...)
+	rows, err := h.rdb().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
