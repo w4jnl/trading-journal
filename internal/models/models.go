@@ -334,6 +334,8 @@ type Trade struct {
 	Setup         *string    `json:"setup"`
 	CreatedAt     time.Time  `json:"created_at"`
 	BrokerTradeID *string    `json:"broker_trade_id"`
+	PlannedStop   *float64   `json:"planned_stop"`
+	PlannedRisk   *float64   `json:"planned_risk"`
 }
 
 type TradeExecution struct {

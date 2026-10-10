@@ -175,3 +175,20 @@ SELECT te.trade_id, te.role, te.qty_used
 FROM trade_executions te
 WHERE te.execution_id = ?
 ORDER BY te.trade_id;
+
+-- name: SetTradePlan :execrows
+-- Planned stop / risk on one of the user's trades (NULLs clear the plan).
+-- Scoped by user through the accounts subquery.
+UPDATE trades SET planned_stop = ?, planned_risk = ?
+WHERE trades.id = ? AND trades.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?);
+
+-- name: ListTradePlansForAccountSymbol :many
+-- The plans a rebuild must carry over (positions.Builder): the FIFO replay
+-- deletes and re-creates every trade of the (account, symbol) key.
+SELECT id, entry_time, planned_stop, planned_risk
+FROM trades
+WHERE account_id = ? AND symbol = ?
+  AND (planned_stop IS NOT NULL OR planned_risk IS NOT NULL);
+
+-- name: RestoreTradePlan :exec
+UPDATE trades SET planned_stop = ?, planned_risk = ? WHERE id = ?;
