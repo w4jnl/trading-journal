@@ -106,7 +106,7 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 	if err := os.WriteFile(filepath.Join(tmp, "attachments", "smoke.png"), []byte("\x89PNG"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	res, err := conn.Exec(`INSERT INTO journal_attachments (entry_id, entry_scope, file_path, mime, byte_size) VALUES (0, 'day', 'smoke.png', 'image/png', 4)`)
+	res, err := conn.Exec(`INSERT INTO journal_attachments (entry_id, entry_scope, file_path, mime, byte_size, user_id) VALUES (?, 'day', 'smoke.png', 'image/png', 4, ?)`, dayEntry.ID, uid)
 	if err != nil {
 		t.Fatal(err)
 	}
