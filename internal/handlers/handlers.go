@@ -29,6 +29,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/oauth"
+	"github.com/w4jnl/trading-journal/internal/positions"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 )
 
@@ -348,6 +349,15 @@ func (h *Handlers) funcMap() template.FuncMap {
 		},
 		// importNote: the import log's message, read for people (import_message.go).
 		"importNote": humanizeImportMessage,
+		// rMultiple formats net P&L over planned risk ("+1.80R"); "" when
+		// either is missing so templates can show a dash.
+		"rMultiple": func(net, risk *float64) string {
+			r := positions.RMultiple(net, risk)
+			if r == nil {
+				return ""
+			}
+			return fmt.Sprintf("%+.2fR", *r)
+		},
 		"deref": func(p *float64) float64 {
 			if p == nil {
 				return 0

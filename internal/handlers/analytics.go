@@ -31,6 +31,7 @@ type analyticsTrade struct {
 	GrossPnl    *float64
 	NetPnl      *float64
 	Commission  *float64
+	PlannedRisk *float64 // money at risk per the trade's plan; nil without one
 	EntryTime   time.Time
 	ExitTime    time.Time
 	AccountName string
@@ -484,7 +485,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	where, args := w.sql(), w.args
 	query := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	                 t.entry_price, t.exit_price,
-	                 t.gross_pnl, t.net_pnl, t.commission,
+	                 t.gross_pnl, t.net_pnl, t.commission, t.planned_risk,
 	                 t.entry_time, t.exit_time,
 	                 a.name
 	          FROM trades t
@@ -503,7 +504,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 		var exit sql.NullTime // exit_time IS NOT NULL filter above, but be defensive
 		if err := rows.Scan(&t.ID, &t.AccountID, &t.Symbol, &t.SymbolRoot, &t.Direction, &t.Qty,
 			&t.EntryPrice, &t.ExitPrice,
-			&t.GrossPnl, &t.NetPnl, &t.Commission,
+			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.PlannedRisk,
 			&t.EntryTime, &exit,
 			&t.AccountName); err != nil {
 			return nil, err
@@ -697,6 +698,15 @@ type headlineMetrics struct {
 	LargestLossTradeID int64   // 0 if none
 	ProfitFactor       float64
 	Expectancy         float64
+	// R metrics over the trades that carry a planned risk (trade_plan.go):
+	// R = net / planned risk. RTrades is how many qualify; the rest is
+	// meaningless (and rendered as a dash) when it is zero.
+	RTrades     int64
+	AvgR        float64
+	AvgWinR     float64
+	AvgLossR    float64 // negative
+	ExpectancyR float64 // mean R, the per-trade edge in risk units
+	WinRateR    float64 // win rate among the planned trades
 }
 
 func computeHeadline(trades []analyticsTrade) headlineMetrics {
@@ -752,6 +762,37 @@ func computeHeadline(trades []analyticsTrade) headlineMetrics {
 	if decided > 0 {
 		lossRate := float64(m.Losses) / float64(decided)
 		m.Expectancy = (m.AvgWin * m.WinRate) + (m.AvgLoss * lossRate)
+	}
+	var sumR, sumWinR, sumLossR float64
+	var winsR, lossesR int64
+	for _, t := range trades {
+		if t.NetPnl == nil || t.PlannedRisk == nil || *t.PlannedRisk <= 0 {
+			continue
+		}
+		r := *t.NetPnl / *t.PlannedRisk
+		m.RTrades++
+		sumR += r
+		switch {
+		case r > 0:
+			winsR++
+			sumWinR += r
+		case r < 0:
+			lossesR++
+			sumLossR += r
+		}
+	}
+	if m.RTrades > 0 {
+		m.AvgR = sumR / float64(m.RTrades)
+		m.ExpectancyR = m.AvgR
+		if winsR+lossesR > 0 {
+			m.WinRateR = float64(winsR) / float64(winsR+lossesR)
+		}
+	}
+	if winsR > 0 {
+		m.AvgWinR = sumWinR / float64(winsR)
+	}
+	if lossesR > 0 {
+		m.AvgLossR = sumLossR / float64(lossesR)
 	}
 	return m
 }

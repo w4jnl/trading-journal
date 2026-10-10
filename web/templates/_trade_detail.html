@@ -44,7 +44,20 @@
     <div class="label">Net</div>
     <div class="num">{{pnlClass .NetPnl}}</div>
   </div>
+  <div>
+    <div class="label" title="Net P&amp;L over the planned risk">R</div>
+    <div class="num">{{with rMultiple .NetPnl .PlannedRisk}}<span class="{{pnlSign (deref $.Trade.NetPnl)}}">{{.}}</span>{{else}}<span class="muted">—</span>{{end}}</div>
+  </div>
 </div>
+{{/* The plan: stop price and money at risk. Risk follows the stop through
+     the instrument's tick value; a typed risk overrides; empty clears. */}}
+<form class="trade-plan" hx-post="/trades/{{$.TradeID}}/plan" hx-target="#trade-sheet-content" hx-swap="innerHTML">
+  <span class="label">Plan</span>
+  <label>Stop <input type="number" step="any" inputmode="decimal" name="stop" value="{{if .PlannedStop}}{{printf "%g" (deref .PlannedStop)}}{{end}}" placeholder="price"></label>
+  <label>Risk <input type="number" step="any" inputmode="decimal" name="risk" value="{{if .PlannedRisk}}{{printf "%.2f" (deref .PlannedRisk)}}{{end}}" placeholder="from stop"></label>
+  <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
+  <span class="trade-plan-hint">risk follows the stop via the instrument's tick value; type a risk to override</span>
+</form>
 {{end}}
 
 <section data-trade-journal data-journal-entry>

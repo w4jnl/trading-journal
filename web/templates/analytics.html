@@ -279,9 +279,22 @@
 <!-- Supporting KPIs — context for the hero numbers, smaller weight. -->
 <div class="kpi-supporting">
   <div class="card">
-    <div class="label">Avg win / avg loss</div>
+    <div class="label">Payoff ratio</div>
     <div class="num--lg">{{if lt .AvgLoss 0.0}}{{printf "%.2f" (div .AvgWin (abs .AvgLoss))}}{{else}}—{{end}}</div>
-    <div class="sub"><span class="pnl-pos num">{{printf "%.2f" .AvgWin}}</span> / <span class="pnl-neg num">{{printf "%.2f" .AvgLoss}}</span></div>
+    <div class="sub">avg win <span class="pnl-pos num">{{printf "%.2f" .AvgWin}}</span> / avg loss <span class="pnl-neg num">{{printf "%.2f" .AvgLoss}}</span></div>
+  </div>
+  <div class="card">
+    <div class="label" title="Net P&amp;L over the planned risk, averaged over trades that carry a plan">Avg R</div>
+    {{if .RTrades}}
+    <div class="num--lg {{pnlSign .AvgR}}">{{printf "%+.2fR" .AvgR}}</div>
+    <div class="sub">
+      <span class="num">{{.RTrades}}</span> planned trades · win <span class="num">{{printf "%.0f%%" (mul .WinRateR 100.0)}}</span>
+      · <span class="pnl-pos num">{{if ne .AvgWinR 0.0}}{{printf "%+.2fR" .AvgWinR}}{{else}}—{{end}}</span> / <span class="pnl-neg num">{{if ne .AvgLossR 0.0}}{{printf "%+.2fR" .AvgLossR}}{{else}}—{{end}}</span>
+    </div>
+    {{else}}
+    <div class="num--lg muted">—</div>
+    <div class="sub">set a stop or risk on trades (trade sheet → Plan) to measure R</div>
+    {{end}}
   </div>
   <div class="card">
     <div class="label">Day win %</div>

@@ -78,6 +78,8 @@ type tradeRow struct {
 	GrossPnl       *float64
 	Commission     *float64
 	NetPnl         *float64
+	PlannedStop    *float64 // the trade's plan (trade_plan.go); nil when none recorded
+	PlannedRisk    *float64 // money at risk; R = NetPnl / PlannedRisk
 	Status         string
 	AccountName    string
 	AccountFirm    *string
@@ -563,7 +565,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 
 	q := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
-	             t.gross_pnl, t.commission, t.net_pnl, t.status,
+	             t.gross_pnl, t.commission, t.net_pnl, t.planned_stop, t.planned_risk, t.status,
 	             a.name, a.firm, a.active,
 	             je.id, je.tag,
 	             (SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count
@@ -589,7 +591,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 		if err := rs.Scan(
 			&r.ID, &r.AccountID, &r.Symbol, &r.SymbolRoot, &r.Direction, &r.Qty,
 			&r.EntryPrice, &r.ExitPrice, &r.EntryTime, &r.ExitTime,
-			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.Status,
+			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.PlannedStop, &r.PlannedRisk, &r.Status,
 			&r.AccountName, &r.AccountFirm, &accountActive,
 			&journalID, &journalTag,
 			&r.GroupCount,
@@ -624,6 +626,7 @@ var tradeSortColumns = map[string]string{
 	"gross":    "t.gross_pnl",
 	"comm":     "t.commission",
 	"net":      "t.net_pnl",
+	"r":        "(t.net_pnl / t.planned_risk)", // NULL without a plan -> sorts last
 }
 
 // defaultSortDir is the direction a column starts in when first clicked:

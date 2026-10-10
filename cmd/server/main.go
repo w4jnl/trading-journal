@@ -715,6 +715,7 @@ func run() error {
 	mux.HandleFunc("GET /trades", h.TradesPage)
 	mux.HandleFunc("GET /trades/{id}", h.TradeDetail)
 	mux.HandleFunc("POST /trades/{id}/journal", h.TradeJournalSave)
+	mux.HandleFunc("POST /trades/{id}/plan", h.TradePlanSave)
 	// Trade-replay charts (JSON) for the trade-detail + journal views.
 	mux.HandleFunc("GET /charts/trade/{id}", h.ChartTrade)
 	mux.HandleFunc("GET /charts/group/{id}", h.ChartGroup)

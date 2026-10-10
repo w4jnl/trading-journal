@@ -177,7 +177,7 @@
       <span class="pnl-neg">{{printf "%.2f" .AvgLoss}}</span>
     </div>
     <div class="sub">
-      Ratio
+      Payoff ratio
       {{if lt .AvgLoss 0.0}}
         <span class="num">{{printf "%.2f" (div .AvgWin (abs .AvgLoss))}}</span>
       {{else}}
