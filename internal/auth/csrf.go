@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -75,8 +76,20 @@ func (c *CSRF) Middleware(next http.Handler) http.Handler {
 		}
 		sid := CookieFromRequest(r)
 		if sid == "" {
-			// No session cookie - unauthenticated mutating call that the
-			// auth middleware will reject anyway.
+			// No session cookie. Either an unauthenticated call the auth
+			// middleware rejects anyway, or proxy mode (Authelia), which
+			// never issues one - yet the browser still holds the SSO cookie
+			// and forward-auth does no origin checking, so a cross-site form
+			// could POST here with full identity. Fall back to the browser's
+			// own evidence: Sec-Fetch-Site, else Origin, else Referer must be
+			// same-origin. A request carrying none of them is not a browser
+			// form post (curl, scripts) and passes.
+			if !sameOriginRequest(r) {
+				slog.Warn("csrf rejected: cross-site request without session", "path", r.URL.Path, "method", r.Method,
+					"sec_fetch_site", r.Header.Get("Sec-Fetch-Site"), "origin", r.Header.Get("Origin"))
+				http.Error(w, "cross-site request rejected", http.StatusForbidden)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -96,6 +109,56 @@ func (c *CSRF) Middleware(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// sameOriginRequest reports whether the browser says this request came from
+// our own origin. Sec-Fetch-Site is authoritative when present ("same-origin"
+// or "none" for a typed URL / bookmark; "same-site" - a sibling subdomain
+// behind the same SSO - is rejected on purpose). Without it, Origin and then
+// Referer are compared against the request host (also the forwarded host
+// behind a reverse proxy). "Origin: null" is cross-site by definition.
+func sameOriginRequest(r *http.Request) bool {
+	if sfs := r.Header.Get("Sec-Fetch-Site"); sfs != "" {
+		return sfs == "same-origin" || sfs == "none"
+	}
+	if o := r.Header.Get("Origin"); o != "" {
+		if o == "null" {
+			return false
+		}
+		return originHostMatches(o, r)
+	}
+	if ref := r.Header.Get("Referer"); ref != "" {
+		return originHostMatches(ref, r)
+	}
+	return true
+}
+
+func originHostMatches(raw string, r *http.Request) bool {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	for _, h := range []string{r.Host, r.Header.Get("X-Forwarded-Host")} {
+		if h != "" && strings.EqualFold(u.Host, h) {
+			return true
+		}
+	}
+	return false
+}
+
+// SafeLocalPath reports whether s is a same-origin path safe to redirect to
+// or link back to: a single leading "/", no scheme or host once parsed, and
+// no backslash or control character - browsers read "/\evil.com" as
+// "//evil.com", which http.Redirect would emit verbatim.
+func SafeLocalPath(s string) bool {
+	if s == "" || s[0] != '/' || strings.HasPrefix(s, "//") || strings.ContainsAny(s, "\\\r\n\x00") {
+		return false
+	}
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme != "" || u.Host != "" || u.Opaque != "" {
+		return false
+	}
+	return true
 }
 
 // SecretFromString turns a config string into the HMAC key. Accepts raw
