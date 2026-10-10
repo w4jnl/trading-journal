@@ -405,32 +405,27 @@ func TestMaybeEnqueueUserThrottle(t *testing.T) {
 	svc, _, _, uid := setupSync(t)
 
 	svc.MaybeEnqueueUser(uid)
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue = %d, want 1", svc.queue.Len())
 	}
 	svc.MaybeEnqueueUser(uid) // pending -> dropped
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue after pending dup = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue after pending dup = %d, want 1", svc.queue.Len())
 	}
 
 	// Simulate the worker finishing just now: pending cleared, lastRun fresh.
-	<-svc.jobs
-	svc.mu.Lock()
-	svc.pending[uid] = false
-	svc.lastRun[uid] = time.Now()
-	svc.mu.Unlock()
+	svc.queue.Take()
+	svc.queue.MarkRan(uid, time.Now())
 
 	svc.MaybeEnqueueUser(uid) // inside throttle window -> dropped
-	if len(svc.jobs) != 0 {
-		t.Fatalf("queue inside throttle = %d, want 0", len(svc.jobs))
+	if svc.queue.Len() != 0 {
+		t.Fatalf("queue inside throttle = %d, want 0", svc.queue.Len())
 	}
 
-	svc.mu.Lock()
-	svc.lastRun[uid] = time.Now().Add(-16 * time.Minute)
-	svc.mu.Unlock()
+	svc.queue.MarkRan(uid, time.Now().Add(-16*time.Minute))
 	svc.MaybeEnqueueUser(uid) // window expired -> enqueued
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue after window = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue after window = %d, want 1", svc.queue.Len())
 	}
 
 	// Nil receiver is a no-op.
@@ -445,33 +440,28 @@ func TestMaybeEnqueueUserAPI(t *testing.T) {
 	svc, _, _, uid := setupSync(t)
 
 	svc.MaybeEnqueueUserAPI(uid) // APIThrottle 0 -> trigger disabled
-	if len(svc.jobs) != 0 {
-		t.Fatalf("disabled API trigger enqueued: queue = %d", len(svc.jobs))
+	if svc.queue.Len() != 0 {
+		t.Fatalf("disabled API trigger enqueued: queue = %d", svc.queue.Len())
 	}
 	svc.Opts.APIThrottle = time.Minute
 	svc.MaybeEnqueueUserAPI(uid)
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue = %d, want 1", svc.queue.Len())
 	}
 	svc.MaybeEnqueueUserAPI(uid) // pending -> dropped
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue after pending dup = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue after pending dup = %d, want 1", svc.queue.Len())
 	}
-	<-svc.jobs
-	svc.mu.Lock()
-	svc.pending[uid] = false
-	svc.lastRun[uid] = time.Now()
-	svc.mu.Unlock()
+	svc.queue.Take()
+	svc.queue.MarkRan(uid, time.Now())
 	svc.MaybeEnqueueUserAPI(uid) // inside the API gap -> dropped
-	if len(svc.jobs) != 0 {
-		t.Fatalf("queue inside API gap = %d, want 0", len(svc.jobs))
+	if svc.queue.Len() != 0 {
+		t.Fatalf("queue inside API gap = %d, want 0", svc.queue.Len())
 	}
-	svc.mu.Lock()
-	svc.lastRun[uid] = time.Now().Add(-61 * time.Second)
-	svc.mu.Unlock()
+	svc.queue.MarkRan(uid, time.Now().Add(-61*time.Second))
 	svc.MaybeEnqueueUserAPI(uid) // gap expired -> enqueued
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue after API gap = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue after API gap = %d, want 1", svc.queue.Len())
 	}
 	var nilSvc *SyncService
 	nilSvc.MaybeEnqueueUserAPI(uid) // no-op
@@ -489,14 +479,10 @@ func TestWaitForUser(t *testing.T) {
 		t.Errorf("idle wait took %v", time.Since(start))
 	}
 
-	svc.mu.Lock()
-	svc.pending[uid] = true
-	svc.mu.Unlock()
+	svc.queue.MarkPending(uid, true)
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		svc.mu.Lock()
-		svc.pending[uid] = false
-		svc.mu.Unlock()
+		svc.queue.MarkPending(uid, false)
 	}()
 	start = time.Now()
 	svc.WaitForUser(ctx, uid, time.Now().Add(5*time.Second))
@@ -504,9 +490,7 @@ func TestWaitForUser(t *testing.T) {
 		t.Errorf("wait for clearing pending took %v", d)
 	}
 
-	svc.mu.Lock()
-	svc.pending[uid] = true
-	svc.mu.Unlock()
+	svc.queue.MarkPending(uid, true)
 	start = time.Now()
 	svc.WaitForUser(ctx, uid, time.Now().Add(400*time.Millisecond)) // stuck -> deadline
 	if d := time.Since(start); d < 300*time.Millisecond || d > 2*time.Second {

@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/syncqueue"
 )
 
 // apiClient is the slice of Client the sync service uses; an interface so
@@ -56,15 +56,9 @@ type syncJob struct {
 //
 // A nil *SyncService is a valid no-op receiver on the enqueue methods, so
 // handlers can call them unconditionally (mirrors marketdata.Prefetcher).
-// SyncOptions bundles the cadence/throttle knobs from config.
-type SyncOptions struct {
-	Throttle     time.Duration // min gap between page-visit syncs per user; <=0 -> 15m
-	APIThrottle  time.Duration // min gap between API-read-triggered syncs per user; <=0 disables that trigger
-	SessionEvery time.Duration // scheduled cadence in the Globex window; 0 disables
-	RTHEvery     time.Duration // faster cadence inside the RTH window; 0 disables
-	RTHStartMin  int           // RTH window bounds, minutes-of-day Chicago
-	RTHEndMin    int
-}
+// SyncOptions bundles the cadence/throttle knobs from config - the shared
+// queue's options, named here so main.go reads naturally.
+type SyncOptions = syncqueue.Options
 
 type SyncService struct {
 	Queries  *models.Queries
@@ -74,12 +68,10 @@ type SyncService struct {
 	Logger   *slog.Logger
 	Opts     SyncOptions
 
-	chicago *time.Location // CME session clock for Schedule
-
-	mu      sync.Mutex
-	lastRun map[int64]time.Time
-	pending map[int64]bool
-	jobs    chan syncJob
+	// queue is the shared per-user worker (single-flight, throttle gaps,
+	// CME-hours scheduler). The payload is the job itself, so the manual
+	// per-account re-fetch rides the same channel, untracked.
+	queue *syncqueue.Queue[syncJob]
 }
 
 // NewSyncService wires a ready-to-Run service.
@@ -90,23 +82,15 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, client apiCl
 	if logger == nil {
 		logger = slog.Default()
 	}
-	chicago, err := time.LoadLocation("America/Chicago")
-	if err != nil {
-		logger.Warn("topstepx: America/Chicago tz unavailable, scheduler uses UTC", "err", err)
-		chicago = time.UTC
-	}
-	return &SyncService{
-		Queries:  q,
-		Importer: imp,
-		Client:   client,
-		Box:      box,
-		Logger:   logger,
-		Opts:     opts,
-		chicago:  chicago,
-		lastRun:  map[int64]time.Time{},
-		pending:  map[int64]bool{},
-		jobs:     make(chan syncJob, 64),
-	}
+	s := &SyncService{Queries: q, Importer: imp, Client: client, Box: box, Logger: logger, Opts: opts}
+	s.queue = syncqueue.New("topstepx", opts, logger, func(ctx context.Context, j syncqueue.Job[syncJob]) error {
+		job := j.Payload
+		if job.UserID == 0 {
+			job.UserID = j.UserID // tracked (whole-user) jobs carry no payload
+		}
+		return s.syncUser(ctx, job)
+	})
+	return s
 }
 
 // MaybeEnqueueUser triggers a background sync for the user unless one is
@@ -116,7 +100,7 @@ func (s *SyncService) MaybeEnqueueUser(userID int64) {
 	if s == nil {
 		return
 	}
-	s.enqueueWithGap(userID, s.Opts.Throttle)
+	s.queue.EnqueueWithGap(userID, s.Opts.Throttle)
 }
 
 // MaybeEnqueueUserAPI is the read-triggered twin of MaybeEnqueueUser for the
@@ -129,7 +113,7 @@ func (s *SyncService) MaybeEnqueueUserAPI(userID int64) {
 	if s == nil || s.Opts.APIThrottle <= 0 {
 		return
 	}
-	s.enqueueWithGap(userID, s.Opts.APIThrottle)
+	s.queue.EnqueueWithGap(userID, s.Opts.APIThrottle)
 }
 
 // PendingForUser reports whether a sync is currently queued or running for
@@ -138,81 +122,50 @@ func (s *SyncService) PendingForUser(userID int64) bool {
 	if s == nil {
 		return false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.pending[userID]
+	return s.queue.PendingForUser(userID)
 }
 
 // WaitForUser blocks until no sync is pending for the user, the deadline
 // passes, or ctx ends - the second half of a refresh read (nudge, wait, then
-// read). Run clears pending only after the job's import has committed, so a
-// read after this sees the fills the nudge pulled. Nil-safe: returns at once.
+// read). Nil-safe: returns at once.
 func (s *SyncService) WaitForUser(ctx context.Context, userID int64, deadline time.Time) {
 	if s == nil {
 		return
 	}
-	for s.PendingForUser(userID) && time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
-}
-
-// enqueueWithGap enqueues a whole-user sync unless one is pending or the
-// last one finished less than minGap ago. The page-visit hook uses the
-// configured throttle; the scheduler passes half its cadence so a sync a
-// user just triggered by browsing isn't pointlessly repeated seconds later.
-func (s *SyncService) enqueueWithGap(userID int64, minGap time.Duration) {
-	if userID == 0 {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.pending[userID] || time.Since(s.lastRun[userID]) < minGap {
-		return
-	}
-	select {
-	case s.jobs <- syncJob{UserID: userID}:
-		s.pending[userID] = true
-	default:
-		s.Logger.Warn("topstepx: sync queue full, dropping", "user_id", userID)
-	}
+	s.queue.WaitForUser(ctx, userID, deadline)
 }
 
 // EnqueueAccountRefetch queues a full-history re-fetch for one account,
-// bypassing the throttle (explicit user action). Safe on a nil receiver.
+// bypassing the throttle and the single-flight check (explicit user
+// action). Safe on a nil receiver.
 func (s *SyncService) EnqueueAccountRefetch(userID, accountID int64) {
 	if s == nil || userID == 0 || accountID == 0 {
 		return
 	}
-	select {
-	case s.jobs <- syncJob{UserID: userID, AccountID: accountID, Full: true}:
-	default:
-		s.Logger.Warn("topstepx: sync queue full, dropping refetch", "account_id", accountID)
-	}
+	s.queue.EnqueueUntracked(userID, syncJob{UserID: userID, AccountID: accountID, Full: true})
 }
 
-// Run drains the queue until ctx is done. Jobs run serially — the importer's
+// Run drains the queue until ctx is done. Jobs run serially - the importer's
 // FIFO rebuild assumes one writer per (account, symbol) at a time.
 func (s *SyncService) Run(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case job := <-s.jobs:
-			if err := s.syncUser(ctx, job); err != nil && !errors.Is(err, context.Canceled) {
-				s.Logger.Error("topstepx sync failed", "user_id", job.UserID, "err", err)
-			}
-			if job.AccountID == 0 {
-				s.mu.Lock()
-				s.pending[job.UserID] = false
-				s.lastRun[job.UserID] = time.Now()
-				s.mu.Unlock()
-			}
-		}
+	if s == nil {
+		return
 	}
+	s.queue.Run(ctx)
+}
+
+// Schedule runs the two-tier CME-hours scheduler (see syncqueue.Schedule)
+// over every user with stored credentials until ctx is done.
+func (s *SyncService) Schedule(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.queue.Schedule(ctx, s.Queries.ListTopstepxSyncUsers)
+}
+
+// scheduledInterval is the cadence in effect at t (0 = market closed).
+func (s *SyncService) scheduledInterval(t time.Time) time.Duration {
+	return s.queue.ScheduledInterval(t)
 }
 
 // TestCredentials verifies a userName/apiKey pair with a bare loginKey round
