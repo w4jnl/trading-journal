@@ -25,6 +25,8 @@ type MCPAuth struct {
 	Resource string
 	// ResourceMetadataURL is advertised in the WWW-Authenticate challenge.
 	ResourceMetadataURL string
+
+	touched touchGate // token/grant last_used_at writes, once per touchEvery per token
 }
 
 // Middleware resolves the bearer token to a *User and injects it via WithUser,
@@ -77,13 +79,15 @@ func (a *MCPAuth) authenticateOAuth(r *http.Request, tok string) (*User, string)
 		Email:       row.Email,
 		IsAdmin:     row.IsAdmin != 0,
 	}
-	tokenID, grantID := row.TokenID, row.GrantID
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = a.Queries.TouchOAuthAccessTokenLastUsed(ctx, tokenID)
-		_ = a.Queries.TouchOAuthGrantLastUsed(ctx, grantID)
-	}()
+	// Last-used bumps once per touchEvery per token (see touchGate).
+	if tokenID, grantID := row.TokenID, row.GrantID; a.touched.allow(tokenID, time.Now()) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = a.Queries.TouchOAuthAccessTokenLastUsed(ctx, tokenID)
+			_ = a.Queries.TouchOAuthGrantLastUsed(ctx, grantID)
+		}()
+	}
 	return u, ""
 }
 

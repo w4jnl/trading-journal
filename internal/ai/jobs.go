@@ -38,12 +38,21 @@ type job struct {
 // for that user (so the UI can show "cancelled"/"done"); the marker-based skip in the
 // work func makes a restart resume where it stopped.
 type JobManager struct {
-	mu   sync.Mutex
-	jobs map[int64]*job // keyed by user id
+	parent context.Context // every job's context descends from it
+	wg     sync.WaitGroup  // running job goroutines, for Wait
+	mu     sync.Mutex
+	jobs   map[int64]*job // keyed by user id
 }
 
-func NewJobManager() *JobManager {
-	return &JobManager{jobs: make(map[int64]*job)}
+// NewJobManager returns a manager whose jobs descend from parent: cancelling
+// it (app shutdown) cancels every running analysis, which then records
+// itself as cancelled and can be resumed by the next Start. A nil parent
+// means context.Background (tests).
+func NewJobManager(parent context.Context) *JobManager {
+	if parent == nil {
+		parent = context.Background()
+	}
+	return &JobManager{parent: parent, jobs: make(map[int64]*job)}
 }
 
 // Start launches run in a goroutine for userID unless one is already running for
@@ -55,9 +64,10 @@ func (m *JobManager) Start(userID int64, date string, run func(ctx context.Conte
 		m.mu.Unlock()
 		return false
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(m.parent)
 	j := &job{status: JobStatus{State: JobRunning, Date: date, StartedAt: time.Now()}, cancel: cancel}
 	m.jobs[userID] = j
+	m.wg.Add(1)
 	m.mu.Unlock()
 
 	progress := func(done, total int, current string) {
@@ -66,6 +76,7 @@ func (m *JobManager) Start(userID int64, date string, run func(ctx context.Conte
 		m.mu.Unlock()
 	}
 	go func() {
+		defer m.wg.Done()
 		err := run(ctx, progress)
 		m.mu.Lock()
 		defer m.mu.Unlock()
@@ -102,6 +113,20 @@ func (m *JobManager) Status(userID int64) JobStatus {
 		return j.status
 	}
 	return JobStatus{State: JobIdle}
+}
+
+// Wait blocks until every running job has finished or ctx ends. Shutdown
+// cancels the parent first, so this is the bounded wait for the in-flight
+// entry to notice and write its terminal state.
+func (m *JobManager) Wait(ctx context.Context) error {
+	done := make(chan struct{})
+	go func() { m.wg.Wait(); close(done) }()
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // Running reports whether a job is currently in progress for userID (used to lock

@@ -401,6 +401,11 @@ func run() error {
 
 	// In-app AI analysis (server-side). Both nil when disabled; the handlers gate
 	// every AI route + UI affordance on AIJobs being non-nil.
+	// The app context: cancelled by SIGINT/SIGTERM, parent of every
+	// background job (AI analyses, sync workers, retention loops).
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	var aiClient ai.Client
 	var aiJobs *ai.JobManager
 	if cfg.AI.Enabled {
@@ -418,7 +423,7 @@ func run() error {
 			return fmt.Errorf("ai: %w", err)
 		}
 		aiClient = c
-		aiJobs = ai.NewJobManager()
+		aiJobs = ai.NewJobManager(ctx)
 		slog.Info("AI analysis enabled", "provider", cfg.AI.Provider, "base_url", cfg.AI.BaseURL, "model", cfg.AI.Model)
 	}
 
@@ -886,9 +891,6 @@ func run() error {
 		IdleTimeout:       120 * time.Second,
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
 	// Background session sweep — purge expired rows every hour.
 	go sessions.StartJanitor(ctx, time.Hour)
 	if cfg.SyncLogRetentionDays > 0 {
@@ -994,6 +996,13 @@ func run() error {
 		slog.Warn("http shutdown", "err", err)
 	}
 	<-watcherDone
+	// AI day analyses were cancelled with ctx; give the in-flight entry the
+	// rest of the window to record its terminal state.
+	if aiJobs != nil {
+		if err := aiJobs.Wait(shutdownCtx); err != nil {
+			slog.Warn("ai jobs did not finish before shutdown", "err", err)
+		}
+	}
 	// Let SQLite refresh its planner statistics while nothing is writing;
 	// cheap, and the only ANALYZE this database ever gets.
 	if _, err := conn.ExecContext(shutdownCtx, "PRAGMA optimize"); err != nil {
