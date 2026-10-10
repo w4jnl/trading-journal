@@ -113,6 +113,15 @@ type Snapshot struct {
 	NetGexChange1H *float64 `json:"net_gex_change_1h"`
 	NetGexChange1D *float64 `json:"net_gex_change_1d"`
 	ExpectedMove1D *float64 `json:"expected_move_1d"`
+	// ExpectedMoveNextSession (engine v0.12.0, update 010) is the ATM
+	// straddle of the first expiry settling after the session's cash close:
+	// the true next-session move, in index points, stable through the day.
+	// ExpectedMove1D is the FRONT LIVE expiry's straddle - intraday the move
+	// left to THIS session's close (it shrinks through the day); only at the
+	// close is it the next session's. Anything presented as a one-day move
+	// must use this field; the 1d figure stays the intraday yardstick. Null
+	// on rows persisted before v0.12.0 unless repaired.
+	ExpectedMoveNextSession *float64 `json:"expected_move_next_session"`
 	// NetDex is CUSTOMER-BOOK delta notional (sum of delta x OI x 100 x S),
 	// NOT dealer-signed - puts contribute their natural negative delta
 	// (decision #23; update 008 corrected the journal's assumption). Served
@@ -153,6 +162,13 @@ type PCVolume struct {
 type Skew struct {
 	DTE0Pct *float64 `json:"dte0_pct"`
 	M1Pct   *float64 `json:"m1_pct"`
+	// DTE0RRPts / M1RRPts (v0.12.0) are the same 25-delta risk reversal
+	// unnormalized: put IV minus call IV, in IV units (0.034 = 3.4 vol
+	// points; verified against the live payload, where m1_rr_pts 0.034 sits
+	// beside m1_pct 28.7). A tenor is null when its wings' deltas do not
+	// match.
+	DTE0RRPts *float64 `json:"dte0_rr_pts"`
+	M1RRPts   *float64 `json:"m1_rr_pts"`
 }
 
 // Profile is the per-strike net-GEX curve behind the summary levels
