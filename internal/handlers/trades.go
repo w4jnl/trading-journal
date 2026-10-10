@@ -31,7 +31,11 @@ type tradeFilters struct {
 	Outcome *string
 	From    *time.Time
 	To      *time.Time
-	Page    int
+	// Sort / Dir order the list: Sort is a key of tradeSortColumns ("" =
+	// newest entry first), Dir "asc" | "desc".
+	Sort string
+	Dir  string
+	Page int
 	// IncludeRetired, when true, lets trades from retired accounts (accounts.active = 0)
 	// surface alongside the rest. Default false hides them — matches the
 	// retire-account contract: trades stay in the database but only the /trades
@@ -113,11 +117,12 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list trades: %w", err))
 		return
 	}
-	total, err := countTradesFiltered(ctx, h.DB, filters)
+	totals, err := totalsTradesFiltered(ctx, h.DB, filters)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("count trades: %w", err))
 		return
 	}
+	total := totals.Count
 
 	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
@@ -195,6 +200,10 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"BackHref":         validBackHref(r),
 		"Trades":           rows,
 		"Total":            total,
+		"Totals":           totals,
+		"Sort":             filters.Sort,
+		"Dir":              filters.Dir,
+		"SortRefs":         sortRefs(r, filters),
 		"Page":             filters.Page,
 		"Pages":            pages,
 		"PageSize":         tradesPageSize,
@@ -609,7 +618,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 	      JOIN accounts a ON a.id = t.account_id
 	      LEFT JOIN journal_entries je ON je.trade_id = t.id
 	      WHERE ` + where + `
-	      ORDER BY t.entry_time DESC, t.id DESC
+	      ORDER BY ` + orderBySQL(f) + `
 	      LIMIT ? OFFSET ?`
 
 	rs, err := db.QueryContext(ctx, q, args...)
@@ -644,6 +653,104 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 		out = append(out, r)
 	}
 	return out, rs.Err()
+}
+
+// tradeSortColumns maps the ?sort= keys the trades table offers to the SQL
+// expression they order by. Keys are what the header links carry; the map
+// is the whitelist, so nothing user-supplied reaches the query text.
+var tradeSortColumns = map[string]string{
+	"entry":    "t.entry_time",
+	"exit":     "t.exit_time",
+	"account":  "a.name",
+	"symbol":   "t.symbol",
+	"dir":      "t.direction",
+	"duration": tradeHoldDaysSQL,
+	"qty":      "t.qty",
+	"entryp":   "t.entry_price",
+	"exitp":    "t.exit_price",
+	"gross":    "t.gross_pnl",
+	"comm":     "t.commission",
+	"net":      "t.net_pnl",
+}
+
+// defaultSortDir is the direction a column starts in when first clicked:
+// text columns read naturally ascending, numbers and times newest/largest
+// first.
+func defaultSortDir(col string) string {
+	switch col {
+	case "account", "symbol", "dir":
+		return "asc"
+	}
+	return "desc"
+}
+
+// orderBySQL renders the ORDER BY for the list. NULLS LAST keeps rows
+// without the sorted value (a stub instrument's NULL P&L) at the bottom in
+// either direction; the id tiebreak makes paging stable.
+func orderBySQL(f tradeFilters) string {
+	expr, ok := tradeSortColumns[f.Sort]
+	if !ok || f.Sort == "" {
+		return "t.entry_time DESC, t.id DESC"
+	}
+	dir := "DESC"
+	if f.Dir == "asc" {
+		dir = "ASC"
+	}
+	return expr + " " + dir + " NULLS LAST, t.id DESC"
+}
+
+// sortRef builds the header link for col: clicking the active column flips
+// its direction, any other column starts in its default direction; the
+// page resets to 1 and every filter is kept.
+func sortRef(r *http.Request, f tradeFilters, col string) string {
+	q := r.URL.Query()
+	q.Set("sort", col)
+	dir := defaultSortDir(col)
+	if f.Sort == col {
+		if f.Dir == "desc" {
+			dir = "asc"
+		} else {
+			dir = "desc"
+		}
+	}
+	q.Set("dir", dir)
+	q.Del("page")
+	return "?" + q.Encode()
+}
+
+// sortRefs is the per-column header link map the template indexes.
+func sortRefs(r *http.Request, f tradeFilters) map[string]string {
+	out := make(map[string]string, len(tradeSortColumns))
+	for col := range tradeSortColumns {
+		out[col] = sortRef(r, f, col)
+	}
+	return out
+}
+
+// tradeTotals aggregates the WHOLE filtered set (not just the page) for
+// the table footer: the number a trader wants after narrowing to a day or
+// a setup is the total, which the paged rows cannot show.
+type tradeTotals struct {
+	Count      int64
+	Wins       int64
+	Losses     int64
+	Gross      float64
+	Commission float64
+	Net        float64
+}
+
+func totalsTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (tradeTotals, error) {
+	where, args := buildWhere(f, userID(ctx))
+	q := `SELECT COUNT(*),
+	             COALESCE(SUM(CASE WHEN t.net_pnl > 0 THEN 1 ELSE 0 END), 0),
+	             COALESCE(SUM(CASE WHEN t.net_pnl < 0 THEN 1 ELSE 0 END), 0),
+	             COALESCE(SUM(t.gross_pnl), 0), COALESCE(SUM(t.commission), 0), COALESCE(SUM(t.net_pnl), 0)
+	      FROM trades t WHERE ` + where
+	var tt tradeTotals
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&tt.Count, &tt.Wins, &tt.Losses, &tt.Gross, &tt.Commission, &tt.Net); err != nil {
+		return tradeTotals{}, err
+	}
+	return tt, nil
 }
 
 func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64, error) {
@@ -789,6 +896,15 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 			u := t.AddDate(0, 0, 1).UTC() // inclusive upper bound
 			f.To = &u
 		}
+	}
+	if v := strings.TrimSpace(q.Get("sort")); v != "" {
+		if _, ok := tradeSortColumns[v]; ok {
+			f.Sort = v
+			f.Dir = defaultSortDir(v)
+		}
+	}
+	if v := strings.TrimSpace(q.Get("dir")); f.Sort != "" && (v == "asc" || v == "desc") {
+		f.Dir = v
 	}
 	if v := strings.TrimSpace(q.Get("page")); v != "" {
 		if p, err := strconv.Atoi(v); err == nil && p >= 1 {
