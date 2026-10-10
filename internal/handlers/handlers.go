@@ -34,12 +34,16 @@ import (
 // Handlers groups every HTTP handler with its shared deps. main.go injects
 // concrete values; tests can swap any field.
 type Handlers struct {
-	Templates       fs.FS   // embedded template tree; pages live at templates/<name>
-	DB              *sql.DB // raw connection for hand-written dynamic queries
-	ImportSvc       *importer.ImportService
-	Queries         *models.Queries
-	UploadsDir      string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
-	AttachmentsDir  string // where journal-attached images are stored on disk
+	Templates      fs.FS   // embedded template tree; pages live at templates/<name>
+	DB             *sql.DB // raw connection for hand-written dynamic queries
+	ImportSvc      *importer.ImportService
+	Queries        *models.Queries
+	UploadsDir     string // staging dir for UI uploads — must be on the same filesystem as ImportSvc.ProcessedDir
+	AttachmentsDir string // where journal-attached images are stored on disk
+	// ExternalURL is cfg.Server.ExternalURL: the public origin the API docs
+	// and OpenAPI servers list advertise. "" falls back to the request's
+	// forwarded host (publicBaseURL).
+	ExternalURL     string
 	OIDashboardsDir string // root folder containing daily OI dashboards (dashboard-YYYY-MM-DD.{html,pdf})
 	Timezone        *time.Location
 	Logger          *slog.Logger
@@ -49,11 +53,6 @@ type Handlers struct {
 	// cfg.Auth.SessionSecret. Nil = no CSRF (acceptable in proxy mode where
 	// the SSO frontend enforces origin checks).
 	CSRF *auth.CSRF
-
-	// ExternalURL is cfg.Server.ExternalURL: the public origin the API docs
-	// and OpenAPI servers list advertise. "" falls back to the request's
-	// forwarded host (publicBaseURL).
-	ExternalURL string
 
 	// ActAs is the admin "browse as another user" helper. Nil disables
 	// the feature (and the /admin/act-as routes return 500-ish).
