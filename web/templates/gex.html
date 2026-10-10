@@ -21,23 +21,9 @@
   #gx-dte .d { color: var(--fg-muted); }
   @media (max-width: 1100px) { .stat-strip { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
   @media (max-width: 700px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-  @media (max-width: 480px)  { .stat-strip { grid-template-columns: 1fr; } }
+  @media (max-width: 480px)  { .stat-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; } }
   .stat-tile { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
   .stat-tile .label { margin-bottom: 2px; }
-
-  .gex-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
-  .gex-toolbar form { display: flex; align-items: center; gap: 8px; margin-left: auto; }
-  .gex-seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
-  .gex-seg a { padding: 5px 14px; font-size: 13px; text-decoration: none; color: var(--fg-muted); }
-  .gex-seg a.active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
-
-  /* Time scrub: a full-width range input over the recent session grid. */
-  .gex-scrub { display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
-  .gex-scrub input[type=range] { flex: 1; accent-color: var(--accent); }
-  /* Fixed width and nowrap: the label always holds ONE timestamp, and a
-     label that could grow would shrink the flex slider beside it, making the
-     thumb jump sideways under the cursor mid-drag. */
-  .gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: 12px; width: 168px; flex: 0 0 168px; text-align: right; white-space: nowrap; }
 
   .chart-host { width: 100%; }
   #gx-analysis-spin { display: none; }
@@ -63,25 +49,6 @@
   .gex-ladder-layers button.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
   .gex-ladder-layers button:disabled { opacity: 0.4; cursor: default; border-style: dashed; }
 
-  /* Expiry chip strip in the profile card: mirrors the Exposure tab's chip
-     CSS (gex_exposure.html) - the chips themselves are built by the shared
-     /static/js/gex-chips.js renderer, so markup and classes match. */
-  .gxe-expiries { display: flex; align-items: stretch; gap: 2px; overflow-x: auto; padding-bottom: 2px; }
-  .gxe-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; font-size: 11px; white-space: nowrap; border-radius: var(--r-sm); }
-  .gxe-chip b { font-size: 11px; line-height: 1.2; color: var(--fg); font-weight: 600; }
-  .gxe-chip .gxe-chip-nums { display: flex; align-items: baseline; gap: 5px; line-height: 1.2; }
-  .gxe-chip .num { font-size: 10px; }
-  .gxe-chip .gxe-pct { font-size: 10px; color: var(--fg-muted); }
-  .gxe-chip--pos .num { color: var(--pos); }
-  .gxe-chip--neg .num { color: var(--neg); }
-  button.gxe-chip--live { border: 1px solid var(--border); background: none; cursor: pointer; text-align: left; font: inherit; }
-  button.gxe-chip--live:hover { border-color: var(--accent); }
-  button.gxe-chip--live.on { border-color: var(--accent); background: var(--accent-soft); }
-  button.gxe-chip--live.on b { color: var(--accent); }
-  .gxe-chip--locked { border: 0; border-left: 1px solid var(--border); border-radius: 0; opacity: 0.65; }
-  .gxe-chip--locked b { color: var(--fg-muted); font-weight: 500; }
-  button.gxe-chip--ghost { border-style: dashed; opacity: 0.75; }
-
   /* uPlot dark-mode tweaks: pick up CSS vars so the chart respects theme. */
   [data-theme="dark"] .u-legend { color: var(--fg); }
   [data-theme="dark"] .u-axis { color: var(--fg-muted); }
@@ -89,10 +56,10 @@
 
 {{template "back_button" .}}
 
-<div class="gex-toolbar">
-  <h1 style="margin: 0;">Gamma (GEX)</h1>
+<div class="toolbar">
+  <h1 class="page-title">Gamma (GEX)</h1>
   {{template "gex_tabs" .}}
-  <div class="gex-seg" id="gx-market-seg">
+  <div class="seg" id="gx-market-seg">
     <a href="/gex/ES{{.QuerySuffix}}" class="{{if eq .Market "ES"}}active{{end}}">ES</a>
     <a href="/gex/NQ{{.QuerySuffix}}" class="{{if eq .Market "NQ"}}active{{end}}">NQ</a>
   </div>
@@ -808,6 +775,7 @@
     below.slice().reverse().forEach((r, i) => {
       const ey = H - padB - 2 - i * 12;
       parts.push(`<text x="${railX + 6}" y="${ey}" fill="${r.color}">▼ ${edgeLabel(r)}</text>`);
+      placed.push(ey);
     });
 
     // Rail labels: near-coincident levels MERGE into one line - real books
@@ -823,11 +791,16 @@
         clusters.push({ yv: yv, rows: [r] });
       }
     });
-    clusters.forEach((cl) => {
+    // Each label wants its baseline on its own tick (yv + 4). Real books
+    // cluster - six levels inside twenty points is normal - and a one-way
+    // push-down marched whole clusters off their levels and, at the bottom,
+    // off the panel. gexStackLabels shares the displacement instead: touching
+    // labels centre as a group on their own ticks, inside the panel and
+    // clear of the fixed labels (now-pill, edge markers).
+    const tys = gexStackLabels(clusters.map((cl) => cl.yv + 4), labelH, placed, padT + 10, H - padB - 2);
+    clusters.forEach((cl, i) => {
       const yv = cl.yv;
-      let ty = yv + 4; // text baseline roughly centered on the tick
-      placed.forEach((pp) => { if (ty - pp < labelH && pp - ty < labelH) ty = pp + labelH; });
-      placed.push(ty);
+      const ty = tys[i];
       const prim = cl.rows.find((r) => r.flip) || cl.rows[0];
       const merged = cl.rows.length > 1;
       let names = cl.rows.map((r) => r.label).join(' + ');
@@ -854,6 +827,46 @@
     host.innerHTML = `<svg class="gex-ladder-svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="Gamma regime ladder">${parts.join('')}</svg>`;
     host.style.cursor = z ? 'grab' : '';
     gexLadderView = { lo: lo, hi: hi, padT: padT, padB: padB, H: H };
+  }
+
+  // 1-D label stacking for the ladder rail. targets: wanted baselines in
+  // y order; h: label height; fixed: baselines of immovable labels that
+  // split the rail into bands; top/bottom: the outermost baselines allowed.
+  // Within a band, labels keep their order; a run of labels that would
+  // touch is centred on the mean of its own targets and clamped to the band,
+  // so no single label carries the whole cluster's displacement.
+  function gexStackLabels(targets, h, fixed, top, bottom) {
+    const walls = fixed.slice().sort((a, b) => a - b);
+    const clamp = (v, lo, hi) => (hi < lo ? lo : Math.max(lo, Math.min(hi, v)));
+    const out = new Array(targets.length);
+    for (let b = 0; b <= walls.length; b++) {
+      const bTop = b === 0 ? top : walls[b - 1] + h;
+      const bBot = b === walls.length ? bottom : walls[b] - h;
+      const idx = [];
+      targets.forEach((t, k) => {
+        const above = walls.filter((w) => w <= t).length;
+        if (above === b) idx.push(k);
+      });
+      if (!idx.length) continue;
+      let runs = idx.map((k) => ({ sum: targets[k], n: 1, start: clamp(targets[k], bTop, bBot) }));
+      let merged = true;
+      while (merged) {
+        merged = false;
+        for (let i = 0; i + 1 < runs.length; i++) {
+          const a = runs[i], c = runs[i + 1];
+          if (c.start - (a.start + (a.n - 1) * h) < h) {
+            const m = { sum: a.sum + c.sum, n: a.n + c.n };
+            m.start = clamp(m.sum / m.n - (m.n - 1) * h / 2, bTop, bBot - (m.n - 1) * h);
+            runs.splice(i, 2, m);
+            merged = true;
+            break;
+          }
+        }
+      }
+      let j = 0;
+      runs.forEach((r) => { for (let k = 0; k < r.n; k++) out[idx[j++]] = r.start + k * h; });
+    }
+    return out;
   }
 
   // One crosshair across all three views: the ladder's y-axis and the
@@ -922,6 +935,25 @@
     });
   }
 
+  // Landing window: spot +/- 3x today's expected move when the snapshot
+  // carries one. That band holds the levels that matter for the session;
+  // the far walls stay acknowledged as edge markers on the rail, and the
+  // charts no longer open on 600 points of near-empty strikes. Double-click
+  // or wheel-out on the ladder (or uPlot's double-click) opens the full
+  // range as before. Not seeded when the band already covers everything.
+  function gexSeedLandingZoom() {
+    const lad = gexLadderData;
+    const s = (gexData && gexData.strikes) || [];
+    if (gexLadderZoom || !lad || !lad.spot || lad.emHigh == null || lad.emLow == null || s.length < 2) return;
+    const em = (lad.emHigh - lad.emLow) / 2;
+    if (!(em > 0)) return;
+    const f = (gexData.spot && lad.spot) ? lad.spot / gexData.spot : 1; // chart -> ladder denomination (1 in practice)
+    const full = [s[0] * f, s[s.length - 1] * f];
+    const lo = Math.max(lad.spot - 3 * em, full[0]), hi = Math.min(lad.spot + 3 * em, full[1]);
+    if (!(hi > lo) || hi - lo >= (full[1] - full[0]) - 1e-9) return;
+    gexLadderZoom = { lo: lo, hi: hi };
+  }
+
   // The reverse direction: a USER zoom on either chart (uPlot's drag-select,
   // or its double-click reset) drives the ladder window and mirrors onto the
   // sibling chart. The guard filters out every programmatic setScale, so this
@@ -974,7 +1006,9 @@
   // gexReportState bails under ?at= - historical browsing must never
   // overwrite the saved live view.
   gexReportState();
+  gexSeedLandingZoom();
   renderLadder();
+  gexSyncChartsToLadder();
   uplotHelpers.onRebuild(() => { gexGuarded(buildCharts); renderLadder(); gexSyncChartsToLadder(); });
 
   // Layer chips: toggle a family, persist, re-render. The fit domain follows
