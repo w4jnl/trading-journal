@@ -36,3 +36,25 @@ jobs:
       # so a separate build step is a redundant full-module compile.
       - name: test
         run: go test -race ./...
+
+      # The committed sqlc output must match the queries; a stale regen
+      # shows up as a diff here instead of as a runtime "no such column".
+      - name: sqlc diff
+        run: go run github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1 diff
+
+      # The release workflow only builds the image on a tag; build it here
+      # too so a Dockerfile or asset-embedding break is caught on the PR.
+      - name: docker build
+        run: docker build -f Docker/Dockerfile --build-arg VERSION=ci -t trading-journal:ci .
+
+  vulncheck:
+    # Known-vulnerability scan of the dependency graph. Its own job so a new
+    # advisory is visible without blocking unrelated work.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
