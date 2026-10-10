@@ -431,6 +431,10 @@ func gexComment(market string, m gexMoment) string {
 		// earlier key keep their positions for existing greps.
 		" quality=" + gexQualityToken(m.snap) +
 		" provenance=" + m.snap.ProvenanceKind() +
+		// Update 010: em= above is expected_move_1d - intraday the move left
+		// to that session's close. em_next= is the true next-session move
+		// (null before engine v0.12.0 unless the row was repaired).
+		" em_next=" + num(m.snap.ExpectedMoveNextSession) +
 		" -->"
 }
 

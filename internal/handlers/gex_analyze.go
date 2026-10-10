@@ -40,7 +40,7 @@ Write a SHORT read in Markdown, in this shape:
 
 Rules that make the read useful:
 - Express distances BOTH in points and in expected-move multiples ("172 points, about 4x the expected move"). A level several expected moves away is not an intraday level - say so plainly and tell the trader to ignore it today.
-- The expected move is one ordinary session's range. If a gamma pocket is narrower than one expected move, that is the headline: the regime is a pocket you are inside, not a state you can lean on.
+- The expected move is the market-implied one-standard-deviation range: intraday it is the move left to this session's close (the facts also give the next full session's move when the engine publishes it). If a gamma pocket is narrower than one expected move, that is the headline: the regime is a pocket you are inside, not a state you can lean on.
 - Positive gamma above the flip means dealer hedging dampens moves (fades, failed breakouts, mean reversion). Below the flip it amplifies them (momentum, expansion). Say which side price is on and what that implies for trade selection.
 - Name the strongest node and treat it as the pin or the ceiling.
 - Distinguish structure from prediction. "If it breaks, hedging stops braking" is structure. "It will go there" is not - never predict direction.
@@ -129,7 +129,14 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 		}
 		line("PROVENANCE: RECONSTRUCTED - this row was rebuilt after a feed outage from %s repriced at this moment's spot; the walls are near-exact, but the flip and the regime carry that chain's implied volatilities, so lean on the walls and treat the flip as approximate", vintage)
 	case "recomputed":
-		line("provenance: recomputed exactly from this slot's archived payloads (equivalent to a live measurement)")
+		// A repaired row (v0.12.0 numerics) is recomputed in place from the
+		// slot's archived payloads: as trustworthy as a live measurement,
+		// and - when a reason is given - carrying corrected numbers.
+		reason := ""
+		if p := s.Provenance; p != nil && p.Reason != "" {
+			reason = " (" + p.Reason + ")"
+		}
+		line("provenance: recomputed from this slot's archived payloads%s - as trustworthy as a live measurement", reason)
 	}
 	line("all prices below are %s-denominated", denom)
 	line("regime: %s", s.Regime.State)
@@ -151,9 +158,26 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 		}
 	}
 	line("spot: %.2f", spot)
+	// Two expected moves since engine v0.12.0 (update 010): the front
+	// expiry's straddle is the move left to THIS session's close - the
+	// intraday yardstick every distance below is measured against - and the
+	// next-session figure is the true one-day move. Rows without the new
+	// field keep the old single sentence, so retained reads of older
+	// snapshots are unaffected.
 	if em > 0 {
-		line("expected move (1 session, 1 standard deviation): %.1f points", em)
-		line("expected-move band: %.2f to %.2f", spot-em, spot+em)
+		if n := s.ExpectedMoveNextSession; n != nil {
+			next := *n
+			if spotFut != nil && s.FuturesConversion != nil {
+				next *= s.FuturesConversion.Ratio
+			}
+			line("expected move to this session's close (1 standard deviation; the front expiry's straddle, which shrinks through the day): %.1f points", em)
+			line("expected-move band to the close: %.2f to %.2f", spot-em, spot+em)
+			line("expected move for the next full session (1 standard deviation): %.1f points", next)
+			line("every 'x the expected move' multiple below uses the move to the close")
+		} else {
+			line("expected move (1 session, 1 standard deviation): %.1f points", em)
+			line("expected-move band: %.2f to %.2f", spot-em, spot+em)
+		}
 	} else {
 		line("expected move: not available")
 	}

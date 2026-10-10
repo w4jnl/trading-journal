@@ -369,8 +369,14 @@ type gexView struct {
 	// the banners renders it (update 009); Show=false hides the strip.
 	Quality gexQuality `json:"quality"`
 	// Skew tenors, engine-defined 25-delta risk reversal / ATM IV.
-	SkewDTE0    string `json:"skewDte0"`
-	SkewM1      string `json:"skewM1"`
+	SkewDTE0 string `json:"skewDte0"`
+	SkewM1   string `json:"skewM1"`
+	// SkewRR is the unnormalized risk reversal line ("RR 0DTE -1.9 · 1M
+	// +3.4 vol pts"; v0.12.0), "" when neither tenor is served.
+	SkewRR string `json:"skewRR"`
+	// ProvLine is the footer's provenance suffix (update 010): a repaired
+	// row's reason and the straddle clock-health figure; "" when neither.
+	ProvLine    string `json:"provLine"`
 	SpotIndex   string `json:"spotIndex"`
 	SpotFutures string `json:"spotFutures"`
 	ConvLine    string `json:"convLine"`
@@ -382,7 +388,12 @@ type gexView struct {
 	// session band position - min/spot/max against the 1Di band (engine
 	// v0.9.0), falling back to spot +/- EM (which centers the marker by
 	// construction). EMPosPct -1 = no band to draw.
-	EMPct    string `json:"emPct"`
+	EMPct string `json:"emPct"`
+	// EMLabel names what EM is (update 010): "next session" when the engine
+	// publishes expected_move_next_session - the true one-day move - else
+	// "1d" for older rows, where the only figure is the front expiry's
+	// straddle. With both present, EMPct also carries "to close X pts".
+	EMLabel  string `json:"emLabel"`
 	EMBandLo string `json:"emBandLo"`
 	EMBandHi string `json:"emBandHi"`
 	EMPosPct int    `json:"emPosPct"`
@@ -723,16 +734,32 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 		if p := sk.M1Pct; p != nil {
 			v.SkewM1 = fmt.Sprintf("%+.1f%%", *p)
 		}
+		v.SkewRR = gexSkewRRLine(sk)
 	}
+	v.ProvLine = gexProvLine(s.Provenance, s.DataQuality)
 	if p := s.Regime.Percentile20D; p != nil {
 		v.Pctl = strconv.FormatFloat(*p, 'f', 0, 64)
 	}
-	if e := s.ExpectedMove1D; e != nil {
-		v.EM = fmt.Sprintf("%.1f pts", *e)
+	// The tile headlines the one-day move. Since engine v0.12.0 that is
+	// expected_move_next_session; expected_move_1d is the front expiry's
+	// straddle, which intraday is only the move left to this session's
+	// close, so it demotes to the sub line. Older rows have just the 1d
+	// figure and keep the old label.
+	v.EMLabel = "1d"
+	emHead := s.ExpectedMove1D
+	if n := s.ExpectedMoveNextSession; n != nil {
+		emHead, v.EMLabel = n, "next session"
 	}
-
-	if e := s.ExpectedMove1D; e != nil && s.SpotIndex > 0 {
-		v.EMPct = fmt.Sprintf("%.2f%% of spot", *e/s.SpotIndex*100)
+	if emHead != nil {
+		v.EM = fmt.Sprintf("%.1f pts", *emHead)
+		var sub []string
+		if s.SpotIndex > 0 {
+			sub = append(sub, fmt.Sprintf("%.2f%% of spot", *emHead/s.SpotIndex*100))
+		}
+		if s.ExpectedMoveNextSession != nil && s.ExpectedMove1D != nil {
+			sub = append(sub, fmt.Sprintf("to close %.1f pts", *s.ExpectedMove1D))
+		}
+		v.EMPct = strings.Join(sub, " · ")
 	}
 
 	v.SpotIndex = fmt.Sprintf("%.2f", s.SpotIndex)
@@ -863,6 +890,25 @@ func gexBuildView(s *gex.Snapshot, ref time.Time) gexView {
 	v.HasProfile = len(s.Profile.StrikesIndex) > 1 &&
 		len(s.Profile.StrikesIndex) == len(s.Profile.NetGex)
 	return v
+}
+
+// gexSkewRRLine renders the risk reversal in vol points per tenor. The
+// engine serves IV units (0.034 = 3.4 vol points), hence the x100.
+func gexSkewRRLine(sk *gex.Skew) string {
+	if sk == nil {
+		return ""
+	}
+	var parts []string
+	if p := sk.DTE0RRPts; p != nil {
+		parts = append(parts, fmt.Sprintf("0DTE %+.1f", *p*100))
+	}
+	if p := sk.M1RRPts; p != nil {
+		parts = append(parts, fmt.Sprintf("1M %+.1f", *p*100))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "RR " + strings.Join(parts, " · ") + " vol pts"
 }
 
 // gexPCLegsLine renders the per-leg put/call ratios, legs in name order

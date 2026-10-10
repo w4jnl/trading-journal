@@ -114,6 +114,8 @@ type gexExpo struct {
 	// 009), from the profile payload (same row as the snapshot, so the same
 	// verdict) with the snapshot as fallback; the strip above the chart.
 	Quality gexQuality `json:"quality"`
+	// ProvLine mirrors the overview footer's provenance suffix (update 010).
+	ProvLine string `json:"provLine,omitempty"`
 }
 
 // gexExpoBucketOpt is one width in the bucket control.
@@ -459,6 +461,7 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 		dq, prov = s.DataQuality, s.Provenance
 	}
 	e.Quality = gexBuildQuality(dq, prov)
+	e.ProvLine = gexProvLine(prov, dq)
 	e.IndexName = "index"
 	if len(pd.Sources) > 0 && pd.Sources[0] != "" {
 		e.IndexName = pd.Sources[0]
