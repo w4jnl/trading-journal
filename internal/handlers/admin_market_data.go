@@ -51,7 +51,7 @@ func (h *Handlers) AdminMarketDataPage(w http.ResponseWriter, r *http.Request) {
 	rows, err := h.DB.QueryContext(ctx,
 		`SELECT t.symbol_root, t.entry_time, t.exit_time
 		   FROM trades t
-		  WHERE t.exit_time IS NULL OR t.exit_time >= ?`, cutoff)
+		  WHERE t.exit_time IS NULL OR t.exit_time >= ?`, cutoff.UTC())
 	if err != nil {
 		h.serverError(w, fmt.Errorf("market-data trades: %w", err))
 		return

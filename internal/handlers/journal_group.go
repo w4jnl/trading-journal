@@ -115,7 +115,8 @@ func summarizeTradeRows(trades []linkedTrade) GroupSummary {
 // retired-account trades from stats. The /trades page retains its own
 // reveal toggle for explicit inspection.
 func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTrade, error) {
-	end := date.AddDate(0, 0, 1)
+	// date is local midnight; SQL compares UTC text (see daybounds.go).
+	fromU, toU := dayBoundsUTC(date)
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
 		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
@@ -126,7 +127,7 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
-	`, userID(ctx), date, end)
+	`, userID(ctx), fromU, toU)
 }
 
 // loadOneTrade returns a one-element slice for the given trade id, in the
@@ -147,7 +148,7 @@ func loadOneTrade(ctx context.Context, db *sql.DB, tradeID int64) ([]linkedTrade
 // starts at `monday` (Monday..Sunday inclusive). Excludes retired-account
 // trades for the same reason loadDayTrades does.
 func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linkedTrade, error) {
-	end := monday.AddDate(0, 0, 7)
+	fromU, toU := daysBoundsUTC(monday, 7)
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
 		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
@@ -158,7 +159,7 @@ func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linked
 		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
-	`, userID(ctx), monday, end)
+	`, userID(ctx), fromU, toU)
 }
 
 // scanLinkedTrades is the shared scan path for loadDayTrades / loadWeekTrades

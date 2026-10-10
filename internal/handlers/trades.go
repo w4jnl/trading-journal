@@ -31,6 +31,12 @@ type tradeFilters struct {
 	Outcome *string
 	From    *time.Time
 	To      *time.Time
+	// FromDay / ToDay are the trading-timezone calendar days (YYYY-MM-DD)
+	// the bounds were built from, for echoing back to the form and chart
+	// title. From/To are UTC instants, so formatting them directly shows the
+	// previous day for any zone east of UTC.
+	FromDay string
+	ToDay   string
 	Page    int
 	// IncludeRetired, when true, lets trades from retired accounts (accounts.active = 0)
 	// surface alongside the rest. Default false hides them — matches the
@@ -390,17 +396,16 @@ func buildPerfChart(ctx context.Context, db *sql.DB, queries *models.Queries, f 
 	case syntheticRange:
 		title = "Last 60 days"
 	case f.From != nil && f.To != nil:
-		fromStr := f.From.Format("2006-01-02")
-		toStr := f.To.Add(-24 * time.Hour).Format("2006-01-02") // To is exclusive +24h; restore the user-facing day
+		fromStr, toStr := f.fromLabel(), f.toLabel()
 		if fromStr == toStr {
 			title = "Day Performance · " + fromStr
 		} else {
 			title = "Range Performance · " + fromStr + " – " + toStr
 		}
 	case f.From != nil:
-		title = "Performance from " + f.From.Format("2006-01-02")
+		title = "Performance from " + f.fromLabel()
 	case f.To != nil:
-		title = "Performance through " + f.To.Add(-24*time.Hour).Format("2006-01-02")
+		title = "Performance through " + f.toLabel()
 	default:
 		// Filter active but no date — chart covers the full matching span.
 		title = "Filtered performance"
@@ -782,12 +787,14 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 		if t, err := time.ParseInLocation("2006-01-02", h.resolveDayKeyword(r.Context(), v, tz), tz); err == nil {
 			u := t.UTC()
 			f.From = &u
+			f.FromDay = t.Format("2006-01-02")
 		}
 	}
 	if v := strings.TrimSpace(q.Get("to")); v != "" {
 		if t, err := time.ParseInLocation("2006-01-02", h.resolveDayKeyword(r.Context(), v, tz), tz); err == nil {
 			u := t.AddDate(0, 0, 1).UTC() // inclusive upper bound
 			f.To = &u
+			f.ToDay = t.Format("2006-01-02")
 		}
 	}
 	if v := strings.TrimSpace(q.Get("page")); v != "" {
@@ -823,12 +830,29 @@ func filtersAsForm(f tradeFilters) map[string]string {
 		out["Outcome"] = *f.Outcome
 	}
 	if f.From != nil {
-		out["From"] = f.From.Format("2006-01-02")
+		out["From"] = f.fromLabel()
 	}
 	if f.To != nil {
-		out["To"] = f.To.Add(-24 * time.Hour).Format("2006-01-02")
+		out["To"] = f.toLabel()
 	}
 	return out
+}
+
+// fromLabel / toLabel are the user-facing days of the range. The parser
+// records them (FromDay/ToDay); a filter built elsewhere falls back to the
+// UTC instant, which is right only for zones at or west of UTC.
+func (f tradeFilters) fromLabel() string {
+	if f.FromDay != "" {
+		return f.FromDay
+	}
+	return f.From.Format("2006-01-02")
+}
+
+func (f tradeFilters) toLabel() string {
+	if f.ToDay != "" {
+		return f.ToDay
+	}
+	return f.To.Add(-24 * time.Hour).Format("2006-01-02") // To is exclusive +24h; restore the user-facing day
 }
 
 // pageRef returns a query string for prev/next-page links, preserving filters.

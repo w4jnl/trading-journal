@@ -122,13 +122,15 @@ func (h *Handlers) listTradesForReconcile(ctx context.Context, uid int64, f txnF
 		b.WriteString(" AND (t.symbol = ? OR t.symbol_root = ?)")
 		args = append(args, f.Symbol, f.Symbol)
 	}
-	if f.From != "" {
-		b.WriteString(" AND substr(COALESCE(t.exit_time, t.entry_time),1,10) >= ?")
-		args = append(args, f.From)
+	// Overlap test on trading-tz days expressed as UTC instants (daybounds.go).
+	tz := h.localTZ()
+	if d, ok := parseLocalDay(f.From, tz); ok {
+		b.WriteString(" AND COALESCE(t.exit_time, t.entry_time) >= ?")
+		args = append(args, d.UTC())
 	}
-	if f.To != "" {
-		b.WriteString(" AND substr(t.entry_time,1,10) <= ?")
-		args = append(args, f.To)
+	if d, ok := parseLocalDay(f.To, tz); ok {
+		b.WriteString(" AND t.entry_time < ?")
+		args = append(args, d.AddDate(0, 0, 1).UTC())
 	}
 	// Outcome by net P&L sign; stub instruments (NULL P&L) match none of them.
 	switch f.Outcome {
@@ -295,6 +297,7 @@ func uniqSorted(ids []int64) []int64 {
 // deletes into one row per group and applies the page filter in Go (groups
 // are few). A group stays listed while any of its fills is still tombstoned.
 func (h *Handlers) listDeletedTradeGroups(ctx context.Context, uid int64, f txnFilter) ([]reconDeletedGroup, error) {
+	tz := h.localTZ()
 	rows, err := h.Queries.ListDeletedGroupExecutions(ctx, uid)
 	if err != nil {
 		return nil, err
@@ -344,10 +347,10 @@ func (h *Handlers) listDeletedTradeGroups(ctx context.Context, uid int64, f txnF
 		if f.Symbol != "" && g.Symbol != f.Symbol && g.SymbolRoot != f.Symbol {
 			continue
 		}
-		if f.From != "" && g.Last.UTC().Format("2006-01-02") < f.From {
+		if f.From != "" && g.Last.In(tz).Format("2006-01-02") < f.From {
 			continue
 		}
-		if f.To != "" && g.First.UTC().Format("2006-01-02") > f.To {
+		if f.To != "" && g.First.In(tz).Format("2006-01-02") > f.To {
 			continue
 		}
 		out = append(out, *g)
