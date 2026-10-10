@@ -305,7 +305,7 @@
        with /accounts and /admin/transactions via dirty_table.js). */}}
 </style>
 
-<script>
+<script nonce="{{$.Nonce}}">
   // Expand/collapse a cell's rate-version history (the row after the cell row).
   document.querySelectorAll('button[data-hist-toggle]').forEach(function (btn) {
     btn.addEventListener('click', function () {

@@ -290,7 +290,7 @@
   {{/* .markdown-preview element styles live in app.css (shared ruleset). */}}
 </style>
 
-<script>
+<script nonce="{{$.Nonce}}">
   /* Library row: clicking the row expands a markdown preview; the "Edit"
      button swaps the preview for the editor form, and "Cancel" swaps back.
      One delegated listener handles every row on the page. */

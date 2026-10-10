@@ -63,7 +63,7 @@
   <a href="/trades" class="btn btn--ghost btn--sm">Clear</a>
 </form>
 </details>
-<script>
+<script nonce="{{$.Nonce}}">
   (function () {
     var d = document.getElementById('trades-filters');
     if (d && window.matchMedia && matchMedia('(max-width: 600px)').matches) d.open = false;
@@ -111,7 +111,7 @@
 </form>
 
 {{template "trade_sheet" .}}
-<script>
+<script nonce="{{$.Nonce}}">
   // Trade-sheet integration for /trades — most of the behavior lives in
   // trade_sheet.js. This hook decides what to do on close:
   //   - If we got here via /trades?sheet=N&back=URL (or legacy ?modal=N)
@@ -307,7 +307,7 @@
   <div class="label" style="margin-bottom: 8px;">{{.ChartTitle}}</div>
   <div id="perf-chart" data-total="{{.ChartTotal}}" style="height: 240px; width: 100%;"></div>
 </div>
-<script>
+<script nonce="{{$.Nonce}}">
   /* Inline data emitted by the Go handler. Both arrays are aligned and start
      with a (firstExitTime - 1min, 0) baseline so the curve rises from zero. */
   window.__perfChart = {
