@@ -122,8 +122,7 @@ func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	tz := h.localTZ()
-	entry, conflict, err := h.createJournalEntry(r.Context(), apiCreateInput{Scope: "trade", TradeID: &tradeID, Body: aiPlaceholderBody}, tz)
+	entry, conflict, err := h.createJournalEntry(r.Context(), apiCreateInput{Scope: "trade", TradeID: &tradeID, Body: aiPlaceholderBody})
 	var entryID int64
 	switch {
 	case conflict != nil:

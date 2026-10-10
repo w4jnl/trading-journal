@@ -24,6 +24,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/livedata"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -148,6 +149,10 @@ type Handlers struct {
 	// distinguish page renders ("page:<name>") from partial renders
 	// ("partial:<name>") since the file sets differ.
 	templateCache sync.Map
+
+	// journal is the domain service behind every journal write (journalSvc).
+	journalOnce sync.Once
+	journal     *journal.Service
 
 	// quoteCache memoizes open-position quotes per contract symbol for a few
 	// seconds (see quoteCacheTTL) so the dashboard's live refresh does not

@@ -280,13 +280,11 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 	if h.AI == nil {
 		return fmt.Errorf("ai analysis is disabled")
 	}
-	tz := h.localTZ()
-	prep, err := h.prepareDayEntries(ctx, dateStr, tz)
+	prep, err := h.prepareDayEntries(ctx, dateStr)
 	if err != nil {
 		return err
 	}
-	resolvedDate, _ := prep["date"].(string)
-	entries, _ := prep["entries"].([]preparedEntry)
+	resolvedDate, entries := prep.Date, prep.Entries
 
 	total := len(entries) + 1 // + the day synthesis
 	done := 0
@@ -312,7 +310,7 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 	if resolvedDate != "" {
 		progress(done, total, "day summary")
 		var dayID int64
-		day, conflict, err := h.createJournalEntry(ctx, apiCreateInput{Scope: "day", Date: resolvedDate, Body: aiPlaceholderBody}, tz)
+		day, conflict, err := h.createJournalEntry(ctx, apiCreateInput{Scope: "day", Date: resolvedDate, Body: aiPlaceholderBody})
 		switch {
 		case conflict != nil:
 			dayID = conflict.EntryID

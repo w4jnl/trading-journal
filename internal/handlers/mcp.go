@@ -199,7 +199,7 @@ func (h *Handlers) mcpPrepareDay(ctx context.Context, req mcpgo.CallToolRequest)
 	if h.aiJobRunning(ctx) {
 		return mcpgo.NewToolResultError(aiBusyMessage), nil
 	}
-	resp, err := h.prepareDayEntries(ctx, req.GetString("date", ""), h.localTZ())
+	resp, err := h.prepareDayEntries(ctx, req.GetString("date", ""))
 	if err != nil {
 		return mcpgo.NewToolResultError(err.Error()), nil
 	}
@@ -422,7 +422,7 @@ func (h *Handlers) mcpCreateJournalEntry(ctx context.Context, req mcpgo.CallTool
 		TradeID:    mcpOptInt(req, "tradeId"),
 		TradeIDs:   mcpInt64Slice(req, "tradeIds"),
 	}
-	e, conflict, err := h.createJournalEntry(ctx, in, h.localTZ())
+	e, conflict, err := h.createJournalEntry(ctx, in)
 	if conflict != nil {
 		return mcpJSON(map[string]any{"alreadyExists": true, "entryId": conflict.EntryID, "message": conflict.Message})
 	}

@@ -84,7 +84,7 @@ type gexAnnotator struct {
 // representative trade t (for group entries the cluster's first trade - same
 // entry/exit window by construction). Never returns an error: the review
 // flow must proceed identically whether or not gamma context is available.
-func (a *gexAnnotator) annotate(ctx context.Context, entryID int64, t prepDayTrade) {
+func (a *gexAnnotator) Annotate(ctx context.Context, entryID int64, t prepDayTrade) {
 	h := a.h
 	if h.GEX == nil || a.broken {
 		return

@@ -82,7 +82,7 @@ func TestGexAnnotateStepsPastDegradedRow(t *testing.T) {
 	ctx := auth.WithUser(context.Background(), &auth.User{ID: 7})
 
 	gexSeedEntry(t, db, 1, aiPlaceholderBody)
-	(&gexAnnotator{h: h}).annotate(ctx, 1, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, gexTestTrade("MES"))
 
 	// Both moments (15:52 / 15:58 ET) hit the degraded 15:50 row first and
 	// step to the clean 15:45 one: two calls per moment.
@@ -116,7 +116,7 @@ func TestGexAnnotateKeepsDegradedRowWhenNoCleanOne(t *testing.T) {
 	ctx := auth.WithUser(context.Background(), &auth.User{ID: 7})
 
 	gexSeedEntry(t, db, 1, aiPlaceholderBody)
-	(&gexAnnotator{h: h}).annotate(ctx, 1, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, gexTestTrade("MES"))
 
 	// 1 + gexCleanSteps calls per moment, then it gives up.
 	if want := int64(2 * (1 + gexCleanSteps)); calls.Load() != want {
@@ -152,7 +152,7 @@ func TestGexAnnotateReconstructedRow(t *testing.T) {
 	ctx := auth.WithUser(context.Background(), &auth.User{ID: 7})
 
 	gexSeedEntry(t, db, 1, aiPlaceholderBody)
-	(&gexAnnotator{h: h}).annotate(ctx, 1, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, gexTestTrade("MES"))
 
 	if calls.Load() != 2 {
 		t.Errorf("engine calls = %d, want 2 (a clean row is never stepped past)", calls.Load())
@@ -441,7 +441,7 @@ func TestJournalGexRefresh(t *testing.T) {
 	if _, err := db.Exec(`UPDATE journal_entries SET trade_id = 42 WHERE id = 1`); err != nil {
 		t.Fatal(err)
 	}
-	(&gexAnnotator{h: h}).annotate(ctx, 1, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, gexTestTrade("MES"))
 	before := gexEntryBody(t, db, 1)
 	if !strings.Contains(before, "stale=true") || !gexRefreshable(before) {
 		t.Fatalf("setup: expected a stale, refreshable block:\n%s", before)
@@ -455,7 +455,7 @@ func TestJournalGexRefresh(t *testing.T) {
 	if _, err := db.Exec(`INSERT INTO journal_entry_trades VALUES (2, 42)`); err != nil {
 		t.Fatal(err)
 	}
-	(&gexAnnotator{h: h}).annotate(ctx, 2, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 2, gexTestTrade("MES"))
 	groupBefore := gexEntryBody(t, db, 2)
 	if !strings.HasPrefix(groupBefore, "Thesis text.") || !strings.Contains(groupBefore, "_Note added ") {
 		t.Fatalf("setup: group body unexpected:\n%s", groupBefore)

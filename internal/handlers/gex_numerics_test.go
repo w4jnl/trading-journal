@@ -229,7 +229,7 @@ func TestGexAnnotateEmNext(t *testing.T) {
 	h := gexTestHandlers(t, db, srv.URL)
 	ctx := auth.WithUser(context.Background(), &auth.User{ID: 7})
 	gexSeedEntry(t, db, 1, aiPlaceholderBody)
-	(&gexAnnotator{h: h}).annotate(ctx, 1, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, gexTestTrade("MES"))
 	body := gexEntryBody(t, db, 1)
 	if !strings.Contains(body, " em=9.7 stale=false quality=ok provenance=recomputed em_next=37.7 -->") {
 		t.Errorf("marker keys:\n%s", body)
@@ -270,13 +270,13 @@ func TestAdminGexRefreshBulk(t *testing.T) {
 		if _, err := db.Exec(`UPDATE journal_entries SET trade_id = 42 WHERE id = ?`, id); err != nil {
 			t.Fatal(err)
 		}
-		(&gexAnnotator{h: h}).annotate(ctx, id, gexTestTrade("MES"))
+		(&gexAnnotator{h: h}).Annotate(ctx, id, gexTestTrade("MES"))
 	}
 	if _, err := db.Exec(`INSERT INTO journal_entries (id, user_id, body, entry_date, scope, trade_id) VALUES (4, 7, ?, ?, 'trade', 42), (5, 7, 'no gamma here', ?, 'trade', NULL)`,
 		aiPlaceholderBody, time.Date(2026, 7, 20, 0, 0, 0, 0, time.UTC), time.Date(2026, 7, 31, 0, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatal(err)
 	}
-	(&gexAnnotator{h: h}).annotate(ctx, 4, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 4, gexTestTrade("MES"))
 	outsideBefore := gexEntryBody(t, db, 4)
 
 	// The engine repaired the rows: same as_of, corrected numbers (here: the

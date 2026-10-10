@@ -687,73 +687,19 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	// 3-segment path conflicts with /journal/week/{week} under Go 1.22 mux
 	// pattern matching (neither pattern is uniformly more specific).
 	if r.FormValue("_action") == "delete" {
-		existing, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date})
-		if err == nil {
-			if delErr := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); delErr != nil {
-				h.serverError(w, fmt.Errorf("delete day journal: %w", delErr))
-				return
-			}
-			h.journalChanged(ctx)
-		} else if !errors.Is(err, sql.ErrNoRows) {
-			h.serverError(w, fmt.Errorf("get day journal: %w", err))
+		if _, err := h.journalSvc().DeleteDay(ctx, userID(ctx), date); err != nil {
+			h.serverError(w, fmt.Errorf("delete day journal: %w", err))
 			return
 		}
 		http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 		return
 	}
-
-	existing, err := h.Queries.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: date})
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		if body == "" {
-			// Nothing to save. Just redirect.
-			http.Redirect(w, r, redirectQuery("empty"), http.StatusSeeOther)
-			return
-		}
-		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-			UserID:     userIDPtr(ctx),
-			TradeID:    nil,
-			AccountID:  nil,
-			EntryDate:  date,
-			Body:       body,
-			Mood:       mood,
-			Tag:        tag,
-			Scope:      "day",
-			StrategyID: strategyID,
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("create journal: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
-	case err != nil:
-		h.serverError(w, fmt.Errorf("get journal: %w", err))
+	out, err := h.journalSvc().SaveDay(ctx, userID(ctx), date, body, mood, tag, strategyID)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("save day journal: %w", err))
 		return
-	default:
-		if body == "" {
-			// Empty save = delete the entry.
-			if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
-				h.serverError(w, fmt.Errorf("delete journal: %w", err))
-				return
-			}
-			h.journalChanged(ctx)
-			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
-			return
-		}
-		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-			UserID:     userIDPtr(ctx),
-			Body:       body,
-			Mood:       mood,
-			Tag:        tag,
-			StrategyID: strategyID,
-			ID:         existing.ID,
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("update journal: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
 	}
-
-	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
+	http.Redirect(w, r, redirectQuery(string(out)), http.StatusSeeOther)
 }
 
 // JournalTradePage renders /journal/trade/{id} — the standalone trade-level
@@ -929,55 +875,12 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 	tag := parseTag(r.FormValue("tag"))
 	strategyID := h.parseStrategyID(r)
 
-	existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		if body == "" {
-			http.Redirect(w, r, redirectQuery("empty"), http.StatusSeeOther)
-			return
-		}
-		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-			UserID:     userIDPtr(ctx),
-			TradeID:    nil,
-			AccountID:  nil,
-			EntryDate:  monday,
-			Body:       body,
-			Mood:       nil,
-			Tag:        tag,
-			Scope:      "week",
-			StrategyID: strategyID,
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("create week journal: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
-	case err != nil:
-		h.serverError(w, fmt.Errorf("get week journal: %w", err))
+	out, err := h.journalSvc().SaveWeek(ctx, userID(ctx), monday, body, tag, strategyID)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("save week journal: %w", err))
 		return
-	default:
-		if body == "" {
-			if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
-				h.serverError(w, fmt.Errorf("delete week journal: %w", err))
-				return
-			}
-			h.journalChanged(ctx)
-			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
-			return
-		}
-		if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-			UserID:     userIDPtr(ctx),
-			Body:       body,
-			Mood:       existing.Mood,
-			Tag:        tag,
-			StrategyID: strategyID,
-			ID:         existing.ID,
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("update week journal: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
 	}
-	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
+	http.Redirect(w, r, redirectQuery(string(out)), http.StatusSeeOther)
 }
 
 // WeekJournalDelete handles POST /journal/week/{week}/delete — explicit
@@ -997,15 +900,8 @@ func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	existing, err := h.Queries.GetWeekJournalEntry(ctx, models.GetWeekJournalEntryParams{UserID: userIDPtr(ctx), EntryDate: monday})
-	if err == nil {
-		if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
-			h.serverError(w, fmt.Errorf("delete week journal: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		h.serverError(w, fmt.Errorf("get week journal: %w", err))
+	if _, err := h.journalSvc().DeleteWeek(ctx, userID(ctx), monday); err != nil {
+		h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 		return
 	}
 	q := url.Values{}
@@ -1022,31 +918,6 @@ func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
 		target += "?" + q.Encode()
 	}
 	http.Redirect(w, r, target, http.StatusSeeOther)
-}
-
-// parseISOWeek parses "YYYY-Www" and returns the Monday of that ISO week
-// (in tz, at midnight), plus the ISO year/week components for re-formatting.
-// The algorithm anchors on Jan 4 — which is always in ISO week 1 — then walks
-// back to that week's Monday and forward N-1 weeks.
-func parseISOWeek(s string, tz *time.Location) (monday time.Time, isoYear, isoWeek int, err error) {
-	parts := strings.SplitN(s, "-W", 2)
-	if len(parts) != 2 {
-		return time.Time{}, 0, 0, fmt.Errorf("invalid week id %q", s)
-	}
-	year, err1 := strconv.Atoi(parts[0])
-	week, err2 := strconv.Atoi(parts[1])
-	if err1 != nil || err2 != nil || week < 1 || week > 53 {
-		return time.Time{}, 0, 0, fmt.Errorf("invalid week id %q", s)
-	}
-	jan4 := time.Date(year, 1, 4, 0, 0, 0, 0, tz)
-	wd := int(jan4.Weekday())
-	if wd == 0 {
-		wd = 7
-	}
-	week1Monday := jan4.AddDate(0, 0, 1-wd)
-	monday = week1Monday.AddDate(0, 0, (week-1)*7)
-	y, w := monday.ISOWeek()
-	return monday, y, w, nil
 }
 
 // JournalPreview handles POST /journal/preview — accepts a markdown body in

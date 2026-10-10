@@ -69,7 +69,7 @@ func TestDayBoundsMatchTradingTimezone(t *testing.T) {
 		t.Errorf("loadDayTrades(Oct 10) = %d trades, want 2", len(day))
 	}
 	// Prepare-day loader.
-	prep, err := h.loadDayTradesForPrep(uctx, oct10, ams)
+	prep, err := h.journalSvc().LoadDayTrades(uctx, userID(uctx), oct10)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -277,7 +277,7 @@ func (h *Handlers) APIStatsDaily(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		var ve apiValidationError
 		if errors.As(err, &ve) {
-			writeJSONError(w, http.StatusBadRequest, ve.msg)
+			writeJSONError(w, http.StatusBadRequest, ve.Msg)
 			return
 		}
 		h.logger().Warn("api stats: filter failed", "err", err)
