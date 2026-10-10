@@ -17,6 +17,7 @@ import (
 	"github.com/gomarkdown/markdown/parser"
 	"github.com/microcosm-cc/bluemonday"
 
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -579,6 +580,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list strategies: %w", err))
 		return
 	}
+	mistakes, emotions := h.entryLabels(ctx, entry.ID)
 
 	data := map[string]any{
 		"NavActive":        "journal",
@@ -595,6 +597,8 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Entry":            entry,
 		"Mood":             mood,
 		"Tag":              tag,
+		"Mistakes":         mistakes,
+		"Emotions":         emotions,
 		"Rendered":         rendered,
 		"Recent":           recent,
 		"Flash":            flash,
@@ -694,9 +698,10 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 		return
 	}
-	out, err := h.journalSvc().SaveDay(ctx, userID(ctx), date, body, mood, tag, strategyID)
+	mistakes, emotions := labelFields(r)
+	out, err := h.journalSvc().SaveDay(ctx, userID(ctx), date, journal.Fields{Body: body, Mood: mood, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions})
 	if err != nil {
-		h.serverError(w, fmt.Errorf("save day journal: %w", err))
+		h.saveFailed(w, "save day journal", err)
 		return
 	}
 	http.Redirect(w, r, redirectQuery(string(out)), http.StatusSeeOther)
@@ -750,6 +755,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list strategies: %w", err))
 		return
 	}
+	mistakes, emotions := h.entryLabels(ctx, journalEntryID)
 
 	h.renderPage(w, r, "journal_trade.html", map[string]any{
 		"NavActive":        "journal",
@@ -762,6 +768,8 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		"HasJournal":       hasJournal,
 		"JournalBody":      journalBody,
 		"JournalTag":       journalTag,
+		"Mistakes":         mistakes,
+		"Emotions":         emotions,
 		"JournalEntryID":   journalEntryID,
 		"GexRefresh":       h.GEX != nil && gexRefreshable(journalBody),
 		"Summary":          summary,
@@ -821,6 +829,7 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list strategies: %w", err))
 		return
 	}
+	mistakes, emotions := h.entryLabels(ctx, entry.ID)
 
 	h.renderPage(w, r, "journal_week.html", map[string]any{
 		"NavActive":        "journal",
@@ -836,6 +845,8 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		"HasEntry":         hasEntry,
 		"Entry":            entry,
 		"Tag":              tag,
+		"Mistakes":         mistakes,
+		"Emotions":         emotions,
 		"Rendered":         rendered,
 		"Flash":            r.URL.Query().Get("flash"),
 		"Trades":           weekTrades,
@@ -875,9 +886,10 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 	tag := parseTag(r.FormValue("tag"))
 	strategyID := h.parseStrategyID(r)
 
-	out, err := h.journalSvc().SaveWeek(ctx, userID(ctx), monday, body, tag, strategyID)
+	mistakes, emotions := labelFields(r)
+	out, err := h.journalSvc().SaveWeek(ctx, userID(ctx), monday, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions})
 	if err != nil {
-		h.serverError(w, fmt.Errorf("save week journal: %w", err))
+		h.saveFailed(w, "save week journal", err)
 		return
 	}
 	http.Redirect(w, r, redirectQuery(string(out)), http.StatusSeeOther)

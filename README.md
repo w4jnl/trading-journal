@@ -20,9 +20,11 @@ around it.
   account per symbol.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
-  view shows the same shape: tag picker, rich markdown editor (paste
-  screenshots, drag-drop images, apply built-in templates, recall prior
-  entries), and the related trades panel.
+  view shows the same shape: tag picker, mistake and emotion labels from
+  a fixed vocabulary (so analytics can tell you what "moved the stop"
+  costs), rich markdown editor (paste screenshots, drag-drop images,
+  apply built-in templates, recall prior entries), and the related
+  trades panel.
 - **Dashboard** leads with a 60-day cumulative P&L curve, a Today panel
   with the day's net P&L as a hero number, and a five-tile stat strip
   with inline-SVG sparklines for trades / win rate / R-multiple /

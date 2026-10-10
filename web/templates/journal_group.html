@@ -32,7 +32,7 @@
 <!-- Body / tag editor — primary action of the page, sits above the
      linked-trades list so the eye lands on the writing surface first. -->
 <section class="journal-entry" data-journal-entry>
-{{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID)}}{{end}}
+{{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{end}}
 <form method="post" action="/journal/group/{{.EntryID}}" class="journal-form"{{if .Entry.Body}} hidden{{end}}>
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
   <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
@@ -41,6 +41,8 @@
       {{template "tag_picker" (dict "Tag" $.Tag)}}
     </div>
     {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
+    {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes)}}
+    {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions)}}
   </div>
 
   {{template "journal_editor" (dict

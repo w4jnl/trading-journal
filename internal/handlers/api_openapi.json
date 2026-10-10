@@ -37,7 +37,7 @@
           "streaks": { "type": "object", "properties": {
             "longestWinTrades": { "type": "integer" }, "longestLossTrades": { "type": "integer" }, "currentTrades": { "type": "integer", "description": "signed: +n wins running, -n losses" },
             "longestGreenDays": { "type": "integer" }, "longestRedDays": { "type": "integer" }, "currentDays": { "type": "integer", "description": "signed" } } },
-          "breakdowns": { "type": "object", "description": "bySymbol, byDirection, byStrategy, byTag, byDayOfWeek, byHour", "additionalProperties": { "type": "array", "items": { "type": "object", "properties": {
+          "breakdowns": { "type": "object", "description": "bySymbol, byDirection, byStrategy, byTag, byMistake, byEmotion, byDayOfWeek, byHour. A trade with several labels counts in every matching byMistake / byEmotion bucket; (none logged) is the unlabelled rest. Labels reach a trade from its own entry, a group entry it is in, or the day entry of the day it closed.", "additionalProperties": { "type": "array", "items": { "type": "object", "properties": {
             "key": { "type": "string" }, "trades": { "type": "integer" }, "wins": { "type": "integer" }, "losses": { "type": "integer" },
             "net": { "type": "number" }, "gross": { "type": "number" }, "best": { "type": "number" }, "worst": { "type": "number" } } } } }
         }
@@ -126,6 +126,14 @@
         "type": "object",
         "properties": { "v": { "type": "integer", "description": "Opaque per-user data version. Compare for inequality only (process-local; resets on restart)." } }
       },
+      "Labels": {
+        "type": "object",
+        "description": "Review labels from the fixed vocabulary. mistakes: chased, early-exit, late-exit, oversized, no-stop, moved-stop, held-loser, revenge, fomo, hesitated, overtraded, against-plan. emotions: calm, focused, confident, anxious, greedy, frustrated, bored, tilted, rushed.",
+        "properties": {
+          "mistakes": { "type": "array", "items": { "type": "string" } },
+          "emotions": { "type": "array", "items": { "type": "string" } }
+        }
+      },
       "JournalDetail": {
         "type": "object",
         "properties": {
@@ -135,6 +143,7 @@
           "tag": { "type": ["string", "null"], "enum": ["good", "neutral", "bad", null] },
           "mood": { "type": ["integer", "null"] },
           "notes": { "type": "string", "description": "Markdown; image refs rewritten to API URLs." },
+          "labels": { "$ref": "#/components/schemas/Labels" },
           "strategy": {
             "type": ["object", "null"],
             "properties": { "id": { "type": "integer" }, "name": { "type": "string" } },
@@ -459,6 +468,24 @@
             "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
           } } } },
           "400": { "description": "Unknown entry or bad/missing tag", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/journal/{id}/labels": {
+      "post": {
+        "operationId": "addLabels",
+        "summary": "Add mistake and/or emotion labels to the entry. Additive: existing labels are kept, duplicates ignored; only the UI removes labels. Keys must come from the fixed vocabulary (see Labels).",
+        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Labels" } } }
+        },
+        "responses": {
+          "200": { "description": "The entry's labels after the add", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "id": { "type": "integer" }, "labels": { "$ref": "#/components/schemas/Labels" } }
+          } } } },
+          "400": { "description": "Unknown label key or empty body", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "404": { "description": "Entry not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },

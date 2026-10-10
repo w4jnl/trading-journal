@@ -558,6 +558,23 @@
     {{template "bucket_table" (dict "Buckets" .ByTag "LinkBase" "")}}
   </section>
   <section>
+    <h3>By mistake</h3>
+    {{if .HasLabels}}
+    {{template "bucket_table" (dict "Buckets" .ByMistake "LinkBase" "")}}
+    <p class="muted" style="font-size:12px; margin:6px 0 0;">A trade with several labels counts in each; "(none logged)" is every trade without one. Labels on a day entry apply to every trade closed that day.</p>
+    {{else}}
+    <p class="muted" style="font-size:12px;">Label mistakes and emotions on your journal entries (day, trade, or group) to see which ones cost you the most.</p>
+    {{end}}
+  </section>
+  <section>
+    <h3>By emotion</h3>
+    {{if .HasLabels}}
+    {{template "bucket_table" (dict "Buckets" .ByEmotion "LinkBase" "")}}
+    {{else}}
+    <p class="muted" style="font-size:12px;">Same labels, emotional side: how you traded when calm versus tilted.</p>
+    {{end}}
+  </section>
+  <section>
     <h3>By day of week (entry)</h3>
     {{template "bucket_table" (dict "Buckets" .ByDOW "LinkBase" "")}}
   </section>

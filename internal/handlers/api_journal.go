@@ -117,6 +117,10 @@ func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry,
 		return nil, err
 	}
 	notes, ids := apiRewriteAttachmentRefs(e.Body)
+	labels, err := h.journalSvc().EntryLabels(ctx, userID(ctx), e.ID)
+	if err != nil {
+		return nil, err
+	}
 	var strat *apiStrategyRef
 	if e.StrategyID != nil {
 		if s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *e.StrategyID, UserID: userID(ctx)}); err == nil {
@@ -130,6 +134,7 @@ func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry,
 		"tag":         e.Tag,
 		"mood":        e.Mood,
 		"notes":       notes,
+		"labels":      labelsOut(labels),
 		"strategy":    strat,
 		"summary":     apiSummaryFrom(summarizeTradeRows(trades)),
 		"trades":      apiTradesFrom(trades),

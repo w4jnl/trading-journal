@@ -475,6 +475,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		return
 	}
 
+	mistakes, emotions := h.entryLabels(ctx, journalEntryID)
 	chartTrades := []linkedTrade{{ID: trade.ID, Symbol: trade.Symbol, SymbolRoot: trade.SymbolRoot, Direction: trade.Direction, EntryTime: trade.EntryTime, ExitTime: trade.ExitTime}}
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
 		"Trade":            trade,
@@ -486,6 +487,8 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"HasJournal":       hasJournal,
 		"JournalBody":      journalBody,
 		"JournalTag":       journalTag,
+		"Mistakes":         mistakes,
+		"Emotions":         emotions,
 		"JournalEntryID":   journalEntryID,
 		"JournalRendered":  journalRendered,
 		"Flash":            flash,
@@ -527,13 +530,14 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		body = ""
 	}
 
-	out, err := h.journalSvc().SaveTrade(ctx, userID(ctx), tradeID, body, tag, strategyID)
+	mistakes, emotions := labelFields(r)
+	out, err := h.journalSvc().SaveTrade(ctx, userID(ctx), tradeID, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions})
 	if errors.Is(err, journal.ErrNotFound) {
 		http.Error(w, "trade not found", http.StatusNotFound)
 		return
 	}
 	if err != nil {
-		h.serverError(w, fmt.Errorf("save trade journal: %w", err))
+		h.saveFailed(w, "save trade journal", err)
 		return
 	}
 	flash := string(out)

@@ -89,6 +89,9 @@ type CreateInput struct {
 	Week       string  `json:"week"`     // week: YYYY-Www
 	TradeID    *int64  `json:"tradeId"`  // trade
 	TradeIDs   []int64 `json:"tradeIds"` // group
+	// Review labels from the fixed vocabulary (labels.go); any scope.
+	Mistakes []string `json:"mistakes"`
+	Emotions []string `json:"emotions"`
 }
 
 // Conflict reports that a singleton (day/week/trade) entry already exists.
@@ -221,6 +224,25 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (mod
 	if !ok {
 		return none, nil, BadInput("unknown strategyId")
 	}
+	// Labels are validated before any write so a bad key fails cleanly.
+	mistakes, err := normalizeLabels(KindMistake, in.Mistakes)
+	if err != nil {
+		return none, nil, err
+	}
+	emotions, err := normalizeLabels(KindEmotion, in.Emotions)
+	if err != nil {
+		return none, nil, err
+	}
+	labelled := func(e models.JournalEntry) (models.JournalEntry, *Conflict, error) {
+		if err := s.writeLabels(ctx, e.ID, KindMistake, mistakes, false); err != nil {
+			return none, nil, err
+		}
+		if err := s.writeLabels(ctx, e.ID, KindEmotion, emotions, false); err != nil {
+			return none, nil, err
+		}
+		s.changed(ctx, userID)
+		return e, nil, nil
+	}
 	body := strings.TrimSpace(in.Body)
 	uid := &userID
 
@@ -254,8 +276,7 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (mod
 		if err != nil {
 			return none, nil, fmt.Errorf("create entry: %w", err)
 		}
-		s.changed(ctx, userID)
-		return e, nil, nil
+		return labelled(e)
 
 	case "week":
 		if body == "" {
@@ -279,8 +300,7 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (mod
 		if err != nil {
 			return none, nil, fmt.Errorf("create entry: %w", err)
 		}
-		s.changed(ctx, userID)
-		return e, nil, nil
+		return labelled(e)
 
 	case "trade":
 		if body == "" {
@@ -308,8 +328,7 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (mod
 		if err != nil {
 			return none, nil, fmt.Errorf("create entry: %w", err)
 		}
-		s.changed(ctx, userID)
-		return e, nil, nil
+		return labelled(e)
 
 	case "group":
 		if len(in.TradeIDs) == 0 {
@@ -322,7 +341,7 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (mod
 		if err != nil {
 			return none, nil, err
 		}
-		return e, nil, nil
+		return labelled(e)
 
 	default:
 		return none, nil, BadInput("scope must be one of: day, week, trade, group")

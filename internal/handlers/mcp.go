@@ -17,6 +17,7 @@ import (
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -159,6 +160,8 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("week", mcpgo.Description("scope=week: YYYY-Www.")),
 		mcpgo.WithNumber("tradeId", mcpgo.Description("scope=trade.")),
 		mcpgo.WithArray("tradeIds", mcpgo.Description("scope=group: trade ids (>=1)."), mcpgo.WithNumberItems()),
+		mcpgo.WithArray("mistakes", mcpgo.Description("Mistake labels, fixed keys: "+strings.Join(journal.LabelKeys(journal.KindMistake), ", ")+"."), mcpgo.WithStringItems()),
+		mcpgo.WithArray("emotions", mcpgo.Description("Emotion labels, fixed keys: "+strings.Join(journal.LabelKeys(journal.KindEmotion), ", ")+"."), mcpgo.WithStringItems()),
 	), h.mcpCreateJournalEntry)
 
 	s.AddTool(mcpgo.NewTool("append_note",
@@ -182,6 +185,14 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("tag", mcpgo.Required(), mcpgo.Enum("good", "neutral", "bad")),
 	), h.mcpSetTag)
 
+	s.AddTool(mcpgo.NewTool("add_labels",
+		mcpgo.WithDestructiveHintAnnotation(false),
+		mcpgo.WithDescription("Add mistake and/or emotion labels to a journal entry from a FIXED vocabulary (unknown keys are rejected). Additive: existing labels stay, duplicates are ignored, nothing is ever removed. Label only what the trades and the trader's own notes clearly show (e.g. an exit before the planned target = early-exit; adding to a loser past the stop = moved-stop); don't guess emotions the notes don't mention. Mistakes: "+strings.Join(journal.LabelKeys(journal.KindMistake), ", ")+". Emotions: "+strings.Join(journal.LabelKeys(journal.KindEmotion), ", ")+"."),
+		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
+		mcpgo.WithArray("mistakes", mcpgo.Description("Mistake keys to add."), mcpgo.WithStringItems()),
+		mcpgo.WithArray("emotions", mcpgo.Description("Emotion keys to add."), mcpgo.WithStringItems()),
+	), h.mcpAddLabels)
+
 	s.AddTool(mcpgo.NewTool("get_daily_stats",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Daily P&L + trade stats per trading day (trades, wins, losses, net, gross, commission, winRate, largestWin/largestLoss) with totals over the range - the same numbers as the journal's Calendar. Use it for overview figures instead of summing trades yourself; for 'how am I doing today' call it with day=\"today\", refresh=true. A trade belongs to the day of its exit (trading tz); the keywords today, yesterday and last (last trading day) are resolved server-side - never compute the date yourself. Retired accounts never count and excluded-from-stats accounts are dropped unless accountId is given. Days without closed trades are omitted."),
@@ -193,7 +204,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	), h.mcpGetDailyStats)
 	s.AddTool(mcpgo.NewTool("get_analytics_summary",
 		mcpgo.WithReadOnlyHintAnnotation(true),
-		mcpgo.WithDescription("The /analytics page as one JSON object for a date range: totals (trades, win rate, net/gross/commission, avg win/loss, payoff ratio, profit factor, expectancy), R (over trades that carry a planned risk), drawdown (max peak-to-trough, dates, days to recover, current), streaks (trades and days), and breakdowns by symbol, direction, strategy, tag, weekday and entry hour. Use it for 'how is my edge / where do I lose' questions instead of summing trade lists. Same date keywords and account rules as get_daily_stats; default range = last 30 days."),
+		mcpgo.WithDescription("The /analytics page as one JSON object for a date range: totals (trades, win rate, net/gross/commission, avg win/loss, payoff ratio, profit factor, expectancy), R (over trades that carry a planned risk), drawdown (max peak-to-trough, dates, days to recover, current), streaks (trades and days), and breakdowns by symbol, direction, strategy, tag, mistake label, emotion label, weekday and entry hour. Use it for 'how is my edge / where do I lose' questions instead of summing trade lists. Same date keywords and account rules as get_daily_stats; default range = last 30 days."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
 		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive, trading tz); default = to minus 29 days.")),
 		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive); default = today. Span at most 400 days.")),
@@ -452,6 +463,8 @@ func (h *Handlers) mcpCreateJournalEntry(ctx context.Context, req mcpgo.CallTool
 		Week:       req.GetString("week", ""),
 		TradeID:    mcpOptInt(req, "tradeId"),
 		TradeIDs:   mcpInt64Slice(req, "tradeIds"),
+		Mistakes:   mcpStringSlice(req, "mistakes"),
+		Emotions:   mcpStringSlice(req, "emotions"),
 	}
 	e, conflict, err := h.createJournalEntry(ctx, in)
 	if conflict != nil {
@@ -503,6 +516,28 @@ func (h *Handlers) mcpSetTag(ctx context.Context, req mcpgo.CallToolRequest) (*m
 		return mcpgo.NewToolResultError(err.Error()), nil
 	}
 	return mcpJSON(map[string]any{"entryId": eid, "tag": tag, "assigned": assigned})
+}
+
+func (h *Handlers) mcpAddLabels(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if h.aiJobRunning(ctx) {
+		return mcpgo.NewToolResultError(aiBusyMessage), nil
+	}
+	eid, err := req.RequireInt("entryId")
+	if err != nil {
+		return mcpgo.NewToolResultError("entryId is required"), nil
+	}
+	mistakes, emotions := mcpStringSlice(req, "mistakes"), mcpStringSlice(req, "emotions")
+	if len(mistakes) == 0 && len(emotions) == 0 {
+		return mcpgo.NewToolResultError("nothing to add: pass mistakes and/or emotions"), nil
+	}
+	labels, err := h.addLabels(ctx, int64(eid), mistakes, emotions)
+	if errors.Is(err, journal.ErrNotFound) {
+		return mcpgo.NewToolResultError("entry not found"), nil
+	}
+	if err != nil {
+		return mcpgo.NewToolResultError(err.Error()), nil
+	}
+	return mcpJSON(map[string]any{"entryId": eid, "labels": labelsOut(labels)})
 }
 
 func (h *Handlers) mcpAppendNote(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
@@ -573,6 +608,24 @@ func mcpInt64Slice(req mcpgo.CallToolRequest, key string) []int64 {
 	for _, x := range raw {
 		if n, ok := toInt64(x); ok {
 			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// mcpStringSlice reads an array-of-strings argument; non-string items and
+// blanks are dropped (the service validates the keys that remain).
+func mcpStringSlice(req mcpgo.CallToolRequest, key string) []string {
+	raw, ok := req.GetArguments()[key].([]any)
+	if !ok {
+		return nil
+	}
+	out := make([]string, 0, len(raw))
+	for _, x := range raw {
+		if str, ok := x.(string); ok {
+			if str = strings.TrimSpace(str); str != "" {
+				out = append(out, str)
+			}
 		}
 	}
 	return out

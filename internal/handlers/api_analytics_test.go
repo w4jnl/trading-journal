@@ -31,6 +31,10 @@ func TestAnalyticsSummaryAndPage(t *testing.T) {
 		`INSERT INTO journal_entries (id, user_id, trade_id, entry_date, body, scope, strategy_id) VALUES (1, ` + itoa64(uid) + `, 10, '2026-10-06', 'x', 'trade', 5)`,
 		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope, tag) VALUES (2, ` + itoa64(uid) + `, '2026-10-07', 'g', 'group', 'bad')`,
 		`INSERT INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (2, 11)`,
+		// Labels reach a trade through its own entry (10), a group entry (11)
+		// or the day entry of the day it closed (12 via the 2026-10-08 day).
+		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope) VALUES (3, ` + itoa64(uid) + `, '2026-10-08', 'd', 'day')`,
+		`INSERT INTO journal_entry_labels (journal_entry_id, kind, label) VALUES (1, 'mistake', 'chased'), (2, 'mistake', 'chased'), (2, 'emotion', 'tilted'), (3, 'mistake', 'overtraded')`,
 	} {
 		if _, err := conn.Exec(stmt); err != nil {
 			t.Fatal(err)
@@ -75,6 +79,14 @@ func TestAnalyticsSummaryAndPage(t *testing.T) {
 	if ks := keys("byTag"); len(ks) != 2 || ks[0] != "(untagged)" || ks[1] != "bad" {
 		t.Errorf("byTag keys = %v", ks)
 	}
+	// Chased: trades 10 (+100) and 11 (-150) = -50 over 2 trades; Overtraded
+	// reaches trade 12 (+20) from its day entry, so no trade is unlabelled.
+	if bs := out.Breakdowns["byMistake"]; len(bs) != 2 || bs[0].Key != "Overtraded" || bs[0].Trades != 1 || bs[0].Net != 20 || bs[1].Key != "Chased the entry" || bs[1].Trades != 2 || bs[1].Net != -50 {
+		t.Errorf("byMistake = %+v", bs)
+	}
+	if bs := out.Breakdowns["byEmotion"]; len(bs) != 2 || bs[0].Key != "(none logged)" || bs[0].Trades != 2 || bs[1].Key != "Tilted" || bs[1].Trades != 1 || bs[1].Net != -150 {
+		t.Errorf("byEmotion = %+v", bs)
+	}
 	if rec := httptest.NewRecorder(); true {
 		h.APIAnalyticsSummary(rec, httptest.NewRequest(http.MethodGet, "/api/v1/analytics/summary?from=2026-13-01", nil).WithContext(ctx))
 		if rec.Code != http.StatusBadRequest {
@@ -86,7 +98,7 @@ func TestAnalyticsSummaryAndPage(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.AnalyticsPage(rec, httptest.NewRequest(http.MethodGet, "/analytics?from=2026-10-01&to=2026-10-10", nil).WithContext(ctx))
 	body := rec.Body.String()
-	for _, want := range []string{"Max drawdown", "still open", "Trade streaks", "By strategy", "By tag", "<code>ORB</code>", "<code>bad</code>", "Avg R"} {
+	for _, want := range []string{"Max drawdown", "still open", "Trade streaks", "By strategy", "By tag", "By mistake", "By emotion", "<code>ORB</code>", "<code>bad</code>", "<code>Chased the entry</code>", "<code>Overtraded</code>", "<code>Tilted</code>", "Avg R"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("analytics page missing %q", want)
 		}

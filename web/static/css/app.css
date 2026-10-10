@@ -2231,6 +2231,20 @@ tr.fanout-member td:first-child { padding-left: 28px; }
 .tag-picker .chip.chip-on.tag-neutral { background: var(--fg-muted);  border-color: var(--fg-muted); }
 .tag-picker .chip.chip-on.tag-none    { background: var(--fg-subtle); border-color: var(--fg-subtle); }
 
+/* Review labels (mistakes / emotions): multi-select chips in the journal
+   editors and matching pills in the read view. Selection is pure CSS via
+   :has(:checked) so the picker works inside HTMX-swapped forms without a
+   script; the hidden checkbox still submits as a repeated form field. */
+.label-picker { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.label-picker .chip input[type=checkbox] { display: none; }
+.label-chip:has(:checked) { color: #ffffff; font-weight: var(--fw-semibold); }
+.label-chip:has(:checked)::before { content: "\2713 "; font-weight: 800; }
+.label-chip--mistake:has(:checked) { background: var(--warn); border-color: var(--warn); }
+.label-chip--emotion:has(:checked) { background: var(--info); border-color: var(--info); }
+.label-pill { text-transform: none; }
+.label-pill--mistake { background: var(--warn-soft); color: var(--warn-text); border: 1px solid var(--warn-border); }
+.label-pill--emotion { background: var(--info-soft); color: var(--info-text); border: 1px solid var(--info-border, var(--border)); }
+
 /* ---- GEX shared chrome (Overview + Exposure) ----------------------------- */
 
 /* Time scrub: a full-width range input over the recent session grid. The

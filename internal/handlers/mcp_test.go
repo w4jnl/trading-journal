@@ -47,7 +47,7 @@ func TestMCPToolsList(t *testing.T) {
 		"prepare_day", "server_info",
 		"list_trades", "get_trade", "list_journal", "get_journal_entry",
 		"list_strategies", "get_strategy", "get_chart_image",
-		"create_journal_entry", "append_note", "assign_strategy", "set_tag",
+		"create_journal_entry", "append_note", "assign_strategy", "set_tag", "add_labels",
 		"get_daily_stats", "get_analytics_summary",
 	}
 	for _, w := range want {
