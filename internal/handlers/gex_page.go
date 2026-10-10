@@ -508,9 +508,10 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		data["QuerySuffix"] = "?" + qs.Encode()
 	}
 
-	if js, pos, ok := gexGrid(now, at); ok {
-		data["GridJSON"] = js
-		data["GridPos"] = pos
+	page := gexPageData{Market: market, TZ: h.localTZ().String(), Latest: latest}
+	if grid, pos, ok := gexGrid(now, at); ok {
+		page.Grid, page.GridPos = grid, pos
+		data["HasGrid"] = true // the scrub bar markup
 	}
 
 	s, err := h.GEX.Snapshot(r.Context(), market, at)
@@ -545,10 +546,36 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 		}
 		data["AIEnabled"] = h.AI != nil
 		if b, err := json.Marshal(view); err == nil {
-			data["ViewJSON"] = template.JS(b)
+			page.View = b
 		}
 	}
+	data["PageJSON"] = page.islandJSON()
 	h.renderPage(w, r, "gex.html", data)
+}
+
+// gexPageData is the Overview tab's JSON data island (#gex-page-data), read
+// by /static/js/gex-overview.js: the page ships no inline script, so its
+// per-request facts travel as data instead.
+type gexPageData struct {
+	Market  string          `json:"market"`
+	TZ      string          `json:"tz"`      // trading timezone (IANA), for the scrub label
+	Latest  bool            `json:"latest"`  // live view: schedule the 5-minute refresh
+	Grid    []int64         `json:"grid"`    // scrub slots (unix seconds), nil when too short
+	GridPos int             `json:"gridPos"` // slot at or before the viewed moment
+	View    json.RawMessage `json:"view"`    // the gexView blob; null without a snapshot
+}
+
+// islandJSON renders the island. json.Marshal escapes < > & as \u00XX, so a
+// "</script" sequence can never appear inside the element.
+func (p gexPageData) islandJSON() template.JS {
+	if p.View == nil {
+		p.View = json.RawMessage("null")
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return "null"
+	}
+	return template.JS(b)
 }
 
 // GEXData serves one snapshot's view model as JSON for the scrub slider.
@@ -601,10 +628,10 @@ func (h *Handlers) GEXData(w http.ResponseWriter, r *http.Request) {
 // the window; the slider then starts parked without a seeded view). ok is
 // false when the grid is too short to scrub. Shared by the Overview and
 // Exposure page handlers - one grid, one scrub behavior.
-func gexGrid(now, at time.Time) (js template.JS, pos int, ok bool) {
-	grid := gexSessionGrid(now)
+func gexGrid(now, at time.Time) (grid []int64, pos int, ok bool) {
+	grid = gexSessionGrid(now)
 	if len(grid) < 2 {
-		return "", 0, false
+		return nil, 0, false
 	}
 	pos = -1
 	for i, ts := range grid {
@@ -612,11 +639,7 @@ func gexGrid(now, at time.Time) (js template.JS, pos int, ok bool) {
 			pos = i
 		}
 	}
-	b, err := json.Marshal(grid)
-	if err != nil {
-		return "", 0, false
-	}
-	return template.JS(b), pos, true
+	return grid, pos, true
 }
 
 // gexSessionGrid returns the scrub slider's time slots: 09:50-16:00 ET in

@@ -181,6 +181,10 @@ func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page strin
 					m["OriginalUser"] = orig
 				}
 			}
+			// The CSP script nonce for this response's inline scripts.
+			if _, exists := m["Nonce"]; !exists {
+				m["Nonce"] = NonceFrom(r.Context())
+			}
 			// Always-on open-position badge in the sidebar. Cheap indexed count; the
 			// badge is non-critical, so any error just leaves it unset (no badge).
 			if _, exists := m["OpenPositionCount"]; !exists {

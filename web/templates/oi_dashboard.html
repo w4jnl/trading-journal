@@ -10,7 +10,7 @@
     <div class="row-sm oi-toolbar">
       <label for="oi-date-picker" class="oi-toolbar__label">Date</label>
       <select id="oi-date-picker" class="oi-toolbar__select"
-              onchange="window.location.href='/oi/' + this.value">
+              data-goto="/oi/">
         {{range .All}}
           <option value="{{.}}" {{if eq . $.Selected}}selected{{end}}>{{.}}</option>
         {{end}}

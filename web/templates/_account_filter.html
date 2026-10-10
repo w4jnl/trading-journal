@@ -121,27 +121,4 @@ inline script so the user sees feedback before submitting.
   /* Retired account labels stay selectable but visually deprioritised. */
   .filter-picker .filter-panel label.filter-option--retired { opacity: 0.7; }
 </style>
-<script>
-  // Live-update the picker's summary count as the user toggles checkboxes.
-  // Click-outside-to-close keeps the dropdown UX consistent with native selects.
-  (function () {
-    const pickers = document.querySelectorAll('.filter-picker');
-    pickers.forEach((p) => {
-      const countEl = p.querySelector('.filter-count');
-      const emptyLabel = countEl.dataset.emptyLabel || 'All accounts';
-      const refresh = () => {
-        const n = p.querySelectorAll('input[type=checkbox]:checked').length;
-        countEl.textContent = n === 0 ? emptyLabel
-                             : n === 1 ? '1 selected'
-                             : n + ' selected';
-      };
-      p.addEventListener('change', refresh);
-    });
-    document.addEventListener('click', (e) => {
-      pickers.forEach((p) => {
-        if (p.open && !p.contains(e.target)) p.open = false;
-      });
-    });
-  })();
-</script>
 {{end}}

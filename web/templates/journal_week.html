@@ -12,7 +12,7 @@
   <a href="/journal/week/{{.PrevWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">‹ Prev week</a>
   <a href="/journal/week/{{.NextWeek}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">Next week ›</a>
   <input type="week" value="{{.WeekID}}"
-         onchange="if (this.value) window.location.href='/journal/week/'+this.value+'{{if .BackHref}}?back={{.BackHref}}{{end}}'"
+         data-goto="/journal/week/" data-goto-suffix="{{if .BackHref}}?back={{.BackHref}}{{end}}"
          style="margin-left: 8px;">
 </div>
 
@@ -53,7 +53,7 @@
     {{if .Entry.Body}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
     {{if .HasEntry}}
       <button type="submit" formaction="/journal/week/{{.WeekID}}/delete" formnovalidate
-              onclick="return confirm('Delete this week note for {{.WeekLabel}}?');"
+              data-confirm="Delete this week note for {{.WeekLabel}}?"
               class="btn btn--danger btn--sm ml-auto">
         Delete entry
       </button>

@@ -203,7 +203,8 @@ func TestSmokeEveryGETRoute(t *testing.T) {
 		mux.Handle("GET "+rt.pattern, rt.handler)
 	}
 	get := func(target string) *httptest.ResponseRecorder {
-		req := httptest.NewRequest(http.MethodGet, target, nil).WithContext(auth.WithUser(context.Background(), f.user))
+		ctx := WithNonce(auth.WithUser(context.Background(), f.user), "smoke-nonce")
+		req := httptest.NewRequest(http.MethodGet, target, nil).WithContext(ctx)
 		rec := httptest.NewRecorder()
 		mux.ServeHTTP(rec, req)
 		return rec
@@ -224,6 +225,11 @@ func TestSmokeEveryGETRoute(t *testing.T) {
 		case rt.core && rec.Code != http.StatusOK:
 			t.Errorf("GET %s -> %d, want 200", target, rec.Code)
 		}
+		if rec.Code == http.StatusOK && strings.HasPrefix(rec.Header().Get("Content-Type"), "text/html") {
+			for _, bad := range unnoncedScripts(rec.Body.String(), "smoke-nonce") {
+				t.Errorf("GET %s: inline script without the nonce (CSP would block it): %s", target, bad)
+			}
+		}
 		t.Logf("GET %-40s %d", target, rec.Code)
 	}
 	// Live pages: the fragment form carries the out-of-band swap bundle.
@@ -233,6 +239,25 @@ func TestSmokeEveryGETRoute(t *testing.T) {
 			t.Errorf("GET %s?fragment=1 -> %d, oob=%v", p, rec.Code, strings.Contains(rec.Body.String(), "hx-swap-oob"))
 		}
 	}
+}
+
+var scriptTagRe = regexp.MustCompile(`<script\b[^>]*>`)
+
+// unnoncedScripts returns the <script> tags on a page that the Content
+// Security Policy would refuse: not a same-origin file (src=), not a JSON
+// data island, and not carrying this response's nonce.
+func unnoncedScripts(body, nonce string) []string {
+	var bad []string
+	for _, tag := range scriptTagRe.FindAllString(body, -1) {
+		switch {
+		case strings.Contains(tag, " src="):
+		case strings.Contains(tag, `type="application/json"`):
+		case strings.Contains(tag, `nonce="`+nonce+`"`):
+		default:
+			bad = append(bad, tag)
+		}
+	}
+	return bad
 }
 
 // Drift guard: the GET patterns mounted in cmd/server/main.go must equal the

@@ -24,7 +24,7 @@
     Re-reads the gamma snapshots for every trade and group journal entry in the window and rewrites its gamma-context block in place; the rest of each entry is untouched. Use it after the engine repairs or backfills history — v0.12.0 recomputed every session since {{.GexFrom}} with corrected 0DTE numerics. Entries whose rows did not change are left alone.
   </p>
   <form method="post" action="/admin/market-data/gex-refresh" class="row-sm" style="gap: 12px; align-items: flex-end; flex-wrap: wrap;"
-        onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Refreshing…';">
+        data-busy="Refreshing…">
     <label><span class="label">From</span><input type="date" name="from" value="{{.GexFrom}}" required></label>
     <label><span class="label">To</span><input type="date" name="to" value="{{.GexTo}}" required></label>
     <button type="submit" class="btn btn--primary">Refresh gamma context</button>
@@ -49,7 +49,7 @@
   {{if .PrefetchOn}}
     {{if gt .TotalMissing 0}}
     <form method="post" action="/admin/market-data/backfill" style="margin-top: 14px;"
-          onsubmit="var b=this.querySelector('button'); b.disabled=true; b.textContent='Queuing…';">
+          data-busy="Queuing…">
       <button type="submit" class="btn btn--primary">Backfill {{.TotalMissing}} missing day(s)</button>
     </form>
     {{else}}

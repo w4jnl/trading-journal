@@ -280,9 +280,10 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 		"GexTab":    "exposure",
 		"AtParam":   atParam,
 	}
-	if js, pos, ok := gexGrid(now, ref); ok {
-		data["GridJSON"] = js
-		data["GridPos"] = pos
+	page := gexExpoPageData{Market: market}
+	if grid, pos, ok := gexGrid(now, ref); ok {
+		page.Grid, page.GridPos = grid, pos
+		data["HasGrid"] = true // the scrub bar markup
 	}
 	// Market-switch links carry the viewed moment + expiry filter along;
 	// the client keeps the same params in sync via history.replaceState.
@@ -336,10 +337,31 @@ func (h *Handlers) GEXExposurePage(w http.ResponseWriter, r *http.Request) {
 		expo.LevelsNote = levelsNote
 		data["Expo"] = expo
 		if b, err := json.Marshal(expo); err == nil {
-			data["ExpoJSON"] = template.JS(b)
+			page.Expo = b
 		}
 	}
+	data["PageJSON"] = page.islandJSON()
 	h.renderPage(w, r, "gex_exposure.html", data)
+}
+
+// gexExpoPageData is the Exposure tab's JSON data island (#gex-expo-data),
+// read by /static/js/gex-exposure.js. See gexPageData.
+type gexExpoPageData struct {
+	Market  string          `json:"market"`
+	Grid    []int64         `json:"grid"`
+	GridPos int             `json:"gridPos"`
+	Expo    json.RawMessage `json:"expo"` // the gexExpo blob; null without a profile
+}
+
+func (p gexExpoPageData) islandJSON() template.JS {
+	if p.Expo == nil {
+		p.Expo = json.RawMessage("null")
+	}
+	b, err := json.Marshal(p)
+	if err != nil {
+		return "null"
+	}
+	return template.JS(b)
 }
 
 // GEXExposureData serves the chip-select fetches AND the scrub slots.

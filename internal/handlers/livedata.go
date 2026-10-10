@@ -38,6 +38,7 @@ func liveFragment(r *http.Request) bool {
 // marker so the client's version compare converges.
 func (h *Handlers) renderPageFragment(w http.ResponseWriter, r *http.Request, page, name string, data map[string]any) {
 	data["OOB"] = true
+	data["Nonce"] = NonceFrom(r.Context())
 	if u := auth.UserFrom(r.Context()); u != nil {
 		data["DataVersion"] = h.LiveData.Version(u.ID)
 		// The bundle also OOB-swaps the sidebar open-position badge - the one

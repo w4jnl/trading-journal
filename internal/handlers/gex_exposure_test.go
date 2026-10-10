@@ -146,7 +146,7 @@ func TestGEXExposurePage(t *testing.T) {
 	body := rec.Body.String()
 	for _, want := range []string{
 		">Overview<", ">Exposure<", // tabs
-		"const gexExpoInit",
+		`id="gex-expo-data"`,
 		`"denom":"futures"`,
 		`"strikes":[7327.74`, // 7300 x 1.0038: same futures scaling as the overview
 		"7558.58",            // published futures CW, never re-derived
@@ -159,7 +159,7 @@ func TestGEXExposurePage(t *testing.T) {
 		`+1.9B flow`,
 		"not served by the engine yet",
 		`data-prof="0dte_vol"`,
-		">CALL<", "location.reload",
+		"gex-exposure.js", // the column headers (CALL/PUT) are drawn by it, not the template
 		// Time scrub: shared session grid + slider + moment-carry anchors
 		// (rendered whenever history has slots, i.e. always in practice).
 		`id="gxe-scrub"`,
@@ -530,8 +530,8 @@ func TestGEXExposureNoProfile(t *testing.T) {
 	if !strings.Contains(body, ">Overview<") {
 		t.Errorf("tabs missing from degraded page")
 	}
-	if strings.Contains(body, "const gexExpoInit") {
-		t.Errorf("blob rendered despite missing profile")
+	if strings.Contains(body, `id="gex-expo-data"`) {
+		t.Errorf("data island rendered despite missing profile")
 	}
 }
 
