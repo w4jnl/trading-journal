@@ -324,8 +324,8 @@ func TestThrottleAndNilReceiver(t *testing.T) {
 	svc, _, _, uid, _ := setupIbkr(t)
 	svc.MaybeEnqueueUser(uid)
 	svc.MaybeEnqueueUser(uid) // pending -> dropped
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue = %d, want 1", svc.queue.Len())
 	}
 	var nilSvc *SyncService
 	nilSvc.MaybeEnqueueUser(uid) // no panic
@@ -336,23 +336,20 @@ func TestThrottleAndNilReceiver(t *testing.T) {
 func TestMaybeEnqueueUserAPI(t *testing.T) {
 	svc, _, _, uid, _ := setupIbkr(t)
 	svc.MaybeEnqueueUserAPI(uid) // APIThrottle 0 -> disabled
-	if len(svc.jobs) != 0 {
-		t.Fatalf("disabled API trigger enqueued: queue = %d", len(svc.jobs))
+	if svc.queue.Len() != 0 {
+		t.Fatalf("disabled API trigger enqueued: queue = %d", svc.queue.Len())
 	}
 	svc.Opts.APIThrottle = time.Minute
 	svc.MaybeEnqueueUserAPI(uid)
 	svc.MaybeEnqueueUserAPI(uid) // pending -> dropped
-	if len(svc.jobs) != 1 {
-		t.Fatalf("queue = %d, want 1", len(svc.jobs))
+	if svc.queue.Len() != 1 {
+		t.Fatalf("queue = %d, want 1", svc.queue.Len())
 	}
-	<-svc.jobs
-	svc.mu.Lock()
-	svc.pending[uid] = false
-	svc.lastRun[uid] = time.Now()
-	svc.mu.Unlock()
+	svc.queue.Take()
+	svc.queue.MarkRan(uid, time.Now())
 	svc.MaybeEnqueueUserAPI(uid) // inside the API gap -> dropped
-	if len(svc.jobs) != 0 {
-		t.Fatalf("queue inside API gap = %d, want 0", len(svc.jobs))
+	if svc.queue.Len() != 0 {
+		t.Fatalf("queue inside API gap = %d, want 0", svc.queue.Len())
 	}
 	var nilSvc *SyncService
 	nilSvc.MaybeEnqueueUserAPI(uid) // no panic
@@ -362,23 +359,17 @@ func TestMaybeEnqueueUserAPI(t *testing.T) {
 func TestWaitForUser(t *testing.T) {
 	svc, _, _, uid, _ := setupIbkr(t)
 	ctx := context.Background()
-	svc.mu.Lock()
-	svc.pending[uid] = true
-	svc.mu.Unlock()
+	svc.queue.MarkPending(uid, true)
 	go func() {
 		time.Sleep(150 * time.Millisecond)
-		svc.mu.Lock()
-		svc.pending[uid] = false
-		svc.mu.Unlock()
+		svc.queue.MarkPending(uid, false)
 	}()
 	start := time.Now()
 	svc.WaitForUser(ctx, uid, time.Now().Add(5*time.Second))
 	if d := time.Since(start); d < 100*time.Millisecond || d > 2*time.Second {
 		t.Errorf("wait took %v", d)
 	}
-	svc.mu.Lock()
-	svc.pending[uid] = true
-	svc.mu.Unlock()
+	svc.queue.MarkPending(uid, true)
 	start = time.Now()
 	svc.WaitForUser(ctx, uid, time.Now().Add(400*time.Millisecond))
 	if d := time.Since(start); d < 300*time.Millisecond || d > 2*time.Second {

@@ -11,6 +11,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/syncqueue"
 )
 
 const syncType = "ibkr_api"
@@ -52,8 +53,6 @@ type GatewayState struct {
 	Accounts []string
 }
 
-type syncJob struct{ UserID int64 }
-
 // SyncService polls the user-configured Client Portal Gateways for executed
 // trades and feeds them through the importer. It never logs in: gateway
 // sessions are established by the user's browser; the service tickles them
@@ -69,14 +68,13 @@ type SyncService struct {
 	// NewClient builds a client for one gateway; tests inject fakes.
 	NewClient func(url string, insecure bool) gatewayClient
 
-	chicago *time.Location // CME session clock for Schedule
+	// queue is the shared per-user worker (single-flight, throttle gaps,
+	// CME-hours scheduler); a job here carries nothing but the user.
+	queue *syncqueue.Queue[struct{}]
 
 	mu      sync.Mutex
-	lastRun map[int64]time.Time
-	pending map[int64]bool
 	states  map[int64]*GatewayState // by gateway id
 	clients map[int64]cachedClient  // by gateway id (client caches its transport)
-	jobs    chan syncJob
 }
 
 // cachedClient remembers the config a client was built from so the cache
@@ -98,26 +96,25 @@ func NewSyncService(q *models.Queries, imp *importer.ImportService, opts SyncOpt
 	if logger == nil {
 		logger = slog.Default()
 	}
-	chicago, err := time.LoadLocation("America/Chicago")
-	if err != nil {
-		logger.Warn("ibkr: America/Chicago tz unavailable, scheduler uses UTC", "err", err)
-		chicago = time.UTC
-	}
-	return &SyncService{
+	s := &SyncService{
 		Queries:  q,
 		Importer: imp,
 		Logger:   logger,
 		Opts:     opts,
-		chicago:  chicago,
 		NewClient: func(url string, insecure bool) gatewayClient {
 			return &Client{BaseURL: url, Insecure: insecure, Logger: logger}
 		},
-		lastRun: map[int64]time.Time{},
-		pending: map[int64]bool{},
 		states:  map[int64]*GatewayState{},
 		clients: map[int64]cachedClient{},
-		jobs:    make(chan syncJob, 64),
 	}
+	s.queue = syncqueue.New("ibkr", syncqueue.Options{
+		Throttle: opts.Throttle, APIThrottle: opts.APIThrottle,
+		SessionEvery: opts.SessionEvery, RTHEvery: opts.RTHEvery,
+		RTHStartMin: opts.RTHStartMin, RTHEndMin: opts.RTHEndMin,
+	}, logger, func(ctx context.Context, j syncqueue.Job[struct{}]) error {
+		return s.syncUser(ctx, j.UserID)
+	})
+	return s
 }
 
 // MaybeEnqueueUser triggers a background poll of the user's gateways unless
@@ -126,7 +123,7 @@ func (s *SyncService) MaybeEnqueueUser(userID int64) {
 	if s == nil {
 		return
 	}
-	s.enqueueWithGap(userID, s.Opts.Throttle)
+	s.queue.EnqueueWithGap(userID, s.Opts.Throttle)
 }
 
 // MaybeEnqueueUserAPI mirrors topstepx: the read-triggered sync for the JSON
@@ -136,43 +133,40 @@ func (s *SyncService) MaybeEnqueueUserAPI(userID int64) {
 	if s == nil || s.Opts.APIThrottle <= 0 {
 		return
 	}
-	s.enqueueWithGap(userID, s.Opts.APIThrottle)
-}
-
-func (s *SyncService) enqueueWithGap(userID int64, minGap time.Duration) {
-	if userID == 0 {
-		return
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if s.pending[userID] || time.Since(s.lastRun[userID]) < minGap {
-		return
-	}
-	select {
-	case s.jobs <- syncJob{UserID: userID}:
-		s.pending[userID] = true
-	default:
-		s.Logger.Warn("ibkr: sync queue full, dropping", "user_id", userID)
-	}
+	s.queue.EnqueueWithGap(userID, s.Opts.APIThrottle)
 }
 
 // Run drains the queue until ctx is done (serial - the FIFO rebuild assumes
 // one writer per (account, symbol) at a time).
 func (s *SyncService) Run(ctx context.Context) {
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case job := <-s.jobs:
-			if err := s.syncUser(ctx, job.UserID); err != nil && !errors.Is(err, context.Canceled) {
-				s.Logger.Error("ibkr sync failed", "user_id", job.UserID, "err", err)
-			}
-			s.mu.Lock()
-			s.pending[job.UserID] = false
-			s.lastRun[job.UserID] = time.Now()
-			s.mu.Unlock()
-		}
+	if s == nil {
+		return
 	}
+	s.queue.Run(ctx)
+}
+
+// Schedule runs the two-tier CME-hours scheduler (see syncqueue.Schedule)
+// over the owner of every enabled gateway until ctx is done.
+func (s *SyncService) Schedule(ctx context.Context) {
+	if s == nil {
+		return
+	}
+	s.queue.Schedule(ctx, func(ctx context.Context) ([]int64, error) {
+		gws, err := s.Queries.ListEnabledIbkrGateways(ctx)
+		if err != nil {
+			return nil, err
+		}
+		users := make([]int64, 0, len(gws))
+		for _, gw := range gws {
+			users = append(users, gw.UserID)
+		}
+		return users, nil
+	})
+}
+
+// scheduledInterval is the cadence in effect at t (0 = market closed).
+func (s *SyncService) scheduledInterval(t time.Time) time.Duration {
+	return s.queue.ScheduledInterval(t)
 }
 
 // PendingForUser reports whether a sync is currently queued or running for
@@ -181,9 +175,7 @@ func (s *SyncService) PendingForUser(userID int64) bool {
 	if s == nil {
 		return false
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.pending[userID]
+	return s.queue.PendingForUser(userID)
 }
 
 // WaitForUser mirrors topstepx: block until the user's sync is idle, the
@@ -192,13 +184,7 @@ func (s *SyncService) WaitForUser(ctx context.Context, userID int64, deadline ti
 	if s == nil {
 		return
 	}
-	for s.PendingForUser(userID) && time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return
-		case <-time.After(200 * time.Millisecond):
-		}
-	}
+	s.queue.WaitForUser(ctx, userID, deadline)
 }
 
 // KeepAlive tickles every enabled gateway so their sessions do not idle out

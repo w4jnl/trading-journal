@@ -221,7 +221,7 @@ func dailyStatsTotals(items []apiDailyStatsItem) apiDailyStatsTotals {
 // dailyStats is the shared loader behind the REST endpoint and the MCP tool.
 func (h *Handlers) dailyStats(ctx context.Context, af accountFilter, rng apiDateRange) (apiDailyStats, error) {
 	tz := h.localTZ()
-	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+	rows, err := h.rq().ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
 		StatDate:   rng.From,
 		StatDate_2: rng.ToExclusive(),

@@ -130,13 +130,13 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	lastSyncs, err := h.Queries.ListLastSyncByType(ctx, userIDPtr(ctx))
+	lastSyncs, err := h.rq().ListLastSyncByType(ctx, userIDPtr(ctx))
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list last syncs: %w", err))
 		return
 	}
 
-	recent, err := listTradesFiltered(ctx, h.DB, tradeFilters{Page: 1})
+	recent, err := listTradesFiltered(ctx, h.rdb(), tradeFilters{Page: 1})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list recent: %w", err))
 		return
@@ -164,7 +164,7 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 
 	// Open-position summary: nonzero (account, contract) nets = open/carried/data-gap
 	// positions. Empty list => the user is flat. Non-fatal; a lookup error just hides it.
-	openPositions, err := h.Queries.ListOpenPositions(ctx, userID(ctx))
+	openPositions, err := h.rq().ListOpenPositions(ctx, userID(ctx))
 	if err != nil {
 		h.logger().Warn("dashboard open positions", "err", err)
 	}
@@ -202,7 +202,7 @@ func (h *Handlers) dashboardDaily(ctx context.Context, tz *time.Location, days i
 	// Bounds go to SQL as UTC instants (see daybounds.go); bucketing below
 	// stays in the trading timezone.
 	start, end := daysBoundsUTC(todayLocal(tz).AddDate(0, 0, 1-days), days)
-	rows, err := h.Queries.DashboardDailyNetPnL(ctx, models.DashboardDailyNetPnLParams{
+	rows, err := h.rq().DashboardDailyNetPnL(ctx, models.DashboardDailyNetPnLParams{
 		ExitTime:   &start,
 		ExitTime_2: &end,
 		UserID:     userID(ctx),
@@ -361,7 +361,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 	today := todayLocal(tz)
 	fromU, toU := dayBoundsUTC(today)
 
-	n, err := h.Queries.CountClosedTradesInRange(ctx, models.CountClosedTradesInRangeParams{
+	n, err := h.rq().CountClosedTradesInRange(ctx, models.CountClosedTradesInRangeParams{
 		ExitTime:   &fromU,
 		ExitTime_2: &toU,
 		UserID:     userID(ctx),
@@ -373,7 +373,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 		return today, nil
 	}
 
-	mostRecent, err := h.Queries.MostRecentClosedExitTime(ctx, userID(ctx))
+	mostRecent, err := h.rq().MostRecentClosedExitTime(ctx, userID(ctx))
 	if errors.Is(err, sql.ErrNoRows) || (err == nil && mostRecent == nil) {
 		return today, nil
 	}
@@ -388,7 +388,7 @@ func (h *Handlers) pickDashboardDate(ctx context.Context, tz *time.Location) (ti
 // and aggregates them into the summary the dashboard renders.
 func (h *Handlers) dashboardStatsFor(ctx context.Context, date time.Time, tz *time.Location) (dashboardStats, error) {
 	fromU, toU := dayBoundsUTC(date)
-	rows, err := h.Queries.ListClosedTradesInRange(ctx, models.ListClosedTradesInRangeParams{
+	rows, err := h.rq().ListClosedTradesInRange(ctx, models.ListClosedTradesInRangeParams{
 		ExitTime:   &fromU,
 		ExitTime_2: &toU,
 		UserID:     userID(ctx),
@@ -453,7 +453,7 @@ func (h *Handlers) dashboardEquityNow(ctx context.Context, tz *time.Location) (d
 	if err != nil {
 		return dashboardEquity{}, err
 	}
-	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
+	accounts, err := h.rq().ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		return dashboardEquity{}, err
 	}

@@ -33,7 +33,7 @@ func (h *Handlers) AdminActAsStart(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/admin/users", http.StatusSeeOther)
 		return
 	}
-	target, err := h.Queries.GetUserByID(ctx, id)
+	target, err := h.rq().GetUserByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			redirectAdminUsers(w, r, "", fmt.Sprintf("user %d not found", id))

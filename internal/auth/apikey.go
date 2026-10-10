@@ -63,6 +63,8 @@ func parseBearer(r *http.Request) string {
 // CSRF machinery, so the /api subtree is exempt from both.
 type APIKeyAuth struct {
 	Queries *models.Queries
+
+	touched touchGate // last_used_at writes, once per touchEvery per key
 }
 
 // Middleware wraps the API mux. Every downstream handler can then call the same
@@ -101,14 +103,17 @@ func (a *APIKeyAuth) authenticate(r *http.Request, tok string) (*User, string) {
 		Email:       row.Email,       // COALESCEd to "" in the query
 		IsAdmin:     row.IsAdmin != 0,
 	}
-	// Best-effort last-used bump; never block the request (or its latency)
-	// on the write. Its own context so a slow disk write can't wedge it.
-	keyID := row.KeyID
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		defer cancel()
-		_ = a.Queries.TouchAPIKeyLastUsed(ctx, keyID)
-	}()
+	// Best-effort last-used bump, once per touchEvery per key (a client
+	// polling every few seconds must not turn into a write per request).
+	// Never blocks the request; its own context so a slow disk write can't
+	// wedge it.
+	if keyID := row.KeyID; a.touched.allow(keyID, time.Now()) {
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			_ = a.Queries.TouchAPIKeyLastUsed(ctx, keyID)
+		}()
+	}
 	return u, ""
 }
 

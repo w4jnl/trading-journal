@@ -80,7 +80,7 @@ func (h *Handlers) openPositionRows(ctx context.Context, rows []models.ListOpenP
 	for _, r := range rows {
 		row := openPositionRow{ListOpenPositionsRow: r}
 		if h != nil && h.Queries != nil {
-			fills, err := h.Queries.ListExecutionsForAccountSymbol(ctx, models.ListExecutionsForAccountSymbolParams{AccountID: r.AccountID, Symbol: r.Symbol})
+			fills, err := h.rq().ListExecutionsForAccountSymbol(ctx, models.ListExecutionsForAccountSymbolParams{AccountID: r.AccountID, Symbol: r.Symbol})
 			if err != nil {
 				h.logger().Warn("open positions: load fills for average entry", "account", r.AccountID, "symbol", r.Symbol, "err", err)
 			} else if pos := positions.OpenFromFills(fills); pos.NetQty != 0 {
@@ -179,7 +179,7 @@ func (h *Handlers) instrument(ctx context.Context, root string, memo map[string]
 		return inst
 	}
 	memo[root] = nil
-	inst, err := h.Queries.GetInstrument(ctx, root)
+	inst, err := h.rq().GetInstrument(ctx, root)
 	if err != nil {
 		return nil
 	}

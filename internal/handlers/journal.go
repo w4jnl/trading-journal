@@ -35,7 +35,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 
 	filters := parseJournalFilters(r, tz)
 
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 100)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, 100)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list feed: %w", err))
 		return
@@ -50,7 +50,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 			groupIDs = append(groupIDs, r.ID)
 		}
 	}
-	groupSummaries, err := loadGroupSummaries(ctx, h.DB, groupIDs)
+	groupSummaries, err := loadGroupSummaries(ctx, h.rdb(), groupIDs)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load group summaries: %w", err))
 		return
@@ -400,23 +400,21 @@ type feedRow struct {
 // can include scope/tag IN (...) and the date range. Same join shape as the
 // sqlc ListJournalFeed query, minus a couple of columns the feed doesn't need.
 func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, limit int) ([]feedRow, error) {
-	clauses := []string{"je.user_id = ?"}
-	args := []any{userID(ctx)}
+	w := whereUser(ownsJournalSQL, userID(ctx))
 	if f.from != nil {
-		clauses = append(clauses, "je.entry_date >= ?")
-		args = append(args, *f.from)
+		w.and("je.entry_date >= ?", *f.from)
 	}
 	if f.to != nil {
-		clauses = append(clauses, "je.entry_date < ?")
-		args = append(args, *f.to)
+		w.and("je.entry_date < ?", *f.to)
 	}
 	if len(f.scopes) > 0 {
 		ph := strings.Repeat("?,", len(f.scopes))
 		ph = ph[:len(ph)-1]
-		clauses = append(clauses, "je.scope IN ("+ph+")")
+		args := make([]any, 0, len(f.scopes))
 		for _, s := range f.scopes {
 			args = append(args, s)
 		}
+		w.and("je.scope IN ("+ph+")", args...)
 	}
 	if len(f.tags) > 0 {
 		// Build (tag IN (...) OR tag IS NULL) when "untagged" is one of the picks.
@@ -430,6 +428,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			}
 		}
 		parts := []string{}
+		var args []any
 		if len(real) > 0 {
 			ph := strings.Repeat("?,", len(real))
 			ph = ph[:len(ph)-1]
@@ -442,11 +441,12 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			parts = append(parts, "je.tag IS NULL")
 		}
 		if len(parts) > 0 {
-			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+			w.and("("+strings.Join(parts, " OR ")+")", args...)
 		}
 	}
 	if len(f.strategies) > 0 || f.strategyNone {
 		var parts []string
+		var args []any
 		if len(f.strategies) > 0 {
 			ph := strings.Repeat("?,", len(f.strategies))
 			ph = ph[:len(ph)-1]
@@ -458,7 +458,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 		if f.strategyNone {
 			parts = append(parts, "je.strategy_id IS NULL")
 		}
-		clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+		w.and("("+strings.Join(parts, " OR ")+")", args...)
 	}
 
 	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
@@ -469,10 +469,10 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 	      LEFT JOIN trades t      ON t.id = je.trade_id
 	      LEFT JOIN accounts a    ON a.id = COALESCE(je.account_id, t.account_id)
 	      LEFT JOIN strategies s  ON s.id = je.strategy_id
-	      WHERE ` + strings.Join(clauses, " AND ") + `
+	      WHERE ` + w.sql() + `
 	      ORDER BY je.entry_date DESC, je.id DESC
 	      LIMIT ?`
-	args = append(args, limit)
+	args := append(w.args, limit)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -567,7 +567,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 
 	// Trades that closed on this day — surfaced in a "Trades · summary" block
 	// so the day view matches the unified content shape of week/group entries.
-	dayTrades, err := loadDayTrades(ctx, h.DB, date)
+	dayTrades, err := loadDayTrades(ctx, h.rdb(), date)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load day trades: %w", err))
 		return
@@ -693,6 +693,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete day journal: %w", delErr))
 				return
 			}
+			h.journalChanged(ctx)
 		} else if !errors.Is(err, sql.ErrNoRows) {
 			h.serverError(w, fmt.Errorf("get day journal: %w", err))
 			return
@@ -723,6 +724,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("create journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	case err != nil:
 		h.serverError(w, fmt.Errorf("get journal: %w", err))
 		return
@@ -733,6 +735,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete journal: %w", err))
 				return
 			}
+			h.journalChanged(ctx)
 			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 			return
 		}
@@ -747,6 +750,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("update journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	}
 
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
@@ -788,7 +792,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	trades, err := loadOneTrade(ctx, h.DB, id)
+	trades, err := loadOneTrade(ctx, h.rdb(), id)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load trade for journal: %w", err))
 		return
@@ -859,7 +863,7 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 	ny, nw := next.ISOWeek()
 	sunday := monday.AddDate(0, 0, 6)
 
-	weekTrades, err := loadWeekTrades(ctx, h.DB, monday)
+	weekTrades, err := loadWeekTrades(ctx, h.rdb(), monday)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load week trades: %w", err))
 		return
@@ -946,6 +950,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("create week journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	case err != nil:
 		h.serverError(w, fmt.Errorf("get week journal: %w", err))
 		return
@@ -955,6 +960,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 				h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 				return
 			}
+			h.journalChanged(ctx)
 			http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
 			return
 		}
@@ -969,6 +975,7 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("update week journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	}
 	http.Redirect(w, r, redirectQuery("saved"), http.StatusSeeOther)
 }
@@ -976,6 +983,9 @@ func (h *Handlers) WeekJournalSave(w http.ResponseWriter, r *http.Request) {
 // WeekJournalDelete handles POST /journal/week/{week}/delete — explicit
 // delete from the week-entry editor's Delete button.
 func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAI(w, r) {
+		return
+	}
 	ctx := r.Context()
 	weekID := r.PathValue("week")
 	monday, _, _, err := parseISOWeek(weekID, h.localTZ())
@@ -993,6 +1003,7 @@ func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("delete week journal: %w", err))
 			return
 		}
+		h.journalChanged(ctx)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		h.serverError(w, fmt.Errorf("get week journal: %w", err))
 		return
@@ -1129,16 +1140,16 @@ func (h *Handlers) tradesForEntry(ctx context.Context, row feedRow, tz *time.Loc
 	day := time.Date(entryDate.Year(), entryDate.Month(), entryDate.Day(), 0, 0, 0, 0, tz)
 	switch row.Scope {
 	case "group":
-		return loadLinkedTrades(ctx, h.DB, row.ID)
+		return loadLinkedTrades(ctx, h.rdb(), row.ID)
 	case "day":
-		return loadDayTrades(ctx, h.DB, day)
+		return loadDayTrades(ctx, h.rdb(), day)
 	case "week":
-		return loadWeekTrades(ctx, h.DB, day)
+		return loadWeekTrades(ctx, h.rdb(), day)
 	case "trade":
 		if row.TradeID == nil {
 			return nil, nil
 		}
-		return loadOneTrade(ctx, h.DB, *row.TradeID)
+		return loadOneTrade(ctx, h.rdb(), *row.TradeID)
 	}
 	return nil, nil
 }
@@ -1153,7 +1164,7 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 	tz := h.localTZ()
 	filters := parseJournalFilters(r, tz)
 
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, 10000)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("export feed: %w", err))
 		return
@@ -1256,7 +1267,7 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 	tz := h.localTZ()
 	filters := parseJournalFilters(r, tz)
 
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, 10000)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, 10000)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("export feed: %w", err))
 		return

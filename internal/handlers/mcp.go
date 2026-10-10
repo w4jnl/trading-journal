@@ -196,6 +196,9 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 // ---- tool handlers (reuse the same ctx-based logic as the REST API) ----
 
 func (h *Handlers) mcpPrepareDay(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if h.aiJobRunning(ctx) {
+		return mcpgo.NewToolResultError(aiBusyMessage), nil
+	}
 	resp, err := h.prepareDayEntries(ctx, req.GetString("date", ""), h.localTZ())
 	if err != nil {
 		return mcpgo.NewToolResultError(err.Error()), nil
@@ -405,6 +408,9 @@ func (h *Handlers) mcpGetChartImage(ctx context.Context, req mcpgo.CallToolReque
 }
 
 func (h *Handlers) mcpCreateJournalEntry(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if h.aiJobRunning(ctx) {
+		return mcpgo.NewToolResultError(aiBusyMessage), nil
+	}
 	in := apiCreateInput{
 		Scope:      req.GetString("scope", ""),
 		Body:       req.GetString("body", ""),
@@ -431,6 +437,9 @@ func (h *Handlers) mcpCreateJournalEntry(ctx context.Context, req mcpgo.CallTool
 }
 
 func (h *Handlers) mcpAssignStrategy(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if h.aiJobRunning(ctx) {
+		return mcpgo.NewToolResultError(aiBusyMessage), nil
+	}
 	eid, err := req.RequireInt("entryId")
 	if err != nil {
 		return mcpgo.NewToolResultError("entryId is required"), nil
@@ -447,6 +456,9 @@ func (h *Handlers) mcpAssignStrategy(ctx context.Context, req mcpgo.CallToolRequ
 }
 
 func (h *Handlers) mcpSetTag(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if h.aiJobRunning(ctx) {
+		return mcpgo.NewToolResultError(aiBusyMessage), nil
+	}
 	eid, err := req.RequireInt("entryId")
 	if err != nil {
 		return mcpgo.NewToolResultError("entryId is required"), nil
@@ -463,6 +475,9 @@ func (h *Handlers) mcpSetTag(ctx context.Context, req mcpgo.CallToolRequest) (*m
 }
 
 func (h *Handlers) mcpAppendNote(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	if h.aiJobRunning(ctx) {
+		return mcpgo.NewToolResultError(aiBusyMessage), nil
+	}
 	id, err := req.RequireInt("entryId")
 	if err != nil {
 		return mcpgo.NewToolResultError("entryId is required"), nil

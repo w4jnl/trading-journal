@@ -10,15 +10,12 @@ import (
 // hours, 0 when closed or a tier is disabled.
 func TestScheduledInterval(t *testing.T) {
 	chi, _ := time.LoadLocation("America/Chicago")
-	svc := &SyncService{
-		chicago: chi,
-		Opts: SyncOptions{
-			SessionEvery: time.Hour,
-			RTHEvery:     15 * time.Minute,
-			RTHStartMin:  7*60 + 30,
-			RTHEndMin:    16 * 60,
-		},
+	// The queue copies its options at construction, so each tier mix is
+	// its own service.
+	mk := func(session, rth time.Duration) *SyncService {
+		return NewSyncService(nil, nil, SyncOptions{SessionEvery: session, RTHEvery: rth, RTHStartMin: 7*60 + 30, RTHEndMin: 16 * 60}, nil)
 	}
+	svc := mk(time.Hour, 15*time.Minute)
 	ct := func(d, hh, mm int) time.Time {
 		return time.Date(2026, 7, d, hh, mm, 0, 0, chi) // 2026-07-13 = Monday
 	}
@@ -44,11 +41,11 @@ func TestScheduledInterval(t *testing.T) {
 	}
 
 	// Disabling a tier zeroes it out without affecting the other.
-	svc.Opts.RTHEvery = 0
+	svc = mk(time.Hour, 0)
 	if got := svc.scheduledInterval(ct(13, 10, 0)); got != time.Hour {
 		t.Errorf("RTH disabled: interval = %v, want fallback to hourly", got)
 	}
-	svc.Opts.SessionEvery = 0
+	svc = mk(0, 0)
 	if got := svc.scheduledInterval(ct(13, 2, 0)); got != 0 {
 		t.Errorf("both disabled: interval = %v, want 0", got)
 	}

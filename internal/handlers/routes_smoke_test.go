@@ -53,7 +53,8 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 	if _, err := os.Stat(src); err != nil {
 		t.Skipf("sample export missing: %v", err)
 	}
-	conn := dbtest.Open(t, "bootstrap")
+	// The reader pool is query_only: a GET handler that writes fails here.
+	conn, rconn := dbtest.OpenWithReader(t, "bootstrap")
 	q := models.New(conn)
 	ctx := context.Background()
 	uid := dbtest.BootstrapUserID(t, conn, "bootstrap")
@@ -113,7 +114,7 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 	attID, _ := res.LastInsertId()
 	return &smokeFixture{
 		h: &Handlers{
-			Templates: web.TemplatesFS, DB: conn, Queries: q, ImportSvc: svc,
+			Templates: web.TemplatesFS, DB: conn, Queries: q, RDB: rconn, RQ: models.New(rconn), ImportSvc: svc,
 			UploadsDir: filepath.Join(tmp, "uploads"), AttachmentsDir: filepath.Join(tmp, "attachments"), OIDashboardsDir: filepath.Join(tmp, "oi"),
 			Timezone: loc, Version: "smoke", LiveData: livedata.NewNotifier(),
 		},

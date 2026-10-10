@@ -59,7 +59,7 @@ func (h *Handlers) APIJournalList(w http.ResponseWriter, r *http.Request) {
 // journalListItems builds the journal-list rows for the given filters + paging.
 // Shared by the REST list endpoint and the MCP list_journal tool.
 func (h *Handlers) journalListItems(ctx context.Context, filters journalFilters, offset, limit int, tz *time.Location) ([]map[string]any, error) {
-	rows, err := listJournalFeedFiltered(ctx, h.DB, filters, offset+limit)
+	rows, err := listJournalFeedFiltered(ctx, h.rdb(), filters, offset+limit)
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +149,9 @@ func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry,
 
 // APIJournalAppendNote: POST /api/v1/journal/{id}/notes  (append-only)
 func (h *Handlers) APIJournalAppendNote(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAIJSON(w, r) {
+		return
+	}
 	ctx := r.Context()
 	id, ok := apiPathID(r)
 	if !ok {
@@ -189,15 +192,22 @@ func (h *Handlers) appendOrSeedJournalNote(ctx context.Context, entry models.Jou
 	note = strings.TrimSpace(note)
 	if strings.TrimSpace(entry.Body) == strings.TrimSpace(aiPlaceholderBody) {
 		seeded := "---\n\n" + strings.TrimRight(note, " \t\n") + "\n"
-		_, err := h.DB.ExecContext(ctx,
+		if _, err := h.DB.ExecContext(ctx,
 			"UPDATE journal_entries SET body = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ?",
-			seeded, entry.ID, userIDPtr(ctx))
-		return err
+			seeded, entry.ID, userIDPtr(ctx)); err != nil {
+			return err
+		}
+		h.journalChanged(ctx)
+		return nil
 	}
 	block := formatAppendedNote(time.Now(), h.localTZ(), note)
-	return h.Queries.AppendJournalEntryBody(ctx, models.AppendJournalEntryBodyParams{
+	if err := h.Queries.AppendJournalEntryBody(ctx, models.AppendJournalEntryBodyParams{
 		Body: block, ID: entry.ID, UserID: userIDPtr(ctx),
-	})
+	}); err != nil {
+		return err
+	}
+	h.journalChanged(ctx)
+	return nil
 }
 
 // formatAppendedNote builds the dated markdown block appended to a journal body:
@@ -244,6 +254,9 @@ func badInput(format string, a ...any) error { return apiValidationError{fmt.Spr
 // with the existing entryId (use the notes endpoint to append). Group entries
 // have no uniqueness and always create.
 func (h *Handlers) APIJournalCreate(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAIJSON(w, r) {
+		return
+	}
 	tz := h.localTZ()
 	var in apiCreateInput
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
@@ -316,6 +329,7 @@ func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz
 		if err != nil {
 			return none, nil, fmt.Errorf("create entry: %w", err)
 		}
+		h.journalChanged(ctx)
 		return e, nil, nil
 
 	case "week":
@@ -340,6 +354,7 @@ func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz
 		if err != nil {
 			return none, nil, fmt.Errorf("create entry: %w", err)
 		}
+		h.journalChanged(ctx)
 		return e, nil, nil
 
 	case "trade":
@@ -372,6 +387,7 @@ func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz
 		if err != nil {
 			return none, nil, fmt.Errorf("create entry: %w", err)
 		}
+		h.journalChanged(ctx)
 		return e, nil, nil
 
 	case "group":
@@ -420,6 +436,7 @@ func (h *Handlers) createJournalEntry(ctx context.Context, in apiCreateInput, tz
 		if err := tx.Commit(); err != nil {
 			return none, nil, fmt.Errorf("commit: %w", err)
 		}
+		h.journalChanged(ctx)
 		return e, nil, nil
 
 	default:
@@ -953,6 +970,9 @@ func (h *Handlers) entryHasMarker(ctx context.Context, entryID int64, marker str
 
 // APIPrepareDay: POST /api/v1/journal/prepare-day  {date?: "YYYY-MM-DD"}
 func (h *Handlers) APIPrepareDay(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAIJSON(w, r) {
+		return
+	}
 	var body struct {
 		Date string `json:"date"`
 	}
@@ -1006,12 +1026,18 @@ func (h *Handlers) assignStrategyIfUnset(ctx context.Context, entryID, strategyI
 		return false, fmt.Errorf("assign strategy: %w", err)
 	}
 	n, _ := res.RowsAffected()
+	if n > 0 {
+		h.journalChanged(ctx)
+	}
 	return n > 0, nil
 }
 
 // APIJournalAssignStrategy: POST /api/v1/journal/{id}/strategy  {strategyId}
 // Assigns a strategy only if the entry has none yet (never overwrites).
 func (h *Handlers) APIJournalAssignStrategy(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAIJSON(w, r) {
+		return
+	}
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")
@@ -1061,12 +1087,18 @@ func (h *Handlers) assignTagIfUnset(ctx context.Context, entryID int64, tag stri
 		return false, fmt.Errorf("assign tag: %w", err)
 	}
 	n, _ := res.RowsAffected()
+	if n > 0 {
+		h.journalChanged(ctx)
+	}
 	return n > 0, nil
 }
 
 // APIJournalAssignTag: POST /api/v1/journal/{id}/tag  {tag}
 // Sets the tag only if the entry has none yet (never overwrites).
 func (h *Handlers) APIJournalAssignTag(w http.ResponseWriter, r *http.Request) {
+	if h.guardJournalingDuringAIJSON(w, r) {
+		return
+	}
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")

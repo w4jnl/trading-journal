@@ -109,7 +109,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	rows, err := h.Queries.ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
+	rows, err := h.rq().ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{
 		UserID:     userID(ctx),
 		StatDate:   gridStart,
 		StatDate_2: gridEnd,
@@ -120,7 +120,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Day-level journal entries for the visible range so we can flag cells.
-	journals, err := h.Queries.ListDayJournalsInRange(ctx, models.ListDayJournalsInRangeParams{
+	journals, err := h.rq().ListDayJournalsInRange(ctx, models.ListDayJournalsInRangeParams{
 		UserID:      userIDPtr(ctx),
 		EntryDate:   monthStart,
 		EntryDate_2: monthEnd,
@@ -145,7 +145,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 	// has Mondays in [monthStart-6 .. monthEnd+6]).
 	weekJournalStart := monthStart.AddDate(0, 0, -7)
 	weekJournalEnd := monthEnd.AddDate(0, 0, 7)
-	weekJournals, err := h.Queries.ListWeekJournalsInRange(ctx, models.ListWeekJournalsInRangeParams{
+	weekJournals, err := h.rq().ListWeekJournalsInRange(ctx, models.ListWeekJournalsInRangeParams{
 		UserID:      userIDPtr(ctx),
 		EntryDate:   weekJournalStart,
 		EntryDate_2: weekJournalEnd,
@@ -311,7 +311,7 @@ func (h *Handlers) CalendarPage(w http.ResponseWriter, r *http.Request) {
 		weeklyTotals[wi] = wt
 	}
 
-	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
+	accounts, err := h.rq().ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
