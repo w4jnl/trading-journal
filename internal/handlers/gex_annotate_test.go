@@ -14,6 +14,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/db/dbtest"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -293,12 +294,12 @@ func TestGexWallBucketGuard(t *testing.T) {
 		{Type: "call_wall", Bucket: "all", Index: 7530, Futures: f(7558)},
 		{Type: "put_wall", Bucket: "0dte", Index: 7350, Futures: f(7378)},
 	}}
-	if l := gexWall(s, "call_wall"); l == nil || l.Bucket != "all" || l.Index != 7530 {
+	if l := gexview.Wall(s, "call_wall"); l == nil || l.Bucket != "all" || l.Index != 7530 {
 		t.Errorf("call_wall = %+v, want the all-bucket level", l)
 	}
 	// A wall present only in the 0DTE book is not the all-book wall - absent
 	// beats wrong.
-	if l := gexWall(s, "put_wall"); l != nil {
+	if l := gexview.Wall(s, "put_wall"); l != nil {
 		t.Errorf("put_wall = %+v, want nil (only 0dte present)", l)
 	}
 }

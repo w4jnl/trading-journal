@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -60,8 +61,8 @@ func gexAnalysisPromptFor(language string) string {
 // gexAnalysisFacts renders the computed geometry the model reasons over. One
 // fact per line, denominations named, so a local model cannot mix them up.
 func gexAnalysisFacts(s *gex.Snapshot, market string) string {
-	et := gexEastern()
-	spotFut := gexSpotFutures(s)
+	et := gexview.Eastern()
+	spotFut := gexview.SpotFutures(s)
 	denom, spot := "index", s.SpotIndex
 	if spotFut != nil {
 		denom, spot = "futures", *spotFut
@@ -81,7 +82,7 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 	} else {
 		flip = s.Flip.Index
 	}
-	cwL, pwL := gexWall(s, "call_wall"), gexWall(s, "put_wall")
+	cwL, pwL := gexview.Wall(s, "call_wall"), gexview.Wall(s, "put_wall")
 	var cw, pw *float64
 	if cwL != nil {
 		cw = pick(cwL.Index, cwL.Futures)
@@ -146,7 +147,7 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 		line("regime percentile (20d): not available yet")
 	}
 	if total, ok := s.Regime.Total(); ok {
-		line("total net gamma across the whole book: %s", gexFmtB(total))
+		line("total net gamma across the whole book: %s", gexview.FmtB(total))
 	}
 	// Front-week regime (engine v0.6.1): emitted only when the snapshot has
 	// it, so retained reads of older snapshots stay byte-identical.
@@ -222,10 +223,10 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 	}
 	cwExtra, pwExtra := "", ""
 	if cwL != nil {
-		cwExtra = ", gamma " + gexFmtB(cwL.Gex)
+		cwExtra = ", gamma " + gexview.FmtB(cwL.Gex)
 	}
 	if pwL != nil {
-		pwExtra = ", gamma " + gexFmtB(pwL.Gex)
+		pwExtra = ", gamma " + gexview.FmtB(pwL.Gex)
 	}
 	dist("call wall", cw, cwExtra)
 	dist("put wall", pw, pwExtra)
@@ -284,10 +285,10 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 		}
 		line("profile: %d strikes from %.0f to %.0f", n, conv(s.Profile.StrikesIndex[0]), conv(s.Profile.StrikesIndex[n-1]))
 		if maxPos.gex > 0 {
-			line("largest positive node: %.2f at %s%s", conv(maxPos.idx), gexFmtB(maxPos.gex), named(maxPos.idx))
+			line("largest positive node: %.2f at %s%s", conv(maxPos.idx), gexview.FmtB(maxPos.gex), named(maxPos.idx))
 		}
 		if maxNeg.gex < 0 {
-			line("largest negative node: %.2f at %s%s", conv(maxNeg.idx), gexFmtB(maxNeg.gex), named(maxNeg.idx))
+			line("largest negative node: %.2f at %s%s", conv(maxNeg.idx), gexview.FmtB(maxNeg.gex), named(maxNeg.idx))
 		}
 		if s.Flip.Index != nil && pwL != nil {
 			lo, hi := pwL.Index, *s.Flip.Index
@@ -333,9 +334,9 @@ func (h *Handlers) gexAnalysisFor(ctx context.Context, market string, asOf time.
 }
 
 // gexAttachAnalysis fills the view's snapshot identity and any retained read.
-// Kept off gexBuildView (which stays a pure function of the snapshot) because
+// Kept off gexview.BuildView (which stays a pure function of the snapshot) because
 // this part needs the request's user.
-func (h *Handlers) gexAttachAnalysis(ctx context.Context, v *gexView, market string, asOf time.Time) {
+func (h *Handlers) gexAttachAnalysis(ctx context.Context, v *gexview.View, market string, asOf time.Time) {
 	v.AsOfParam = asOf.UTC().Format(time.RFC3339Nano)
 	if body := h.gexAnalysisFor(ctx, market, asOf); body != "" {
 		v.Analysis = body

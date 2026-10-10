@@ -13,6 +13,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -385,7 +386,7 @@ func TestGexBuildLadder(t *testing.T) {
 	}
 
 	spotFut := spot * ratio
-	lad := gexBuildLadder(snap, &spotFut)
+	lad := gexview.BuildLadder(snap, &spotFut)
 	if lad.Denom != "futures" {
 		t.Fatalf("denom = %q, want futures", lad.Denom)
 	}
@@ -405,7 +406,7 @@ func TestGexBuildLadder(t *testing.T) {
 
 	// Cold basis: the whole ladder falls back to index rather than emptying.
 	snap.FuturesConversion = nil
-	lad = gexBuildLadder(snap, nil)
+	lad = gexview.BuildLadder(snap, nil)
 	if lad.Denom != "index" || lad.Spot != spot {
 		t.Fatalf("cold basis denom/spot = %q/%v", lad.Denom, lad.Spot)
 	}
@@ -418,7 +419,7 @@ func TestGexBuildLadder(t *testing.T) {
 
 	// No flip (no zero crossing that day) must not drop the other levels.
 	snap.Flip = gex.Flip{}
-	if lad = gexBuildLadder(snap, nil); lad.Flip != nil || lad.CW == nil {
+	if lad = gexview.BuildLadder(snap, nil); lad.Flip != nil || lad.CW == nil {
 		t.Errorf("null flip mishandled: %+v", lad)
 	}
 }
@@ -436,18 +437,18 @@ func TestGexSpotFutures(t *testing.T) {
 		SpotFutures:       &published,
 		FuturesConversion: &gex.FuturesConversion{Ratio: 1.5}, // absurd on purpose
 	}
-	if got := gexSpotFutures(s); got == nil || *got != published {
+	if got := gexview.SpotFutures(s); got == nil || *got != published {
 		t.Errorf("= %v, want the published %v (not ratio arithmetic)", got, published)
 	}
 
 	s.SpotFutures = nil
 	s.FuturesConversion = &gex.FuturesConversion{Ratio: 1.004}
-	if got := gexSpotFutures(s); got == nil || *got != 7503.54*1.004 {
+	if got := gexview.SpotFutures(s); got == nil || *got != 7503.54*1.004 {
 		t.Errorf("pre-v0.3.0 fallback = %v", got)
 	}
 
 	s.FuturesConversion = nil
-	if got := gexSpotFutures(s); got != nil {
+	if got := gexview.SpotFutures(s); got != nil {
 		t.Errorf("cold basis = %v, want nil (never invent a conversion)", got)
 	}
 }
@@ -647,7 +648,7 @@ func TestGexBuildChartProfiles(t *testing.T) {
 			"0dte_vol": {StrikesIndex: []float64{7450, 7530}, NetGex: []float64{1e9}}, // mismatched: dropped
 		},
 	}
-	cps := gexBuildChartProfiles(pd, gexChart{Ratio: 1.0038})
+	cps := gexview.BuildChartProfiles(pd, gexview.Chart{Ratio: 1.0038})
 	if len(cps) != 2 {
 		t.Fatalf("keys = %v", cps)
 	}
@@ -657,15 +658,15 @@ func TestGexBuildChartProfiles(t *testing.T) {
 	if cps["all"].NativeW != 10 || cps["0dte"].Gex[1] != 2e9 {
 		t.Errorf("nativeW/gex: %+v", cps)
 	}
-	if got := gexBuildChartProfiles(pd, gexChart{})["all"].Strikes[0]; got != 7300 {
+	if got := gexview.BuildChartProfiles(pd, gexview.Chart{})["all"].Strikes[0]; got != 7300 {
 		t.Errorf("index-denominated chart must pass strikes through: %v", got)
 	}
-	if gexBuildChartProfiles(nil, gexChart{}) != nil {
+	if gexview.BuildChartProfiles(nil, gexview.Chart{}) != nil {
 		t.Errorf("nil pd must yield nil")
 	}
 }
 
-// gexSessionGrid: ET session slots on weekdays only, ascending, bounded by
+// gexview.SessionGrid: ET session slots on weekdays only, ascending, bounded by
 // the engine history start and the current moment.
 func TestGexSessionGrid(t *testing.T) {
 	et, err := time.LoadLocation("America/New_York")
@@ -675,7 +676,7 @@ func TestGexSessionGrid(t *testing.T) {
 
 	// Saturday noon: window covers Fri Jul 31 + Thu Jul 30 (history start),
 	// nothing older, no weekend slots.
-	grid := gexSessionGrid(time.Date(2026, 8, 1, 12, 0, 0, 0, et))
+	grid := gexview.SessionGrid(time.Date(2026, 8, 1, 12, 0, 0, 0, et))
 	if len(grid) != 150 { // 2 sessions x 75 slots (09:50..16:00 step 5m)
 		t.Fatalf("grid len = %d, want 150", len(grid))
 	}
@@ -694,7 +695,7 @@ func TestGexSessionGrid(t *testing.T) {
 	}
 
 	// Mid-session: the current partial day ends at the last elapsed slot.
-	grid = gexSessionGrid(time.Date(2026, 7, 31, 12, 3, 0, 0, et))
+	grid = gexview.SessionGrid(time.Date(2026, 7, 31, 12, 3, 0, 0, et))
 	last = time.Unix(grid[len(grid)-1], 0).In(et)
 	if last.Format("2006-01-02 15:04") != "2026-07-31 12:00" {
 		t.Errorf("mid-session last slot = %v", last)
@@ -713,13 +714,13 @@ func TestGexFmtB(t *testing.T) {
 		{-1200, "-1200"},
 	}
 	for _, c := range cases {
-		if got := gexFmtB(c.v); got != c.want {
-			t.Errorf("gexFmtB(%v) = %q, want %q", c.v, got, c.want)
+		if got := gexview.FmtB(c.v); got != c.want {
+			t.Errorf("gexview.FmtB(%v) = %q, want %q", c.v, got, c.want)
 		}
 	}
 }
 
-// gexBuildDTE is pure: band edges, deltas, and empty-band honesty.
+// gexview.BuildDTE is pure: band edges, deltas, and empty-band honesty.
 func TestGexBuildDTE(t *testing.T) {
 	tz, _ := time.LoadLocation("America/Chicago")
 	now := time.Date(2026, 8, 21, 9, 30, 0, 0, tz)
@@ -733,7 +734,7 @@ func TestGexBuildDTE(t *testing.T) {
 		"2026-08-21": -2.5e9,
 		"2026-08-31": 4e9,
 	}}
-	rows := gexBuildDTE(pd, prev, now, tz)
+	rows := gexview.BuildDTE(pd, prev, now, tz)
 	if len(rows) != 3 {
 		t.Fatalf("rows = %d", len(rows))
 	}
@@ -747,7 +748,7 @@ func TestGexBuildDTE(t *testing.T) {
 	if rows[2].Net != "+1.0B" || rows[2].Delta != "" {
 		t.Errorf(">20d = %+v", rows[2])
 	}
-	if gexBuildDTE(nil, nil, now, tz) != nil || gexBuildDTE(&gex.ProfileDetail{}, nil, now, tz) != nil {
+	if gexview.BuildDTE(nil, nil, now, tz) != nil || gexview.BuildDTE(&gex.ProfileDetail{}, nil, now, tz) != nil {
 		t.Errorf("missing profile should yield no rows")
 	}
 }
@@ -764,7 +765,7 @@ func TestGexViewEMBand(t *testing.T) {
 			{Type: "em_intra_max", Index: 7530, Gex: 0, Bucket: "all"},
 		},
 	}
-	v := gexBuildView(s, time.Date(2026, 8, 21, 15, 0, 0, 0, time.UTC))
+	v := gexview.BuildView(s, time.Date(2026, 8, 21, 15, 0, 0, 0, time.UTC))
 	if v.EMBandLo != "7480.00" || v.EMBandHi != "7530.00" {
 		t.Errorf("band = %s / %s, want the 1Di levels", v.EMBandLo, v.EMBandHi)
 	}

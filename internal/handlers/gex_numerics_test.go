@@ -13,6 +13,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -68,35 +69,35 @@ func TestSnapshotNumericsDecode(t *testing.T) {
 }
 
 func TestGexProvAndSkewLines(t *testing.T) {
-	if got := gexProvLine(nil, nil); got != "" {
+	if got := gexview.ProvLine(nil, nil); got != "" {
 		t.Errorf("empty prov line = %q", got)
 	}
 	rel := 0.0041
 	dq := &gex.DataQuality{Straddle: &gex.Straddle{RelErr: &rel}}
 	prov := &gex.Provenance{Kind: "recomputed", Reason: "v0.12.0 numerics"}
-	if got := gexProvLine(prov, dq); got != "recomputed: v0.12.0 numerics · straddle +0.4%" {
+	if got := gexview.ProvLine(prov, dq); got != "recomputed: v0.12.0 numerics · straddle +0.4%" {
 		t.Errorf("prov line = %q", got)
 	}
-	if got := gexProvLine(&gex.Provenance{Kind: "recomputed"}, nil); got != "recomputed" {
+	if got := gexview.ProvLine(&gex.Provenance{Kind: "recomputed"}, nil); got != "recomputed" {
 		t.Errorf("reasonless recompute = %q", got)
 	}
 	// Measured and reconstructed rows say nothing here (the strip owns
 	// reconstructed); the straddle still shows.
-	if got := gexProvLine(&gex.Provenance{Kind: "reconstructed"}, dq); got != "straddle +0.4%" {
+	if got := gexview.ProvLine(&gex.Provenance{Kind: "reconstructed"}, dq); got != "straddle +0.4%" {
 		t.Errorf("reconstructed prov line = %q", got)
 	}
 
-	if got := gexSkewRRLine(nil); got != "" {
+	if got := gexview.SkewRRLine(nil); got != "" {
 		t.Errorf("nil skew = %q", got)
 	}
 	d0, m1 := -0.019, 0.034
-	if got := gexSkewRRLine(&gex.Skew{DTE0RRPts: &d0, M1RRPts: &m1}); got != "RR 0DTE -1.9 · 1M +3.4 vol pts" {
+	if got := gexview.SkewRRLine(&gex.Skew{DTE0RRPts: &d0, M1RRPts: &m1}); got != "RR 0DTE -1.9 · 1M +3.4 vol pts" {
 		t.Errorf("rr line = %q", got)
 	}
-	if got := gexSkewRRLine(&gex.Skew{M1RRPts: &m1}); got != "RR 1M +3.4 vol pts" {
+	if got := gexview.SkewRRLine(&gex.Skew{M1RRPts: &m1}); got != "RR 1M +3.4 vol pts" {
 		t.Errorf("rr line (one tenor) = %q", got)
 	}
-	if got := gexSkewRRLine(&gex.Skew{}); got != "" {
+	if got := gexview.SkewRRLine(&gex.Skew{}); got != "" {
 		t.Errorf("rr line without points = %q", got)
 	}
 }
@@ -105,12 +106,12 @@ func TestGexProvAndSkewLines(t *testing.T) {
 // trust finding: it must not light up the strip.
 func TestGexQualityHidesRecomputedNotice(t *testing.T) {
 	dq := &gex.DataQuality{Warnings: []gex.QualityWarning{{Code: "RECOMPUTED", Severity: "notice", Message: "recomputed from archived cycle payloads"}}}
-	q := gexBuildQuality(dq, &gex.Provenance{Kind: "recomputed", Reason: "v0.12.0 numerics"})
+	q := gexview.BuildQuality(dq, &gex.Provenance{Kind: "recomputed", Reason: "v0.12.0 numerics"})
 	if q.Show || len(q.Warnings) != 0 || q.Kind != "" {
 		t.Errorf("recomputed-only row lit the strip: %+v", q)
 	}
 	dq.Warnings = append(dq.Warnings, gex.QualityWarning{Code: "STALE_PAYLOAD", Severity: "notice", Message: "payload age 900s"})
-	q = gexBuildQuality(dq, nil)
+	q = gexview.BuildQuality(dq, nil)
 	if !q.Show || len(q.Warnings) != 1 || q.Warnings[0].Code != "STALE_PAYLOAD" {
 		t.Errorf("real notice dropped with the RECOMPUTED one: %+v", q)
 	}
