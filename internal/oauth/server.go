@@ -14,6 +14,7 @@ package oauth
 import (
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -49,6 +50,12 @@ type Server struct {
 	Queries *models.Queries
 	Cfg     Config
 	Logger  *slog.Logger
+
+	// Dynamic client registration is public and unauthenticated; this bounds
+	// how many registrations one client address may make per window so an
+	// unauthenticated loop cannot fill the clients table (see register.go).
+	regMu   sync.Mutex
+	regHits map[string][]time.Time
 }
 
 // Issuer returns the configured origin without a trailing slash.

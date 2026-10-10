@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -46,6 +49,11 @@ func (h *Handlers) SettingsIbkrGatewayCreate(w http.ResponseWriter, r *http.Requ
 	u, err := url.Parse(rawURL)
 	if err != nil || (u.Scheme != "https" && u.Scheme != "http") || u.Host == "" {
 		http.Redirect(w, r, "/settings?err=gateway+URL+must+be+http(s)%3A%2F%2Fhost%3Aport", http.StatusSeeOther)
+		return
+	}
+	if !h.ibkrGatewayHostAllowed(ctx, u.Hostname()) {
+		http.Redirect(w, r, "/settings?err="+url.QueryEscape(
+			"gateway host "+u.Hostname()+" is not allowed - ask an admin to add it to ibkr.allowed_gateway_hosts"), http.StatusSeeOther)
 		return
 	}
 	tlsInsecure := int64(0)
@@ -92,7 +100,11 @@ func (h *Handlers) SettingsIbkrGatewayTest(w http.ResponseWriter, r *http.Reques
 	st, err := h.IbkrSync.TestGateway(r.Context(), gw)
 	switch {
 	case err != nil:
-		http.Redirect(w, r, "/settings?err="+errToQuery(fmt.Errorf("gateway %s unreachable: %v", gw.Name, err)), http.StatusSeeOther)
+		// The client error carries the gateway's status and a body snippet -
+		// useful in the log, but echoing it to the page would turn the test
+		// button into a read primitive against whatever host was registered.
+		h.logger().Warn("ibkr gateway test failed", "gateway", gw.Name, "err", err)
+		http.Redirect(w, r, "/settings?err="+errToQuery(fmt.Errorf("gateway %s is unreachable or returned an error (details in the server log)", gw.Name)), http.StatusSeeOther)
 	case !st.Authenticated:
 		http.Redirect(w, r, "/settings?err="+errToQuery(fmt.Errorf(
 			"gateway %s responds but is not authenticated - open %s in a browser and log in", gw.Name, gw.Url)), http.StatusSeeOther)
@@ -174,4 +186,33 @@ func (h *Handlers) AccountsLivesyncReset(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	http.Redirect(w, r, "/accounts?flash=cutover-reset", http.StatusSeeOther)
+}
+
+// ibkrGatewayHostAllowed decides whether the caller may point the server at
+// this gateway host. The server fetches the URL itself - a server-side
+// request primitive - so non-admins are limited to ibkr.allowed_gateway_hosts
+// (hostnames compared case-insensitively, IP literals, or CIDRs matched
+// against an IP-literal host); admins may register anything.
+func (h *Handlers) ibkrGatewayHostAllowed(ctx context.Context, host string) bool {
+	if u := auth.UserFrom(ctx); u != nil && u.IsAdmin {
+		return true
+	}
+	host = strings.ToLower(strings.TrimSpace(host))
+	if host == "" {
+		return false
+	}
+	ip := net.ParseIP(host)
+	for _, a := range h.IbkrGatewayHosts {
+		a = strings.ToLower(strings.TrimSpace(a))
+		switch {
+		case a == "":
+		case strings.Contains(a, "/"):
+			if _, n, err := net.ParseCIDR(a); err == nil && ip != nil && n.Contains(ip) {
+				return true
+			}
+		case a == host:
+			return true
+		}
+	}
+	return false
 }

@@ -84,6 +84,12 @@ type IBKR struct {
 	SessionSyncMin     int    `yaml:"session_sync_min"` // scheduled cadence during Globex hours; default 60; 0 disables
 	RTHSyncMin         int    `yaml:"rth_sync_min"`     // faster cadence inside rth_window; default 15; 0 disables
 	RTHWindow          string `yaml:"rth_window"`       // "HH:MM-HH:MM" Chicago, Mon-Fri; default "07:30-16:00"
+	// AllowedGatewayHosts bounds where NON-ADMIN users may point a Client
+	// Portal Gateway: hostnames, IP literals or CIDRs. The server fetches the
+	// gateway URL itself, so an unrestricted field is a server-side request
+	// primitive into the private network. Admins may register any host.
+	// Empty = non-admins cannot add gateways.
+	AllowedGatewayHosts []string `yaml:"allowed_gateway_hosts"`
 }
 
 // RTHWindowHM parses RTHWindow into start/end minutes-of-day (Chicago).
