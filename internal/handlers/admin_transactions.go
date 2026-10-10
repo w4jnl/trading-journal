@@ -209,13 +209,16 @@ func (h *Handlers) listExecutionsFiltered(ctx context.Context, uid int64, f txnF
 		b.WriteString(" AND e.side = ?")
 		args = append(args, f.Side)
 	}
-	if f.From != "" {
-		b.WriteString(" AND substr(e.exec_time,1,10) >= ?")
-		args = append(args, f.From)
+	// Trading-tz days as UTC instants: exec_time is UTC text, and the
+	// stored date prefix is the UTC date, not the user's (daybounds.go).
+	tz := h.localTZ()
+	if d, ok := parseLocalDay(f.From, tz); ok {
+		b.WriteString(" AND e.exec_time >= ?")
+		args = append(args, d.UTC())
 	}
-	if f.To != "" {
-		b.WriteString(" AND substr(e.exec_time,1,10) <= ?")
-		args = append(args, f.To)
+	if d, ok := parseLocalDay(f.To, tz); ok {
+		b.WriteString(" AND e.exec_time < ?")
+		args = append(args, d.AddDate(0, 0, 1).UTC())
 	}
 	switch {
 	case f.OnlyDeleted:

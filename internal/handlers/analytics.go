@@ -79,16 +79,18 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Trading-tz days, sent to SQL as UTC instants (see daybounds.go).
 	var from, to *time.Time
 	if v := q.Get("from"); v != "" {
-		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
-			from = &t
+		if t, ok := parseLocalDay(v, tz); ok {
+			u := t.UTC()
+			from = &u
 		}
 	}
 	if v := q.Get("to"); v != "" {
-		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
-			t = t.AddDate(0, 0, 1)
-			to = &t
+		if t, ok := parseLocalDay(v, tz); ok {
+			u := t.AddDate(0, 0, 1).UTC()
+			to = &u
 		}
 	}
 

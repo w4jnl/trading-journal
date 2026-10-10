@@ -72,6 +72,18 @@
   --neg-strong: #b91c1c;
   --neg-muted:  #9b3434; /* losses-in-context (calendar history) vs active warning */
   --warn:       #d97706;
+  /* Text-on-surface sentiment colours. --pos/--neg are fills and large
+     numerals; at 11-13px on the page background they measure ~3.2:1, so
+     body-size text uses these darker siblings (>= 4.5:1 on --bg). The
+     --on-* pair is the text colour inside a solid --pos-text/--neg-text
+     fill (the hero chip). */
+  --pos-text:    #15803d;
+  --neg-text:    #b91c1c;
+  --warn-text:   #9a3412;
+  --info-text:   #1e40af;
+  --accent-text: #0f7f84;
+  --on-pos:      #ffffff;
+  --on-neg:      #ffffff;
   --warn-soft:  #fffbeb;
   --warn-border:#fde68a;
   --info:       #2563eb;
@@ -191,7 +203,7 @@
   --border-strong: #3f3f46;
 
   --accent:        #2EBABE;
-  --accent-fg:     #ffffff;
+  --accent-fg:     #0a0a0b; /* near-black on the teal: white measured 2.4:1 */
   --accent-hover:  #A8DCDD;
   --accent-soft:   rgba(46, 186, 190, 0.16);
   --accent-strong: #A8DCDD;
@@ -206,6 +218,15 @@
   --neg-strong: #dc2626;
   --neg-muted:  #c45a5a;
   --warn:       #f59e0b;
+  /* Dark surfaces: the base sentiment colours already clear 4.5:1 on the
+     page background, so text reuses them; solid fills take dark text. */
+  --pos-text:    var(--pos);
+  --neg-text:    var(--neg);
+  --warn-text:   var(--warn);
+  --info-text:   var(--info);
+  --accent-text: var(--accent);
+  --on-pos:      #052e16;
+  --on-neg:      #450a0a;
   --warn-soft:  rgba(245, 158, 11, 0.12);
   --warn-border:rgba(245, 158, 11, 0.30);
   --info:       #60a5fa;
@@ -782,11 +803,11 @@ select:not(.no-style), .select {
   color: var(--fg-muted);
   white-space: nowrap;
 }
-.pill.success { background: var(--pos-soft); color: var(--pos); }
-.pill.error   { background: var(--neg-soft); color: var(--neg); }
-.pill.warn    { background: var(--warn-soft); color: var(--warn); }
-.pill.info    { background: var(--info-soft); color: var(--info); }
-.pill.accent  { background: var(--accent-soft); color: var(--accent); }
+.pill.success { background: var(--pos-soft); color: var(--pos-text); }
+.pill.error   { background: var(--neg-soft); color: var(--neg-text); }
+.pill.warn    { background: var(--warn-soft); color: var(--warn-text); }
+.pill.info    { background: var(--info-soft); color: var(--info-text); }
+.pill.accent  { background: var(--accent-soft); color: var(--accent-text); }
 
 /* GEX data-quality strip (engine update 009): pills per finding under the
    page banners, the reconstructed note on its own line. Hidden attribute
@@ -798,12 +819,12 @@ select:not(.no-style), .select {
 
 /* Direction pills used in trade lists. Distinct hue family on purpose so a
    short isn't mistaken for a long at a glance. */
-.dir-long  { background: var(--info-soft);  color: var(--info); }
-.dir-short { background: var(--warn-soft);  color: var(--warn); }
+.dir-long  { background: var(--info-soft);  color: var(--info-text); }
+.dir-short { background: var(--warn-soft);  color: var(--warn-text); }
 
 /* Sentiment text classes */
-.pnl-pos { color: var(--pos); font-weight: var(--fw-semibold); }
-.pnl-neg { color: var(--neg); font-weight: var(--fw-semibold); }
+.pnl-pos { color: var(--pos-text); font-weight: var(--fw-semibold); }
+.pnl-neg { color: var(--neg-text); font-weight: var(--fw-semibold); }
 
 /* ---- Flash messages ------------------------------------------------------- */
 
@@ -1169,8 +1190,8 @@ a:hover > .icon-journal,
   letter-spacing: -0.005em;
   line-height: 1.2;
 }
-.pnl-chip--pos { background: var(--pos); color: var(--accent-fg); }
-.pnl-chip--neg { background: var(--neg); color: var(--accent-fg); }
+.pnl-chip--pos { background: var(--pos-text); color: var(--on-pos); } /* white on --pos measured 2.3:1 */
+.pnl-chip--neg { background: var(--neg-text); color: var(--on-neg); }
 .pnl-chip--flat {
   background: var(--bg-sunken);
   color: var(--fg-muted);
@@ -2096,3 +2117,31 @@ tr.trade-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -
    2,500px on a phone (the charts then sized themselves to that). The strip
    scrolls on its own line instead. */
 .gxe-expiries { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
+
+/* ---- Review pass (2026-10) ------------------------------------------------ */
+
+/* Calendar: secondary text inside a tinted day cell. The muted grey that
+   works on the card background drops to ~2.5:1 on the green fill in dark
+   mode; inside a coloured cell the secondary text follows the cell's own
+   text colour. */
+[data-theme="dark"] .calendar td.has-pnl-pos .muted,
+[data-theme="dark"] .calendar td.has-pnl-pos-strong .muted,
+[data-theme="dark"] .calendar td.has-pnl-neg .muted,
+[data-theme="dark"] .calendar td.has-pnl-neg-strong .muted { color: rgba(255, 255, 255, 0.78); }
+
+/* Journal trade tables: copy-trader fan-out folded into one row per
+   decision (see _journal_summary.html / groupLinkedTrades). */
+.fanout-btn {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px 2px 4px; border: 1px solid var(--border); border-radius: var(--r-pill);
+  background: var(--bg-elev); color: var(--fg); font: inherit; font-size: var(--fs-12); cursor: pointer;
+}
+.fanout-btn:hover { border-color: var(--border-strong); background: var(--bg-hover); }
+.fanout-caret {
+  display: inline-block; width: 0; height: 0;
+  border-left: 5px solid currentColor; border-top: 4px solid transparent; border-bottom: 4px solid transparent;
+  transition: transform var(--t-fast);
+}
+tr.fanout.open .fanout-caret { transform: rotate(90deg); }
+tr.fanout-member td { background: var(--bg-sunken); }
+tr.fanout-member td:first-child { padding-left: 28px; }

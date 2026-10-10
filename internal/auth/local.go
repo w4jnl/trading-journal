@@ -29,6 +29,16 @@ type LocalAuth struct {
 	// renderPage / template machinery is reused. Receives template data
 	// like {"Error": "...", "Username": "alice"}.
 	LoginTemplate func(w http.ResponseWriter, data map[string]any)
+
+	// limiter throttles failed logins per (username, client IP); created on
+	// first use so struct-literal construction keeps working.
+	limiter     *loginLimiter
+	limiterOnce sync.Once
+}
+
+func (a *LocalAuth) limits() *loginLimiter {
+	a.limiterOnce.Do(func() { a.limiter = newLoginLimiter() })
+	return a.limiter
 }
 
 // ResolveUser reads the session cookie and returns the user, or nil if the
@@ -59,10 +69,10 @@ func (a *LocalAuth) HandleUnauthenticated(w http.ResponseWriter, r *http.Request
 func (a *LocalAuth) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /login", a.GetLogin)
 	mux.HandleFunc("POST /login", a.PostLogin)
+	// POST only: a GET alias would let any page log the user out by
+	// embedding an image or link (logout CSRF). The sidebar sign-out is a
+	// form POST.
 	mux.HandleFunc("POST /logout", a.PostLogout)
-	// GET /logout: convenience for "click logout link" flows. POST is the
-	// canonical CSRF-protected version.
-	mux.HandleFunc("GET /logout", a.PostLogout)
 }
 
 // GetLogin renders the login form. If ?next=<safe> is set, the form
@@ -87,8 +97,20 @@ func (a *LocalAuth) PostLogin(w http.ResponseWriter, r *http.Request) {
 	password := r.PostFormValue("password")
 	next := r.PostFormValue("next")
 
+	// Throttle before touching bcrypt: a locked key answers 429 without
+	// spending a hash, and the message says how long to wait.
+	key := strings.ToLower(username) + "|" + clientIP(r)
+	if wait := a.limits().retryAfter(key); wait > 0 {
+		secs := int(wait.Seconds() + 0.5)
+		slog.Warn("login throttled", "username", username, "ip", clientIP(r), "retry_after_s", secs)
+		w.Header().Set("Retry-After", fmt.Sprint(secs))
+		w.WriteHeader(http.StatusTooManyRequests)
+		a.renderLogin(w, username, fmt.Sprintf("Too many failed attempts. Try again in %d seconds.", secs), next)
+		return
+	}
 	user, err := a.verify(r.Context(), username, password)
 	if err != nil {
+		a.limits().fail(key)
 		// Don't reveal whether it was username or password that failed —
 		// constant-time-ish equivalence at the UX layer.
 		slog.Info("login failed", "username", username, "err", err)
@@ -96,6 +118,7 @@ func (a *LocalAuth) PostLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	a.limits().reset(key)
 	id, expires, err := a.Sessions.Create(r.Context(), user.ID,
 		r.UserAgent(), clientIP(r))
 	if err != nil {
@@ -223,8 +246,9 @@ func nextOr(fallback, next string) string {
 	if next == "" {
 		return fallback
 	}
-	// Only same-origin paths. Reject scheme/host or protocol-relative URLs.
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+	// Only same-origin paths: no scheme/host, no protocol-relative URL, no
+	// backslash (SafeLocalPath has the full rule).
+	if !SafeLocalPath(next) {
 		return fallback
 	}
 	return next

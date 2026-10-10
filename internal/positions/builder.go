@@ -126,6 +126,19 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 		return 0, fmt.Errorf("list group links: %w", err)
 	}
 
+	// Remember each linked trade's opening fill while the junction rows still
+	// exist; the relink below keys on it (see there).
+	entryExecByTrade := map[int64]int64{}
+	for _, link := range links {
+		if _, seen := entryExecByTrade[link.TradeID]; !seen {
+			entryExecByTrade[link.TradeID] = b.firstEntryExec(ctx, link.TradeID)
+		}
+	}
+	for _, link := range groupLinks {
+		if _, seen := entryExecByTrade[link.TradeID]; !seen {
+			entryExecByTrade[link.TradeID] = b.firstEntryExec(ctx, link.TradeID)
+		}
+	}
 	if err := b.Queries.DeleteTradesForAccountSymbol(ctx, models.DeleteTradesForAccountSymbolParams{
 		AccountID: k.AccountID,
 		Symbol:    k.Symbol,
@@ -163,17 +176,18 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 		return 0, err
 	}
 
-	// Re-link the journal entries we detached up top. A reconstructed trade
-	// keeps the same entry_time as the original, so a lookup by signal hits
-	// the right new row. If the underlying executions changed enough that no
-	// trade with that entry_time exists anymore, leave trade_id NULL — the
-	// entry becomes a day-level note, which is the closest sensible fallback.
+	// Re-link the journal entries we detached up top. The identity that
+	// survives a rebuild is the fill that OPENED the trade: execution ids are
+	// stable while trade ids are not, and a fill is the entry of exactly one
+	// trade. entry_time alone is ambiguous whenever two trades open in the
+	// same second (one-second CSV timestamps; a sell@T that flips into a new
+	// position at the same T) - it used to attach a note to whichever trade
+	// happened to sort first. When the opening fill no longer opens a trade
+	// (fills were removed and the FIFO re-paired), fall back to entry_time;
+	// when that misses too, leave trade_id NULL — the entry becomes a
+	// day-level note, the closest sensible fallback.
 	for _, link := range links {
-		newID, err := b.Queries.FindTradeBySignal(ctx, models.FindTradeBySignalParams{
-			AccountID: k.AccountID,
-			Symbol:    k.Symbol,
-			EntryTime: link.EntryTime,
-		})
+		newID, err := b.findRebuiltTrade(ctx, k, entryExecByTrade[link.TradeID], link.EntryTime)
 		switch {
 		case err == nil:
 			if err := b.Queries.RelinkJournalEntry(ctx, models.RelinkJournalEntryParams{
@@ -192,11 +206,7 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 	// Re-link group entries (M:N) the same way. The CASCADE wiped the
 	// link rows when DeleteTradesForAccountSymbol ran; re-insert now.
 	for _, link := range groupLinks {
-		newID, err := b.Queries.FindTradeBySignal(ctx, models.FindTradeBySignalParams{
-			AccountID: k.AccountID,
-			Symbol:    k.Symbol,
-			EntryTime: link.EntryTime,
-		})
+		newID, err := b.findRebuiltTrade(ctx, k, entryExecByTrade[link.TradeID], link.EntryTime)
 		switch {
 		case err == nil:
 			if err := b.Queries.InsertGroupLink(ctx, models.InsertGroupLinkParams{
@@ -285,6 +295,12 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	}
 
 	for _, fill := range fills {
+		if fill.Qty <= 0 {
+			// A zero or negative quantity would divide the VWAP by zero and
+			// store NaN prices; the parsers reject such rows, this is the
+			// backstop for hand-edited or API-sourced executions.
+			continue
+		}
 		fillDir := "long"
 		if fill.Side == "sell" {
 			fillDir = "short"
@@ -538,16 +554,56 @@ func summarize(uses []fillUse, wantFirst bool) (totalQty, weighted float64, t ti
 	return
 }
 
+// firstEntryExec returns the execution id that opened tradeID, or 0 when the
+// trade has no entry-role junction row (never for a builder-made trade).
+func (b *Builder) firstEntryExec(ctx context.Context, tradeID int64) int64 {
+	id, err := b.Queries.FirstEntryExecutionForTrade(ctx, tradeID)
+	if err != nil {
+		return 0
+	}
+	return id
+}
+
+// findRebuiltTrade resolves the trade a journal link should attach to after
+// the rebuild: the trade opened by execID when known, else the trade with
+// the original entry_time. sql.ErrNoRows means neither matched.
+func (b *Builder) findRebuiltTrade(ctx context.Context, k Key, execID int64, entryTime time.Time) (int64, error) {
+	if execID != 0 {
+		id, err := b.Queries.FindTradeByEntryExecution(ctx, models.FindTradeByEntryExecutionParams{
+			ExecutionID: execID, AccountID: k.AccountID, Symbol: k.Symbol,
+		})
+		if err == nil {
+			return id, nil
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return 0, err
+		}
+	}
+	return b.Queries.FindTradeBySignal(ctx, models.FindTradeBySignalParams{
+		AccountID: k.AccountID, Symbol: k.Symbol, EntryTime: entryTime,
+	})
+}
+
 // computePnl computes a closed trade's gross and net given a pre-computed
-// commission (from commissionForLegs). gross is NULL when the instrument has no
-// multiplier (tick spec not set up yet) - and then commission/net are NULL too,
-// pending the user configuring the symbol. A nil commission (no rate configured)
-// leaves net = gross. User fixes missing rates via /commissions.
+// commission (from commissionForLegs). Futures P&L is price distance in
+// ticks x tick value x qty (CLAUDE.md invariant; the same math the open
+// positions' unrealized P&L uses), so a complete tick spec is all an
+// instrument needs. multiplier - which IS tick_value / tick_size - is kept
+// only as the fallback for an instrument that was configured before tick
+// specs were required. gross is NULL when neither is set (a stub awaiting
+// setup) - and then commission/net are NULL too, pending the user
+// configuring the symbol. A nil commission (no rate configured) leaves
+// net = gross. User fixes missing rates via /commissions.
 func computePnl(direction string, avgEntry, avgExit, qty float64, inst models.Instrument, commission *float64) (gross, comm, net *float64) {
-	if inst.Multiplier == nil {
+	var mult float64
+	switch {
+	case inst.TickSize != nil && inst.TickValue != nil && *inst.TickSize > 0:
+		mult = *inst.TickValue / *inst.TickSize
+	case inst.Multiplier != nil:
+		mult = *inst.Multiplier
+	default:
 		return nil, nil, nil
 	}
-	mult := *inst.Multiplier
 	g := 0.0
 	if direction == "long" {
 		g = (avgExit - avgEntry) * mult * qty

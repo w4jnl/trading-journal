@@ -299,6 +299,9 @@
     // Volume as an overlay histogram pinned to the bottom ~18% of the pane.
     var vol = chart.addSeries(LWC.HistogramSeries, { priceFormat: { type: "volume" }, priceScaleId: "" });
     chart.priceScale("").applyOptions({ scaleMargins: { top: 0.82, bottom: 0 } });
+    // Headroom for marker labels above the highest bar and below the volume
+    // band; without it the topmost labels are cut by the chart edge.
+    chart.priceScale("right").applyOptions({ scaleMargins: { top: 0.14, bottom: 0.24 } });
 
     var markersApi = null; // v5 markers primitive, created once then updated
 
@@ -313,6 +316,9 @@
         return { time: b.t, value: b.v || 0, color: (b.c >= b.o ? c.pos : c.neg) + "55" };
       }));
       var times = bars.map(function (b) { return b.t; });
+      // Price labels need room; on a narrow (phone) chart they only pile up,
+      // so the arrows stand alone there. Folded fan-out fills carry a count.
+      var narrow = holder.clientWidth < 480;
       var markers = (panel.markers || []).map(function (m) {
         var solid = m.side === "buy" ? c.pos : c.neg;
         return {
@@ -322,7 +328,7 @@
           // solid entry arrows (lightweight-charts has no hollow markers).
           color: m.role === "exit" ? solid + "80" : solid,
           shape: m.side === "buy" ? "arrowUp" : "arrowDown",
-          text: fmtPrice(m.price),
+          text: narrow ? "" : fmtPrice(m.price) + (m.count > 1 ? " \u00d7" + m.count : ""),
         };
       }).sort(function (a, b) { return a.time - b.time; });
       if (LWC.createSeriesMarkers) {

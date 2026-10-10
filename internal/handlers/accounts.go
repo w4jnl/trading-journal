@@ -664,6 +664,19 @@ func (h *Handlers) AccountsReassign(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/accounts?flash=reassignsame", http.StatusSeeOther)
 		return
 	}
+	// Ownership: both accounts must be the caller's. A foreign source would
+	// let a user pull another tenant's whole history into their own account;
+	// a foreign destination would scatter their data into someone else's.
+	// The reassign queries themselves are keyed on account_id only.
+	uid := userID(ctx)
+	if _, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: srcID, UserID: uid}); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: dstID, UserID: uid}); err != nil {
+		http.Error(w, "target account not found", http.StatusNotFound)
+		return
+	}
 
 	tx, err := h.DB.BeginTx(ctx, nil)
 	if err != nil {
@@ -707,7 +720,16 @@ func (h *Handlers) AccountsReassign(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.LiveData.Bump(userID(ctx))
+	// The destination now holds two accounts' fills, possibly for the same
+	// contract: replay its FIFO queues so trades reflect the merged stream
+	// and carry the destination's commission source, instead of waiting for
+	// the next import to happen to rebuild that symbol.
+	if h.ImportSvc != nil {
+		if err := h.ImportSvc.RebuildTradesForAccount(ctx, dstID); err != nil {
+			h.logger().Warn("reassign: rebuild destination failed", "account", dstID, "err", err)
+		}
+	}
+	h.LiveData.Bump(uid)
 	flash := fmt.Sprintf("moved%%3D%d", tradesMoved) // moved=<n>
 	http.Redirect(w, r, "/accounts?flash="+flash, http.StatusSeeOther)
 }

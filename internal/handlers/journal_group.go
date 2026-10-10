@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -114,7 +115,8 @@ func summarizeTradeRows(trades []linkedTrade) GroupSummary {
 // retired-account trades from stats. The /trades page retains its own
 // reveal toggle for explicit inspection.
 func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTrade, error) {
-	end := date.AddDate(0, 0, 1)
+	// date is local midnight; SQL compares UTC text (see daybounds.go).
+	fromU, toU := dayBoundsUTC(date)
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
 		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
@@ -125,7 +127,7 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
-	`, userID(ctx), date, end)
+	`, userID(ctx), fromU, toU)
 }
 
 // loadOneTrade returns a one-element slice for the given trade id, in the
@@ -146,7 +148,7 @@ func loadOneTrade(ctx context.Context, db *sql.DB, tradeID int64) ([]linkedTrade
 // starts at `monday` (Monday..Sunday inclusive). Excludes retired-account
 // trades for the same reason loadDayTrades does.
 func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linkedTrade, error) {
-	end := monday.AddDate(0, 0, 7)
+	fromU, toU := daysBoundsUTC(monday, 7)
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
 		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
@@ -157,7 +159,7 @@ func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linked
 		  AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.exit_time ASC, t.id ASC
-	`, userID(ctx), monday, end)
+	`, userID(ctx), fromU, toU)
 }
 
 // scanLinkedTrades is the shared scan path for loadDayTrades / loadWeekTrades
@@ -390,7 +392,9 @@ func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	target := fmt.Sprintf("/journal/group/%d", entry.ID)
-	if back := r.FormValue("back"); back != "" && strings.HasPrefix(back, "/") && !strings.HasPrefix(back, "//") {
+	h.LiveData.Bump(userID(ctx))
+
+	if back := r.FormValue("back"); auth.SafeLocalPath(back) {
 		v := url.Values{}
 		v.Set("back", back)
 		target += "?" + v.Encode()
@@ -722,12 +726,23 @@ func (h *Handlers) GroupJournalUnlink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad trade_id", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.DB.ExecContext(ctx,
-		"DELETE FROM journal_entry_trades WHERE journal_entry_id = ? AND trade_id = ?",
-		entryID, tradeID,
-	); err != nil {
+	// Ownership lives in the predicate: the link is removed only when the
+	// group entry is the caller's. Anything else is a 404, like the link
+	// handler's guard above - a foreign id must not confirm or mutate.
+	res, err := h.DB.ExecContext(ctx,
+		`DELETE FROM journal_entry_trades
+		 WHERE journal_entry_id = ? AND trade_id = ?
+		   AND journal_entry_id IN (SELECT id FROM journal_entries WHERE user_id = ? AND scope = 'group')`,
+		entryID, tradeID, userID(ctx),
+	)
+	if err != nil {
 		h.serverError(w, fmt.Errorf("unlink: %w", err))
 		return
 	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		http.NotFound(w, r)
+		return
+	}
+	h.LiveData.Bump(userID(ctx))
 	http.Redirect(w, r, fmt.Sprintf("/journal/group/%d?flash=unlinked", entryID), http.StatusSeeOther)
 }

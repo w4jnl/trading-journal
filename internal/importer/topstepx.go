@@ -58,6 +58,9 @@ func ParseTopstepX(r io.Reader) ([]Fill, error) {
 		if err != nil {
 			return nil, fmt.Errorf("row %d: parse size: %w", line, err)
 		}
+		if qty <= 0 {
+			return nil, fmt.Errorf("row %d: size must be positive, got %v", line, qty)
+		}
 		price, err := strconv.ParseFloat(strings.TrimSpace(row[cols["ExecutePrice"]]), 64)
 		if err != nil {
 			return nil, fmt.Errorf("row %d: parse execute price: %w", line, err)

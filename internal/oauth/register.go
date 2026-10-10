@@ -3,6 +3,7 @@ package oauth
 import (
 	"encoding/json"
 	"errors"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -49,6 +50,11 @@ const maxClientNameRunes = 64
 func (s *Server) RegisterHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if preflight(w, r, http.MethodPost) {
+			return
+		}
+		if !s.registerAllowed(clientAddr(r)) {
+			w.Header().Set("Retry-After", "3600")
+			writeOAuthError(w, http.StatusTooManyRequests, ErrInvalidClientMetadata, "too many client registrations from this address; try again later")
 			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
@@ -184,3 +190,50 @@ func ClientDisplayName(c models.OauthClient) string {
 }
 
 var errUnknownClient = errors.New("unknown client")
+
+// Registration rate limit: generous, because behind a reverse proxy every
+// external client shares the proxy's address, but enough to stop an
+// unauthenticated loop from growing the clients table without bound.
+const (
+	registerRateMax    = 60
+	registerRateWindow = time.Hour
+)
+
+// registerAllowed records a registration attempt from addr and reports
+// whether it is within the per-address budget for the current window.
+func (s *Server) registerAllowed(addr string) bool {
+	now := time.Now()
+	s.regMu.Lock()
+	defer s.regMu.Unlock()
+	if s.regHits == nil {
+		s.regHits = map[string][]time.Time{}
+	}
+	hits := s.regHits[addr][:0:0]
+	for _, t := range s.regHits[addr] {
+		if now.Sub(t) < registerRateWindow {
+			hits = append(hits, t)
+		}
+	}
+	if len(hits) >= registerRateMax {
+		s.regHits[addr] = hits
+		return false
+	}
+	s.regHits[addr] = append(hits, now)
+	// Forget addresses whose window has fully elapsed so the map stays small.
+	for a, hs := range s.regHits {
+		if len(hs) == 0 || now.Sub(hs[len(hs)-1]) >= registerRateWindow {
+			delete(s.regHits, a)
+		}
+	}
+	return true
+}
+
+// clientAddr is the request's network address without the port - the only
+// identity an unauthenticated registration has.
+func clientAddr(r *http.Request) string {
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
+	}
+	return host
+}

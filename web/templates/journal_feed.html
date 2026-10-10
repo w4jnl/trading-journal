@@ -120,6 +120,9 @@
           <div class="entry-preview">{{snippet .Body 180}}</div>
         </span>
         <span class="entry-pills">
+          {{/* Machine blocks are badged, not previewed (see preview.go). */}}
+          {{if hasAIReview .Body}}<span class="pill info" title="Contains an AI review">AI</span>{{end}}
+          {{if hasGexContext .Body}}<span class="pill" title="Contains gamma (GEX) context">GEX</span>{{end}}
           {{if .Strategy}}<span class="pill strategy-chip" title="Strategy: {{.Strategy}}">{{.Strategy}}</span>{{end}}
           <span class="tag-slot">{{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}</span>
         </span>

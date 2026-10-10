@@ -41,10 +41,35 @@ UPDATE journal_entries SET account_id = ? WHERE account_id = ?;
 DELETE FROM trades WHERE account_id = ? AND symbol = ?;
 
 -- name: ListJournalLinksForAccountSymbol :many
-SELECT je.id AS journal_id, t.entry_time
+-- Trade-scope journal links for this (account, symbol), captured before the
+-- FIFO rebuild deletes the trades. trade_id lets the builder look up the
+-- trade's first entry fill (FirstEntryExecutionForTrade), which is the
+-- stable identity across rebuilds; entry_time is the fallback signal.
+SELECT je.id AS journal_id, t.id AS trade_id, t.entry_time
 FROM journal_entries je
 JOIN trades t ON je.trade_id = t.id
 WHERE t.account_id = ? AND t.symbol = ?;
+
+-- name: FirstEntryExecutionForTrade :one
+-- The execution that opened the trade: entry-role junction row with the
+-- earliest fill. Execution ids survive a rebuild (trade ids do not), and a
+-- fill opens exactly one trade - a flip fill is the EXIT of one trade and
+-- the ENTRY of the next, so the role keeps the two apart.
+SELECT te.execution_id
+FROM trade_executions te
+JOIN executions e ON e.id = te.execution_id
+WHERE te.trade_id = ? AND te.role = 'entry'
+ORDER BY e.exec_time ASC, e.id ASC
+LIMIT 1;
+
+-- name: FindTradeByEntryExecution :one
+-- The (rebuilt) trade this execution opened. Scoped to the account/symbol
+-- being rebuilt for safety; the execution already pins both.
+SELECT te.trade_id
+FROM trade_executions te
+JOIN trades t ON t.id = te.trade_id
+WHERE te.execution_id = ? AND te.role = 'entry' AND t.account_id = ? AND t.symbol = ?
+LIMIT 1;
 
 -- name: ClearJournalLinksForAccountSymbol :exec
 UPDATE journal_entries SET trade_id = NULL
@@ -64,7 +89,7 @@ UPDATE journal_entries SET trade_id = ? WHERE id = ?;
 -- runs so the FK ON DELETE CASCADE doesn't permanently lose them - we
 -- re-INSERT after the FIFO rebuild lands fresh trade rows with the same
 -- entry_time, mirroring the trade-scope relink dance above.
-SELECT jet.journal_entry_id, t.entry_time
+SELECT jet.journal_entry_id, jet.trade_id, t.entry_time
 FROM journal_entry_trades jet
 JOIN trades t ON t.id = jet.trade_id
 WHERE t.account_id = ? AND t.symbol = ?;

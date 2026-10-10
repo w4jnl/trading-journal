@@ -154,7 +154,7 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64, forceR
 		   FROM trades
 		  WHERE account_id = ?
 		    AND (exit_time IS NULL OR exit_time >= ?)`,
-		accountID, cutoff)
+		accountID, cutoff.UTC()) // stored as UTC text; a local instant would compare as if it were UTC
 	if err != nil {
 		p.logger().Warn("marketdata: prefetch enumerate trades", "account_id", accountID, "err", err)
 		return
