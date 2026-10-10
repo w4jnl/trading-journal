@@ -383,12 +383,14 @@
     return gexData.gex.map((v) => (run += v));
   }
 
-  // Profile bin control: the canonical 5/10/25/50-point widths, re-binned
-  // CLIENT-side by summing net GEX into coarser index-space buckets (exact -
-  // GEX is additive; the snapshot endpoint has no ?bucket=). Widths finer
-  // than the snapshot's native grid, or not integer multiples of it, render
-  // disabled. The choice sticks per market for the session. The cumulative
-  // chart always stays native - a finer running sum is strictly better.
+  // Profile bin control: the market's width ladder (server-side
+  // gexCanonLadder: ES 5/10/25/50, NQ 10/20/50/100 - the stored grid and its
+  // 2x/5x/10x), re-binned CLIENT-side by summing net GEX into coarser
+  // index-space buckets (exact - GEX is additive; the snapshot endpoint has
+  // no ?bucket=). Widths finer than the snapshot's native grid, or not
+  // integer multiples of it, render disabled. The choice sticks per market
+  // for the session. The cumulative chart always stays native - a finer
+  // running sum is strictly better.
   let gexBin = 0; // 0 = native grid
   try {
     // localStorage so the choice survives new windows; read the old
@@ -418,19 +420,20 @@
     const seg = document.getElementById('gx-bin-seg');
     if (!seg) return;
     const nw = Math.round((gexData && gexData.nativeW) || 0);
+    const ladder = (gexData && gexData.binLadder && gexData.binLadder.length) ? gexData.binLadder : [5, 10, 25, 50];
     // Hide on degenerate grids (sparse test/legacy profiles): a native
-    // width beyond the canonical ladder has nothing to offer.
-    if (!nw || nw > 50) { seg.style.display = 'none'; return; }
+    // width beyond the market's ladder has nothing to offer.
+    if (!nw || nw > ladder[ladder.length - 1]) { seg.style.display = 'none'; return; }
     seg.style.display = 'inline-flex';
     const act = (gexBin > nw && gexBin % nw === 0) ? gexBin : nw;
     let html = '';
-    [5, 10, 25, 50].forEach(function (w) {
+    ladder.forEach(function (w) {
       const ok = w === nw || (w > nw && w % nw === 0);
       if (ok) {
         html += '<button type="button" data-bin="' + w + '"' + (w === act ? ' class="on"' : '') +
           ' title="' + w + '-point index buckets' + (w === nw ? ' (native grid)' : '') + '">' + w + '</button>';
       } else {
-        html += '<button type="button" disabled title="' + w + '-point buckets need a snapshot stored on a compatible finer grid — 5-point storage starts with engine v0.8.0 data">' + w + '</button>';
+        html += '<button type="button" disabled title="' + w + '-point buckets need a snapshot stored on a finer grid this width is a multiple of — the engine stores ES at 5 points since v0.8.0 (10 before), NQ at 10">' + w + '</button>';
       }
     });
     seg.innerHTML = html;

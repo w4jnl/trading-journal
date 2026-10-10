@@ -99,6 +99,10 @@ type gexChart struct {
 	// endpoint has no ?bucket=, so aggregation is client-side.
 	NativeW float64 `json:"nativeW"`
 	Ratio   float64 `json:"ratio"`
+	// BinLadder is the market's bucket-width ladder for the bin control
+	// (gexCanonLadder) - the client greys out widths the native grid
+	// cannot serve, exactly like the Exposure tab's control.
+	BinLadder []int `json:"binLadder"`
 }
 
 // gexLadder is the numeric model behind the vertical regime-ladder panel:
@@ -1114,6 +1118,7 @@ func gexBuildChart(s *gex.Snapshot, spotFut *float64) gexChart {
 			ch.NativeW = d
 		}
 	}
+	ch.BinLadder = gexCanonLadder(s.Market, int(math.Round(ch.NativeW)))
 	cw, pw := gexWall(s, "call_wall"), gexWall(s, "put_wall")
 	if cw != nil {
 		ch.CW = &cw.Index

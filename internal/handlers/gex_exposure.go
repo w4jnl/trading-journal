@@ -96,11 +96,12 @@ type gexExpo struct {
 	IndexName string  `json:"indexName"`
 	// BucketIndex is the served grid in raw INDEX points (BucketWidth is
 	// futures-scaled); BucketBase/BucketOpts drive the width control: the
-	// canonical 5-10-25-50 ladder, each width flagged servable or not
-	// (finer than the stored grid, or not an integer multiple of it).
-	// Unservable widths render disabled rather than hidden, so the
-	// control reads the same every day - today's pre-v0.8.0 snapshots
-	// gray out 5 and 25; tomorrow's 5-point grid enables everything.
+	// market's ladder (gexCanonLadder: ES 5-10-25-50, NQ 10-20-50-100),
+	// each width flagged servable or not (finer than the stored grid, or
+	// not an integer multiple of it). Unservable widths render disabled
+	// rather than hidden, so the control reads the same every day - an ES
+	// row stored at 10 before engine v0.8.0 grays out 5 and 25; today's
+	// 5-point grid enables everything.
 	BucketIndex float64            `json:"bucketIndex"`
 	BucketBase  int                `json:"bucketBase"`
 	BucketOpts  []gexExpoBucketOpt `json:"bucketOpts"`
@@ -124,22 +125,46 @@ type gexExpoBucketOpt struct {
 	Ok bool `json:"ok"`
 }
 
-// gexBucketOpts builds the canonical 5-10-25-50 width ladder for a stored
-// base width: a width is servable when it IS the base or a coarser integer
-// multiple of it (the engine's ?bucket= contract). A base outside the
-// ladder (unexpected) is prepended so the native grid is always offered.
-func gexBucketOpts(base int) []gexExpoBucketOpt {
+// gexBucketMax is the engine's ?bucket= ceiling (index points).
+const gexBucketMax = 100
+
+// gexCanonLadder is a market's width ladder (index points): the stored grid
+// and its 2x / 5x / 10x. The grid follows the index leg's listed strike
+// spacing near the money - SPX strikes sit 5 points apart, NDX 10 - so the
+// ladders differ per market and stay fixed per market, which keeps the
+// control reading the same on every row. An unknown market derives its
+// ladder from the row's own stored width.
+func gexCanonLadder(market string, base int) []int {
+	switch strings.ToUpper(market) {
+	case "ES", "SPX":
+		return []int{5, 10, 25, 50}
+	case "NQ", "NDX":
+		return []int{10, 20, 50, 100}
+	}
+	if base > 0 {
+		return []int{base, 2 * base, 5 * base, 10 * base}
+	}
+	return []int{5, 10, 25, 50}
+}
+
+// gexBucketOpts builds the market's width ladder for a stored base width: a
+// width is servable when it IS the base or a coarser integer multiple of it
+// within the engine's ceiling (the ?bucket= contract) - so an ES row stored
+// at 10 before engine v0.8.0 greys out 5 and 25 while today's 5-point rows
+// enable everything. A base outside the ladder (unexpected) is prepended so
+// the native grid is always offered.
+func gexBucketOpts(market string, base int) []gexExpoBucketOpt {
 	if base <= 0 {
 		return nil
 	}
-	canon := []int{5, 10, 25, 50}
+	canon := gexCanonLadder(market, base)
 	opts := make([]gexExpoBucketOpt, 0, len(canon)+1)
 	seen := false
 	for _, w := range canon {
 		if w == base {
 			seen = true
 		}
-		opts = append(opts, gexExpoBucketOpt{W: w, Ok: w == base || (w > base && w%base == 0)})
+		opts = append(opts, gexExpoBucketOpt{W: w, Ok: w == base || (w > base && w%base == 0 && w <= gexBucketMax)})
 	}
 	if !seen {
 		opts = append([]gexExpoBucketOpt{{W: base, Ok: true}}, opts...)
@@ -468,7 +493,7 @@ func gexBuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *tim
 	}
 	e.BucketIndex = pd.BucketWidth
 	e.BucketBase = int(math.Round(pd.BucketWidth))
-	e.BucketOpts = gexBucketOpts(e.BucketBase)
+	e.BucketOpts = gexBucketOpts(pd.Market, e.BucketBase)
 
 	// Denomination: identical futures-first rule as the overview charts.
 	// The profile payload's own futures fields (engine v0.7.0+) win, so the
