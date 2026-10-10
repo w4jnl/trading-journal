@@ -348,6 +348,7 @@ func (h *Handlers) gexAttachAnalysis(ctx context.Context, v *gexView, market str
 // with the analysis fragment for an in-place HTMX swap, so the page keeps its
 // scrub position. ?force=1 regenerates and replaces the stored text.
 func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
+	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
 	if h.GEX == nil || h.AI == nil {
 		http.NotFound(w, r)
 		return

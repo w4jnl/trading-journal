@@ -83,6 +83,7 @@ func (h *Handlers) AIDayCancel(w http.ResponseWriter, r *http.Request) {
 // the entry view, so swapping only the view would hide it - and the Analyze button then
 // hides itself (the entry is now marked). Matches how Save already behaves on these pages.
 func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
+	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
 	if h.AIJobs == nil {
 		http.NotFound(w, r)
 		return
@@ -108,6 +109,7 @@ func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
 // fits (never overwriting yours). Re-renders the trade sheet in place (like Save) so the
 // analysis appears inline and the sheet stays open.
 func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
+	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
 	if h.AIJobs == nil {
 		http.NotFound(w, r)
 		return

@@ -61,7 +61,7 @@ func renderMarkdownDoc(src string) (string, []mdHeading) {
 // request arrived on, so every curl line is copy-pasteable as-is.
 func (h *Handlers) APIDocsPage(w http.ResponseWriter, r *http.Request) {
 	md := string(tj.APIDoc)
-	base := requestBaseURL(r)
+	base := h.publicBaseURL(r)
 	if base != "" {
 		md = strings.ReplaceAll(md, "https://YOUR_HOST", base)
 	} else {

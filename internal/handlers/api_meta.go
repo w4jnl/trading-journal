@@ -55,7 +55,7 @@ func (h *Handlers) APIIndex(w http.ResponseWriter, r *http.Request) {
 // Falls back to the embedded relative URL when the host can't be determined.
 func (h *Handlers) APIOpenAPI(w http.ResponseWriter, r *http.Request) {
 	spec := apiOpenAPISpec
-	if base := requestBaseURL(r); base != "" {
+	if base := h.publicBaseURL(r); base != "" {
 		spec = bytes.Replace(spec, []byte(`"url": "/api/v1"`), []byte(`"url": "`+base+`/api/v1"`), 1)
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")

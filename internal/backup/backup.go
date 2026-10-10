@@ -37,6 +37,13 @@ type Options struct {
 
 var archiveDateRe = regexp.MustCompile(`^backup-(\d{4}-\d{2}-\d{2})\.tar\.gz$`)
 
+// Pre-migration archives: written right before a schema change so a release
+// can be rolled back to the exact pre-upgrade state. Named by date and the
+// newest pending migration version; the newest keepPreMigrate are kept.
+var preMigrateRe = regexp.MustCompile(`^pre-migrate-(\d{4}-\d{2}-\d{2})-(\d+)\.tar\.gz$`)
+
+const keepPreMigrate = 3
+
 // Schedule runs an initial backup immediately (deduped: skipped if today's
 // archive already exists), then fires daily at o.Hour local time until ctx is
 // cancelled. Backup failures are logged, never fatal.
@@ -72,23 +79,36 @@ func nextRun(now time.Time, hour int, loc *time.Location) time.Time {
 // no-op (returns nil) when today's archive already exists, so frequent restarts
 // don't accumulate backups.
 func RunOnce(ctx context.Context, o Options) error {
+	date := time.Now().In(o.Loc).Format("2006-01-02")
+	return runArchive(ctx, o, "backup-"+date+".tar.gz")
+}
+
+// RunPreMigration writes pre-migrate-<date>-<version>.tar.gz before the
+// schema changes (version = the newest pending migration). Deduped like
+// RunOnce, so a crash-loop during an upgrade does not pile up archives.
+func RunPreMigration(ctx context.Context, o Options, version string) error {
+	date := time.Now().In(o.Loc).Format("2006-01-02")
+	return runArchive(ctx, o, "pre-migrate-"+date+"-"+version+".tar.gz")
+}
+
+// runArchive snapshots the database and writes the named archive into
+// o.Dir, skipping when it already exists, then prunes.
+func runArchive(ctx context.Context, o Options, name string) error {
 	if err := os.MkdirAll(o.Dir, 0o755); err != nil {
 		return fmt.Errorf("mkdir backup dir: %w", err)
 	}
-	date := time.Now().In(o.Loc).Format("2006-01-02")
-	target := filepath.Join(o.Dir, "backup-"+date+".tar.gz")
+	target := filepath.Join(o.Dir, name)
 	if _, err := os.Stat(target); err == nil {
-		slog.Debug("backup skipped; today's archive exists", "file", target)
+		slog.Debug("backup skipped; archive exists", "file", target)
 		return nil
 	}
-
 	snapshot := filepath.Join(o.Dir, fmt.Sprintf(".snapshot-%d.db", os.Getpid()))
 	if err := vacuumInto(ctx, o.DB, snapshot); err != nil {
 		return fmt.Errorf("snapshot db: %w", err)
 	}
 	defer os.Remove(snapshot)
 
-	tmp := filepath.Join(o.Dir, ".tmp-"+date+".tar.gz")
+	tmp := filepath.Join(o.Dir, ".tmp-"+name)
 	if err := writeArchive(tmp, snapshot, o); err != nil {
 		os.Remove(tmp)
 		return fmt.Errorf("write archive: %w", err)
@@ -101,6 +121,33 @@ func RunOnce(ctx context.Context, o Options) error {
 
 	if err := prune(o.Dir); err != nil {
 		slog.Warn("backup prune failed", "err", err)
+	}
+	if err := prunePreMigrate(o.Dir); err != nil {
+		slog.Warn("pre-migration prune failed", "err", err)
+	}
+	return nil
+}
+
+// prunePreMigrate keeps the newest keepPreMigrate pre-migration archives.
+func prunePreMigrate(dir string) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return err
+	}
+	var names []string
+	for _, e := range entries {
+		if !e.IsDir() && preMigrateRe.MatchString(e.Name()) {
+			names = append(names, e.Name())
+		}
+	}
+	sort.Sort(sort.Reverse(sort.StringSlice(names))) // date then version: lexical = chronological
+	for i, n := range names {
+		if i < keepPreMigrate {
+			continue
+		}
+		if err := os.Remove(filepath.Join(dir, n)); err != nil {
+			slog.Warn("prune remove failed", "file", n, "err", err)
+		}
 	}
 	return nil
 }
@@ -126,7 +173,9 @@ func vacuumInto(ctx context.Context, db *sql.DB, dst string) error {
 // attachments dir, the imports processed/failed audit trail, and config.yaml.
 // Missing sources are skipped silently (e.g. attachments before first upload).
 func writeArchive(path, snapshot string, o Options) error {
-	f, err := os.Create(path)
+	// 0600: the archive carries config.yaml and with it the session secret,
+	// the broker-credential encryption key and the API keys.
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
 	if err != nil {
 		return err
 	}
