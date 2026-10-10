@@ -146,7 +146,7 @@ func TestGexAnnotate(t *testing.T) {
 
 	gexSeedEntry(t, db, 1, aiPlaceholderBody)
 	ann := &gexAnnotator{h: h}
-	ann.annotate(ctx, 1, gexTestTrade("MES"))
+	ann.Annotate(ctx, 1, gexTestTrade("MES"))
 
 	body := gexEntryBody(t, db, 1)
 	if calls.Load() != 2 {
@@ -183,7 +183,7 @@ func TestGexAnnotate(t *testing.T) {
 	}
 
 	// Idempotent: a fresh pass sees the marker and never re-fetches.
-	(&gexAnnotator{h: h}).annotate(ctx, 1, gexTestTrade("MES"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, gexTestTrade("MES"))
 	if calls.Load() != 2 {
 		t.Errorf("re-annotate fetched again: calls = %d", calls.Load())
 	}
@@ -193,7 +193,7 @@ func TestGexAnnotate(t *testing.T) {
 
 	// Non-ES/NQ roots produce no gamma noise and no fetches.
 	gexSeedEntry(t, db, 2, aiPlaceholderBody)
-	(&gexAnnotator{h: h}).annotate(ctx, 2, gexTestTrade("CL"))
+	(&gexAnnotator{h: h}).Annotate(ctx, 2, gexTestTrade("CL"))
 	if calls.Load() != 2 {
 		t.Errorf("CL trade hit the engine: calls = %d", calls.Load())
 	}
@@ -215,7 +215,7 @@ func TestGexAnnotateErrors(t *testing.T) {
 	h := gexTestHandlers(t, db, srv404.URL)
 	gexSeedEntry(t, db, 1, aiPlaceholderBody)
 	ann := &gexAnnotator{h: h}
-	ann.annotate(ctx, 1, gexTestTrade("MES"))
+	ann.Annotate(ctx, 1, gexTestTrade("MES"))
 	if ann.broken {
 		t.Error("404 must not trip the annotator (expected pre-history skip)")
 	}
@@ -228,11 +228,11 @@ func TestGexAnnotateErrors(t *testing.T) {
 	srvDown.Close()
 	h2 := gexTestHandlers(t, db, srvDown.URL)
 	ann2 := &gexAnnotator{h: h2}
-	ann2.annotate(ctx, 1, gexTestTrade("MES"))
+	ann2.Annotate(ctx, 1, gexTestTrade("MES"))
 	if !ann2.broken {
 		t.Error("transport error did not trip the annotator")
 	}
-	ann2.annotate(ctx, 1, gexTestTrade("MES")) // must return without dialing
+	ann2.Annotate(ctx, 1, gexTestTrade("MES")) // must return without dialing
 	if got := gexEntryBody(t, db, 1); got != aiPlaceholderBody {
 		t.Errorf("broken annotator wrote a body: %q", got)
 	}
@@ -253,7 +253,7 @@ func TestGexAnnotateStale(t *testing.T) {
 	tr := gexTestTrade("MES")
 	tr.EntryTime = time.Date(2026, 7, 31, 7, 0, 0, 0, time.UTC) // 03:00 ET
 	tr.ExitTime = time.Date(2026, 7, 31, 7, 30, 0, 0, time.UTC)
-	(&gexAnnotator{h: h}).annotate(ctx, 1, tr)
+	(&gexAnnotator{h: h}).Annotate(ctx, 1, tr)
 
 	body := gexEntryBody(t, db, 1)
 	for _, want := range []string{

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -316,7 +317,6 @@ func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	tz := h.localTZ()
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
@@ -333,71 +333,20 @@ func (h *Handlers) GroupJournalCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// entry_date = max(exit_time) across the selected trades in trading tz.
-	// ORDER BY ... LIMIT 1 (not MAX(exit_time)) keeps the scan path on a
-	// typed column — same workaround as pickDashboardDate.
-	placeholders := strings.Repeat("?,", len(ids))
-	placeholders = placeholders[:len(placeholders)-1]
-	args := make([]any, 0, len(ids))
-	for _, id := range ids {
-		args = append(args, id)
-	}
-	// Scope the trade lookup by user so the "find latest exit" query can't
-	// surface a trade the user doesn't own (the trade id came from the form).
-	scopedArgs := append([]any{userID(ctx)}, args...)
-	var maxExit time.Time
-	row := h.DB.QueryRowContext(ctx,
-		"SELECT t.exit_time FROM trades t JOIN accounts a ON a.id = t.account_id WHERE a.user_id = ? AND t.id IN ("+placeholders+") AND t.exit_time IS NOT NULL ORDER BY t.exit_time DESC LIMIT 1",
-		scopedArgs...,
-	)
-	if err := row.Scan(&maxExit); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			maxExit = time.Now().In(tz)
-		} else {
-			h.serverError(w, fmt.Errorf("find max exit: %w", err))
-			return
-		}
-	}
-	y, m, d := maxExit.In(tz).Date()
-	entryDate := time.Date(y, m, d, 0, 0, 0, 0, tz)
-
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("begin: %w", err))
+	// The service keeps only the caller's trades (a guessed or foreign id
+	// never joins the group), dates the entry at their latest exit, and
+	// creates entry + links in one transaction.
+	entry, err := h.journalSvc().CreateGroup(ctx, userID(ctx), ids)
+	if errors.Is(err, journal.ErrNoOwnedTrades) {
+		http.Error(w, "select at least one trade", http.StatusBadRequest)
 		return
 	}
-	defer tx.Rollback()
-	q := h.Queries.WithTx(tx)
-	entry, err := q.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-		UserID:    userIDPtr(ctx),
-		TradeID:   nil,
-		AccountID: nil,
-		EntryDate: entryDate,
-		Body:      "",
-		Mood:      nil,
-		Tag:       nil,
-		Scope:     "group",
-	})
 	if err != nil {
 		h.serverError(w, fmt.Errorf("create group entry: %w", err))
 		return
 	}
-	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx,
-			"INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)",
-			entry.ID, id,
-		); err != nil {
-			h.serverError(w, fmt.Errorf("link trade %d: %w", id, err))
-			return
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		h.serverError(w, fmt.Errorf("commit: %w", err))
-		return
-	}
 
 	target := fmt.Sprintf("/journal/group/%d", entry.ID)
-	h.LiveData.Bump(userID(ctx))
 
 	if back := r.FormValue("back"); auth.SafeLocalPath(back) {
 		v := url.Values{}
@@ -566,28 +515,12 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
 	strategyID := h.parseStrategyID(r)
-	if body == "" {
-		if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: id, UserID: userIDPtr(ctx)}); err != nil {
-			h.serverError(w, fmt.Errorf("delete group: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
-		http.Redirect(w, r, redirectTo("deleted"), http.StatusSeeOther)
+	out, err := h.journalSvc().SaveGroup(ctx, userID(ctx), id, body, tag, strategyID)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("save group: %w", err))
 		return
 	}
-	if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-		UserID:     userIDPtr(ctx),
-		Body:       body,
-		Mood:       nil,
-		Tag:        tag,
-		StrategyID: strategyID,
-		ID:         id,
-	}); err != nil {
-		h.serverError(w, fmt.Errorf("update group: %w", err))
-		return
-	}
-	h.journalChanged(ctx)
-	http.Redirect(w, r, redirectTo("saved"), http.StatusSeeOther)
+	http.Redirect(w, r, redirectTo(string(out)), http.StatusSeeOther)
 }
 
 // GroupJournalDelete handles POST /journal/group/{id}/delete — explicit
@@ -607,11 +540,10 @@ func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad form", http.StatusBadRequest)
 		return
 	}
-	if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: entryID, UserID: userIDPtr(ctx)}); err != nil {
+	if err := h.journalSvc().Delete(ctx, userID(ctx), entryID); err != nil {
 		h.serverError(w, fmt.Errorf("delete group: %w", err))
 		return
 	}
-	h.journalChanged(ctx)
 	q := url.Values{}
 	q.Set("flash", "deleted")
 	target := "/journal"
@@ -663,53 +595,18 @@ func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Ownership: the group entry must belong to the caller.
-	var ownEntry int64
-	if err := h.DB.QueryRowContext(ctx,
-		"SELECT 1 FROM journal_entries WHERE id = ? AND user_id = ? AND scope = 'group'",
-		entryID, userID(ctx),
-	).Scan(&ownEntry); err != nil {
+	linked, err := h.journalSvc().LinkTrades(ctx, userID(ctx), entryID, ids)
+	switch {
+	case errors.Is(err, journal.ErrNotFound):
 		http.NotFound(w, r)
 		return
-	}
-	// Keep only trade ids the caller actually owns, so a guessed/foreign id
-	// can't be linked into the user's group entry.
-	owned := make([]int64, 0, len(ids))
-	for _, id := range ids {
-		var ok int64
-		if err := h.DB.QueryRowContext(ctx,
-			"SELECT 1 FROM trades t JOIN accounts a ON a.id = t.account_id WHERE t.id = ? AND a.user_id = ?",
-			id, userID(ctx),
-		).Scan(&ok); err == nil {
-			owned = append(owned, id)
-		}
-	}
-	if len(owned) == 0 {
+	case errors.Is(err, journal.ErrNoOwnedTrades):
 		http.Error(w, "no owned trades to link", http.StatusBadRequest)
 		return
-	}
-	ids = owned
-
-	tx, err := h.DB.BeginTx(ctx, nil)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("begin: %w", err))
+	case err != nil:
+		h.serverError(w, fmt.Errorf("link trades: %w", err))
 		return
 	}
-	defer tx.Rollback()
-	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx,
-			"INSERT OR IGNORE INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (?, ?)",
-			entryID, id,
-		); err != nil {
-			h.serverError(w, fmt.Errorf("link trade %d: %w", id, err))
-			return
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		h.serverError(w, fmt.Errorf("commit: %w", err))
-		return
-	}
-	h.journalChanged(ctx)
 
 	if back := r.FormValue("back"); back != "" && strings.HasPrefix(back, "/") && !strings.HasPrefix(back, "//") {
 		sep := "?"
@@ -717,7 +614,7 @@ func (h *Handlers) GroupJournalLink(w http.ResponseWriter, r *http.Request) {
 			sep = "&"
 		}
 		http.Redirect(w, r,
-			fmt.Sprintf("%s%sflash=grouplinked%%3D%d&group=%d", back, sep, len(ids), entryID),
+			fmt.Sprintf("%s%sflash=grouplinked%%3D%d&group=%d", back, sep, linked, entryID),
 			http.StatusSeeOther)
 		return
 	}
@@ -745,23 +642,14 @@ func (h *Handlers) GroupJournalUnlink(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad trade_id", http.StatusBadRequest)
 		return
 	}
-	// Ownership lives in the predicate: the link is removed only when the
-	// group entry is the caller's. Anything else is a 404, like the link
-	// handler's guard above - a foreign id must not confirm or mutate.
-	res, err := h.DB.ExecContext(ctx,
-		`DELETE FROM journal_entry_trades
-		 WHERE journal_entry_id = ? AND trade_id = ?
-		   AND journal_entry_id IN (SELECT id FROM journal_entries WHERE user_id = ? AND scope = 'group')`,
-		entryID, tradeID, userID(ctx),
-	)
+	ok, err := h.journalSvc().UnlinkTrade(ctx, userID(ctx), entryID, tradeID)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("unlink: %w", err))
 		return
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
-	h.LiveData.Bump(userID(ctx))
 	http.Redirect(w, r, fmt.Sprintf("/journal/group/%d?flash=unlinked", entryID), http.StatusSeeOther)
 }

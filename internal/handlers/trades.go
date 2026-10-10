@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -524,67 +525,16 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 		body = ""
 	}
 
-	// Use the trade's exit date (or entry date if still open) so day-by-date
-	// queries pick this up alongside the trade.
-	trade, err := h.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: tradeID, UserID: userID(ctx)})
-	if err != nil {
+	out, err := h.journalSvc().SaveTrade(ctx, userID(ctx), tradeID, body, tag, strategyID)
+	if errors.Is(err, journal.ErrNotFound) {
 		http.Error(w, "trade not found", http.StatusNotFound)
 		return
 	}
-	entryDate := trade.EntryTime
-	if trade.ExitTime != nil {
-		entryDate = *trade.ExitTime
-	}
-
-	existing, err := h.Queries.GetJournalEntryByTradeID(ctx, &tradeID)
-	flash := "saved"
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		if body == "" {
-			flash = "empty"
-			break
-		}
-		if _, err := h.Queries.CreateJournalEntry(ctx, models.CreateJournalEntryParams{
-			UserID:     userIDPtr(ctx),
-			TradeID:    &tradeID,
-			AccountID:  &trade.AccountID,
-			EntryDate:  entryDate,
-			Body:       body,
-			Mood:       nil,
-			Tag:        tag,
-			Scope:      "trade",
-			StrategyID: strategyID,
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("create trade journal: %w", err))
-			return
-		}
-		h.journalChanged(ctx)
-	case err != nil:
-		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("save trade journal: %w", err))
 		return
-	default:
-		if body == "" {
-			if err := h.Queries.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: existing.ID, UserID: userIDPtr(ctx)}); err != nil {
-				h.serverError(w, fmt.Errorf("delete trade journal: %w", err))
-				return
-			}
-			h.journalChanged(ctx)
-			flash = "deleted"
-		} else {
-			if err := h.Queries.UpdateJournalEntry(ctx, models.UpdateJournalEntryParams{
-				UserID:     userIDPtr(ctx),
-				Body:       body,
-				Mood:       existing.Mood, // preserve mood; trade entries don't expose it in v1
-				Tag:        tag,
-				StrategyID: strategyID,
-				ID:         existing.ID,
-			}); err != nil {
-				h.serverError(w, fmt.Errorf("update trade journal: %w", err))
-				return
-			}
-			h.journalChanged(ctx)
-		}
 	}
+	flash := string(out)
 
 	// HTMX path (centered modal on /trades or /analytics) wants the updated
 	// detail partial so the modal refreshes in place. A plain form submit
