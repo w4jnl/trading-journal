@@ -67,14 +67,7 @@
     if (toastShownFor === v) return; // one toast per version
     toastShownFor = v;
     if (typeof window.toast !== 'function') return;
-    var t = window.toast('New data available — click to refresh', { kind: 'info', duration: 0 });
-    if (t && t.addEventListener) {
-      t.style.cursor = 'pointer';
-      t.addEventListener('click', function () {
-        t.remove();
-        apply();
-      });
-    }
+    window.toast('New data available', { kind: 'info', duration: 0, action: { label: 'Refresh', onClick: apply } });
   }
 
   function check() {

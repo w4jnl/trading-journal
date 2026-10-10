@@ -4,7 +4,7 @@
 {{template "back_button" .}}
 
 <div class="row" style="align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
-  <h1 style="margin: 0;">Open Interest{{if .Selected}} · {{.Selected}}{{end}}</h1>
+  <h1 class="page-title">Open Interest{{if .Selected}} · {{.Selected}}{{end}}</h1>
 
   {{if not .Empty}}
     <div class="row-sm oi-toolbar">

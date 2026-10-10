@@ -572,6 +572,11 @@ hr {
 }
 @media (max-width: 480px) {
   .grid-auto { grid-template-columns: 1fr !important; }
+  /* Value tiles stay two-up: a column of one-number cards wastes a phone
+     screen, and 170px holds "12,345.67" with room. */
+  .grid-auto:has(> .card--compact),
+  .grid-auto:has(> div > .value),
+  .grid-auto:has(> div > .value-lg) { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }
 }
 
 .table-scroll {
@@ -1264,6 +1269,28 @@ a:hover > .icon-journal,
 .toast.toast--warn    { border-left-color: var(--warn); }
 .toast.toast--info    { border-left-color: var(--info); }
 .toast.toast--leaving { animation: toast-out 180ms ease-in forwards; }
+.toast-text { flex: 1; min-width: 0; }
+/* One action per toast: "Refresh", "Open", "Undo". A real control, not a
+   whole-banner click target the user has to discover. */
+.toast-action {
+  flex: 0 0 auto;
+  padding: 2px 9px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--r-sm);
+  background: var(--bg-elev);
+  color: var(--accent-text);
+  font-size: var(--fs-12);
+  font-weight: var(--fw-semibold);
+  line-height: 1.5;
+  height: auto;
+  text-decoration: none;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.toast-action:hover { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+@media (max-width: 600px) {
+  #toast-stack { left: 16px; right: 16px; max-width: none; }
+}
 .toast-close {
   background: transparent;
   border: 0;
@@ -1962,6 +1989,8 @@ tr.trade-row.htmx-request { opacity: 0.55; cursor: progress; }
 .mt-8   { margin-top: 8px; }
 .mt-12  { margin-top: 12px; }
 .mt-16  { margin-top: 16px; }
+.mb-8   { margin-bottom: 8px; }
+.mb-12  { margin-bottom: 12px; }
 .mb-16  { margin-bottom: 16px; }
 .ml-auto { margin-left: auto; }
 .tar    { text-align: right; }
@@ -2113,10 +2142,6 @@ tr.trade-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 .txn-filter .field { min-width: 0; max-width: 100%; }
 .txn-filter select, .txn-filter input { max-width: 100%; }
 
-/* GEX expiry chip strip: 25 chips never wrapped and pushed the card to
-   2,500px on a phone (the charts then sized themselves to that). The strip
-   scrolls on its own line instead. */
-.gxe-expiries { max-width: 100%; overflow-x: auto; scrollbar-width: thin; }
 
 /* ---- Review pass (2026-10) ------------------------------------------------ */
 
@@ -2145,3 +2170,87 @@ tr.trade-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -
 tr.fanout.open .fanout-caret { transform: rotate(90deg); }
 tr.fanout-member td { background: var(--bg-sunken); }
 tr.fanout-member td:first-child { padding-left: 28px; }
+
+/* ---- Primitives: page title, toolbar, segmented control, chip ------------ */
+
+/* A page heading that sits in a flex row with its controls (toolbar,
+   .row-between): no bottom margin, the row owns the spacing. */
+.page-title { margin: 0; }
+
+/* Toolbar: heading + controls on one wrapping line; a form inside sits at
+   the far end (market pickers, "as of" inputs). */
+.toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.toolbar > form { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+/* Segmented control: a row of mutually exclusive links or buttons. The
+   active segment carries .active (links) or .on (buttons). */
+.seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--r-sm); overflow: hidden; }
+.seg > a, .seg > button {
+  padding: 5px 14px; font-size: var(--fs-13); line-height: 1.4; text-decoration: none;
+  color: var(--fg-muted); background: none; border: 0; border-radius: 0; height: auto; cursor: pointer; font: inherit; font-size: var(--fs-13);
+}
+.seg > a:hover, .seg > button:hover { color: var(--fg); background: var(--bg-hover); }
+.seg > a.active, .seg > button.on { background: var(--accent-soft); color: var(--accent-text); font-weight: var(--fw-semibold); }
+
+/* Chip: a selectable pill (filters, tag pickers). Pages add the selected
+   state colours; the base only sets shape and the hover affordance. */
+.chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px;
+  border: 1.5px solid var(--border); border-radius: var(--r-pill); font-size: var(--fs-12);
+  color: var(--fg-muted); cursor: pointer; user-select: none;
+  transition: background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.chip:hover { border-color: var(--border-strong); color: var(--fg); }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; }
+
+/* Tag picker (journal good / neutral / bad / none), shared by every journal
+   scope and the trade sheet. Was inline in the tag_picker partial, so it
+   was re-sent with every page that used it. */
+.tag-picker { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.tag-picker .chip {
+  padding: 6px 12px; border-width: 2px; font-weight: var(--fw-medium); opacity: 0.55;
+  transition: transform var(--t-fast), opacity var(--t-fast), background var(--t-fast), border-color var(--t-fast), color var(--t-fast);
+}
+.tag-picker .chip:hover { opacity: 0.85; }
+.tag-picker .chip input[type=radio] { display: none; }
+.tag-picker .chip .icon { width: 14px; height: 14px; }
+/* Selected: full-colour fill, white text, a leading checkmark and a slight
+   lift. tag_picker.js toggles .chip-on on change; the server renders it for
+   the initial paint, so the state never depends on :has(). */
+.tag-picker .chip.chip-on { color: #ffffff !important; font-weight: var(--fw-bold); opacity: 1; transform: translateY(-1px); }
+.tag-picker .chip.chip-on::before { content: "\2713  "; font-weight: 800; }
+.tag-picker .chip.chip-on.tag-good    { background: var(--pos);       border-color: var(--pos); }
+.tag-picker .chip.chip-on.tag-bad     { background: var(--neg);       border-color: var(--neg); }
+.tag-picker .chip.chip-on.tag-neutral { background: var(--fg-muted);  border-color: var(--fg-muted); }
+.tag-picker .chip.chip-on.tag-none    { background: var(--fg-subtle); border-color: var(--fg-subtle); }
+
+/* ---- GEX shared chrome (Overview + Exposure) ----------------------------- */
+
+/* Time scrub: a full-width range input over the recent session grid. The
+   fixed label width keeps the flex slider from resizing mid-drag (a growing
+   label would move the thumb under the cursor). */
+.gex-scrub { display: flex; align-items: center; gap: 12px; padding: 8px 14px; }
+.gex-scrub input[type=range] { flex: 1; accent-color: var(--accent); }
+.gex-scrub .gex-scrub-when { font-family: "JetBrains Mono", monospace; font-size: var(--fs-12); width: 168px; flex: 0 0 168px; text-align: right; white-space: nowrap; }
+
+/* Expiry chip strip (built by /static/js/gex-chips.js on both tabs). Live
+   chips are bordered pills - clickable things look clickable; locked chips
+   are plain columns split by hairlines; a ghost chip is a selected date the
+   viewed book does not offer (still clickable so it can be dropped). The
+   strip scrolls on its own line: 25 chips never wrapped and once pushed a
+   phone layout to 2,500px. */
+.gxe-expiries { display: flex; align-items: stretch; gap: 2px; max-width: 100%; overflow-x: auto; scrollbar-width: thin; padding-bottom: 2px; }
+.gxe-chip { flex: 0 0 auto; display: inline-flex; flex-direction: column; justify-content: center; gap: 2px; padding: 4px 10px; font-size: var(--fs-11); white-space: nowrap; border-radius: var(--r-sm); }
+.gxe-chip b { font-size: var(--fs-11); line-height: 1.2; color: var(--fg); font-weight: var(--fw-semibold); }
+.gxe-chip .gxe-chip-nums { display: flex; align-items: baseline; gap: 5px; line-height: 1.2; }
+.gxe-chip .num { font-size: 10px; }
+.gxe-chip .gxe-pct { font-size: 10px; color: var(--fg-muted); }
+.gxe-chip--pos .num { color: var(--pos-text); }
+.gxe-chip--neg .num { color: var(--neg-text); }
+button.gxe-chip--live { border: 1px solid var(--border); background: none; cursor: pointer; text-align: left; font: inherit; height: auto; }
+button.gxe-chip--live:hover { border-color: var(--accent); }
+button.gxe-chip--live.on { border-color: var(--accent); background: var(--accent-soft); }
+button.gxe-chip--live.on b { color: var(--accent-text); }
+.gxe-chip--locked { border: 0; border-left: 1px solid var(--border); border-radius: 0; opacity: 0.65; }
+.gxe-chip--locked b { color: var(--fg-muted); font-weight: var(--fw-medium); }
+button.gxe-chip--ghost { border-style: dashed; opacity: 0.75; }
