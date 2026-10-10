@@ -211,3 +211,39 @@ func TestServiceSavesAndLinks(t *testing.T) {
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+// Accounts hidden in Settings stay out of prepare-day: neither their trades
+// nor the days only they traded on surface.
+func TestHiddenAccountsStayOutOfPrepareDay(t *testing.T) {
+	conn := dbtest.Open(t, "boot")
+	uid := dbtest.BootstrapUserID(t, conn, "boot")
+	for _, stmt := range []string{
+		`INSERT INTO accounts (id, user_id, name, import_source, account_ref, excluded_from_stats) VALUES
+			(1, ` + itoa(uid) + `, 'visible', 'motivewave_csv', 'A-1', 0), (2, ` + itoa(uid) + `, 'hidden', 'motivewave_csv', 'A-2', 1)`,
+		`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status, net_pnl) VALUES
+			(10, 1, 'ESU6', 'ES', 'long', 1, 100, 101, '2026-10-08 14:00:00 +0000 UTC', '2026-10-08 15:00:00 +0000 UTC', 'closed', 50),
+			(20, 2, 'ESU6', 'ES', 'long', 1, 100, 101, '2026-10-08 16:00:00 +0000 UTC', '2026-10-08 17:00:00 +0000 UTC', 'closed', 500),
+			(21, 2, 'ESU6', 'ES', 'short', 1, 100, 99, '2026-10-09 16:00:00 +0000 UTC', '2026-10-09 17:00:00 +0000 UTC', 'closed', 500)`,
+	} {
+		if _, err := conn.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	s := &Service{DB: conn, Q: models.New(conn), TZ: func() *time.Location { return time.UTC }}
+	ctx := context.Background()
+	day := time.Date(2026, 10, 8, 0, 0, 0, 0, time.UTC)
+	trades, err := s.LoadDayTrades(ctx, uid, day)
+	if err != nil || len(trades) != 1 || trades[0].ID != 10 {
+		t.Errorf("LoadDayTrades = %+v (%v), want only trade 10", trades, err)
+	}
+	if last, err := s.LastTradingDay(ctx, uid); err != nil || !last.Equal(day) {
+		t.Errorf("LastTradingDay = %v (%v), want %v (the hidden account's 9th does not count)", last, err, day)
+	}
+	res, err := s.PrepareDay(ctx, uid, "2026-10-08")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Entries) != 1 || res.Entries[0].TradeIDs[0] != 10 {
+		t.Errorf("PrepareDay entries = %+v, want one for trade 10", res.Entries)
+	}
+}

@@ -151,13 +151,16 @@ func (s *Service) PrepareDay(ctx context.Context, userID int64, dateStr string) 
 }
 
 // LastTradingDay returns the trading-tz date of the user's most recent
-// closed trade strictly before today (zero time if none).
+// closed trade strictly before today (zero time if none). Accounts hidden in
+// Settings (excluded_from_stats) do not count, here or in LoadDayTrades: the
+// flag keeps an account out of the default views, and the journal's
+// prepare-day is one of them.
 func (s *Service) LastTradingDay(ctx context.Context, userID int64) (time.Time, error) {
 	tz := s.tz()
 	var et time.Time
 	err := s.DB.QueryRowContext(ctx,
 		`SELECT t.exit_time FROM trades t JOIN accounts a ON a.id = t.account_id
-		 WHERE a.user_id = ? AND a.active = 1 AND t.status = 'closed' AND t.exit_time IS NOT NULL AND t.exit_time < ?
+		 WHERE a.user_id = ? AND a.active = 1 AND a.excluded_from_stats = 0 AND t.status = 'closed' AND t.exit_time IS NOT NULL AND t.exit_time < ?
 		 ORDER BY t.exit_time DESC LIMIT 1`, userID, todayIn(tz).UTC()).Scan(&et)
 	if errors.Is(err, sql.ErrNoRows) {
 		return time.Time{}, nil
@@ -178,7 +181,7 @@ func (s *Service) LoadDayTrades(ctx context.Context, userID int64, day time.Time
 	rows, err := s.DB.QueryContext(ctx, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.entry_time, t.entry_price, t.exit_time, t.exit_price, t.account_id, a.name, t.net_pnl
 		FROM trades t JOIN accounts a ON a.id = t.account_id
-		WHERE t.status = 'closed' AND t.exit_time IS NOT NULL AND a.active = 1 AND a.user_id = ?
+		WHERE t.status = 'closed' AND t.exit_time IS NOT NULL AND a.active = 1 AND a.excluded_from_stats = 0 AND a.user_id = ?
 		  AND t.exit_time >= ? AND t.exit_time < ?
 		ORDER BY t.entry_time ASC, t.id ASC`, userID, fromU, toU)
 	if err != nil {
