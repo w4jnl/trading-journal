@@ -111,38 +111,34 @@ func (h *Handlers) listTradesForReconcile(ctx context.Context, uid int64, f txnF
 		t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl,
 		(SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id LIMIT 1) AS journal_entry_id,
 		(SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count
-		FROM trades t JOIN accounts a ON a.id = t.account_id
-		WHERE a.user_id = ? AND t.status = 'closed'`)
-	args := []any{uid}
+		FROM trades t JOIN accounts a ON a.id = t.account_id WHERE `)
+	w := whereUser(ownsAccountsSQL, uid).and("t.status = 'closed'")
 	if f.AccountID != 0 {
-		b.WriteString(" AND t.account_id = ?")
-		args = append(args, f.AccountID)
+		w.and("t.account_id = ?", f.AccountID)
 	}
 	if f.Symbol != "" {
-		b.WriteString(" AND (t.symbol = ? OR t.symbol_root = ?)")
-		args = append(args, f.Symbol, f.Symbol)
+		w.and("(t.symbol = ? OR t.symbol_root = ?)", f.Symbol, f.Symbol)
 	}
 	// Overlap test on trading-tz days expressed as UTC instants (daybounds.go).
 	tz := h.localTZ()
 	if d, ok := parseLocalDay(f.From, tz); ok {
-		b.WriteString(" AND COALESCE(t.exit_time, t.entry_time) >= ?")
-		args = append(args, d.UTC())
+		w.and("COALESCE(t.exit_time, t.entry_time) >= ?", d.UTC())
 	}
 	if d, ok := parseLocalDay(f.To, tz); ok {
-		b.WriteString(" AND t.entry_time < ?")
-		args = append(args, d.AddDate(0, 0, 1).UTC())
+		w.and("t.entry_time < ?", d.AddDate(0, 0, 1).UTC())
 	}
 	// Outcome by net P&L sign; stub instruments (NULL P&L) match none of them.
 	switch f.Outcome {
 	case "win":
-		b.WriteString(" AND t.net_pnl > 0")
+		w.and("t.net_pnl > 0")
 	case "loss":
-		b.WriteString(" AND t.net_pnl < 0")
+		w.and("t.net_pnl < 0")
 	case "flat":
-		b.WriteString(" AND t.net_pnl = 0")
+		w.and("t.net_pnl = 0")
 	}
+	b.WriteString(w.sql())
 	b.WriteString(" ORDER BY t.entry_time DESC, t.id DESC LIMIT ?")
-	args = append(args, reconTradesLimit)
+	args := append(w.args, reconTradesLimit)
 
 	rows, err := h.DB.QueryContext(ctx, b.String(), args...)
 	if err != nil {

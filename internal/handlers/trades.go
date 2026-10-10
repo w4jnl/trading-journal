@@ -777,77 +777,56 @@ func countTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (int64
 const tradeHoldDaysSQL = "(julianday(substr(t.exit_time,1,19)) - julianday(substr(t.entry_time,1,19)))"
 
 func buildWhere(f tradeFilters, uid int64) (string, []any) {
-	clauses := []string{"t.status = 'closed'"}
-	// Scope to the user's accounts up front.
-	clauses = append(clauses, "t.account_id IN (SELECT id FROM accounts WHERE user_id = ?)")
-	args := []any{uid}
+	w := whereUser(ownsTradesSQL, uid).and("t.status = 'closed'")
 	if !f.IncludeRetired {
-		clauses = append(clauses, "t."+retiredAccountFilterSQL)
+		w.and("t." + retiredAccountFilterSQL)
 	}
 	// Settings account visibility: hidden accounts leave the DEFAULT list;
 	// an explicit account filter (Active) is the override, same rule as
 	// Calendar/Analytics.
 	if !f.Account.Active && !f.IncludeHidden {
-		clauses = append(clauses, "t."+hiddenAccountFilterSQL)
+		w.and("t." + hiddenAccountFilterSQL)
 	}
 	if f.Account.Active {
-		if len(f.Account.AccountIDs) == 0 {
-			// User requested a filter but no accounts match — return zero rows.
-			clauses = append(clauses, "1 = 0")
-		} else {
-			placeholders := strings.Repeat("?,", len(f.Account.AccountIDs))
-			placeholders = placeholders[:len(placeholders)-1]
-			clauses = append(clauses, "t.account_id IN ("+placeholders+")")
-			for _, id := range f.Account.AccountIDs {
-				args = append(args, id)
-			}
-		}
+		w.andIn("t.account_id", f.Account.AccountIDs)
 	}
 	if f.SymbolRoot != nil {
-		clauses = append(clauses, "t.symbol_root = ?")
-		args = append(args, *f.SymbolRoot)
+		w.and("t.symbol_root = ?", *f.SymbolRoot)
 	}
 	if f.Direction != nil {
-		clauses = append(clauses, "t.direction = ?")
-		args = append(args, *f.Direction)
+		w.and("t.direction = ?", *f.Direction)
 	}
 	if f.Horizon != nil {
 		// Bands must match tradeHorizon(): Scalp <10m, Intraday <1d, Swing <14d, else Long-term.
 		// tradeHoldDaysSQL is the holding time in DAYS.
 		switch *f.Horizon {
 		case "scalp":
-			clauses = append(clauses, tradeHoldDaysSQL+" < ?")
-			args = append(args, 10.0/1440.0)
+			w.and(tradeHoldDaysSQL+" < ?", 10.0/1440.0)
 		case "intraday":
-			clauses = append(clauses, tradeHoldDaysSQL+" >= ? AND "+tradeHoldDaysSQL+" < ?")
-			args = append(args, 10.0/1440.0, 1.0)
+			w.and(tradeHoldDaysSQL+" >= ? AND "+tradeHoldDaysSQL+" < ?", 10.0/1440.0, 1.0)
 		case "swing":
-			clauses = append(clauses, tradeHoldDaysSQL+" >= ? AND "+tradeHoldDaysSQL+" < ?")
-			args = append(args, 1.0, 14.0)
+			w.and(tradeHoldDaysSQL+" >= ? AND "+tradeHoldDaysSQL+" < ?", 1.0, 14.0)
 		case "long-term":
-			clauses = append(clauses, tradeHoldDaysSQL+" >= ?")
-			args = append(args, 14.0)
+			w.and(tradeHoldDaysSQL+" >= ?", 14.0)
 		}
 	}
 	if f.Outcome != nil {
 		switch *f.Outcome {
 		case "win":
-			clauses = append(clauses, "t.net_pnl > 0")
+			w.and("t.net_pnl > 0")
 		case "loss":
-			clauses = append(clauses, "t.net_pnl < 0")
+			w.and("t.net_pnl < 0")
 		case "breakeven":
-			clauses = append(clauses, "t.net_pnl = 0")
+			w.and("t.net_pnl = 0")
 		}
 	}
 	if f.From != nil {
-		clauses = append(clauses, "t.exit_time >= ?")
-		args = append(args, *f.From)
+		w.and("t.exit_time >= ?", *f.From)
 	}
 	if f.To != nil {
-		clauses = append(clauses, "t.exit_time < ?")
-		args = append(args, *f.To)
+		w.and("t.exit_time < ?", *f.To)
 	}
-	return strings.Join(clauses, " AND "), args
+	return w.sql(), w.args
 }
 
 // parseTradeFilters reads filter values from the query string. Empty values

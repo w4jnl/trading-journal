@@ -400,23 +400,21 @@ type feedRow struct {
 // can include scope/tag IN (...) and the date range. Same join shape as the
 // sqlc ListJournalFeed query, minus a couple of columns the feed doesn't need.
 func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, limit int) ([]feedRow, error) {
-	clauses := []string{"je.user_id = ?"}
-	args := []any{userID(ctx)}
+	w := whereUser(ownsJournalSQL, userID(ctx))
 	if f.from != nil {
-		clauses = append(clauses, "je.entry_date >= ?")
-		args = append(args, *f.from)
+		w.and("je.entry_date >= ?", *f.from)
 	}
 	if f.to != nil {
-		clauses = append(clauses, "je.entry_date < ?")
-		args = append(args, *f.to)
+		w.and("je.entry_date < ?", *f.to)
 	}
 	if len(f.scopes) > 0 {
 		ph := strings.Repeat("?,", len(f.scopes))
 		ph = ph[:len(ph)-1]
-		clauses = append(clauses, "je.scope IN ("+ph+")")
+		args := make([]any, 0, len(f.scopes))
 		for _, s := range f.scopes {
 			args = append(args, s)
 		}
+		w.and("je.scope IN ("+ph+")", args...)
 	}
 	if len(f.tags) > 0 {
 		// Build (tag IN (...) OR tag IS NULL) when "untagged" is one of the picks.
@@ -430,6 +428,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			}
 		}
 		parts := []string{}
+		var args []any
 		if len(real) > 0 {
 			ph := strings.Repeat("?,", len(real))
 			ph = ph[:len(ph)-1]
@@ -442,11 +441,12 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			parts = append(parts, "je.tag IS NULL")
 		}
 		if len(parts) > 0 {
-			clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+			w.and("("+strings.Join(parts, " OR ")+")", args...)
 		}
 	}
 	if len(f.strategies) > 0 || f.strategyNone {
 		var parts []string
+		var args []any
 		if len(f.strategies) > 0 {
 			ph := strings.Repeat("?,", len(f.strategies))
 			ph = ph[:len(ph)-1]
@@ -458,7 +458,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 		if f.strategyNone {
 			parts = append(parts, "je.strategy_id IS NULL")
 		}
-		clauses = append(clauses, "("+strings.Join(parts, " OR ")+")")
+		w.and("("+strings.Join(parts, " OR ")+")", args...)
 	}
 
 	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
@@ -469,10 +469,10 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 	      LEFT JOIN trades t      ON t.id = je.trade_id
 	      LEFT JOIN accounts a    ON a.id = COALESCE(je.account_id, t.account_id)
 	      LEFT JOIN strategies s  ON s.id = je.strategy_id
-	      WHERE ` + strings.Join(clauses, " AND ") + `
+	      WHERE ` + w.sql() + `
 	      ORDER BY je.entry_date DESC, je.id DESC
 	      LIMIT ?`
-	args = append(args, limit)
+	args := append(w.args, limit)
 
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {

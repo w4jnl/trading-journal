@@ -686,8 +686,11 @@ type accountFilter struct {
 }
 
 // resolveAccountFilter parses ?filter=acc:N&filter=type:X (multi-valued) into
-// a concrete []int64 of accounts to filter by, resolving type slugs against
-// the accounts table.
+// a concrete []int64 of accounts to filter by, resolving both forms against
+// the USER's accounts: a type slug must not pull in other users' accounts,
+// and an explicit id that is not the user's is dropped (the downstream
+// predicates would have ANDed it away; resolving it here keeps "show none"
+// and the selected count honest).
 func (h *Handlers) resolveAccountFilter(r *http.Request) (accountFilter, error) {
 	raw := r.URL.Query()["filter"]
 	af := accountFilter{RawValues: raw, Selected: map[string]bool{}}
@@ -715,36 +718,38 @@ func (h *Handlers) resolveAccountFilter(r *http.Request) (accountFilter, error) 
 		return af, nil
 	}
 	af.Active = true
-	set := map[int64]bool{}
-	for _, id := range explicitIDs {
-		set[id] = true
+	w := whereUser("user_id = ?", userID(r.Context()))
+	var alts []string
+	var args []any
+	if len(explicitIDs) > 0 {
+		ph := strings.Repeat("?,", len(explicitIDs))
+		alts = append(alts, "id IN ("+ph[:len(ph)-1]+")")
+		for _, id := range explicitIDs {
+			args = append(args, id)
+		}
 	}
 	if len(types) > 0 {
-		placeholders := strings.Repeat("?,", len(types))
-		placeholders = placeholders[:len(placeholders)-1]
-		args := make([]any, len(types))
-		for i, t := range types {
-			args[i] = t
-		}
-		q := "SELECT id FROM accounts WHERE type IN (" + placeholders + ")"
-		rows, err := h.DB.QueryContext(r.Context(), q, args...)
-		if err != nil {
-			return af, fmt.Errorf("resolve type filter: %w", err)
-		}
-		defer rows.Close()
-		for rows.Next() {
-			var id int64
-			if err := rows.Scan(&id); err != nil {
-				return af, err
-			}
-			set[id] = true
-		}
-		if err := rows.Err(); err != nil {
-			return af, err
+		ph := strings.Repeat("?,", len(types))
+		alts = append(alts, "type IN ("+ph[:len(ph)-1]+")")
+		for _, t := range types {
+			args = append(args, t)
 		}
 	}
-	for id := range set {
+	w.and("("+strings.Join(alts, " OR ")+")", args...)
+	rows, err := h.DB.QueryContext(r.Context(), "SELECT id FROM accounts WHERE "+w.sql()+" ORDER BY id", w.args...)
+	if err != nil {
+		return af, fmt.Errorf("resolve account filter: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return af, err
+		}
 		af.AccountIDs = append(af.AccountIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return af, err
 	}
 	return af, nil
 }

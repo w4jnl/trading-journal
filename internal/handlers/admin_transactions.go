@@ -194,41 +194,36 @@ func (h *Handlers) listExecutionsFiltered(ctx context.Context, uid int64, f txnF
 	b.WriteString(`SELECT e.id, e.account_id, a.account_ref, a.name, e.symbol, e.symbol_root,
 		e.side, e.qty, e.price, e.exec_time, e.broker_exec_id, e.order_id, e.import_method,
 		e.manual, e.deleted_at, e.edited_at, a.commission_source
-		FROM executions e JOIN accounts a ON a.id = e.account_id
-		WHERE a.user_id = ?`)
-	args := []any{uid}
+		FROM executions e JOIN accounts a ON a.id = e.account_id WHERE `)
+	w := whereUser(ownsAccountsSQL, uid)
 	if f.AccountID != 0 {
-		b.WriteString(" AND e.account_id = ?")
-		args = append(args, f.AccountID)
+		w.and("e.account_id = ?", f.AccountID)
 	}
 	if f.Symbol != "" {
-		b.WriteString(" AND e.symbol = ?")
-		args = append(args, f.Symbol)
+		w.and("e.symbol = ?", f.Symbol)
 	}
 	if f.Side == "buy" || f.Side == "sell" {
-		b.WriteString(" AND e.side = ?")
-		args = append(args, f.Side)
+		w.and("e.side = ?", f.Side)
 	}
 	// Trading-tz days as UTC instants: exec_time is UTC text, and the
 	// stored date prefix is the UTC date, not the user's (daybounds.go).
 	tz := h.localTZ()
 	if d, ok := parseLocalDay(f.From, tz); ok {
-		b.WriteString(" AND e.exec_time >= ?")
-		args = append(args, d.UTC())
+		w.and("e.exec_time >= ?", d.UTC())
 	}
 	if d, ok := parseLocalDay(f.To, tz); ok {
-		b.WriteString(" AND e.exec_time < ?")
-		args = append(args, d.AddDate(0, 0, 1).UTC())
+		w.and("e.exec_time < ?", d.AddDate(0, 0, 1).UTC())
 	}
 	switch {
 	case f.OnlyDeleted:
-		b.WriteString(" AND e.deleted_at IS NOT NULL")
+		w.and("e.deleted_at IS NOT NULL")
 	case !f.IncludeDeleted:
-		b.WriteString(" AND e.deleted_at IS NULL")
+		w.and("e.deleted_at IS NULL")
 	}
+	b.WriteString(w.sql())
 	b.WriteString(" ORDER BY e.exec_time DESC, e.id DESC LIMIT 1000")
 
-	rows, err := h.DB.QueryContext(ctx, b.String(), args...)
+	rows, err := h.DB.QueryContext(ctx, b.String(), w.args...)
 	if err != nil {
 		return nil, err
 	}
