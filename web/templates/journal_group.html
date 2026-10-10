@@ -58,7 +58,7 @@
     <button type="submit" class="btn btn--primary">Save</button>
     {{if .Entry.Body}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
     <button type="submit" formaction="/journal/group/{{.EntryID}}/delete" formnovalidate
-            onclick="return confirm('Delete this group note? Linked trades stay; only the note and its links are removed.');"
+            data-confirm="Delete this group note? Linked trades stay; only the note and its links are removed."
             class="btn btn--danger btn--sm ml-auto">
       Delete entry
     </button>

@@ -411,7 +411,7 @@
       <div class="value-lg {{pnlSign .NetPnl}} num">
         <a class="trade-link" href="#" data-trade-id="{{.ID}}"
            hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
-           onclick="return false;">{{printf "%.2f" .NetPnl}}</a>
+           data-prevent>{{printf "%.2f" .NetPnl}}</a>
       </div>
       <div class="blurb">
         <span class="pair">{{.Direction}} <span class="num">{{printf "%.0f" .Qty}}</span> <code>{{.Symbol}}</code> @ <span class="num">{{printf "%.2f" .EntryPrice}}</span></span>
@@ -427,7 +427,7 @@
       <div class="value-lg {{pnlSign .NetPnl}} num">
         <a class="trade-link" href="#" data-trade-id="{{.ID}}"
            hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
-           onclick="return false;">{{printf "%.2f" .NetPnl}}</a>
+           data-prevent>{{printf "%.2f" .NetPnl}}</a>
       </div>
       <div class="blurb">
         <span class="pair">{{.Direction}} <span class="num">{{printf "%.0f" .Qty}}</span> <code>{{.Symbol}}</code> @ <span class="num">{{printf "%.2f" .EntryPrice}}</span></span>

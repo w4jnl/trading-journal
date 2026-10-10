@@ -296,3 +296,17 @@
     setTimeout(function () { navigateToTrade(state, id); }, 30);
   }
 })();
+
+// Sheet title: the trade detail partial carries it as data (a hidden
+// .sheet-title-src marker) instead of an inline script, so a CSP without
+// 'unsafe-inline' can run the page. Applied after every swap into the sheet.
+(function () {
+  "use strict";
+  document.body.addEventListener("htmx:afterSwap", function (e) {
+    var content = e.target;
+    if (!content || content.id !== "trade-sheet-content") return;
+    var src = content.querySelector("[data-sheet-title]");
+    var title = document.getElementById("trade-sheet-title");
+    if (src && title) title.textContent = src.getAttribute("data-sheet-title");
+  });
+})();

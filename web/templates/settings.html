@@ -200,7 +200,7 @@
       <button type="submit" class="btn btn--secondary btn--sm">Test connection</button>
     </form>
     <form method="post" action="/settings/topstepx/delete" style="display: inline;"
-          onsubmit="return confirm('Remove TopstepX credentials? Automatic sync stops; already-imported trades stay.');">
+          data-confirm="Remove TopstepX credentials? Automatic sync stops; already-imported trades stay.">
       <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
       <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
     </form>
@@ -284,7 +284,7 @@
             <button type="submit" class="btn btn--ghost btn--sm">{{if eq .Gateway.Enabled 1}}Disable{{else}}Enable{{end}}</button>
           </form>
           <form method="post" action="/settings/ibkr/gateways/{{.Gateway.ID}}/delete" style="display:inline;"
-                onsubmit="return confirm('Remove gateway {{.Gateway.Name}}? Synced trades stay; polling stops.');">
+                data-confirm="Remove gateway {{.Gateway.Name}}? Synced trades stay; polling stops.">
             <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
             <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
           </form>
@@ -354,13 +354,13 @@
           <td class="tar">
             {{if .RevokedAt}}
             <form method="post" action="/settings/oauth/{{.ID}}/delete" style="display: inline;"
-                  onsubmit="return confirm('Remove this revoked connection from the list?');">
+                  data-confirm="Remove this revoked connection from the list?">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn--danger btn--sm">Delete</button>
             </form>
             {{else}}
             <form method="post" action="/settings/oauth/{{.ID}}/revoke" style="display: inline;"
-                  onsubmit="return confirm('Disconnect this app? It will stop working immediately and must sign in again.');">
+                  data-confirm="Disconnect this app? It will stop working immediately and must sign in again.">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn--ghost btn--sm">Revoke</button>
             </form>
@@ -412,13 +412,13 @@
           <td class="tar">
             {{if .RevokedAt}}
             <form method="post" action="/settings/api-keys/{{.ID}}/delete" style="display: inline;"
-                  onsubmit="return confirm('Delete this revoked key row?');">
+                  data-confirm="Delete this revoked key row?">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn--danger btn--sm">Delete</button>
             </form>
             {{else}}
             <form method="post" action="/settings/api-keys/{{.ID}}/revoke" style="display: inline;"
-                  onsubmit="return confirm('Revoke this key? Clients using it will stop working immediately.');">
+                  data-confirm="Revoke this key? Clients using it will stop working immediately.">
               <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
               <button type="submit" class="btn btn--ghost btn--sm">Revoke</button>
             </form>

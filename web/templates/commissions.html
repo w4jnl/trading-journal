@@ -96,7 +96,7 @@
                   <td class="tar">
                     {{if $.CanEdit}}
                     <form method="post" action="/commissions/rates/delete" style="display:inline"
-                          onsubmit="return confirm('Delete this rate version? Trades in its window will recompute.');">
+                          data-confirm="Delete this rate version? Trades in its window will recompute.">
                       <input type="hidden" name="id" value="{{.ID}}">
                       <input type="hidden" name="asset_class" value="{{$cell.AssetClass}}">
                       <input type="hidden" name="firm" value="{{$cell.Firm}}">

@@ -64,7 +64,7 @@
     {{if .JournalBody}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
     {{if .HasJournal}}
       <button type="submit" name="_action" value="delete" formnovalidate
-              onclick="return confirm('Delete this trade journal entry?');"
+              data-confirm="Delete this trade journal entry?"
               class="btn btn--danger btn--sm ml-auto">
         Delete entry
       </button>

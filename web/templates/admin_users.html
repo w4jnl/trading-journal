@@ -73,7 +73,7 @@
                 </button>
               </form>
               <form method="post" action="/admin/users/{{.ID}}/delete"
-                    onsubmit="return confirm('Delete {{.Username}} AND all their data (trades, journal, imports, attachments)? This cannot be undone.');">
+                    data-confirm="Delete {{.Username}} AND all their data (trades, journal, imports, attachments)? This cannot be undone.">
                 <button type="submit" class="btn btn--danger btn--sm" {{if $me}}disabled title="cannot delete yourself"{{end}}>
                   Delete
                 </button>

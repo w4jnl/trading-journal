@@ -26,7 +26,7 @@
 
 <div class="row-sm" style="margin-bottom: 8px; gap: 8px;">
   <form method="post" action="/accounts/recompute"
-        onsubmit="return confirm('Rebuild trades and daily_stats for every account from raw executions? This is safe to run repeatedly — use it after a timezone or commission change.');"
+        data-confirm="Rebuild trades and daily_stats for every account from raw executions? This is safe to run repeatedly — use it after a timezone or commission change."
         style="display: inline;">
     <button type="submit" class="btn btn--secondary btn--sm">↻ Recompute all</button>
   </form>
@@ -217,7 +217,7 @@
                   cutover to now and import one fresh MotiveWave export to fill the gap.
                 </p>
                 <form method="post" action="/accounts/{{$a.ID}}/livesync-reset" style="display: inline;"
-                      onsubmit="return confirm('Move the live-sync cutover to now? MotiveWave imports will again cover everything before this moment.');">
+                      data-confirm="Move the live-sync cutover to now? MotiveWave imports will again cover everything before this moment.">
                   <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
                   <button type="submit" class="btn btn--secondary btn--sm">Reset cutover to now</button>
                 </form>

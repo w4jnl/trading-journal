@@ -13,7 +13,7 @@
     <label class="field">
       <span class="field-label">Any day</span>
       <input type="date" max="{{.Today}}"
-             onchange="if (this.value) window.location.href='/journal/'+this.value+'?back=/journal'">
+             data-goto="/journal/" data-goto-suffix="?back=/journal">
     </label>
     <label class="field">
       {{/* No preset value: selecting the current week from a pre-filled input
@@ -22,7 +22,7 @@
            week — including the current one — from the empty picker. */}}
       <span class="field-label">Any week</span>
       <input type="week"
-             onchange="if (this.value) window.location.href='/journal/week/'+this.value+'?back=/journal'">
+             data-goto="/journal/week/" data-goto-suffix="?back=/journal">
     </label>
   </div>
 </div>

@@ -90,25 +90,6 @@
   </table>
 </div>
 {{end}}
-<script>
-  // Fan-out toggles: delegated once per page so live-refresh swaps of this
-  // partial neither stack listeners nor lose them.
-  (function () {
-    if (window.__fanoutBound) return;
-    window.__fanoutBound = true;
-    document.addEventListener('click', function (e) {
-      var b = e.target.closest('.fanout-btn');
-      if (!b) return;
-      var tr = b.closest('tr');
-      var id = tr && tr.getAttribute('data-fanout-toggle');
-      if (id == null) return;
-      var open = b.getAttribute('aria-expanded') === 'true';
-      b.setAttribute('aria-expanded', String(!open));
-      tr.classList.toggle('open', !open);
-      tr.parentNode.querySelectorAll('tr[data-fanout="' + id + '"]').forEach(function (r) { r.hidden = open; });
-    });
-  })();
-</script>
 {{end}}
 
 {{/* journal_trade_row is one trade line. .Group >= 0 marks a fan-out member
@@ -124,9 +105,9 @@
   <td class="tabular num">{{.Qty}}</td>
   <td class="tabular num">{{pnlChip .NetPnl}}</td>
   {{if $.AllowUnlink}}
-  <td class="tar" onclick="event.stopPropagation();">
+  <td class="tar" data-stop>
     <form method="post" action="/journal/group/{{$.EntryID}}/unlink"
-          onsubmit="return confirm('Remove trade {{.ID}} from this group note?');"
+          data-confirm="Remove trade {{.ID}} from this group note?"
           style="display: inline;">
       <input type="hidden" name="trade_id" value="{{.ID}}">
       <button type="submit" class="btn btn--ghost btn--sm" title="Remove from group">×</button>
