@@ -56,6 +56,15 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("load group summaries: %w", err))
 		return
 	}
+	entryIDs := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		entryIDs = append(entryIDs, r.ID)
+	}
+	entryLabels, err := loadEntryLabels(ctx, h.rdb(), entryIDs)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load entry labels: %w", err))
+		return
+	}
 
 	type feedItem struct {
 		ID        int64
@@ -66,6 +75,8 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		Tag       string
 		Strategy  string // assigned strategy name, "" when none
 		Body      string
+		Mistakes  []string // review label keys (internal/journal vocabulary)
+		Emotions  []string
 		EditURL   string // where to navigate when the row is clicked
 		// Group-only — populated when Scope == "group", zero otherwise.
 		GroupN      int64
@@ -77,10 +88,12 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	items := make([]feedItem, 0, len(rows))
 	for _, row := range rows {
 		fi := feedItem{
-			ID:    row.ID,
-			Scope: row.Scope,
-			Date:  row.EntryDate.In(tz),
-			Body:  row.Body,
+			ID:       row.ID,
+			Scope:    row.Scope,
+			Date:     row.EntryDate.In(tz),
+			Body:     row.Body,
+			Mistakes: entryLabels[row.ID][journal.KindMistake],
+			Emotions: entryLabels[row.ID][journal.KindEmotion],
 		}
 		if row.Tag != nil {
 			fi.Tag = *row.Tag
@@ -165,8 +178,11 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		stratOpts = append(stratOpts, journalStrategyOption{ID: s.ID, Name: s.Name, Checked: filters.strategySet[s.ID]})
 	}
 
-	filterCount := len(filters.scopes) + len(filters.tags) + len(filters.strategies)
+	filterCount := len(filters.scopes) + len(filters.tags) + len(filters.strategies) + len(filters.mistakes) + len(filters.emotions)
 	if filters.strategyNone {
+		filterCount++
+	}
+	if filters.mistakeNone {
 		filterCount++
 	}
 	if filters.fromStr != "" {
@@ -177,6 +193,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	}
 
 	activeChips := buildJournalActiveChips(filters, stratName)
+	patterns := journalLabelPatterns(filters, entryLabels)
 
 	h.renderPage(w, r, "journal_feed.html", map[string]any{
 		"NavActive":           "journal",
@@ -190,6 +207,10 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		"TagSelected":         filters.tagSet,
 		"StrategyOptions":     stratOpts,
 		"StrategyNoneChecked": filters.strategyNone,
+		"MistakeSelected":     filters.mistakeSet,
+		"MistakeNoneChecked":  filters.mistakeNone,
+		"EmotionSelected":     filters.emotionSet,
+		"Patterns":            patterns,
 		"FilterActive":        filters.active(),
 		"FilterCount":         filterCount,
 		"ActiveFilters":       activeChips,
@@ -234,6 +255,7 @@ func buildJournalActiveChips(f journalFilters, stratName map[int64]string) []jou
 	if f.strategyNone {
 		base.Add("strategy", "none")
 	}
+	f.labelValues(base)
 	removeURL := func(key, val string) string {
 		v := url.Values{}
 		for k, vals := range base {
@@ -276,6 +298,15 @@ func buildJournalActiveChips(f journalFilters, stratName map[int64]string) []jou
 	if f.strategyNone {
 		chips = append(chips, journalActiveChip{"Unassigned", removeURL("strategy", "none")})
 	}
+	for _, k := range f.mistakes {
+		chips = append(chips, journalActiveChip{journal.LabelName(journal.KindMistake, k), removeURL("mistake", k)})
+	}
+	if f.mistakeNone {
+		chips = append(chips, journalActiveChip{"No mistake logged", removeURL("mistake", "none")})
+	}
+	for _, k := range f.emotions {
+		chips = append(chips, journalActiveChip{journal.LabelName(journal.KindEmotion, k), removeURL("emotion", k)})
+	}
 	return chips
 }
 
@@ -302,6 +333,7 @@ func exportQueryString(f journalFilters) string {
 	if f.strategyNone {
 		v.Add("strategy", "none")
 	}
+	f.labelValues(v)
 	return v.Encode()
 }
 
@@ -321,20 +353,57 @@ type journalFilters struct {
 	strategies   []int64
 	strategyNone bool
 	strategySet  map[int64]bool
+	// Review labels (internal/journal vocabulary). Within a kind the picks
+	// are OR-ed, across kinds AND-ed, like tag and strategy. mistakeNone
+	// selects entries with no mistake logged at all.
+	mistakes    []string
+	emotions    []string
+	mistakeSet  map[string]bool
+	emotionSet  map[string]bool
+	mistakeNone bool
 }
 
 func (f journalFilters) active() bool {
 	return f.from != nil || f.to != nil || len(f.scopes) > 0 || len(f.tags) > 0 ||
-		len(f.strategies) > 0 || f.strategyNone
+		len(f.strategies) > 0 || f.strategyNone || len(f.mistakes) > 0 || len(f.emotions) > 0 || f.mistakeNone
 }
 
-// parseJournalFilters reads ?from=&to=&scope=&tag=&strategy= from the request.
-func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
-	f := journalFilters{
+// newJournalFilters is the empty filter set with its lookup maps ready.
+func newJournalFilters() journalFilters {
+	return journalFilters{
 		scopeSet:    map[string]bool{},
 		tagSet:      map[string]bool{},
 		strategySet: map[int64]bool{},
+		mistakeSet:  map[string]bool{},
+		emotionSet:  map[string]bool{},
 	}
+}
+
+// addLabelFilter records one label pick when it is in the vocabulary;
+// "none" on mistakes means "nothing logged". Unknown keys are ignored.
+func (f *journalFilters) addLabelFilter(kind, key string) {
+	key = strings.ToLower(strings.TrimSpace(key))
+	if kind == journal.KindMistake && key == "none" {
+		f.mistakeNone = true
+		return
+	}
+	if !journal.ValidLabel(kind, key) {
+		return
+	}
+	if kind == journal.KindMistake && !f.mistakeSet[key] {
+		f.mistakes = append(f.mistakes, key)
+		f.mistakeSet[key] = true
+	}
+	if kind == journal.KindEmotion && !f.emotionSet[key] {
+		f.emotions = append(f.emotions, key)
+		f.emotionSet[key] = true
+	}
+}
+
+// parseJournalFilters reads ?from=&to=&scope=&tag=&strategy=&mistake=&emotion=
+// from the request.
+func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
+	f := newJournalFilters()
 	if v := strings.TrimSpace(r.URL.Query().Get("from")); v != "" {
 		if t, err := time.ParseInLocation("2006-01-02", v, tz); err == nil {
 			f.from = &t
@@ -376,7 +445,27 @@ func parseJournalFilters(r *http.Request, tz *time.Location) journalFilters {
 			f.strategySet[id] = true
 		}
 	}
+	for _, v := range r.URL.Query()["mistake"] {
+		f.addLabelFilter(journal.KindMistake, v)
+	}
+	for _, v := range r.URL.Query()["emotion"] {
+		f.addLabelFilter(journal.KindEmotion, v)
+	}
 	return f
+}
+
+// labelValues re-emits the label filters as query values (shared by the
+// export query string and the active chips).
+func (f journalFilters) labelValues(v url.Values) {
+	for _, k := range f.mistakes {
+		v.Add("mistake", k)
+	}
+	if f.mistakeNone {
+		v.Add("mistake", "none")
+	}
+	for _, k := range f.emotions {
+		v.Add("emotion", k)
+	}
 }
 
 // feedRow is the projection ListJournalFeed used to return — we keep the
@@ -461,6 +550,31 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 		}
 		w.and("("+strings.Join(parts, " OR ")+")", args...)
 	}
+	// Labels: an entry matches a kind when it carries any of the picked
+	// keys (or, for "none", carries no mistake at all).
+	labelClause := func(kind string, keys []string, none bool) {
+		if len(keys) == 0 && !none {
+			return
+		}
+		var parts []string
+		var args []any
+		if len(keys) > 0 {
+			ph := strings.Repeat("?,", len(keys))
+			ph = ph[:len(ph)-1]
+			parts = append(parts, "EXISTS (SELECT 1 FROM journal_entry_labels l WHERE l.journal_entry_id = je.id AND l.kind = ? AND l.label IN ("+ph+"))")
+			args = append(args, kind)
+			for _, k := range keys {
+				args = append(args, k)
+			}
+		}
+		if none {
+			parts = append(parts, "NOT EXISTS (SELECT 1 FROM journal_entry_labels l WHERE l.journal_entry_id = je.id AND l.kind = ?)")
+			args = append(args, kind)
+		}
+		w.and("("+strings.Join(parts, " OR ")+")", args...)
+	}
+	labelClause(journal.KindMistake, f.mistakes, f.mistakeNone)
+	labelClause(journal.KindEmotion, f.emotions, false)
 
 	q := `SELECT je.id, je.trade_id, je.account_id, je.entry_date, je.body,
 	             je.mood, je.tag, je.scope,

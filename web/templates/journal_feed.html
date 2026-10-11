@@ -87,12 +87,42 @@
       </div>
     </div>
     {{end}}
+    <div class="row mt-12">
+      <div>
+        <div class="field-label" style="margin-bottom: 6px;">Mistake</div>
+        <div class="chip-row">
+          {{range labelOptions "mistake"}}
+            <label class="chip lf-mistake"><input type="checkbox" name="mistake" value="{{.Key}}" {{if index $.MistakeSelected .Key}}checked{{end}}>{{.Name}}</label>
+          {{end}}
+          <label class="chip lf-none"><input type="checkbox" name="mistake" value="none" {{if $.MistakeNoneChecked}}checked{{end}}>None logged</label>
+        </div>
+      </div>
+    </div>
+    <div class="row mt-12">
+      <div>
+        <div class="field-label" style="margin-bottom: 6px;">Emotion</div>
+        <div class="chip-row">
+          {{range labelOptions "emotion"}}
+            <label class="chip lf-emotion"><input type="checkbox" name="emotion" value="{{.Key}}" {{if index $.EmotionSelected .Key}}checked{{end}}>{{.Name}}</label>
+          {{end}}
+        </div>
+      </div>
+    </div>
     <div class="row mt-16">
       <button type="submit" class="btn btn--primary">Apply</button>
       {{if .FilterActive}}<a href="/journal" class="btn btn--ghost btn--sm">Clear all</a>{{end}}
     </div>
   </form>
 </details>
+
+{{if .Patterns}}
+{{/* What keeps happening: each label counted over the entries listed below.
+     A click narrows the feed to it; a second click (active) lets go. */}}
+<div class="jf-patterns">
+  <span class="jf-patterns__label">Patterns in these <span class="num">{{len .Items}}</span> entries</span>
+  {{range .Patterns}}<a class="jf-pattern jf-pattern--{{.Kind}}{{if .Active}} jf-pattern--active{{end}}" href="{{.URL}}" title="{{if .Active}}Stop filtering by{{else}}Only entries with{{end}} {{.Name}}">{{.Name}} <span class="num">×{{.N}}</span></a>{{end}}
+</div>
+{{end}}
 
 {{if .Items}}
 <ul class="feed">
@@ -123,6 +153,8 @@
           {{/* Machine blocks are badged, not previewed (see preview.go). */}}
           {{if hasAIReview .Body}}<span class="pill info" title="Contains an AI review">AI</span>{{end}}
           {{if hasGexContext .Body}}<span class="pill" title="Contains gamma (GEX) context">GEX</span>{{end}}
+          {{range .Mistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}
+          {{range .Emotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
           {{if .Strategy}}<span class="pill strategy-chip" title="Strategy: {{.Strategy}}">{{.Strategy}}</span>{{end}}
           <span class="tag-slot">{{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}</span>
         </span>
@@ -182,6 +214,19 @@
   .chip:has(:checked).tag-untagged{ background: var(--bg-sunken);   border-color: var(--fg-subtle); color: var(--fg-muted); }
   .chip:has(:checked).strategy-filter-chip { background: color-mix(in srgb, var(--brand-teal, var(--accent)) 16%, transparent);
                                              border-color: var(--brand-teal, var(--accent)); color: var(--brand-teal, var(--accent)); }
+  .chip:has(:checked).lf-mistake { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-text); }
+  .chip:has(:checked).lf-emotion { background: var(--info-soft); border-color: var(--info); color: var(--info-text); }
+  .chip:has(:checked).lf-none    { background: var(--bg-sunken); border-color: var(--fg-subtle); color: var(--fg-muted); }
+
+  /* Patterns strip: label counts over the listed entries, click to filter. */
+  .jf-patterns { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 12px; font-size: 12px; }
+  .jf-patterns__label { color: var(--fg-muted); margin-right: 4px; }
+  .jf-pattern { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: var(--r-pill);
+                border: 1px solid var(--border); color: var(--fg-muted); text-decoration: none; transition: background var(--t-fast), border-color var(--t-fast); }
+  .jf-pattern .num { font-weight: var(--fw-semibold); }
+  .jf-pattern--mistake:hover, .jf-pattern--mistake.jf-pattern--active { background: var(--warn-soft); border-color: var(--warn); color: var(--warn-text); }
+  .jf-pattern--emotion:hover, .jf-pattern--emotion.jf-pattern--active { background: var(--info-soft); border-color: var(--info); color: var(--info-text); }
+  .jf-pattern--active::after { content: " ✕"; font-size: 10px; opacity: 0.7; }
 
   /* Feed list */
   ul.feed { list-style: none; padding: 0; margin: 0;
