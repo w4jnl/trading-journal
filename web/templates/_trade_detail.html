@@ -97,18 +97,29 @@
   {{if eq $.Flash "deleted"}}<div class="flash deleted">Entry deleted (body was empty).</div>{{end}}
   {{if eq $.Flash "empty"}}<div class="flash empty">Nothing to save — body was empty.</div>{{end}}
 
-  {{/* Existing entry opens in read-only preview; Edit reveals the form, Save
-       returns to preview. A new/empty entry shows the form directly. Mirrors the
-       day/week journal views - journal_view.js toggles view<->form within
-       [data-journal-entry]. The sheet's header Analyze button drives AI, so
-       journal_view's built-in one is suppressed (HideAnalyze). */}}
-  {{if $.JournalBody}}{{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{end}}
+  {{/* The sheet opens on the trade, not the note: an existing entry shows
+       as a read-only preview, a missing one as a single "Add note" line, and
+       the editor stays folded until Edit / Add note (journal_view.js toggles
+       view<->form within [data-journal-entry]) or until the row's journal
+       icon asked for it (JournalOpen: form shown, trade_sheet.js focuses it).
+       The sheet's header Analyze button drives AI, so journal_view's built-in
+       one is suppressed (HideAnalyze). */}}
+  {{if $.JournalBody}}
+    {{if $.JournalOpen}}<div hidden data-journal-view>{{end}}
+    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true "Mistakes" $.Mistakes "Emotions" $.Emotions)}}
+    {{if $.JournalOpen}}</div>{{end}}
+  {{else}}
+    <div class="journal-view journal-view--empty" data-journal-view{{if $.JournalOpen}} hidden{{end}}>
+      <span class="muted">No note on this trade yet.</span>
+      <button type="button" class="btn btn--secondary btn--sm" data-journal-edit title="Add a note (e)">+ Add note</button>
+    </div>
+  {{end}}
 
   <form hx-post="/trades/{{$.TradeID}}/journal"
         hx-target="#trade-sheet-content"
         hx-swap="innerHTML"
         hx-encoding="application/x-www-form-urlencoded"
-        class="journal-form"{{if $.JournalBody}} hidden{{end}}>
+        class="journal-form"{{if not $.JournalOpen}} hidden{{end}}{{if $.JournalOpen}} data-journal-open{{end}}>
     <div class="row-sm" style="margin-bottom: 8px; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
       <div>
         <span class="label" style="margin-right: 4px;">Tag</span>
@@ -130,7 +141,7 @@
     )}}
     <div class="row mt-8">
       <button type="submit" class="btn btn--primary">Save</button>
-      {{if $.JournalBody}}<button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>{{end}}
+      <button type="button" class="btn btn--ghost btn--sm" data-journal-cancel>Cancel</button>
       <span class="muted" style="font-size: 11px;">⌘S to save</span>
     </div>
   </form>

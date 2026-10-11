@@ -11,7 +11,11 @@
 //     g / n / b → click corresponding tag radio (good / neutral / bad)
 //     Esc → close
 //     ⌘S / Ctrl-S inside the sheet → submit the journal form
-//   - Shortcuts that conflict with typing (j/k/g/n/b) are suppressed when
+//   - e → open the note editor (Add note / Edit) and focus it
+//   - The row's journal icon ([data-journal-open]) opens the sheet with the
+//     note editor unfolded (/trades/{id}?journal=1); handled in the capture
+//     phase so the row's own hx-get does not fire as well.
+//   - Shortcuts that conflict with typing (j/k/g/n/b/e) are suppressed when
 //     focus is in an input/textarea/contenteditable.
 //
 // Host page may set `window.tradeSheetOnClose` for page-specific cleanup
@@ -52,6 +56,15 @@
   // ---------- Row click → open sheet ----------
 
   function bindRowClicks(state) {
+    // Journal icon: capture phase, before the row's htmx listener sees the
+    // click, so only the note request goes out.
+    document.addEventListener("click", function (e) {
+      var btn = e.target.closest && e.target.closest("[data-journal-open]");
+      if (!btn) return;
+      e.stopPropagation();
+      e.preventDefault();
+      navigateToTrade(state, btn.getAttribute("data-journal-open"), "?journal=1");
+    }, true);
     document.addEventListener("click", function (e) {
       var trigger = e.target.closest && e.target.closest("[data-trade-id]");
       if (!trigger) return;
@@ -92,10 +105,26 @@
 
   // navigateToTrade actively loads /trades/{id} into the sheet — for keyboard
   // nav and deep links where no row click happened.
-  function navigateToTrade(state, id) {
+  function navigateToTrade(state, id, query) {
     revealSheet(state, id);
     if (window.htmx && state.content) {
-      window.htmx.ajax("GET", "/trades/" + id, "#trade-sheet-content");
+      window.htmx.ajax("GET", "/trades/" + id + (query || ""), "#trade-sheet-content");
+    }
+  }
+
+  // openNote unfolds the note editor in the current sheet (the Add note /
+  // Edit button of journal_view.js) and focuses it; a no-op without one.
+  function openNote(state) {
+    if (!state.content) return;
+    var form = state.content.querySelector("form.journal-form");
+    if (form && form.hidden) {
+      var edit = state.content.querySelector("[data-journal-edit]");
+      if (edit) edit.click();
+    }
+    var ta = state.content.querySelector("form.journal-form textarea[data-je-input]");
+    if (ta) {
+      ta.focus();
+      if (ta.scrollIntoView) ta.scrollIntoView({ block: "center" });
     }
   }
 
@@ -224,6 +253,10 @@
           e.preventDefault();
           chooseTag(state, "bad");
           return;
+        case "e":
+          e.preventDefault();
+          openNote(state);
+          return;
       }
     });
   }
@@ -282,6 +315,9 @@
       if (e.target === state.content || state.content.contains(e.target)) {
         if (state.currentId) state.content.dataset.trade = state.currentId;
         refreshNavButtons(state);
+        // Opened from the row's journal icon: the editor is already shown;
+        // put the cursor in it.
+        if (state.content.querySelector("form.journal-form[data-journal-open]")) openNote(state);
       }
     });
   }

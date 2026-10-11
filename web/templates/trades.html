@@ -383,8 +383,11 @@
         <td class="col-sel c-sel" data-stop>
           <input type="checkbox" class="trade-sel" value="{{.ID}}" aria-label="Select trade {{.Symbol}} {{ltime .EntryTime "datetime"}}" data-stop>
         </td>
-        <td class="c-j" title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
-          <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
+        <td class="c-j">
+          {{/* The icon opens the sheet with the note editor (trade_sheet.js
+               handles [data-journal-open] before the row's own hx-get); the
+               rest of the row opens the trade with the note folded. */}}
+          <button type="button" class="j-open" data-journal-open="{{.ID}}" title="{{if .HasJournal}}Edit the note{{if .JournalTag}} ({{.JournalTag}}){{end}}{{else}}Add a note{{end}}" aria-label="{{if .HasJournal}}Edit the note on{{else}}Add a note to{{end}} trade {{.Symbol}}"><span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span></button>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         {{if .PastStop}}<span class="past-stop-dot" title="Past the stop: heat −{{printf "%.2f" (deref .MaePnl)}} against a planned risk of {{printf "%.2f" (deref .PlannedRisk)}}"></span>{{end}}</td>
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
         <td class="c-acct" data-label="Account" title="{{.AccountName}}">{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>

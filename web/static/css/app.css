@@ -1864,6 +1864,14 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
    journal_view.js, Cancel hides it again. */
 .journal-entry { margin-bottom: 8px; }
 .journal-view__bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+/* No note yet: one quiet line with the Add button where the preview would be. */
+.journal-view--empty { display: flex; align-items: center; gap: 12px; font-size: var(--fs-13); padding: 6px 0 10px; }
+.journal-view--empty[hidden] { display: none; } /* display:flex would beat the hidden attribute */
+.journal-view--empty .btn { margin-left: auto; }
+/* The row's journal icon is a button: no chrome, the icon is the control. */
+.j-open { background: none; border: 0; padding: 0; margin: 0; cursor: pointer; color: inherit; font: inherit; line-height: 0; border-radius: var(--r-sm, 4px); }
+.j-open:hover .icon-journal { color: var(--accent); opacity: 1; }
+.j-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .journal-view__bar .journal-view__edit { margin-left: auto; }
 .journal-view__tag { text-transform: capitalize; }
 .journal-view__tag.tag-good    { background: var(--pos-soft); color: var(--pos); }
