@@ -35,6 +35,8 @@ type analyticsTrade struct {
 	EntryTime   time.Time
 	ExitTime    time.Time
 	AccountName string
+	Strategy    string // from the trade's own entry, else a group entry it is in; "" = none
+	Tag         string // good | neutral | bad from the same entries; "" = untagged
 }
 
 // analyticsBucket aggregates trades by some grouping key (symbol, direction,
@@ -109,6 +111,8 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	byHour := bucketBy(trades, func(t analyticsTrade) string {
 		return fmt.Sprintf("%02d:00", t.EntryTime.In(tz).Hour())
 	})
+	byStrategy := bucketBy(trades, func(t analyticsTrade) string { return orLabel(t.Strategy, "(no strategy)") })
+	byTag := bucketBy(trades, func(t analyticsTrade) string { return orLabel(t.Tag, "(untagged)") })
 	insights := computeInsights(headline, bySymbol, byDOW, byHour)
 
 	// Daily series — prefer the daily_stats rollup so the local-tz bucketing
@@ -117,6 +121,8 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	// run for fresh imports).
 	dailyRollup := h.dailyRollupForFilter(ctx, accountFilt, from, to, tz)
 	dash := computeDashboard(trades, byDOW, dailyRollup, tz)
+	drawdown := computeDrawdown(trades)
+	streaks := computeStreaks(trades, dash.DailySeries)
 
 	// Balance series — running equity over the same date range, walked
 	// forward from each included account's balance anchor.
@@ -169,6 +175,10 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"ChartJSON":        template.JS(chartJSON),
 		"BySymbol":         bySymbol,
 		"ByDirection":      byDirection,
+		"ByStrategy":       byStrategy,
+		"ByTag":            byTag,
+		"Drawdown":         drawdown,
+		"Streaks":          streaks,
 		"ByDOW":            byDOW,
 		"ByHour":           byHour,
 		"Accounts":         accountsForFilter(accounts, false),
@@ -487,7 +497,13 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                 t.entry_price, t.exit_price,
 	                 t.gross_pnl, t.net_pnl, t.commission, t.planned_risk,
 	                 t.entry_time, t.exit_time,
-	                 a.name
+	                 a.name,
+	                 COALESCE((SELECT s.name FROM journal_entries je JOIN strategies s ON s.id = je.strategy_id WHERE je.trade_id = t.id LIMIT 1),
+	                          (SELECT s.name FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
+	                           JOIN strategies s ON s.id = je.strategy_id WHERE jet.trade_id = t.id LIMIT 1), '') AS strategy,
+	                 COALESCE((SELECT je.tag FROM journal_entries je WHERE je.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1),
+	                          (SELECT je.tag FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
+	                           WHERE jet.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1), '') AS tag
 	          FROM trades t
 	          JOIN accounts a ON a.id = t.account_id
 	          WHERE ` + where + `
@@ -506,7 +522,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 			&t.EntryPrice, &t.ExitPrice,
 			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.PlannedRisk,
 			&t.EntryTime, &exit,
-			&t.AccountName); err != nil {
+			&t.AccountName, &t.Strategy, &t.Tag); err != nil {
 			return nil, err
 		}
 		if exit.Valid {
@@ -1178,4 +1194,12 @@ func durationBuckets(trades []analyticsTrade) []durationBucket {
 		}
 	}
 	return defs
+}
+
+// orLabel substitutes a label for an empty bucket key.
+func orLabel(v, empty string) string {
+	if v == "" {
+		return empty
+	}
+	return v
 }

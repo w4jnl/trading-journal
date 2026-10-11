@@ -12,6 +12,36 @@
       "bearerApiKey": { "type": "http", "scheme": "bearer", "description": "Authorization: Bearer tj_... (the API also accepts the key in an X-API-Key header at runtime, but the spec advertises one scheme since ChatGPT supports only one)." }
     },
     "schemas": {
+      "AnalyticsSummary": {
+        "type": "object",
+        "description": "Everything /analytics shows for the same filter. Money is in the account currency; R values are multiples of the trade's planned risk.",
+        "properties": {
+          "from": { "type": "string" }, "to": { "type": "string" }, "timezone": { "type": "string" },
+          "totals": { "type": "object", "properties": {
+            "trades": { "type": "integer" }, "wins": { "type": "integer" }, "losses": { "type": "integer" }, "winRate": { "type": "number" },
+            "net": { "type": "number" }, "gross": { "type": "number" }, "commission": { "type": "number" },
+            "avgWin": { "type": "number" }, "avgLoss": { "type": "number", "description": "negative" },
+            "payoffRatio": { "type": ["number", "null"], "description": "avgWin / |avgLoss|" },
+            "profitFactor": { "type": ["number", "null"], "description": "sum of wins / sum of losses; null without losses" },
+            "expectancy": { "type": "number", "description": "per trade, in money" },
+            "largestWin": { "type": "number" }, "largestLoss": { "type": "number" } } },
+          "r": { "type": "object", "properties": {
+            "plannedTrades": { "type": "integer", "description": "trades carrying a planned risk; the other fields are meaningless when 0" },
+            "avgR": { "type": "number" }, "winRate": { "type": "number" }, "avgWinR": { "type": "number" }, "avgLossR": { "type": "number" } } },
+          "drawdown": { "type": "object", "properties": {
+            "maxDrawdown": { "type": "number", "description": "deepest peak-to-trough fall of cumulative net P&L, positive magnitude" },
+            "maxDrawdownPeakAt": { "type": ["string", "null"], "format": "date-time" }, "maxDrawdownTroughAt": { "type": ["string", "null"], "format": "date-time" },
+            "maxDrawdownRecoverAt": { "type": ["string", "null"], "format": "date-time", "description": "null while the fall is still open" },
+            "maxDrawdownDays": { "type": "integer" }, "currentDrawdown": { "type": "number" }, "underwater": { "type": "boolean" },
+            "peakAt": { "type": ["string", "null"], "format": "date-time" } } },
+          "streaks": { "type": "object", "properties": {
+            "longestWinTrades": { "type": "integer" }, "longestLossTrades": { "type": "integer" }, "currentTrades": { "type": "integer", "description": "signed: +n wins running, -n losses" },
+            "longestGreenDays": { "type": "integer" }, "longestRedDays": { "type": "integer" }, "currentDays": { "type": "integer", "description": "signed" } } },
+          "breakdowns": { "type": "object", "description": "bySymbol, byDirection, byStrategy, byTag, byDayOfWeek, byHour", "additionalProperties": { "type": "array", "items": { "type": "object", "properties": {
+            "key": { "type": "string" }, "trades": { "type": "integer" }, "wins": { "type": "integer" }, "losses": { "type": "integer" },
+            "net": { "type": "number" }, "gross": { "type": "number" }, "best": { "type": "number" }, "worst": { "type": "number" } } } } }
+        }
+      },
       "Error": { "type": "object", "properties": { "error": { "type": "string" } }, "required": ["error"] },
       "Attachment": {
         "type": "object",
@@ -222,6 +252,24 @@
         ],
         "responses": {
           "200": { "description": "OK (an empty range is a 200 with items: [] and zeroed totals)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DailyStats" } } } },
+          "400": { "description": "Malformed date, to before from, or span over 400 days", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
+          "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/analytics/summary": {
+      "get": {
+        "operationId": "getAnalyticsSummary",
+        "summary": "The /analytics page for a date range as one object: totals, R (over planned trades), drawdown, streaks, and breakdowns by symbol, direction, strategy, tag, weekday and entry hour. Same parameters and account rules as /stats/daily; default range = last 30 days.",
+        "parameters": [
+          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-08-01" }, "description": "First day, inclusive, trading timezone: YYYY-MM-DD or today|yesterday|last." },
+          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last." },
+          { "name": "day", "in": "query", "schema": { "type": "string", "example": "yesterday" }, "description": "Shorthand for from=to=day." },
+          { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug>. An explicit filter lifts the excluded-from-stats rule." },
+          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s)." }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnalyticsSummary" } } } },
           "400": { "description": "Malformed date, to before from, or span over 400 days", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }

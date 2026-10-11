@@ -36,6 +36,11 @@
   <link rel="icon" href="/static/img/brand/favicon.svg{{assetVer}}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/static/img/brand/apple-touch-icon.svg{{assetVer}}">
   <meta name="theme-color" content="#12999D">
+  {{/* Installable on a phone: the manifest plus the iOS hints. */}}
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Journal">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <meta property="og:type"        content="website">
   <meta property="og:site_name"   content="W4J Trading Journal">

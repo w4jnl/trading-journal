@@ -23,6 +23,7 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	// behind the session chain) - plus the read-triggered sync nudge.
 	m.HandleFunc("GET /api/v1/version", h.APIVersion)
 	m.HandleFunc("GET /api/v1/stats/daily", h.APIStatsDaily)
+	m.HandleFunc("GET /api/v1/analytics/summary", h.APIAnalyticsSummary)
 	m.HandleFunc("GET /api/v1/strategies", h.APIStrategiesList)
 	m.HandleFunc("GET /api/v1/strategies/{id}", h.APIStrategyDetail)
 	m.HandleFunc("GET /api/v1/journal", h.APIJournalList)

@@ -1,0 +1,14 @@
+{
+  "name": "Trading Journal",
+  "short_name": "Journal",
+  "description": "Personal futures trading journal: imports, FIFO trades, analytics, journaling.",
+  "start_url": "/dashboard",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1216",
+  "theme_color": "#12999D",
+  "icons": [
+    { "src": "/static/img/brand/logo-mark.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/static/img/brand/apple-touch-icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "maskable" }
+  ]
+}

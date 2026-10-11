@@ -18,6 +18,7 @@ var apiIndexEndpoints = []map[string]string{
 	{"method": "GET", "path": "/api/v1/openapi.json", "summary": "OpenAPI 3 spec"},
 	{"method": "GET", "path": "/api/v1/version", "summary": "Data version for change detection (poll; refetch on any change)"},
 	{"method": "GET", "path": "/api/v1/stats/daily", "summary": "Daily P&L + trade stats per trading day, with range totals (the Calendar's numbers)"},
+	{"method": "GET", "path": "/api/v1/analytics/summary", "summary": "Analytics for a range as one object: totals, R, drawdown, streaks, breakdowns by symbol/direction/strategy/tag/weekday/hour"},
 	{"method": "GET", "path": "/api/v1/strategies", "summary": "List strategies"},
 	{"method": "GET", "path": "/api/v1/strategies/{id}", "summary": "Strategy detail (name + full markdown)"},
 	{"method": "GET", "path": "/api/v1/journal", "summary": "List journal entries"},
