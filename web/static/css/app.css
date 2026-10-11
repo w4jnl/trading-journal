@@ -1864,6 +1864,14 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
    journal_view.js, Cancel hides it again. */
 .journal-entry { margin-bottom: 8px; }
 .journal-view__bar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+/* No note yet: one quiet line with the Add button where the preview would be. */
+.journal-view--empty { display: flex; align-items: center; gap: 12px; font-size: var(--fs-13); padding: 6px 0 10px; }
+.journal-view--empty[hidden] { display: none; } /* display:flex would beat the hidden attribute */
+.journal-view--empty .btn { margin-left: auto; }
+/* The row's journal icon is a button: no chrome, the icon is the control. */
+.j-open { background: none; border: 0; padding: 0; margin: 0; cursor: pointer; color: inherit; font: inherit; line-height: 0; border-radius: var(--r-sm, 4px); }
+.j-open:hover .icon-journal { color: var(--accent); opacity: 1; }
+.j-open:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .journal-view__bar .journal-view__edit { margin-left: auto; }
 .journal-view__tag { text-transform: capitalize; }
 .journal-view__tag.tag-good    { background: var(--pos-soft); color: var(--pos); }
@@ -2094,6 +2102,29 @@ tfoot td {
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
 @media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+/* Live refresh landed a change on this row: a soft accent wash that fades
+   out, so the eye finds what moved without a reload. */
+@keyframes row-flash { from { background-color: var(--accent-soft); } to { background-color: transparent; } }
+.trades-table tr.row-flash > td { animation: row-flash 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .trades-table tr.row-flash > td { animation: none; } }
+
+/* Risk cell: the R number and the path glyph, a bar centred on the entry
+   with heat to the left, best seen to the right and the exit as a dot. */
+.trades-table .c-r { white-space: nowrap; }
+.path { position: relative; display: inline-block; width: 48px; height: 8px; vertical-align: middle; margin-left: 6px;
+        background: var(--bg-sunken); border-radius: 4px; overflow: visible; }
+.path::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--fg-subtle); }
+.path__heat { position: absolute; right: 50%; top: 0; height: 100%; background: var(--neg); opacity: 0.45; border-radius: 4px 0 0 4px; }
+.path__gain { position: absolute; left: 50%; top: 0; height: 100%; background: var(--pos); opacity: 0.45; border-radius: 0 4px 4px 0; }
+.path__exit { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, -50%);
+              background: var(--fg-muted); border: 1.5px solid var(--bg-elev); box-shadow: 0 0 0 1px currentColor; }
+.path__exit.pnl-pos { background: var(--pos); color: var(--pos); }
+.path__exit.pnl-neg { background: var(--neg); color: var(--neg); }
+/* Past the stop: one red dot leading the Risk cell (and labelling the
+   footer's count), for a planned trade whose heat went beyond the risk. */
+.past-stop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--neg); vertical-align: middle; }
+.past-stop-dot--lead { margin-right: 5px; }
+.past-stop-dot--inline { margin: 0 4px 0 0; }
 
 /* Trade sheet: the plan row under the stat strip. */
 .trade-plan { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0 14px; }

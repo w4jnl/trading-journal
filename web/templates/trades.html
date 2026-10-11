@@ -52,6 +52,14 @@
       <option value="long-term" {{if eq "long-term" $selHz}}selected{{end}}>Long-term</option>
     </select>
   </label>
+  <label>Risk
+    <select name="risk" data-autosubmit>
+      <option value="">Any</option>
+      {{$selRisk := index .Filters "Risk"}}
+      <option value="planned" {{if eq "planned" $selRisk}}selected{{end}}>Planned</option>
+      <option value="past-stop" {{if eq "past-stop" $selRisk}}selected{{end}}>Past stop</option>
+    </select>
+  </label>
   <label>From
     <input type="date" name="from" value="{{index .Filters "From"}}">
   </label>
@@ -359,7 +367,7 @@
         {{template "sort_th" (dict "Label" "Gross P&L" "Col" "gross" "Class" "tabular c-gross" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         {{template "sort_th" (dict "Label" "Comm" "Col" "comm" "Class" "tabular c-comm" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         {{template "sort_th" (dict "Label" "Net P&L" "Col" "net" "Class" "tabular c-net" "Sort" $sort "Dir" $dir "Refs" $refs)}}
-        {{template "sort_th" (dict "Label" "R" "Col" "r" "Class" "tabular c-r" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "Risk" "Col" "r" "Class" "tabular c-r" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         <th class="tabular c-bal" title="Account balance after this trade">Bal after</th>
       </tr>
     </thead>
@@ -375,8 +383,11 @@
         <td class="col-sel c-sel" data-stop>
           <input type="checkbox" class="trade-sel" value="{{.ID}}" aria-label="Select trade {{.Symbol}} {{ltime .EntryTime "datetime"}}" data-stop>
         </td>
-        <td class="c-j" title="{{if .HasJournal}}Journal entry{{if .JournalTag}} ({{.JournalTag}}){{end}} — click row to view{{else}}No journal entry yet — click row to add{{end}}">
-          <span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
+        <td class="c-j">
+          {{/* The icon opens the sheet with the note editor (trade_sheet.js
+               handles [data-journal-open] before the row's own hx-get); the
+               rest of the row opens the trade with the note folded. */}}
+          <button type="button" class="j-open" data-journal-open="{{.ID}}" title="{{if .HasJournal}}Edit the note{{if .JournalTag}} ({{.JournalTag}}){{end}}{{else}}Add a note{{end}}" aria-label="{{if .HasJournal}}Edit the note on{{else}}Add a note to{{end}} trade {{.Symbol}}"><span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span></button>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
         <td class="c-acct" data-label="Account" title="{{.AccountName}}">{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
@@ -389,7 +400,7 @@
         <td class="tabular num c-gross" data-label="Gross">{{pnlClass .GrossPnl}}</td>
         <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
         <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
-        {{$row := .}}<td class="tabular num c-r" data-label="R" title="Net P&amp;L over the planned risk">{{with rMultiple $row.NetPnl $row.PlannedRisk}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{.}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        {{$row := .}}<td class="tabular num c-r" data-label="Risk" title="R: net P&amp;L over the planned risk · path: heat left, best seen right, exit as the dot">{{$r := rMultiple $row.NetPnl $row.PlannedRisk}}{{$path := $row.Path}}{{if $row.PastStop}}<span class="past-stop-dot past-stop-dot--lead" title="Past the stop: heat −{{printf "%.2f" (deref $row.MaePnl)}} against a planned risk of {{printf "%.2f" (deref $row.PlannedRisk)}}"></span>{{end}}{{if $r}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{$r}}</span>{{end}}{{with $path}} <span class="path" title="{{.Title}}"><span class="path__heat" style="width: {{.HeatPct}}%"></span><span class="path__gain" style="width: {{.GainPct}}%"></span><span class="path__exit {{.Sign}}" style="left: {{.ExitPct}}%"></span></span>{{end}}{{if and (not $r) (not $path)}}<span class="muted">—</span>{{end}}</td>
         <td class="tabular num c-bal" data-label="Bal after">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}
@@ -399,7 +410,7 @@
     {{if .Trades}}
     <tfoot>
       <tr class="totals">
-        <td colspan="8" class="c-tot-label"><span class="num">{{.Totals.Count}}</span> trades in this filter · <span class="pnl-pos num">{{.Totals.Wins}}W</span><span class="muted">/</span><span class="pnl-neg num">{{.Totals.Losses}}L</span></td>
+        <td colspan="8" class="c-tot-label"><span class="num">{{.Totals.Count}}</span> trades in this filter · <span class="pnl-pos num">{{.Totals.Wins}}W</span><span class="muted">/</span><span class="pnl-neg num">{{.Totals.Losses}}L</span>{{with .Totals}}{{if .Planned}} · planned <span class="num">{{.Planned}}</span>{{if .RCount}} · avg <span class="num {{pnlSign .AvgR}}">{{printf "%+.2fR" .AvgR}}</span>{{end}}{{if .PastStop}} · <span class="past-stop-dot past-stop-dot--inline"></span>past stop <span class="num pnl-neg">{{.PastStop}}</span>{{end}}{{end}}{{if gt .MeasuredMfe 0.0}} · exit kept <span class="num">{{printf "%.0f%%" (mul .ExitKept 100.0)}}</span> <span class="subtle">of <span class="num">{{.Measured}}</span> measured</span>{{end}}{{end}}</td>
         <td class="c-entry"></td>
         <td class="c-exit"></td>
         <td class="tabular num c-gross {{if gt .Totals.Gross 0.0}}pnl-pos{{else if lt .Totals.Gross 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Totals.Gross}}</td>

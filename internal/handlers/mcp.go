@@ -101,6 +101,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("symbolRoot", mcpgo.Description("Filter by root, e.g. MES.")),
 		mcpgo.WithString("direction", mcpgo.Enum("long", "short")),
 		mcpgo.WithString("outcome", mcpgo.Enum("win", "loss", "breakeven")),
+		mcpgo.WithString("risk", mcpgo.Enum("planned", "past-stop"), mcpgo.Description("planned: trades with a stop or risk set; past-stop: planned trades whose measured heat (mae) exceeded the planned risk.")),
 		mcpgo.WithNumber("accountId", mcpgo.Description("Filter to one account id.")),
 		mcpgo.WithNumber("page", mcpgo.Description("1-based page; default 1."), mcpgo.DefaultNumber(1)),
 		mcpgo.WithBoolean("includeRetired", mcpgo.Description("Include trades on retired accounts.")),
@@ -251,6 +252,9 @@ func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest)
 	}
 	if v := req.GetString("outcome", ""); v == "win" || v == "loss" || v == "breakeven" {
 		f.Outcome = &v
+	}
+	if v := req.GetString("risk", ""); v == "planned" || v == "past-stop" {
+		f.Risk = &v
 	}
 	from, to := h.mcpDateRange(ctx, req)
 	f.From, f.To = from, to

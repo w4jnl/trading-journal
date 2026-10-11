@@ -54,7 +54,8 @@ func TestTradeSheetMeasuresExcursion(t *testing.T) {
 		t.Fatalf("sheet -> %d: %s", rec.Code, rec.Body.String())
 	}
 	body := rec.Body.String()
-	for _, want := range []string{"Max heat", "−300.00", "3 pts", "Best seen", "+500.00", "5 pts", "Exit kept", "80%", "(1m bars)"} {
+	for _, want := range []string{"Max heat", "−300.00", "3 pts", "Best seen", "+500.00", "5 pts", "Exit kept", "80%", "(1m bars)",
+		`data-plan-entry="7250" data-plan-qty="2" data-plan-direction="long" data-plan-point-value="50" data-plan-tick="0.25"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("sheet missing %q", want)
 		}
