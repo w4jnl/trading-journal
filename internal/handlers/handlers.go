@@ -361,6 +361,16 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return excursion.Efficiency(direction, entry, *exit, *mfe)
 		},
+		// splitLines: a one-item-per-line text as a slice (checklist previews).
+		"splitLines": func(s string) []string {
+			var out []string
+			for _, l := range strings.Split(s, "\n") {
+				if l = strings.TrimSpace(l); l != "" {
+					out = append(out, l)
+				}
+			}
+			return out
+		},
 		// Review-label vocabulary for the editors' chips and the view's pills.
 		"labelOptions": journal.LabelOptions,
 		"labelName":    journal.LabelName,

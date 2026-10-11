@@ -160,6 +160,11 @@ type JournalEntry struct {
 	StrategyID *int64    `json:"strategy_id"`
 }
 
+type JournalEntryCheck struct {
+	JournalEntryID int64 `json:"journal_entry_id"`
+	ItemID         int64 `json:"item_id"`
+}
+
 type JournalEntryLabel struct {
 	JournalEntryID int64  `json:"journal_entry_id"`
 	Kind           string `json:"kind"`
@@ -287,6 +292,13 @@ type Strategy struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 	ArchivedAt *time.Time `json:"archived_at"`
+}
+
+type StrategyChecklistItem struct {
+	ID         int64  `json:"id"`
+	StrategyID int64  `json:"strategy_id"`
+	Position   int64  `json:"position"`
+	Text       string `json:"text"`
 }
 
 type StrategyPlaybook struct {

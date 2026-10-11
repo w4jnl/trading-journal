@@ -158,6 +158,9 @@ func (s *Service) SaveTrade(ctx context.Context, userID, tradeID int64, f Fields
 	if err := s.applyFieldLabels(ctx, entryID, f); err != nil {
 		return "", err
 	}
+	if err := s.applyFieldChecks(ctx, entryID, f); err != nil {
+		return "", err
+	}
 	s.changed(ctx, userID)
 	return OutcomeSaved, nil
 }
@@ -174,6 +177,9 @@ func (s *Service) SaveGroup(ctx context.Context, userID, entryID int64, f Fields
 		return "", fmt.Errorf("update group entry: %w", err)
 	}
 	if err := s.applyFieldLabels(ctx, entryID, f); err != nil {
+		return "", err
+	}
+	if err := s.applyFieldChecks(ctx, entryID, f); err != nil {
 		return "", err
 	}
 	s.changed(ctx, userID)

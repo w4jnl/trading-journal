@@ -24,6 +24,7 @@ type analyticsSummary struct {
 	Excursion  analyticsExcursion     `json:"excursion"`
 	Drawdown   drawdownMetrics        `json:"drawdown"`
 	Streaks    streakMetrics          `json:"streaks"`
+	Compliance []complianceRow        `json:"compliance"` // playbook checklist compliance per strategy
 	Breakdowns map[string][]bucketOut `json:"breakdowns"` // bySymbol, byDirection, byStrategy, byTag, byMistake, byEmotion, byDayOfWeek, byHour
 }
 
@@ -123,8 +124,9 @@ func (h *Handlers) analyticsSummaryFor(ctx context.Context, af accountFilter, rn
 			Trades: hl.ExcTrades, ExitEfficiency: hl.ExitEfficiency, AvgMae: hl.AvgMAE, AvgMfe: hl.AvgMFE,
 			WinnersAvgMae: hl.Heat, LosersAvgMfe: hl.GaveBack,
 		},
-		Drawdown: computeDrawdown(trades),
-		Streaks:  computeStreaks(trades, daily),
+		Drawdown:   computeDrawdown(trades),
+		Streaks:    computeStreaks(trades, daily),
+		Compliance: computeCompliance(trades),
 		Breakdowns: map[string][]bucketOut{
 			"bySymbol":    bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return t.SymbolRoot })),
 			"byDirection": bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return t.Direction })),

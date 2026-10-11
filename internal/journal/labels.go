@@ -101,6 +101,7 @@ type Fields struct {
 	StrategyID *int64
 	Mistakes   []string // label keys (KindMistake)
 	Emotions   []string // label keys (KindEmotion)
+	Checks     []int64  // ticked checklist item ids of the entry's strategy (trade / group saves)
 }
 
 // normalizeLabels validates and dedupes keys for a kind; empty strings are

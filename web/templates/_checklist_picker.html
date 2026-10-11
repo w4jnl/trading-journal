@@ -1,0 +1,20 @@
+{{/* checklist_picker: the playbook checklist of the selected strategy as
+     tick boxes, submitted as repeated <input name=check value=itemID>. One
+     block per strategy with items is rendered; checklist.js shows the one
+     matching the strategy <select> of the same form, so switching the
+     strategy needs no round trip. Dict: Blocks ([]checklistBlock), Checked
+     (map[int64]bool), StrategyID (int64 selected, 0 for none). */}}
+{{define "checklist_picker"}}
+{{if .Blocks}}
+<div class="checklist-picker" data-checklist-picker>
+  {{range .Blocks}}
+  <div class="checklist-block" data-checklist-for="{{.StrategyID}}"{{if ne .StrategyID $.StrategyID}} hidden{{end}}>
+    <span class="label" style="margin-right: 4px;" title="The strategy's playbook rules; tick what you followed">Playbook</span>
+    <div class="checklist-items">
+      {{range .Items}}<label class="checklist-item"><input type="checkbox" name="check" value="{{.ID}}"{{if index $.Checked .ID}} checked{{end}}><span>{{.Text}}</span></label>{{end}}
+    </div>
+  </div>
+  {{end}}
+</div>
+{{end}}
+{{end}}

@@ -32,7 +32,11 @@ around it.
   over the day's trades (re-entry after a loss, size-up after a loss, a
   stop run through, a winner cut short, a loser held, overtrading,
   late entries) with the numbers and a one-click label; the same checks
-  reach the AI reviewer and the API.
+  reach the AI reviewer and the API. A strategy can carry a **playbook
+  checklist** (its rules, one per line, edited in the Library); trade and
+  group notes that use the strategy tick the rules, the note shows the
+  score and the misses, and analytics reports compliance per strategy
+  with the net of complete versus incomplete trades.
 - **Dashboard** leads with a 60-day cumulative P&L curve, a Today panel
   with the day's net P&L as a hero number, and a five-tile stat strip
   with inline-SVG sparklines for trades / win rate / R-multiple /

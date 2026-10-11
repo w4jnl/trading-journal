@@ -107,7 +107,7 @@
        one is suppressed (HideAnalyze). */}}
   {{if $.JournalBody}}
     {{if $.JournalOpen}}<div hidden data-journal-view>{{end}}
-    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true "Mistakes" $.Mistakes "Emotions" $.Emotions)}}
+    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}
     {{if $.JournalOpen}}</div>{{end}}
   {{else}}
     <div class="journal-view journal-view--empty" data-journal-view{{if $.JournalOpen}} hidden{{end}}>
@@ -129,6 +129,7 @@
       {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
       {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes)}}
       {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions)}}
+      {{template "checklist_picker" (dict "Blocks" $.Checklists "Checked" $.Checked "StrategyID" $.StrategyID)}}
     </div>
     {{template "journal_editor" (dict
       "Body"        $.JournalBody

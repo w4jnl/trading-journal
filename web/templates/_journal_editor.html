@@ -136,6 +136,7 @@
     {{if .Tag}}<span class="pill journal-view__tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
     {{range .Mistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}
     {{range .Emotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
+    {{with .Checklist}}<span class="pill checklist-pill {{if .Complete}}checklist-pill--ok{{else}}checklist-pill--miss{{end}}" title="Playbook rules ticked on this note">Playbook {{.Done}}/{{.Total}}</span>{{end}}
     {{if and aiEnabled .ID (not .HideAnalyze) (not (aiAnalyzed .Body))}}
     <button type="button" class="btn btn--secondary btn--sm"
             hx-post="/ai/entry/{{.ID}}" hx-swap="none"
@@ -145,6 +146,7 @@
     {{end}}
     <button type="button" class="btn btn--secondary btn--sm journal-view__edit" data-journal-edit>Edit</button>
   </div>
+  {{with .Checklist}}{{if .Missed}}<div class="checklist-missed"><span class="label">Missed</span> {{range $i, $m := .Missed}}{{if $i}} · {{end}}{{$m}}{{end}}</div>{{end}}{{end}}
   <div class="markdown-preview">{{markdown .Body}}</div>
 </div>
 {{end}}

@@ -46,6 +46,10 @@ type analyticsTrade struct {
 	MfePnl      *float64
 	SetID       *int64 // copy set (internal/copyset); nil for a decision of its own
 	SetSize     int64  // members folded into this row when the unit is decisions
+	// Playbook checklist of the entry's strategy: rules in total and
+	// ticked; 0 total when the strategy has no checklist or no entry.
+	ChecklistTotal int64
+	ChecklistDone  int64
 }
 
 // analyticsBucket aggregates trades by some grouping key (symbol, direction,
@@ -195,6 +199,7 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"ByTag":            byTag,
 		"ByMistake":        byMistake,
 		"ByEmotion":        byEmotion,
+		"Compliance":       computeCompliance(trades),
 		"HasLabels":        hasLabels(trades),
 		"Drawdown":         drawdown,
 		"Streaks":          streaks,
@@ -521,6 +526,14 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                 t.gross_pnl, t.net_pnl, t.commission, t.planned_risk,
 	                 t.entry_time, t.exit_time,
 	                 t.mae_pnl, t.mfe_pnl, m.set_id,
+	                 COALESCE((SELECT COUNT(*) FROM strategy_checklist_items ci WHERE ci.strategy_id = COALESCE(
+	                           (SELECT je.strategy_id FROM journal_entries je WHERE je.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1),
+	                           (SELECT je.strategy_id FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
+	                            WHERE jet.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1))), 0) AS checklist_total,
+	                 COALESCE((SELECT COUNT(*) FROM journal_entry_checks c WHERE c.journal_entry_id = COALESCE(
+	                           (SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1),
+	                           (SELECT jet.journal_entry_id FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
+	                            WHERE jet.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1))), 0) AS checklist_done,
 	                 a.name,
 	                 COALESCE((SELECT s.name FROM journal_entries je JOIN strategies s ON s.id = je.strategy_id WHERE je.trade_id = t.id LIMIT 1),
 	                          (SELECT s.name FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
@@ -556,7 +569,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 			&t.EntryPrice, &t.ExitPrice,
 			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.PlannedRisk,
 			&t.EntryTime, &exit,
-			&t.MaePnl, &t.MfePnl, &t.SetID,
+			&t.MaePnl, &t.MfePnl, &t.SetID, &t.ChecklistTotal, &t.ChecklistDone,
 			&t.AccountName, &t.Strategy, &t.Tag, &mistakes, &emotions); err != nil {
 			return nil, err
 		}
@@ -657,8 +670,64 @@ func collapseSets(trades []analyticsTrade) []analyticsTrade {
 		}
 		s.Mistakes = mergeKeys(s.Mistakes, t.Mistakes)
 		s.Emotions = mergeKeys(s.Emotions, t.Emotions)
+		if t.ChecklistTotal > s.ChecklistTotal {
+			s.ChecklistTotal, s.ChecklistDone = t.ChecklistTotal, t.ChecklistDone
+		}
 	}
 	sort.SliceStable(out, func(i, j int) bool { return out[i].ExitTime.Before(out[j].ExitTime) })
+	return out
+}
+
+// complianceRow is one strategy's playbook compliance over the trades that
+// carry its checklist: how often the rules were all ticked, and what the
+// complete and the incomplete trades made.
+type complianceRow struct {
+	Strategy      string  `json:"strategy"`
+	Trades        int64   `json:"trades"`
+	AvgPct        float64 `json:"avgPct"` // mean share of rules ticked
+	Complete      int64   `json:"complete"`
+	CompleteNet   float64 `json:"completeNet"`
+	IncompleteNet float64 `json:"incompleteNet"`
+}
+
+// computeCompliance groups the trades with a checklist by strategy; the
+// rows come most-traded first.
+func computeCompliance(trades []analyticsTrade) []complianceRow {
+	by := map[string]*complianceRow{}
+	sums := map[string]float64{}
+	var order []string
+	for _, t := range trades {
+		if t.ChecklistTotal <= 0 {
+			continue
+		}
+		key := orLabel(t.Strategy, "(no strategy)")
+		r, ok := by[key]
+		if !ok {
+			r = &complianceRow{Strategy: key}
+			by[key] = r
+			order = append(order, key)
+		}
+		r.Trades++
+		sums[key] += float64(t.ChecklistDone) / float64(t.ChecklistTotal)
+		complete := t.ChecklistDone >= t.ChecklistTotal
+		if complete {
+			r.Complete++
+		}
+		if t.NetPnl != nil {
+			if complete {
+				r.CompleteNet += *t.NetPnl
+			} else {
+				r.IncompleteNet += *t.NetPnl
+			}
+		}
+	}
+	out := make([]complianceRow, 0, len(order))
+	for _, k := range order {
+		r := by[k]
+		r.AvgPct = sums[k] / float64(r.Trades)
+		out = append(out, *r)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Trades > out[j].Trades })
 	return out
 }
 

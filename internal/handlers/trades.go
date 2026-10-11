@@ -589,6 +589,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 	}
 
 	mistakes, emotions := h.entryLabels(ctx, journalEntryID)
+	checklists, checked := h.checklistData(ctx, journalEntryID)
 	chartTrades := []linkedTrade{{ID: trade.ID, Symbol: trade.Symbol, SymbolRoot: trade.SymbolRoot, Direction: trade.Direction, EntryTime: trade.EntryTime, ExitTime: trade.ExitTime}}
 	// The row click opens the trade with its note folded (read view, or a
 	// one-line "add note"); the row's journal icon asks for the editor.
@@ -619,6 +620,9 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"JournalTag":       journalTag,
 		"Mistakes":         mistakes,
 		"Emotions":         emotions,
+		"Checklists":       checklists,
+		"Checked":          checked,
+		"Checklist":        h.entryChecklist(ctx, journalEntryID),
 		"JournalEntryID":   journalEntryID,
 		"JournalRendered":  journalRendered,
 		"Flash":            flash,
@@ -661,7 +665,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mistakes, emotions := labelFields(r)
-	out, err := h.journalSvc().SaveTrade(ctx, userID(ctx), tradeID, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions})
+	out, err := h.journalSvc().SaveTrade(ctx, userID(ctx), tradeID, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions, Checks: checkFields(r)})
 	if errors.Is(err, journal.ErrNotFound) {
 		http.Error(w, "trade not found", http.StatusNotFound)
 		return

@@ -14,6 +14,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -40,6 +41,16 @@ func (h *Handlers) LibraryPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	strategies, err := h.Queries.ListStrategies(ctx, uid)
+	checklistText := map[int64]string{}
+	if lists, err := h.journalSvc().ChecklistsForUser(ctx, uid); err == nil {
+		for sid, items := range lists {
+			lines := make([]string, 0, len(items))
+			for _, it := range items {
+				lines = append(lines, it.Text)
+			}
+			checklistText[sid] = strings.Join(lines, "\n")
+		}
+	}
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list strategies: %w", err))
 		return
@@ -65,6 +76,7 @@ func (h *Handlers) LibraryPage(w http.ResponseWriter, r *http.Request) {
 		"BuiltinTemplates": builtins,
 		"UserTemplates":    userTemplates,
 		"Strategies":       strategies,
+		"ChecklistText":    checklistText,
 		"ScopeOptions":     []string{"any", "day", "week", "trade", "group"},
 		"PlaybookBody":     playbookBody,
 		"PlaybookRendered": template.HTML(renderMarkdown(playbookBody)),
@@ -226,13 +238,18 @@ func (h *Handlers) StrategyCreate(w http.ResponseWriter, r *http.Request) {
 		redirectLibrary(w, r, "strategies", "", "strategy name is required")
 		return
 	}
-	if _, err := h.Queries.CreateStrategy(ctx, models.CreateStrategyParams{
+	st, err := h.Queries.CreateStrategy(ctx, models.CreateStrategyParams{
 		UserID: userID(ctx),
 		Name:   name,
 		Body:   body,
-	}); err != nil {
+	})
+	if err != nil {
 		// Most likely the UNIQUE(user_id, name) constraint.
 		redirectLibrary(w, r, "strategies", "", "could not create strategy (name already used?): "+err.Error())
+		return
+	}
+	if err := h.journalSvc().SetChecklistItems(ctx, userID(ctx), st.ID, journal.ParseChecklistText(r.PostFormValue("checklist"))); err != nil {
+		redirectLibrary(w, r, "strategies", "", "strategy created, but its checklist could not be saved: "+err.Error())
 		return
 	}
 	redirectLibrary(w, r, "strategies", "saved", "")
@@ -262,6 +279,10 @@ func (h *Handlers) StrategyUpdate(w http.ResponseWriter, r *http.Request) {
 		UserID: userID(ctx),
 	}); err != nil {
 		redirectLibrary(w, r, "strategies", "", "could not update strategy: "+err.Error())
+		return
+	}
+	if err := h.journalSvc().SetChecklistItems(ctx, userID(ctx), id, journal.ParseChecklistText(r.PostFormValue("checklist"))); err != nil {
+		redirectLibrary(w, r, "strategies", "", "strategy saved, but its checklist could not be: "+err.Error())
 		return
 	}
 	redirectLibrary(w, r, "strategies", "saved", "")
