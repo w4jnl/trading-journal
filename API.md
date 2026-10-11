@@ -192,6 +192,8 @@ Query parameters (all optional):
 | `to` | `YYYY-MM-DD` | Inclusive upper bound |
 | `tag` | `good` \| `neutral` \| `bad` \| `untagged` | |
 | `strategy` | strategy id, or `none` | Filter by assigned strategy |
+| `mistake` | label key, or `none` | Repeatable; entries carrying any of the picked mistakes (`none` = no mistake logged) |
+| `emotion` | label key | Repeatable; entries carrying any of the picked emotions |
 | `limit` | integer | Default `50`, max `200` |
 | `offset` | integer | Default `0` |
 

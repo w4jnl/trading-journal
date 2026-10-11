@@ -2,10 +2,15 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
+	"sort"
+	"strconv"
+	"strings"
 
 	"github.com/w4jnl/trading-journal/internal/journal"
 )
@@ -22,6 +27,122 @@ func (h *Handlers) entryLabels(ctx context.Context, entryID int64) (mistakes, em
 		return nil, nil
 	}
 	return labels[journal.KindMistake], labels[journal.KindEmotion]
+}
+
+// loadEntryLabels fetches the labels of many entries in one query (the
+// feed and the API list), keyed by entry id then kind, labels sorted.
+func loadEntryLabels(ctx context.Context, db *sql.DB, entryIDs []int64) (map[int64]map[string][]string, error) {
+	out := map[int64]map[string][]string{}
+	if len(entryIDs) == 0 {
+		return out, nil
+	}
+	ph := strings.Repeat("?,", len(entryIDs))
+	ph = ph[:len(ph)-1]
+	args := make([]any, 0, len(entryIDs))
+	for _, id := range entryIDs {
+		args = append(args, id)
+	}
+	rows, err := db.QueryContext(ctx, `SELECT journal_entry_id, kind, label FROM journal_entry_labels WHERE journal_entry_id IN (`+ph+`) ORDER BY kind, label`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch labels: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var kind, label string
+		if err := rows.Scan(&id, &kind, &label); err != nil {
+			return nil, err
+		}
+		if out[id] == nil {
+			out[id] = map[string][]string{}
+		}
+		out[id][kind] = append(out[id][kind], label)
+	}
+	return out, rows.Err()
+}
+
+// journalLabelPattern is one label with its count over the listed entries
+// and a link that adds it to the filter (or drops it when already active).
+type journalLabelPattern struct {
+	Kind   string
+	Key    string
+	Name   string
+	N      int
+	Active bool
+	URL    string
+}
+
+// journalLabelPatterns counts each label over the entries on the page, most
+// frequent first, so the feed shows what keeps happening and lets the
+// trader drill into it with one click.
+func journalLabelPatterns(f journalFilters, labels map[int64]map[string][]string) []journalLabelPattern {
+	counts := map[[2]string]int{}
+	for _, byKind := range labels {
+		for kind, keys := range byKind {
+			for _, k := range keys {
+				counts[[2]string{kind, k}]++
+			}
+		}
+	}
+	if len(counts) == 0 {
+		return nil
+	}
+	base := url.Values{}
+	base.Set("from", f.fromStr)
+	base.Set("to", f.toStr)
+	for _, v := range f.scopes {
+		base.Add("scope", v)
+	}
+	for _, v := range f.tags {
+		base.Add("tag", v)
+	}
+	for _, id := range f.strategies {
+		base.Add("strategy", strconv.FormatInt(id, 10))
+	}
+	if f.strategyNone {
+		base.Add("strategy", "none")
+	}
+	f.labelValues(base)
+	for _, k := range []string{"from", "to"} {
+		if base.Get(k) == "" {
+			base.Del(k)
+		}
+	}
+	toggleURL := func(kind, key string, active bool) string {
+		v := url.Values{}
+		param := kind // "mistake" | "emotion"
+		for k, vals := range base {
+			for _, x := range vals {
+				if active && k == param && x == key {
+					continue
+				}
+				v.Add(k, x)
+			}
+		}
+		if !active {
+			v.Add(param, key)
+		}
+		if enc := v.Encode(); enc != "" {
+			return "/journal?" + enc
+		}
+		return "/journal"
+	}
+	out := make([]journalLabelPattern, 0, len(counts))
+	for ck, n := range counts {
+		kind, key := ck[0], ck[1]
+		active := (kind == journal.KindMistake && f.mistakeSet[key]) || (kind == journal.KindEmotion && f.emotionSet[key])
+		out = append(out, journalLabelPattern{Kind: kind, Key: key, Name: journal.LabelName(kind, key), N: n, Active: active, URL: toggleURL(kind, key, active)})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].N != out[j].N {
+			return out[i].N > out[j].N
+		}
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
 }
 
 // labelsOut shapes an entry's labels for JSON: both kinds always present,

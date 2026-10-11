@@ -114,12 +114,14 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcpgo.NewTool("list_journal",
 		mcpgo.WithReadOnlyHintAnnotation(true),
-		mcpgo.WithDescription("List the caller's journal entries (summary rows) for a day or range, optionally filtered by scope/tag. Newest first."),
+		mcpgo.WithDescription("List the caller's journal entries (summary rows) for a day or range, optionally filtered by scope, tag, or a review label (mistake / emotion key; mistake=none means no mistake logged). Rows carry their labels. Newest first."),
 		mcpgo.WithString("day", mcpgo.Description("Single day YYYY-MM-DD; sets from=to=day.")),
 		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD (inclusive).")),
 		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD (inclusive).")),
 		mcpgo.WithString("scope", mcpgo.Enum("day", "week", "trade", "group")),
 		mcpgo.WithString("tag", mcpgo.Enum("good", "neutral", "bad", "untagged")),
+		mcpgo.WithString("mistake", mcpgo.Description("Only entries carrying this mistake key, or none.")),
+		mcpgo.WithString("emotion", mcpgo.Description("Only entries carrying this emotion key.")),
 		mcpgo.WithNumber("limit", mcpgo.Description("Max rows; default 100."), mcpgo.DefaultNumber(100)),
 	), h.mcpListJournal)
 
@@ -340,9 +342,15 @@ func (h *Handlers) mcpGetTrade(ctx context.Context, req mcpgo.CallToolRequest) (
 
 func (h *Handlers) mcpListJournal(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 	tz := h.localTZ()
-	f := journalFilters{scopeSet: map[string]bool{}, tagSet: map[string]bool{}, strategySet: map[int64]bool{}}
+	f := newJournalFilters()
 	if from, to := mcpDateRangeTZ(req, tz); from != nil {
 		f.from, f.to = from, to
+	}
+	if v := req.GetString("mistake", ""); v != "" {
+		f.addLabelFilter(journal.KindMistake, v)
+	}
+	if v := req.GetString("emotion", ""); v != "" {
+		f.addLabelFilter(journal.KindEmotion, v)
 	}
 	if v := req.GetString("scope", ""); v != "" {
 		f.scopes = []string{v}

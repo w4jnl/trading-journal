@@ -225,3 +225,84 @@ func TestBucketByMulti(t *testing.T) {
 		t.Errorf("sorted by net desc, got %q first", got[0].Key)
 	}
 }
+
+// The feed shows each entry's labels, filters by them (OR within a kind,
+// AND across kinds, "none" for entries without a mistake), counts them in
+// the patterns strip, and the API list rows carry them.
+func TestJournalFeedLabels(t *testing.T) {
+	conn := dbtest.Open(t, "boot")
+	uid := dbtest.BootstrapUserID(t, conn, "boot")
+	for _, stmt := range []string{
+		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope) VALUES
+			(1, ` + itoa64(uid) + `, '2026-10-07', 'chased it', 'day'),
+			(2, ` + itoa64(uid) + `, '2026-10-08', 'moved the stop, tilted', 'day'),
+			(3, ` + itoa64(uid) + `, '2026-10-09', 'clean day', 'day')`,
+		`INSERT INTO journal_entry_labels (journal_entry_id, kind, label) VALUES
+			(1, 'mistake', 'chased'), (2, 'mistake', 'chased'), (2, 'mistake', 'moved-stop'), (2, 'emotion', 'tilted')`,
+	} {
+		if _, err := conn.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &Handlers{DB: conn, Queries: models.New(conn), Templates: web.TemplatesFS, Timezone: time.UTC}
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: uid, Username: "boot", DisplayName: "Boot"})
+	feed := func(qs string) string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.JournalFeed(rec, httptest.NewRequest(http.MethodGet, "/journal"+qs, nil).WithContext(ctx))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("feed%s -> %d", qs, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	count := func(body string) int { return strings.Count(body, `class="entry-link"`) }
+
+	all := feed("")
+	if count(all) != 3 {
+		t.Fatalf("unfiltered feed lists %d entries, want 3", count(all))
+	}
+	for _, want := range []string{
+		`label-pill--mistake" title="Mistake">Chased the entry<`,
+		`label-pill--emotion" title="Emotion">Tilted<`,
+		`Patterns in these <span class="num">3</span> entries`,
+		`Chased the entry <span class="num">×2</span>`,
+		`Moved the stop <span class="num">×1</span>`,
+		`href="/journal?mistake=chased"`,
+		`name="mistake" value="none"`,
+	} {
+		if !strings.Contains(all, want) {
+			t.Errorf("feed missing %q", want)
+		}
+	}
+	if got := feed("?mistake=chased"); count(got) != 2 || !strings.Contains(got, `jf-pattern--active" href="/journal"`) || !strings.Contains(got, `Chased the entry <span class="fchip-x">`) {
+		t.Errorf("mistake=chased: %d entries (want 2); active pattern / chip present=%v", count(got), strings.Contains(got, "jf-pattern--active"))
+	}
+	if got := feed("?mistake=chased&emotion=tilted"); count(got) != 1 || !strings.Contains(got, "moved the stop, tilted") {
+		t.Errorf("chased AND tilted: %d entries, want only entry 2", count(got))
+	}
+	if got := feed("?mistake=moved-stop&mistake=none"); count(got) != 2 || strings.Contains(got, ">chased it<") {
+		t.Errorf("moved-stop OR none: %d entries, want entries 2 and 3", count(got))
+	}
+	if got := feed("?mistake=yolo"); count(got) != 3 {
+		t.Errorf("unknown key should be ignored, got %d entries", count(got))
+	}
+	if qs := exportQueryString(parseJournalFilters(httptest.NewRequest(http.MethodGet, "/journal?emotion=tilted&mistake=none", nil), time.UTC)); qs != "emotion=tilted&mistake=none" {
+		t.Errorf("export qs = %q", qs)
+	}
+
+	// API list rows carry labels and honour the same filter.
+	rec := httptest.NewRecorder()
+	h.APIJournalList(rec, httptest.NewRequest(http.MethodGet, "/api/v1/journal?mistake=chased", nil).WithContext(ctx))
+	var out struct {
+		Items []struct {
+			ID     int64               `json:"id"`
+			Labels map[string][]string `json:"labels"`
+		} `json:"items"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil || rec.Code != http.StatusOK {
+		t.Fatalf("api list -> %d: %s", rec.Code, rec.Body.String())
+	}
+	if len(out.Items) != 2 || out.Items[0].ID != 2 || strings.Join(out.Items[0].Labels["mistakes"], ",") != "chased,moved-stop" || strings.Join(out.Items[0].Labels["emotions"], ",") != "tilted" {
+		t.Errorf("api list = %+v", out.Items)
+	}
+}

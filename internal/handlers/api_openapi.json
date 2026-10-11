@@ -346,6 +346,8 @@
           { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" } },
           { "name": "tag", "in": "query", "schema": { "type": "string", "enum": ["good", "neutral", "bad", "untagged"] } },
           { "name": "strategy", "in": "query", "schema": { "type": "string" }, "description": "Strategy id, or 'none'." },
+          { "name": "mistake", "in": "query", "schema": { "type": "string" }, "description": "Repeatable. Mistake label key (see Labels), or 'none' for entries with no mistake logged." },
+          { "name": "emotion", "in": "query", "schema": { "type": "string" }, "description": "Repeatable. Emotion label key (see Labels)." },
           { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
           { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
         ],
