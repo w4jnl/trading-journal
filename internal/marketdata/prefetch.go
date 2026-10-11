@@ -16,6 +16,9 @@ type Prefetcher struct {
 	DB     *sql.DB        // enumerate an account's recent trades
 	Loc    *time.Location // exchange tz for day bucketing
 	Logger *slog.Logger
+	// AfterAccount, when set, runs once an account's days are fetched (the
+	// excursion filler reads the fresh bars). Best-effort like the rest.
+	AfterAccount func(ctx context.Context, accountID int64)
 
 	jobs  chan int64
 	delay time.Duration // throttle between Yahoo day-fetches
@@ -216,6 +219,9 @@ func (p *Prefetcher) processAccount(ctx context.Context, accountID int64, forceR
 		if !sleepCtx(ctx, p.delay) {
 			return
 		}
+	}
+	if p.AfterAccount != nil && ctx.Err() == nil {
+		p.AfterAccount(ctx, accountID)
 	}
 }
 

@@ -877,3 +877,48 @@ func TestPlannedRisk(t *testing.T) {
 		t.Error("R with zero risk or no net must be nil")
 	}
 }
+
+// TestRebuild_KeepsExcursionWhenBoundariesUnchanged: a measured MAE/MFE
+// rides along a rebuild that leaves the trade as it was, and is dropped
+// (to be measured again from the cache) when the trade re-pairs.
+func TestRebuild_KeepsExcursionWhenBoundariesUnchanged(t *testing.T) {
+	b, q, conn, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
+	})
+	ctx := context.Background()
+	if _, err := b.Rebuild(ctx, []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("first rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(ctx, accID)
+	if len(trades) != 1 {
+		t.Fatalf("setup expected 1 trade, got %d", len(trades))
+	}
+	if _, err := conn.Exec(`UPDATE trades SET mae_points = 1.5, mfe_points = 3, mae_pnl = 75, mfe_pnl = 150, excursion_tf = '1m' WHERE id = ?`, trades[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Rebuild(ctx, []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("rebuild: %v", err)
+	}
+	trades, _ = q.ListTradesForAccount(ctx, accID)
+	if len(trades) != 1 || trades[0].ExcursionTf == nil || trades[0].MaePnl == nil || *trades[0].MaePnl != 75 || trades[0].MfePoints == nil || *trades[0].MfePoints != 3 {
+		t.Fatalf("excursion lost across an unchanged rebuild: %+v", trades)
+	}
+
+	// A later closing fill changes the trade's size and exit: the old
+	// measurement no longer applies and must not be carried.
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7251, at(1), nil},
+		{"sell", 1, 7253, at(8), nil},
+	})
+	if _, err := b.Rebuild(ctx, []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("rebuild after new fills: %v", err)
+	}
+	trades, _ = q.ListTradesForAccount(ctx, accID)
+	for _, tr := range trades {
+		if tr.ExcursionTf != nil {
+			t.Errorf("trade %d kept an excursion although its boundaries changed: qty %v exit %v", tr.ID, tr.Qty, tr.ExitTime)
+		}
+	}
+}

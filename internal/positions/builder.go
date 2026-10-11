@@ -153,6 +153,22 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 			entryExecByTrade[p.ID] = b.firstEntryExec(ctx, p.ID)
 		}
 	}
+	// Excursions (MAE/MFE off cached bars) are derived, but re-reading
+	// bars for every rebuilt trade is work the replay need not repeat:
+	// keep them where the trade comes back with the same boundaries and
+	// let the filler recompute the rest.
+	excursions, err := b.Queries.ListTradeExcursionsForAccountSymbol(ctx, models.ListTradeExcursionsForAccountSymbolParams{
+		AccountID: k.AccountID,
+		Symbol:    k.Symbol,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list trade excursions: %w", err)
+	}
+	for _, e := range excursions {
+		if _, seen := entryExecByTrade[e.ID]; !seen {
+			entryExecByTrade[e.ID] = b.firstEntryExec(ctx, e.ID)
+		}
+	}
 	if err := b.Queries.DeleteTradesForAccountSymbol(ctx, models.DeleteTradesForAccountSymbolParams{
 		AccountID: k.AccountID,
 		Symbol:    k.Symbol,
@@ -260,6 +276,31 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 			// the trade is gone with its boundaries; so is its plan.
 		default:
 			return closed, fmt.Errorf("find trade by signal (plan): %w", err)
+		}
+	}
+
+	// Restore the excursions whose trade came back unchanged: same entry
+	// price, size and exit, so the bars it was read from still apply. A
+	// re-paired trade drops it and is measured again from the cache.
+	for _, e := range excursions {
+		newID, err := b.findRebuiltTrade(ctx, k, entryExecByTrade[e.ID], e.EntryTime)
+		switch {
+		case err == nil:
+			t, err := b.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: newID, UserID: b.UserID})
+			if err != nil || t.ExitTime == nil || e.ExitTime == nil || !t.ExitTime.Equal(*e.ExitTime) ||
+				t.EntryPrice != e.EntryPrice || t.Qty != e.Qty {
+				continue
+			}
+			if err := b.Queries.SetTradeExcursion(ctx, models.SetTradeExcursionParams{
+				MaePoints: e.MaePoints, MfePoints: e.MfePoints, MaePnl: e.MaePnl, MfePnl: e.MfePnl,
+				ExcursionTf: e.ExcursionTf, ID: newID,
+			}); err != nil {
+				return closed, fmt.Errorf("restore trade excursion %d: %w", newID, err)
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// boundaries shifted; measured again later.
+		default:
+			return closed, fmt.Errorf("find trade by signal (excursion): %w", err)
 		}
 	}
 

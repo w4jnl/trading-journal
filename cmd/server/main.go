@@ -25,6 +25,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/backup"
 	"github.com/w4jnl/trading-journal/internal/config"
 	"github.com/w4jnl/trading-journal/internal/db"
+	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/handlers"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
@@ -583,6 +584,20 @@ func run() error {
 	// its methods are nil-safe anyway).
 	liveData := livedata.NewNotifier()
 
+	// MAE/MFE off the bar cache: filled after each prefetch pass, on sheet
+	// view, and once over the whole cache at boot (nothing fetches).
+	var excursions *excursion.Service
+	if marketCache != nil {
+		excursions = &excursion.Service{DB: conn, Q: queries, Bars: marketCache, Changed: liveData.Bump}
+		if prefetcher != nil {
+			prefetcher.AfterAccount = func(ctx context.Context, accountID int64) {
+				if _, err := excursions.FillAccount(ctx, accountID); err != nil && ctx.Err() == nil {
+					slog.Warn("excursion fill after prefetch", "account_id", accountID, "err", err)
+				}
+			}
+		}
+	}
+
 	importSvc := &importer.ImportService{
 		DB:           conn,
 		Queries:      queries,
@@ -675,6 +690,7 @@ func run() error {
 		ActAs:            actAs,
 		MarketData:       marketCache,
 		Prefetch:         prefetcher,
+		Excursions:       excursions,
 		MCPInstanceLabel: cfg.MCP.InstanceLabel,
 		OAuth:            oauthSrv,
 		AI:               aiClient,
@@ -950,6 +966,9 @@ func run() error {
 			go prefetcher.ScheduleNightly(ctx, h, m)
 			slog.Info("market-data nightly refresh scheduled", "at", cfg.MarketData.NightlyRefresh)
 		}
+	}
+	if excursions != nil {
+		go excursions.FillAll(ctx)
 	}
 
 	// TopstepX API sync worker + hourly CME-hours scheduler + session-token

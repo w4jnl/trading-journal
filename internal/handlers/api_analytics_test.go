@@ -31,6 +31,10 @@ func TestAnalyticsSummaryAndPage(t *testing.T) {
 		`INSERT INTO journal_entries (id, user_id, trade_id, entry_date, body, scope, strategy_id) VALUES (1, ` + itoa64(uid) + `, 10, '2026-10-06', 'x', 'trade', 5)`,
 		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope, tag) VALUES (2, ` + itoa64(uid) + `, '2026-10-07', 'g', 'group', 'bad')`,
 		`INSERT INTO journal_entry_trades (journal_entry_id, trade_id) VALUES (2, 11)`,
+		// Measured price paths: the winner took 20 of heat with 150 on the
+		// table, the loser had 60 of profit before turning; 12 is unmeasured.
+		`UPDATE trades SET mae_pnl = 20, mfe_pnl = 150, mae_points = 0.4, mfe_points = 3, excursion_tf = '1m' WHERE id = 10`,
+		`UPDATE trades SET mae_pnl = 200, mfe_pnl = 60, mae_points = 4, mfe_points = 1.2, excursion_tf = '1m' WHERE id = 11`,
 		// Labels reach a trade through its own entry (10), a group entry (11)
 		// or the day entry of the day it closed (12 via the 2026-10-08 day).
 		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope) VALUES (3, ` + itoa64(uid) + `, '2026-10-08', 'd', 'day')`,
@@ -58,6 +62,10 @@ func TestAnalyticsSummaryAndPage(t *testing.T) {
 	}
 	if out.R.PlannedTrades != 1 || out.R.AvgR != 2 {
 		t.Errorf("r = %+v, want one planned trade at +2R", out.R)
+	}
+	// Gross 104 + -146 over MFE 150 + 60: the exits kept -20% of what was there.
+	if ex := out.Excursion; ex.Trades != 2 || ex.ExitEfficiency != -0.2 || ex.AvgMae != 110 || ex.AvgMfe != 105 || ex.WinnersAvgMae != 20 || ex.LosersAvgMfe != 60 {
+		t.Errorf("excursion = %+v", ex)
 	}
 	// Cumulative 100, -50, -30: the fall from 100 to -50 is 150 and still open.
 	if out.Drawdown.MaxDD != 150 || out.Drawdown.MaxDDRecover != nil || out.Drawdown.CurrentDD != 130 {
@@ -98,7 +106,7 @@ func TestAnalyticsSummaryAndPage(t *testing.T) {
 	rec = httptest.NewRecorder()
 	h.AnalyticsPage(rec, httptest.NewRequest(http.MethodGet, "/analytics?from=2026-10-01&to=2026-10-10", nil).WithContext(ctx))
 	body := rec.Body.String()
-	for _, want := range []string{"Max drawdown", "still open", "Trade streaks", "By strategy", "By tag", "By mistake", "By emotion", "<code>ORB</code>", "<code>bad</code>", "<code>Chased the entry</code>", "<code>Overtraded</code>", "<code>Tilted</code>", "Avg R"} {
+	for _, want := range []string{"Max drawdown", "still open", "Trade streaks", "By strategy", "By tag", "By mistake", "By emotion", "<code>ORB</code>", "<code>bad</code>", "<code>Chased the entry</code>", "<code>Overtraded</code>", "<code>Tilted</code>", "Avg R", "Exit efficiency", "-20%", "Heat on winners", "−20.00", "Given back by losers", "+60.00"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("analytics page missing %q", want)
 		}

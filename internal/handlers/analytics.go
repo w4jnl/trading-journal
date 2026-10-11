@@ -41,6 +41,8 @@ type analyticsTrade struct {
 	Tag         string   // good | neutral | bad from the same entries; "" = untagged
 	Mistakes    []string // review labels (keys) from the same entries, deduped
 	Emotions    []string
+	MaePnl      *float64 // excursion in money (internal/excursion); nil until measured
+	MfePnl      *float64
 }
 
 // analyticsBucket aggregates trades by some grouping key (symbol, direction,
@@ -506,6 +508,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                 t.entry_price, t.exit_price,
 	                 t.gross_pnl, t.net_pnl, t.commission, t.planned_risk,
 	                 t.entry_time, t.exit_time,
+	                 t.mae_pnl, t.mfe_pnl,
 	                 a.name,
 	                 COALESCE((SELECT s.name FROM journal_entries je JOIN strategies s ON s.id = je.strategy_id WHERE je.trade_id = t.id LIMIT 1),
 	                          (SELECT s.name FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
@@ -540,6 +543,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 			&t.EntryPrice, &t.ExitPrice,
 			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.PlannedRisk,
 			&t.EntryTime, &exit,
+			&t.MaePnl, &t.MfePnl,
 			&t.AccountName, &t.Strategy, &t.Tag, &mistakes, &emotions); err != nil {
 			return nil, err
 		}
@@ -807,6 +811,20 @@ type headlineMetrics struct {
 	AvgLossR    float64 // negative
 	ExpectancyR float64 // mean R, the per-trade edge in risk units
 	WinRateR    float64 // win rate among the planned trades
+	// Price-path metrics over the trades measured from cached bars
+	// (internal/excursion). ExitEfficiency is total gross over total MFE:
+	// the share of the profit that was on the table which the exits kept.
+	// Heat is the mean MAE of winners (what a good trade had to sit
+	// through); GaveBack the mean MFE of losers (profit they had before
+	// turning). Zero counts mean "nothing measured yet".
+	ExcTrades      int64
+	ExitEfficiency float64
+	AvgMAE         float64
+	AvgMFE         float64
+	HeatWinners    int64
+	Heat           float64
+	GaveBackLosers int64
+	GaveBack       float64
 }
 
 func computeHeadline(trades []analyticsTrade) headlineMetrics {
@@ -890,6 +908,42 @@ func computeHeadline(trades []analyticsTrade) headlineMetrics {
 	}
 	if winsR > 0 {
 		m.AvgWinR = sumWinR / float64(winsR)
+	}
+	var sumMAE, sumMFE, sumGrossMeasured, sumHeat, sumGaveBack float64
+	for _, t := range trades {
+		if t.MaePnl == nil || t.MfePnl == nil {
+			continue
+		}
+		m.ExcTrades++
+		sumMAE += *t.MaePnl
+		sumMFE += *t.MfePnl
+		if t.GrossPnl != nil {
+			sumGrossMeasured += *t.GrossPnl
+		}
+		if t.NetPnl == nil {
+			continue
+		}
+		switch {
+		case *t.NetPnl > 0:
+			m.HeatWinners++
+			sumHeat += *t.MaePnl
+		case *t.NetPnl < 0:
+			m.GaveBackLosers++
+			sumGaveBack += *t.MfePnl
+		}
+	}
+	if m.ExcTrades > 0 {
+		m.AvgMAE = sumMAE / float64(m.ExcTrades)
+		m.AvgMFE = sumMFE / float64(m.ExcTrades)
+		if sumMFE > 0 {
+			m.ExitEfficiency = sumGrossMeasured / sumMFE
+		}
+	}
+	if m.HeatWinners > 0 {
+		m.Heat = sumHeat / float64(m.HeatWinners)
+	}
+	if m.GaveBackLosers > 0 {
+		m.GaveBack = sumGaveBack / float64(m.GaveBackLosers)
 	}
 	if lossesR > 0 {
 		m.AvgLossR = sumLossR / float64(lossesR)

@@ -19,6 +19,7 @@ type analyticsSummary struct {
 	Timezone   string                 `json:"timezone"`
 	Totals     analyticsTotals        `json:"totals"`
 	R          analyticsR             `json:"r"`
+	Excursion  analyticsExcursion     `json:"excursion"`
 	Drawdown   drawdownMetrics        `json:"drawdown"`
 	Streaks    streakMetrics          `json:"streaks"`
 	Breakdowns map[string][]bucketOut `json:"breakdowns"` // bySymbol, byDirection, byStrategy, byTag, byMistake, byEmotion, byDayOfWeek, byHour
@@ -47,6 +48,18 @@ type analyticsR struct {
 	WinRate       float64 `json:"winRate"`
 	AvgWinR       float64 `json:"avgWinR"`
 	AvgLossR      float64 `json:"avgLossR"` // negative
+}
+
+// analyticsExcursion is the price-path view (internal/excursion) over the
+// trades measured from cached bars; the other fields mean nothing when
+// trades is 0.
+type analyticsExcursion struct {
+	Trades         int64   `json:"trades"`
+	ExitEfficiency float64 `json:"exitEfficiency"` // total gross / total MFE
+	AvgMae         float64 `json:"avgMae"`
+	AvgMfe         float64 `json:"avgMfe"`
+	WinnersAvgMae  float64 `json:"winnersAvgMae"` // heat a winner sat through
+	LosersAvgMfe   float64 `json:"losersAvgMfe"`  // profit a loser had before turning
 }
 
 type bucketOut struct {
@@ -95,8 +108,12 @@ func (h *Handlers) analyticsSummaryFor(ctx context.Context, af accountFilter, rn
 	}
 	return analyticsSummary{
 		From: rng.From.Format("2006-01-02"), To: rng.To.Format("2006-01-02"), Timezone: tz.String(),
-		Totals:   totals,
-		R:        analyticsR{PlannedTrades: hl.RTrades, AvgR: hl.AvgR, WinRate: hl.WinRateR, AvgWinR: hl.AvgWinR, AvgLossR: hl.AvgLossR},
+		Totals: totals,
+		R:      analyticsR{PlannedTrades: hl.RTrades, AvgR: hl.AvgR, WinRate: hl.WinRateR, AvgWinR: hl.AvgWinR, AvgLossR: hl.AvgLossR},
+		Excursion: analyticsExcursion{
+			Trades: hl.ExcTrades, ExitEfficiency: hl.ExitEfficiency, AvgMae: hl.AvgMAE, AvgMfe: hl.AvgMFE,
+			WinnersAvgMae: hl.Heat, LosersAvgMfe: hl.GaveBack,
+		},
 		Drawdown: computeDrawdown(trades),
 		Streaks:  computeStreaks(trades, daily),
 		Breakdowns: map[string][]bucketOut{
