@@ -2102,6 +2102,12 @@ tfoot td {
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
 @media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+/* Live refresh landed a change on this row: a soft accent wash that fades
+   out, so the eye finds what moved without a reload. */
+@keyframes row-flash { from { background-color: var(--accent-soft); } to { background-color: transparent; } }
+.trades-table tr.row-flash > td { animation: row-flash 1.6s ease-out; }
+@media (prefers-reduced-motion: reduce) { .trades-table tr.row-flash > td { animation: none; } }
+
 /* Risk cell: the R number and the path glyph, a bar centred on the entry
    with heat to the left, best seen to the right and the exit as a dot. */
 .trades-table .c-r { white-space: nowrap; }
