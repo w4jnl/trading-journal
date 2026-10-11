@@ -85,7 +85,7 @@
        day/week journal views - journal_view.js toggles view<->form within
        [data-journal-entry]. The sheet's header Analyze button drives AI, so
        journal_view's built-in one is suppressed (HideAnalyze). */}}
-  {{if $.JournalBody}}{{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true)}}{{end}}
+  {{if $.JournalBody}}{{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{end}}
 
   <form hx-post="/trades/{{$.TradeID}}/journal"
         hx-target="#trade-sheet-content"
@@ -98,6 +98,8 @@
         {{template "tag_picker" (dict "Tag" $.JournalTag)}}
       </div>
       {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
+      {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes)}}
+      {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions)}}
     </div>
     {{template "journal_editor" (dict
       "Body"        $.JournalBody

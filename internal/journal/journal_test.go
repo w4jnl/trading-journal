@@ -143,16 +143,36 @@ func TestServiceSavesAndLinks(t *testing.T) {
 	ctx := context.Background()
 	day := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
 
-	if out, err := s.SaveDay(ctx, uid, day, "", nil, nil, nil); err != nil || out != OutcomeEmpty || bumps != 0 {
+	if out, err := s.SaveDay(ctx, uid, day, Fields{}); err != nil || out != OutcomeEmpty || bumps != 0 {
 		t.Fatalf("empty save on no entry: out=%q err=%v bumps=%d", out, err, bumps)
 	}
-	if out, err := s.SaveDay(ctx, uid, day, "note", nil, nil, nil); err != nil || out != OutcomeSaved || bumps != 1 {
+	if out, err := s.SaveDay(ctx, uid, day, Fields{Body: "note", Mistakes: []string{"chased"}, Emotions: []string{"anxious", "ANXIOUS"}}); err != nil || out != OutcomeSaved || bumps != 1 {
 		t.Fatalf("create: out=%q err=%v bumps=%d", out, err, bumps)
 	}
-	if out, err := s.SaveDay(ctx, uid, day, "note 2", nil, nil, nil); err != nil || out != OutcomeSaved || bumps != 2 {
+	if out, err := s.SaveDay(ctx, uid, day, Fields{Body: "note 2", Emotions: []string{"calm"}}); err != nil || out != OutcomeSaved || bumps != 2 {
 		t.Fatalf("update: out=%q err=%v bumps=%d", out, err, bumps)
 	}
-	if out, err := s.SaveDay(ctx, uid, day, "", nil, nil, nil); err != nil || out != OutcomeDeleted || bumps != 3 {
+	// The update replaced the label sets: mistakes cleared, emotion swapped.
+	dayEntry, _ := s.Q.GetDayJournalEntry(ctx, models.GetDayJournalEntryParams{UserID: &uid, EntryDate: day})
+	if labels, err := s.EntryLabels(ctx, uid, dayEntry.ID); err != nil || len(labels[KindMistake]) != 0 || len(labels[KindEmotion]) != 1 || labels[KindEmotion][0] != "calm" {
+		t.Fatalf("labels after update = %v (%v), want only emotion calm", labels, err)
+	}
+	if _, err := s.SaveDay(ctx, uid, day, Fields{Body: "x", Mistakes: []string{"made-up"}}); err == nil {
+		t.Fatal("unknown label accepted")
+	}
+	if err := s.SetLabels(ctx, uid, dayEntry.ID, KindMistake, []string{"fomo"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetLabels(ctx, uid, dayEntry.ID, KindMistake, []string{"revenge"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if labels, _ := s.EntryLabels(ctx, uid, dayEntry.ID); len(labels[KindMistake]) != 2 {
+		t.Fatalf("additive SetLabels = %v, want fomo + revenge", labels[KindMistake])
+	}
+	if err := s.SetLabels(ctx, 2, dayEntry.ID, KindMistake, []string{"fomo"}, true); err != ErrNotFound {
+		t.Fatalf("another user's labels: err=%v, want ErrNotFound", err)
+	}
+	if out, err := s.SaveDay(ctx, uid, day, Fields{}); err != nil || out != OutcomeDeleted || bumps != 5 {
 		t.Fatalf("empty save deletes: out=%q err=%v bumps=%d", out, err, bumps)
 	}
 	if ok, err := s.DeleteDay(ctx, uid, day); err != nil || ok {
@@ -183,10 +203,10 @@ func TestServiceSavesAndLinks(t *testing.T) {
 	if ok, err := s.UnlinkTrade(ctx, uid, g.ID, 10); err != nil || !ok {
 		t.Fatalf("unlink: ok=%v err=%v", ok, err)
 	}
-	if _, err := s.SaveTrade(ctx, uid, 20, "x", nil, nil); err != ErrNotFound {
+	if _, err := s.SaveTrade(ctx, uid, 20, Fields{Body: "x"}); err != ErrNotFound {
 		t.Fatalf("trade entry on a foreign trade: err=%v, want ErrNotFound", err)
 	}
-	if out, err := s.SaveTrade(ctx, uid, 10, "trade note", nil, nil); err != nil || out != OutcomeSaved {
+	if out, err := s.SaveTrade(ctx, uid, 10, Fields{Body: "trade note"}); err != nil || out != OutcomeSaved {
 		t.Fatalf("trade save: out=%q err=%v", out, err)
 	}
 	// Append seeds a placeholder, appends otherwise; both bump.

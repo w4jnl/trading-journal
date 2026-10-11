@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+
+	"github.com/w4jnl/trading-journal/internal/journal"
 )
 
 // analyticsSummary is the one analytics read for programs: the REST
@@ -19,7 +21,7 @@ type analyticsSummary struct {
 	R          analyticsR             `json:"r"`
 	Drawdown   drawdownMetrics        `json:"drawdown"`
 	Streaks    streakMetrics          `json:"streaks"`
-	Breakdowns map[string][]bucketOut `json:"breakdowns"` // bySymbol, byDirection, byStrategy, byTag, byDayOfWeek, byHour
+	Breakdowns map[string][]bucketOut `json:"breakdowns"` // bySymbol, byDirection, byStrategy, byTag, byMistake, byEmotion, byDayOfWeek, byHour
 }
 
 type analyticsTotals struct {
@@ -102,6 +104,8 @@ func (h *Handlers) analyticsSummaryFor(ctx context.Context, af accountFilter, rn
 			"byDirection": bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return t.Direction })),
 			"byStrategy":  bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return orLabel(t.Strategy, "(no strategy)") })),
 			"byTag":       bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return orLabel(t.Tag, "(untagged)") })),
+			"byMistake":   bucketsOut(bucketByMulti(trades, labelKeys(journal.KindMistake, func(t analyticsTrade) []string { return t.Mistakes }, "(none logged)"))),
+			"byEmotion":   bucketsOut(bucketByMulti(trades, labelKeys(journal.KindEmotion, func(t analyticsTrade) []string { return t.Emotions }, "(none logged)"))),
 			"byDayOfWeek": bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return weekdayLabel(t.EntryTime.In(tz).Weekday()) })),
 			"byHour":      bucketsOut(bucketBy(trades, func(t analyticsTrade) string { return fmt.Sprintf("%02d:00", t.EntryTime.In(tz).Hour()) })),
 		},

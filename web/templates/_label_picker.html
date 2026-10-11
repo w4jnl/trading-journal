@@ -1,0 +1,12 @@
+{{/* label_picker: multi-select chips over a fixed vocabulary (journal
+     package: mistakes, emotions). Submits as repeated <input name=KIND>.
+     Selected state is pure CSS (.label-chip:has(:checked)), so it works
+     inside HTMX-swapped forms with no script. */}}
+{{define "label_picker"}}
+<div class="label-picker">
+  <span class="label" style="margin-right: 4px;">{{.Title}}</span>
+  <div class="chip-row">
+    {{range .Options}}<label class="chip label-chip label-chip--{{$.Kind}}"><input type="checkbox" name="{{$.Kind}}" value="{{.Key}}"{{if hasStr $.Selected .Key}} checked{{end}}><span>{{.Name}}</span></label>{{end}}
+  </div>
+</div>
+{{end}}

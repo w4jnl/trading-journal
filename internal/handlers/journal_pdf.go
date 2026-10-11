@@ -45,6 +45,8 @@ type pdfEntry struct {
 	Trade    string
 	Tag      string
 	Strategy string
+	Mistakes []string // review labels, display names
+	Emotions []string
 	Body     string
 	Summary  GroupSummary
 	Trades   []linkedTrade
@@ -197,7 +199,8 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 	}
 	pdf.Ln(8)
 
-	// Meta line: "Account: X · Trade: Y …"
+	// Meta line: "Account: X · Trade: Y …", then the review labels on a
+	// line of their own ("Mistakes: … · Emotions: …").
 	if e.Account != "" || e.Trade != "" {
 		pdf.SetFont("Helvetica", "", smallFontSize)
 		pdf.SetTextColor(82, 82, 91)
@@ -212,6 +215,17 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 			meta += "Trade: " + e.Trade
 		}
 		pdf.MultiCell(r.contentWidth, 5, r.tr(meta), "", "L", false)
+	}
+	// Review labels as pills, like on screen: amber mistakes, blue emotions.
+	if len(e.Mistakes) > 0 || len(e.Emotions) > 0 {
+		var chips []pdfChip
+		for _, m := range e.Mistakes {
+			chips = append(chips, pdfChip{m, mistakeChipColor})
+		}
+		for _, m := range e.Emotions {
+			chips = append(chips, pdfChip{m, emotionChipColor})
+		}
+		r.drawChipRow(chips)
 	}
 
 	// Trades block — same look for day / week / group / trade entries.
@@ -665,6 +679,41 @@ func (r *pdfRenderer) drawChip(label string, c chipColor) {
 
 func (r *pdfRenderer) drawTagChip(tag string) {
 	r.drawChip(strings.ToUpper(tag), tagColor(tag))
+}
+
+// pdfChip is one pill in a wrapping row.
+type pdfChip struct {
+	Label string
+	Color chipColor
+}
+
+// Review-label pills, the on-screen amber / blue (app.css label-pill).
+var (
+	mistakeChipColor = chipColor{255, 251, 235, 154, 52, 18}
+	emotionChipColor = chipColor{239, 246, 255, 30, 64, 175}
+)
+
+// drawChipRow lays pills left to right from the margin, wrapping to a new
+// line when the next one would cross the content width, and ends the row.
+func (r *pdfRenderer) drawChipRow(chips []pdfChip) {
+	pdf := r.pdf
+	if len(chips) == 0 {
+		return
+	}
+	const gap, lineStep = 1.5, 6.0
+	x0 := pageMarginX
+	pdf.SetX(x0)
+	for _, c := range chips {
+		pdf.SetFont("Helvetica", "B", 7)
+		w := pdf.GetStringWidth(r.tr(c.Label)) + 4
+		if pdf.GetX() > x0 && pdf.GetX()+w > x0+r.contentWidth {
+			pdf.Ln(lineStep)
+			pdf.SetX(x0)
+		}
+		r.drawChip(c.Label, c.Color)
+		pdf.SetX(pdf.GetX() + gap)
+	}
+	pdf.Ln(lineStep)
 }
 
 // ----- plain-text fallback for unsupported node types --------------------

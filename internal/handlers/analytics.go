@@ -10,9 +10,11 @@ import (
 	"math"
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -35,8 +37,10 @@ type analyticsTrade struct {
 	EntryTime   time.Time
 	ExitTime    time.Time
 	AccountName string
-	Strategy    string // from the trade's own entry, else a group entry it is in; "" = none
-	Tag         string // good | neutral | bad from the same entries; "" = untagged
+	Strategy    string   // from the trade's own entry, else a group entry it is in; "" = none
+	Tag         string   // good | neutral | bad from the same entries; "" = untagged
+	Mistakes    []string // review labels (keys) from the same entries, deduped
+	Emotions    []string
 }
 
 // analyticsBucket aggregates trades by some grouping key (symbol, direction,
@@ -113,6 +117,8 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	})
 	byStrategy := bucketBy(trades, func(t analyticsTrade) string { return orLabel(t.Strategy, "(no strategy)") })
 	byTag := bucketBy(trades, func(t analyticsTrade) string { return orLabel(t.Tag, "(untagged)") })
+	byMistake := bucketByMulti(trades, labelKeys(journal.KindMistake, func(t analyticsTrade) []string { return t.Mistakes }, "(none logged)"))
+	byEmotion := bucketByMulti(trades, labelKeys(journal.KindEmotion, func(t analyticsTrade) []string { return t.Emotions }, "(none logged)"))
 	insights := computeInsights(headline, bySymbol, byDOW, byHour)
 
 	// Daily series — prefer the daily_stats rollup so the local-tz bucketing
@@ -177,6 +183,9 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"ByDirection":      byDirection,
 		"ByStrategy":       byStrategy,
 		"ByTag":            byTag,
+		"ByMistake":        byMistake,
+		"ByEmotion":        byEmotion,
+		"HasLabels":        hasLabels(trades),
 		"Drawdown":         drawdown,
 		"Streaks":          streaks,
 		"ByDOW":            byDOW,
@@ -503,7 +512,15 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                           JOIN strategies s ON s.id = je.strategy_id WHERE jet.trade_id = t.id LIMIT 1), '') AS strategy,
 	                 COALESCE((SELECT je.tag FROM journal_entries je WHERE je.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1),
 	                          (SELECT je.tag FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
-	                           WHERE jet.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1), '') AS tag
+	                           WHERE jet.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1), '') AS tag,
+	                 COALESCE((SELECT GROUP_CONCAT(DISTINCT l.label) FROM journal_entry_labels l
+	                           WHERE l.kind = 'mistake' AND l.journal_entry_id IN (
+	                             SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id
+	                             UNION SELECT jet.journal_entry_id FROM journal_entry_trades jet WHERE jet.trade_id = t.id)), '') AS mistakes,
+	                 COALESCE((SELECT GROUP_CONCAT(DISTINCT l.label) FROM journal_entry_labels l
+	                           WHERE l.kind = 'emotion' AND l.journal_entry_id IN (
+	                             SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id
+	                             UNION SELECT jet.journal_entry_id FROM journal_entry_trades jet WHERE jet.trade_id = t.id)), '') AS emotions
 	          FROM trades t
 	          JOIN accounts a ON a.id = t.account_id
 	          WHERE ` + where + `
@@ -518,19 +535,86 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	for rows.Next() {
 		var t analyticsTrade
 		var exit sql.NullTime // exit_time IS NOT NULL filter above, but be defensive
+		var mistakes, emotions string
 		if err := rows.Scan(&t.ID, &t.AccountID, &t.Symbol, &t.SymbolRoot, &t.Direction, &t.Qty,
 			&t.EntryPrice, &t.ExitPrice,
 			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.PlannedRisk,
 			&t.EntryTime, &exit,
-			&t.AccountName, &t.Strategy, &t.Tag); err != nil {
+			&t.AccountName, &t.Strategy, &t.Tag, &mistakes, &emotions); err != nil {
 			return nil, err
 		}
 		if exit.Valid {
 			t.ExitTime = exit.Time
 		}
+		t.Mistakes, t.Emotions = splitLabels(mistakes), splitLabels(emotions)
 		out = append(out, t)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	// Day-entry labels describe the whole session ("overtraded", "tilted"),
+	// so they apply to every trade closed that trading day. Week entries are
+	// too coarse to attribute and stay out.
+	dayLabels, err := h.dayLabelsByDate(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if len(dayLabels) > 0 {
+		tz := h.localTZ()
+		for i := range out {
+			dl := dayLabels[out[i].ExitTime.In(tz).Format("2006-01-02")]
+			out[i].Mistakes = mergeKeys(out[i].Mistakes, dl[journal.KindMistake])
+			out[i].Emotions = mergeKeys(out[i].Emotions, dl[journal.KindEmotion])
+		}
+	}
+	return out, nil
+}
+
+// dayLabelsByDate loads the labels of the caller's day entries keyed by
+// entry date (YYYY-MM-DD) and kind. The table is small (a few labels per
+// journaled day), so one unfiltered read beats a per-trade subquery.
+func (h *Handlers) dayLabelsByDate(ctx context.Context) (map[string]map[string][]string, error) {
+	rows, err := h.rdb().QueryContext(ctx, `
+		SELECT substr(je.entry_date, 1, 10), l.kind, l.label
+		FROM journal_entry_labels l
+		JOIN journal_entries je ON je.id = l.journal_entry_id
+		WHERE je.scope = 'day' AND je.user_id = ?`, userID(ctx))
+	if err != nil {
+		return nil, fmt.Errorf("day labels: %w", err)
+	}
+	defer rows.Close()
+	out := map[string]map[string][]string{}
+	for rows.Next() {
+		var day, kind, label string
+		if err := rows.Scan(&day, &kind, &label); err != nil {
+			return nil, err
+		}
+		if out[day] == nil {
+			out[day] = map[string][]string{}
+		}
+		out[day][kind] = append(out[day][kind], label)
+	}
 	return out, rows.Err()
+}
+
+// mergeKeys unions two label-key lists, sorted and deduped; nil when both
+// are empty so "no labels" stays a nil slice.
+func mergeKeys(a, b []string) []string {
+	if len(b) == 0 {
+		return a
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, list := range [][]string{a, b} {
+		for _, k := range list {
+			if !seen[k] {
+				seen[k] = true
+				out = append(out, k)
+			}
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // insight is one auto-surfaced finding rendered in the "Notable" panel at
@@ -816,39 +900,17 @@ func computeHeadline(trades []analyticsTrade) headlineMetrics {
 // bucketBy groups trades by a string key and returns buckets sorted by net
 // P&L descending (most-profitable group first).
 func bucketBy(trades []analyticsTrade, key func(analyticsTrade) string) []analyticsBucket {
+	return bucketByMulti(trades, func(t analyticsTrade) []string { return []string{key(t)} })
+}
+
+// bucketByMulti is bucketBy for keys a trade can carry several of (review
+// labels): the trade counts once in every bucket it belongs to, so bucket
+// totals may exceed the trade count. keys returning nothing skips the trade.
+func bucketByMulti(trades []analyticsTrade, keys func(analyticsTrade) []string) []analyticsBucket {
 	by := map[string]*analyticsBucket{}
 	for _, t := range trades {
-		k := key(t)
-		b, ok := by[k]
-		if !ok {
-			b = &analyticsBucket{Key: k}
-			by[k] = b
-		}
-		b.Trades++
-		if t.GrossPnl != nil {
-			b.Gross += *t.GrossPnl
-		}
-		if t.NetPnl == nil {
-			continue
-		}
-		b.Net += *t.NetPnl
-		switch {
-		case *t.NetPnl > 0:
-			b.Wins++
-		case *t.NetPnl < 0:
-			b.Losses++
-		}
-		if !b.HasBW {
-			b.Best = *t.NetPnl
-			b.Worst = *t.NetPnl
-			b.HasBW = true
-		} else {
-			if *t.NetPnl > b.Best {
-				b.Best = *t.NetPnl
-			}
-			if *t.NetPnl < b.Worst {
-				b.Worst = *t.NetPnl
-			}
+		for _, k := range keys(t) {
+			bucketAdd(by, k, t)
 		}
 	}
 	out := make([]analyticsBucket, 0, len(by))
@@ -857,6 +919,75 @@ func bucketBy(trades []analyticsTrade, key func(analyticsTrade) string) []analyt
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Net > out[j].Net })
 	return out
+}
+
+// labelKeys is the bucket key function for one label kind: the labels'
+// display names, or the given placeholder when the trade carries none.
+func labelKeys(kind string, pick func(analyticsTrade) []string, none string) func(analyticsTrade) []string {
+	return func(t analyticsTrade) []string {
+		ls := pick(t)
+		if len(ls) == 0 {
+			return []string{none}
+		}
+		out := make([]string, 0, len(ls))
+		for _, l := range ls {
+			out = append(out, journal.LabelName(kind, l))
+		}
+		return out
+	}
+}
+
+// splitLabels turns a GROUP_CONCAT'ed label column back into keys.
+func splitLabels(s string) []string {
+	if s == "" {
+		return nil
+	}
+	return strings.Split(s, ",")
+}
+
+// hasLabels reports whether any trade in the slice carries a review label,
+// so the page can show a hint instead of an all-"(none)" table.
+func hasLabels(trades []analyticsTrade) bool {
+	for _, t := range trades {
+		if len(t.Mistakes) > 0 || len(t.Emotions) > 0 {
+			return true
+		}
+	}
+	return false
+}
+
+func bucketAdd(by map[string]*analyticsBucket, k string, t analyticsTrade) {
+	b, ok := by[k]
+	if !ok {
+		b = &analyticsBucket{Key: k}
+		by[k] = b
+	}
+	b.Trades++
+	if t.GrossPnl != nil {
+		b.Gross += *t.GrossPnl
+	}
+	if t.NetPnl == nil {
+		return
+	}
+	b.Net += *t.NetPnl
+	switch {
+	case *t.NetPnl > 0:
+		b.Wins++
+	case *t.NetPnl < 0:
+		b.Losses++
+	}
+	if !b.HasBW {
+		b.Best = *t.NetPnl
+		b.Worst = *t.NetPnl
+		b.HasBW = true
+		return
+	}
+	if *t.NetPnl > b.Best {
+		b.Best = *t.NetPnl
+	}
+	if *t.NetPnl < b.Worst {
+		b.Worst = *t.NetPnl
+	}
 }
 
 // weekdayLabel returns "Mon", "Tue", … so DOW buckets sort and display nicely.

@@ -430,6 +430,7 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
+	mistakes, emotions := h.entryLabels(ctx, entry.ID)
 	h.renderPage(w, r, "journal_group.html", map[string]any{
 		"NavActive":        "journal",
 		"BackHref":         validBackHref(r),
@@ -444,6 +445,8 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		"Trades":           trades,
 		"Summary":          summary,
 		"Tag":              tag,
+		"Mistakes":         mistakes,
+		"Emotions":         emotions,
 		"Rendered":         rendered,
 		"Flash":            r.URL.Query().Get("flash"),
 		"Strategies":       strategies,
@@ -515,9 +518,10 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 	body := strings.TrimSpace(r.FormValue("body"))
 	tag := parseTag(r.FormValue("tag"))
 	strategyID := h.parseStrategyID(r)
-	out, err := h.journalSvc().SaveGroup(ctx, userID(ctx), id, body, tag, strategyID)
+	mistakes, emotions := labelFields(r)
+	out, err := h.journalSvc().SaveGroup(ctx, userID(ctx), id, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions})
 	if err != nil {
-		h.serverError(w, fmt.Errorf("save group: %w", err))
+		h.saveFailed(w, "save group", err)
 		return
 	}
 	http.Redirect(w, r, redirectTo(string(out)), http.StatusSeeOther)

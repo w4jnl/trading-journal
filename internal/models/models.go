@@ -160,6 +160,12 @@ type JournalEntry struct {
 	StrategyID *int64    `json:"strategy_id"`
 }
 
+type JournalEntryLabel struct {
+	JournalEntryID int64  `json:"journal_entry_id"`
+	Kind           string `json:"kind"`
+	Label          string `json:"label"`
+}
+
 type JournalEntryTrade struct {
 	JournalEntryID int64 `json:"journal_entry_id"`
 	TradeID        int64 `json:"trade_id"`

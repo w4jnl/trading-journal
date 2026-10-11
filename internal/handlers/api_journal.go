@@ -65,6 +65,14 @@ func (h *Handlers) journalListItems(ctx context.Context, filters journalFilters,
 	} else {
 		rows = nil
 	}
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+	labels, err := loadEntryLabels(ctx, h.rdb(), ids)
+	if err != nil {
+		return nil, err
+	}
 	items := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
 		trades, _ := h.tradesForEntry(ctx, row, tz)
@@ -75,6 +83,7 @@ func (h *Handlers) journalListItems(ctx context.Context, filters journalFilters,
 			"tag":      row.Tag,
 			"mood":     row.Mood,
 			"strategy": row.StrategyName,
+			"labels":   labelsOut(labels[row.ID]),
 			"snippet":  apiSnippet(row.Body, 160),
 			"summary":  apiSummaryFrom(summarizeTradeRows(trades)),
 			"links": map[string]string{
@@ -117,6 +126,10 @@ func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry,
 		return nil, err
 	}
 	notes, ids := apiRewriteAttachmentRefs(e.Body)
+	labels, err := h.journalSvc().EntryLabels(ctx, userID(ctx), e.ID)
+	if err != nil {
+		return nil, err
+	}
 	var strat *apiStrategyRef
 	if e.StrategyID != nil {
 		if s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *e.StrategyID, UserID: userID(ctx)}); err == nil {
@@ -130,6 +143,7 @@ func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry,
 		"tag":         e.Tag,
 		"mood":        e.Mood,
 		"notes":       notes,
+		"labels":      labelsOut(labels),
 		"strategy":    strat,
 		"summary":     apiSummaryFrom(summarizeTradeRows(trades)),
 		"trades":      apiTradesFrom(trades),

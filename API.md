@@ -149,6 +149,7 @@ surface:
 | `POST` | `/api/v1/journal/{id}/notes` | Append a dated note (append-only) |
 | `POST` | `/api/v1/journal/{id}/strategy` | Assign a strategy (only if the entry has none) |
 | `POST` | `/api/v1/journal/{id}/tag` | Set a tag (only if the entry has none) |
+| `POST` | `/api/v1/journal/{id}/labels` | Add mistake / emotion labels (additive) |
 | `GET`  | `/api/v1/journal/{id}/chart.png` | Server-rendered chart image |
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
 | `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
@@ -191,6 +192,8 @@ Query parameters (all optional):
 | `to` | `YYYY-MM-DD` | Inclusive upper bound |
 | `tag` | `good` \| `neutral` \| `bad` \| `untagged` | |
 | `strategy` | strategy id, or `none` | Filter by assigned strategy |
+| `mistake` | label key, or `none` | Repeatable; entries carrying any of the picked mistakes (`none` = no mistake logged) |
+| `emotion` | label key | Repeatable; entries carrying any of the picked emotions |
 | `limit` | integer | Default `50`, max `200` |
 | `offset` | integer | Default `0` |
 
@@ -441,6 +444,31 @@ changed** (`"assigned": false` then).
 
 `400` for an unknown entry or a bad/missing tag.
 
+### Add labels (mistakes / emotions)
+
+`POST /api/v1/journal/{id}/labels` with
+`{"mistakes": ["chased", "moved-stop"], "emotions": ["frustrated"]}` adds
+review labels to an entry. Either array may be omitted. The call is
+**additive**: labels already on the entry stay, duplicates are ignored, and
+nothing is ever removed through the API (the trader does that in the UI).
+
+Keys come from a fixed vocabulary, so breakdowns stay comparable over time:
+
+| Kind | Keys |
+|---|---|
+| `mistakes` | `chased`, `early-exit`, `late-exit`, `oversized`, `no-stop`, `moved-stop`, `held-loser`, `revenge`, `fomo`, `hesitated`, `overtraded`, `against-plan` |
+| `emotions` | `calm`, `focused`, `confident`, `anxious`, `greedy`, `frustrated`, `bored`, `tilted`, `rushed` |
+
+Response is the entry's labels after the add:
+
+```json
+{ "id": 41, "labels": { "mistakes": ["chased", "moved-stop"], "emotions": ["frustrated"] } }
+```
+
+`400` for an unknown key or an empty body, `404` for an entry you don't own.
+The same `labels` object is part of every journal detail response, and
+`POST /api/v1/journal` accepts `mistakes` / `emotions` arrays on create.
+
 ### Chart image (PNG)
 
 `GET /api/v1/journal/{id}/chart.png`
@@ -647,6 +675,8 @@ Query parameters are those of `/api/v1/stats/daily` (`from`, `to`, `day`,
     "byDirection": [ /* long, short */ ],
     "byStrategy":  [ /* strategy names; "(no strategy)" for the rest */ ],
     "byTag":       [ /* good, neutral, bad, "(untagged)" */ ],
+    "byMistake":   [ /* label names, e.g. "Moved stop"; "(none logged)" for the rest; a trade counts in each of its labels */ ],
+    "byEmotion":   [ /* same for emotions */ ],
     "byDayOfWeek": [ /* Mon..Fri */ ],
     "byHour":      [ /* "09:00" .. by entry hour, trading timezone */ ]
   }
@@ -655,7 +685,8 @@ Query parameters are those of `/api/v1/stats/daily` (`from`, `to`, `day`,
 
 Semantics: trades belong to the day of their exit; `r.*` is meaningless
 when `plannedTrades` is 0 (plans are set on the trade sheet); a strategy
-or tag reaches a trade through its own entry or a group entry it is in.
+or tag reaches a trade through its own entry or a group entry it is in, and
+a label also through the day entry of the day the trade closed.
 Errors as for `/stats/daily`.
 
 ### Data version (change detection)

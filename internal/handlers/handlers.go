@@ -349,6 +349,17 @@ func (h *Handlers) funcMap() template.FuncMap {
 		},
 		// importNote: the import log's message, read for people (import_message.go).
 		"importNote": humanizeImportMessage,
+		// Review-label vocabulary for the editors' chips and the view's pills.
+		"labelOptions": journal.LabelOptions,
+		"labelName":    journal.LabelName,
+		"hasStr": func(list []string, v string) bool {
+			for _, x := range list {
+				if x == v {
+					return true
+				}
+			}
+			return false
+		},
 		// rMultiple formats net P&L over planned risk ("+1.80R"); "" when
 		// either is missing so templates can show a dash.
 		"rMultiple": func(net, risk *float64) string {
