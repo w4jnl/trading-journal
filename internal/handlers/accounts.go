@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/copyset"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/mwmail"
@@ -709,6 +710,10 @@ func (h *Handlers) AccountsReassign(w http.ResponseWriter, r *http.Request) {
 	tz := h.Timezone
 	if err := importer.RefreshDailyStatsForAccount(ctx, q, srcID, tz); err != nil {
 		h.serverError(w, fmt.Errorf("refresh src stats: %w", err))
+		return
+	}
+	if _, err := copyset.RebuildForAccount(ctx, q, dstID); err != nil {
+		h.serverError(w, fmt.Errorf("rebuild copy sets: %w", err))
 		return
 	}
 	if err := importer.RefreshDailyStatsForAccount(ctx, q, dstID, tz); err != nil {

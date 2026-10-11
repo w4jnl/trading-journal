@@ -46,11 +46,15 @@ type apiTradeRow struct {
 	MfePoints      *float64 `json:"mfePoints"`
 	ExitEfficiency *float64 `json:"exitEfficiency"`
 	ExcursionBars  *string  `json:"excursionBars"`
-	Status         string   `json:"status"`
-	Retired        bool     `json:"retired"`
-	HasJournal     bool     `json:"hasJournal"`
-	JournalTag     string   `json:"journalTag,omitempty"`
-	GroupCount     int64    `json:"groupCount"`
+	// Copy set (internal/copyset): copies of one decision across accounts
+	// share a setId; null for a decision of its own.
+	SetID      *int64 `json:"setId"`
+	SetSize    int64  `json:"setSize"`
+	Status     string `json:"status"`
+	Retired    bool   `json:"retired"`
+	HasJournal bool   `json:"hasJournal"`
+	JournalTag string `json:"journalTag,omitempty"`
+	GroupCount int64  `json:"groupCount"`
 }
 
 type apiExecution struct {
@@ -86,6 +90,8 @@ type apiTradeDetail struct {
 	MfePoints      *float64       `json:"mfePoints"`
 	ExitEfficiency *float64       `json:"exitEfficiency"`
 	ExcursionBars  *string        `json:"excursionBars"`
+	SetID          *int64         `json:"setId"`
+	SetSize        int64          `json:"setSize"`
 	Status         string         `json:"status"`
 	BrokerTradeID  *string        `json:"brokerTradeId"`
 	HasJournal     bool           `json:"hasJournal"`
@@ -114,7 +120,8 @@ func apiTradeRowFrom(t tradeRow) apiTradeRow {
 		PlannedStop: t.PlannedStop, PlannedRisk: t.PlannedRisk, RMultiple: positions.RMultiple(t.NetPnl, t.PlannedRisk),
 		Mae: t.MaePnl, Mfe: t.MfePnl, MaePoints: t.MaePoints, MfePoints: t.MfePoints, ExcursionBars: t.ExcursionTf,
 		ExitEfficiency: apiExitEfficiency(t.Direction, t.EntryPrice, t.ExitPrice, t.MfePoints),
-		Retired:        t.AccountRetired, HasJournal: t.HasJournal, JournalTag: t.JournalTag, GroupCount: t.GroupCount,
+		SetID:          t.SetID, SetSize: t.SetSize,
+		Retired: t.AccountRetired, HasJournal: t.HasJournal, JournalTag: t.JournalTag, GroupCount: t.GroupCount,
 	}
 }
 
@@ -192,6 +199,10 @@ func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, e
 		ExitEfficiency: apiExitEfficiency(t.Direction, t.EntryPrice, t.ExitPrice, t.MfePoints),
 		BrokerTradeID:  t.BrokerTradeID,
 		ChartPng:       fmt.Sprintf("/api/v1/trades/%d/chart.png", id),
+	}
+	if ms, err := h.rq().GetTradeSetMembership(ctx, id); err == nil {
+		sid := ms.SetID
+		d.SetID, d.SetSize = &sid, ms.SetSize
 	}
 	if e, err := h.rq().GetJournalEntryByTradeID(ctx, &id); err == nil {
 		d.HasJournal = true

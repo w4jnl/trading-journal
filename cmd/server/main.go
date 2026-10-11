@@ -24,6 +24,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/backup"
 	"github.com/w4jnl/trading-journal/internal/config"
+	"github.com/w4jnl/trading-journal/internal/copyset"
 	"github.com/w4jnl/trading-journal/internal/db"
 	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/gex"
@@ -730,11 +731,14 @@ func run() error {
 	mux.HandleFunc("POST /import/assign", h.ImportAssign)
 	mux.HandleFunc("GET /trades", h.TradesPage)
 	mux.HandleFunc("GET /trades/{id}", h.TradeDetail)
+	mux.HandleFunc("GET /trades/sets/{id}", h.TradeSetDetail)
+	mux.HandleFunc("POST /trades/sets/{id}/journal", h.TradeSetJournal)
 	mux.HandleFunc("POST /trades/{id}/journal", h.TradeJournalSave)
 	mux.HandleFunc("POST /trades/{id}/plan", h.TradePlanSave)
 	// Trade-replay charts (JSON) for the trade-detail + journal views.
 	mux.HandleFunc("GET /charts/trade/{id}", h.ChartTrade)
 	mux.HandleFunc("GET /charts/group/{id}", h.ChartGroup)
+	mux.HandleFunc("GET /charts/set/{id}", h.ChartSet)
 	mux.HandleFunc("GET /charts/day/{date}", h.ChartDay)
 	mux.HandleFunc("GET /charts/week/{week}", h.ChartWeek)
 	mux.HandleFunc("GET /accounts", h.AccountsPage)
@@ -970,6 +974,8 @@ func run() error {
 	if excursions != nil {
 		go excursions.FillAll(ctx)
 	}
+	// Copy sets for databases from before the feature: one pass, fast.
+	copyset.Backfill(ctx, queries, slog.Default())
 
 	// TopstepX API sync worker + hourly CME-hours scheduler + session-token
 	// maintainer (renews tokens via validate before they expire, so syncs and

@@ -127,6 +127,22 @@
   //   - Otherwise let trade_sheet.js perform a plain hide (return undefined).
   // Journal saves inside the sheet update the row's icon live via an
   // hx-swap-oob span (see _trade_detail.html), so no reload is needed.
+  // Sets view: the chevron opens or folds a set's member rows. Delegated in
+  // the capture phase, so it runs before the button's own stopPropagation
+  // (data-stop) and survives live-refresh swaps of the table region; the
+  // click never reaches the row's hx-get.
+  document.addEventListener('click', function (e) {
+    var btn = e.target.closest && e.target.closest('[data-set-toggle]');
+    if (!btn) return;
+    e.stopPropagation();
+    e.preventDefault();
+    var id = btn.getAttribute('data-set-toggle');
+    var open = btn.getAttribute('aria-expanded') !== 'true';
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.textContent = open ? '▾' : '▸';
+    document.querySelectorAll('tr[data-member-of="' + id + '"]').forEach(function (tr) { tr.hidden = !open; });
+  }, true);
+
   window.tradeSheetOnClose = function () {
     const params = new URLSearchParams(location.search);
     const back = params.get('back');
@@ -332,7 +348,13 @@
 {{define "trades_table_live"}}
 <div id="trades-table-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
 <div class="muted retired-toggle-row" style="margin-bottom:8px;">
-  <span><span class="num">{{.Total}}</span> closed trades.</span>
+  {{/* Unit of the list: every trade, or one row per decision with the copy
+       set's accounts folded underneath. The choice is remembered. */}}
+  <span class="seg seg--sm trades-view-seg" role="group" aria-label="List by">
+    <a href="/trades?{{.ViewTradesQS}}" class="{{if ne .View "sets"}}active{{end}}" title="One row per trade">Trades</a>
+    <a href="/trades?{{.ViewSetsQS}}" class="{{if eq .View "sets"}}active{{end}}" title="One row per decision; copy sets fold their accounts underneath">Sets</a>
+  </span>
+  <span><span class="num">{{.Total}}</span> closed trades{{if eq .View "sets"}} · <span class="num">{{.Units}}</span> decisions{{end}}.</span>
   {{if .RetiredAuto}}
     <span class="retired-toggle-note">Retired accounts included because the filter targets them.</span>
   {{else if .ShowRetired}}
@@ -345,6 +367,9 @@
   {{end}}
 </div>
 
+{{if eq .View "sets"}}
+{{template "trades_sets_table" .}}
+{{else}}
 {{/* Header cells sort the WHOLE filtered set server-side (?sort=&dir=);
      the active column shows its direction and flips on click. The footer
      totals the filtered set, not the page. Under 600px the table becomes
@@ -429,6 +454,100 @@
   <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
   <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
+{{end}}
+</div>
+{{end}}
+
+{{/* The sets view: one row per decision. A copy set shows its members
+     (hidden until the chevron opens them); a trade in no set is a row of
+     its own and opens the trade sheet directly. Only entry time and net
+     sort over a group. */}}
+{{define "trades_sets_table"}}
+{{$sort := .Sort}}{{$dir := .Dir}}{{$refs := .SortRefs}}
+<div class="table-scroll sticky-head">
+  <table class="trades-table sets-table">
+    <thead>
+      <tr>
+        <th class="c-x"></th>
+        <th class="c-j"></th>
+        {{template "sort_th" (dict "Label" "Entry time" "Col" "entry" "Class" "c-time" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        <th class="c-set">Decision</th>
+        <th class="c-dir">Dir</th>
+        <th class="tabular c-acc" title="Accounts in the set">Accts</th>
+        <th class="tabular c-qty">Qty</th>
+        <th class="tabular c-entry" title="Average entry across the accounts, with the spread between the best and worst fill">Entry avg</th>
+        <th class="tabular c-exit" title="Average exit across the accounts">Exit avg</th>
+        <th class="tabular c-comm">Comm</th>
+        {{template "sort_th" (dict "Label" "Net P&L" "Col" "net" "Class" "tabular c-net" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        <th class="tabular c-r" title="R: net over the planned risk summed across the set">Risk</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Sets}}{{$s := .}}
+      <tr class="trade-row set-row{{if .Retired}} trade-row--retired{{end}}"
+          data-trade-id="{{.Key}}"
+          tabindex="0"
+          hx-get="{{if .IsSet}}/trades/sets/{{.SetIDValue}}{{else}}/trades/{{(index .Members 0).ID}}{{end}}"
+          hx-target="#trade-sheet-content"
+          hx-swap="innerHTML"
+          hx-indicator="closest tr">
+        <td class="c-x">{{if .IsSet}}<button type="button" class="set-toggle" data-set-toggle="{{.SetIDValue}}" data-stop aria-expanded="false" title="Show the accounts in this set" aria-label="Show the accounts in this set">▸</button>{{end}}</td>
+        <td class="c-j">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</td>
+        <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
+        <td class="c-set" data-label="Decision">{{.Symbol}}{{if .IsSet}} <span class="set-badge" title="{{.Accounts}} accounts, {{len .Members}} trades">set ×{{len .Members}}</span>{{end}}</td>
+        <td class="c-dir">{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td class="tabular num c-acc">{{.Accounts}}</td>
+        <td class="tabular num c-qty" data-label="Qty">{{.Qty}}</td>
+        <td class="tabular num c-entry" data-label="Entry">{{printf "%.2f" .EntryAvg}}{{if gt .Spread 0.0}} <span class="subtle" title="Spread between the best and worst entry">±{{printf "%g" .Spread}}</span>{{end}}</td>
+        <td class="tabular num c-exit" data-label="Exit">{{if .ExitAvg}}{{printf "%.2f" (deref .ExitAvg)}}{{else}}—{{end}}</td>
+        <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+        <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
+        <td class="tabular num c-r" data-label="Risk">{{if .PastStop}}<span class="past-stop-dot past-stop-dot--lead" title="At least one account went past its planned stop"></span>{{end}}{{with .RMultiple}}<span class="{{pnlSign (deref $s.NetPnl)}}">{{printf "%+.2fR" (deref .)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+      {{if .IsSet}}{{range .Members}}{{$row := .}}
+      <tr class="trade-row set-member{{if .AccountRetired}} trade-row--retired{{end}}"
+          data-trade-id="{{.ID}}"
+          data-member-of="{{$s.SetIDValue}}"
+          hidden
+          tabindex="0"
+          hx-get="/trades/{{.ID}}"
+          hx-target="#trade-sheet-content"
+          hx-swap="innerHTML"
+          hx-indicator="closest tr">
+        <td class="c-x"></td>
+        <td class="c-j">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</td>
+        <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "time"}}</td>
+        <td class="c-set" data-label="Account" title="{{.AccountName}}">{{.AccountName}} <span class="subtle">· {{.Symbol}}</span></td>
+        <td class="c-dir"></td>
+        <td class="c-acc"></td>
+        <td class="tabular num c-qty" data-label="Qty">{{.Qty}}</td>
+        <td class="tabular num c-entry" data-label="Entry">{{printf "%.2f" .EntryPrice}}</td>
+        <td class="tabular num c-exit" data-label="Exit">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
+        <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
+        <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
+        <td class="tabular num c-r" data-label="Risk">{{$r := rMultiple $row.NetPnl $row.PlannedRisk}}{{$path := $row.Path}}{{if $row.PastStop}}<span class="past-stop-dot past-stop-dot--lead" title="Past the stop"></span>{{end}}{{if $r}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{$r}}</span>{{end}}{{with $path}} <span class="path" title="{{.Title}}"><span class="path__heat" style="width: {{.HeatPct}}%"></span><span class="path__gain" style="width: {{.GainPct}}%"></span><span class="path__exit {{.Sign}}" style="left: {{.ExitPct}}%"></span></span>{{end}}{{if and (not $r) (not $path)}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+      {{end}}{{end}}
+    {{else}}
+      <tr><td colspan="12" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+    {{end}}
+    </tbody>
+    {{if .Sets}}
+    <tfoot>
+      <tr class="totals">
+        <td colspan="10" class="c-tot-label"><span class="num">{{.Units}}</span> decisions · <span class="num">{{.Totals.Count}}</span> trades in this filter · <span class="pnl-pos num">{{.Totals.Wins}}W</span><span class="muted">/</span><span class="pnl-neg num">{{.Totals.Losses}}L</span>{{with .Totals}}{{if .Planned}} · planned <span class="num">{{.Planned}}</span>{{if .RCount}} · avg <span class="num {{pnlSign .AvgR}}">{{printf "%+.2fR" .AvgR}}</span>{{end}}{{if .PastStop}} · <span class="past-stop-dot past-stop-dot--inline"></span>past stop <span class="num pnl-neg">{{.PastStop}}</span>{{end}}{{end}}{{if gt .MeasuredMfe 0.0}} · exit kept <span class="num">{{printf "%.0f%%" (mul .ExitKept 100.0)}}</span>{{end}}{{end}}</td>
+        <td class="tabular num c-net {{if gt .Totals.Net 0.0}}pnl-pos{{else if lt .Totals.Net 0.0}}pnl-neg{{end}}" data-label="Net">{{printf "%.2f" .Totals.Net}}</td>
+        <td class="c-r"></td>
+      </tr>
+    </tfoot>
+    {{end}}
+  </table>
+</div>
+
+<div class="pager">
+  <a href="{{.PrevPage}}" class="{{if not .PrevPage}}disabled{{end}}">‹ Prev</a>
+  <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
+  <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
 {{end}}
 

@@ -646,7 +646,8 @@ questions - use it instead of summing `/api/v1/trades` yourself. The MCP
 tool `get_analytics_summary` returns the same object.
 
 Query parameters are those of `/api/v1/stats/daily` (`from`, `to`, `day`,
-`filter`, `account_id`, `refresh`), same defaults (last 30 days), same
+`filter`, `account_id`, `refresh`) plus `unit` (`trades` | `sets`), same
+defaults (last 30 days), same
 400-day cap, same account rules.
 
 ```jsonc
@@ -692,7 +693,12 @@ or tag reaches a trade through its own entry or a group entry it is in, and
 a label also through the day entry of the day the trade closed. `excursion`
 covers only trades measured from cached bars (every trade row carries
 `mae`, `mfe`, `maePoints`, `mfePoints`, `exitEfficiency`, `excursionBars`;
-all null until the bars are cached).
+all null until the bars are cached). Trade rows also carry `setId` /
+`setSize`: copies of one decision fanned across accounts by a copytrader
+share a `setId` (same underlying, same direction, entries within two
+seconds, two or more accounts); group by it instead of guessing from
+timestamps. `unit=sets` on the summary counts each set once with its money
+summed (`unit` and the raw `trades` count are echoed in the response).
 Errors as for `/stats/daily`.
 
 ### Data version (change detection)

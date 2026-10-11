@@ -9,6 +9,7 @@ import (
 	"html/template"
 	"math"
 	"net/http"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -43,6 +44,8 @@ type analyticsTrade struct {
 	Emotions    []string
 	MaePnl      *float64 // excursion in money (internal/excursion); nil until measured
 	MfePnl      *float64
+	SetID       *int64 // copy set (internal/copyset); nil for a decision of its own
+	SetSize     int64  // members folded into this row when the unit is decisions
 }
 
 // analyticsBucket aggregates trades by some grouping key (symbol, direction,
@@ -106,6 +109,11 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.serverError(w, fmt.Errorf("fetch trades: %w", err))
 		return
+	}
+	unit := analyticsUnit(r)
+	tradeCount := len(trades)
+	if unit == "sets" {
+		trades = collapseSets(trades)
 	}
 
 	headline := computeHeadline(trades)
@@ -197,7 +205,11 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"FilterCount":      accountFilt.SelectedCount,
 		"From":             formFrom,
 		"To":               formTo,
-		"TradeCount":       int64(len(trades)),
+		"TradeCount":       int64(tradeCount),
+		"Unit":             unit,
+		"UnitCount":        int64(len(trades)),
+		"UnitTradesQS":     template.URL(unitQuery(r, "trades")),
+		"UnitSetsQS":       template.URL(unitQuery(r, "sets")),
 		"EquityNow":        equityNow,
 		"EquityByType":     equityByType,
 		"EquityIncluded":   balIncluded,
@@ -508,7 +520,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                 t.entry_price, t.exit_price,
 	                 t.gross_pnl, t.net_pnl, t.commission, t.planned_risk,
 	                 t.entry_time, t.exit_time,
-	                 t.mae_pnl, t.mfe_pnl,
+	                 t.mae_pnl, t.mfe_pnl, m.set_id,
 	                 a.name,
 	                 COALESCE((SELECT s.name FROM journal_entries je JOIN strategies s ON s.id = je.strategy_id WHERE je.trade_id = t.id LIMIT 1),
 	                          (SELECT s.name FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
@@ -526,6 +538,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                             UNION SELECT jet.journal_entry_id FROM journal_entry_trades jet WHERE jet.trade_id = t.id)), '') AS emotions
 	          FROM trades t
 	          JOIN accounts a ON a.id = t.account_id
+	          LEFT JOIN trade_set_members m ON m.trade_id = t.id
 	          WHERE ` + where + `
 	          ORDER BY t.exit_time`
 	rows, err := h.rdb().QueryContext(ctx, query, args...)
@@ -543,7 +556,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 			&t.EntryPrice, &t.ExitPrice,
 			&t.GrossPnl, &t.NetPnl, &t.Commission, &t.PlannedRisk,
 			&t.EntryTime, &exit,
-			&t.MaePnl, &t.MfePnl,
+			&t.MaePnl, &t.MfePnl, &t.SetID,
 			&t.AccountName, &t.Strategy, &t.Tag, &mistakes, &emotions); err != nil {
 			return nil, err
 		}
@@ -572,6 +585,81 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 		}
 	}
 	return out, nil
+}
+
+// unitQuery is the current analytics query with the unit switched.
+func unitQuery(r *http.Request, unit string) string {
+	q := url.Values{}
+	for k, vs := range r.URL.Query() {
+		if k == "unit" || k == "fragment" {
+			continue
+		}
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	q.Set("unit", unit)
+	return q.Encode()
+}
+
+// analyticsUnit reads ?unit=: "trades" (default) or "sets", where a copy
+// set counts once (one decision) with its money summed.
+func analyticsUnit(r *http.Request) string {
+	if r.URL.Query().Get("unit") == "sets" {
+		return "sets"
+	}
+	return "trades"
+}
+
+// collapseSets folds each copy set's members into one analyticsTrade: money,
+// contracts and planned risk summed (so R still reads net over risk), the
+// entry at the earliest member and the exit at the latest, the average
+// entry price, and strategy, tag and labels pooled. A trade in no set
+// passes through. Order follows the exit time, like the fetch.
+func collapseSets(trades []analyticsTrade) []analyticsTrade {
+	out := make([]analyticsTrade, 0, len(trades))
+	idx := map[int64]int{}
+	for _, t := range trades {
+		if t.SetID == nil {
+			t.SetSize = 1
+			out = append(out, t)
+			continue
+		}
+		i, ok := idx[*t.SetID]
+		if !ok {
+			t.SetSize = 1
+			t.AccountName = "set"
+			idx[*t.SetID] = len(out)
+			out = append(out, t)
+			continue
+		}
+		s := &out[i]
+		s.SetSize++
+		s.EntryPrice = (s.EntryPrice*float64(s.SetSize-1) + t.EntryPrice) / float64(s.SetSize)
+		s.Qty += t.Qty
+		addOpt(&s.GrossPnl, t.GrossPnl)
+		addOpt(&s.NetPnl, t.NetPnl)
+		addOpt(&s.Commission, t.Commission)
+		addOpt(&s.PlannedRisk, t.PlannedRisk)
+		addOpt(&s.MaePnl, t.MaePnl)
+		addOpt(&s.MfePnl, t.MfePnl)
+		if t.EntryTime.Before(s.EntryTime) {
+			s.EntryTime = t.EntryTime
+		}
+		if t.ExitTime.After(s.ExitTime) {
+			s.ExitTime = t.ExitTime
+		}
+		if s.Strategy == "" {
+			s.Strategy = t.Strategy
+		}
+		if s.Tag == "" {
+			s.Tag = t.Tag
+		}
+		s.Mistakes = mergeKeys(s.Mistakes, t.Mistakes)
+		s.Emotions = mergeKeys(s.Emotions, t.Emotions)
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].ExitTime.Before(out[j].ExitTime) })
+	return out
 }
 
 // dayLabelsByDate loads the labels of the caller's day entries keyed by

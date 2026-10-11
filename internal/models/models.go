@@ -356,6 +356,30 @@ type TradeExecution struct {
 	QtyUsed     float64 `json:"qty_used"`
 }
 
+type TradeSet struct {
+	ID          int64      `json:"id"`
+	UserID      int64      `json:"user_id"`
+	ClusterKey  string     `json:"cluster_key"`
+	SymbolRoot  string     `json:"symbol_root"`
+	Direction   string     `json:"direction"`
+	EntryTime   time.Time  `json:"entry_time"`
+	ExitTime    *time.Time `json:"exit_time"`
+	Members     int64      `json:"members"`
+	Accounts    int64      `json:"accounts"`
+	Qty         float64    `json:"qty"`
+	EntryAvg    float64    `json:"entry_avg"`
+	EntrySpread float64    `json:"entry_spread"`
+	ExitAvg     *float64   `json:"exit_avg"`
+	GrossPnl    *float64   `json:"gross_pnl"`
+	Commission  *float64   `json:"commission"`
+	NetPnl      *float64   `json:"net_pnl"`
+}
+
+type TradeSetMember struct {
+	TradeID int64 `json:"trade_id"`
+	SetID   int64 `json:"set_id"`
+}
+
 type User struct {
 	ID           int64      `json:"id"`
 	Username     string     `json:"username"`

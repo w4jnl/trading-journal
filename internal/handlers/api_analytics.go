@@ -17,6 +17,8 @@ type analyticsSummary struct {
 	From       string                 `json:"from"`
 	To         string                 `json:"to"`
 	Timezone   string                 `json:"timezone"`
+	Unit       string                 `json:"unit"`   // trades | sets: what one count means
+	Trades     int64                  `json:"trades"` // closed trades in range, whatever the unit
 	Totals     analyticsTotals        `json:"totals"`
 	R          analyticsR             `json:"r"`
 	Excursion  analyticsExcursion     `json:"excursion"`
@@ -83,12 +85,18 @@ func bucketsOut(bs []analyticsBucket) []bucketOut {
 
 // analyticsSummaryFor computes the summary for the user's trades that
 // exited inside rng (trading-tz days) under the account filter.
-func (h *Handlers) analyticsSummaryFor(ctx context.Context, af accountFilter, rng apiDateRange) (analyticsSummary, error) {
+func (h *Handlers) analyticsSummaryFor(ctx context.Context, af accountFilter, rng apiDateRange, unit string) (analyticsSummary, error) {
 	tz := h.localTZ()
 	from, to := rng.From.UTC(), rng.ToExclusive().UTC()
 	trades, err := h.fetchAnalyticsTrades(ctx, af, &from, &to)
 	if err != nil {
 		return analyticsSummary{}, fmt.Errorf("fetch trades: %w", err)
+	}
+	tradeCount := int64(len(trades))
+	if unit != "sets" {
+		unit = "trades"
+	} else {
+		trades = collapseSets(trades)
 	}
 	hl := computeHeadline(trades)
 	daily := dailySeriesFromTrades(trades, tz)
@@ -108,6 +116,7 @@ func (h *Handlers) analyticsSummaryFor(ctx context.Context, af accountFilter, rn
 	}
 	return analyticsSummary{
 		From: rng.From.Format("2006-01-02"), To: rng.To.Format("2006-01-02"), Timezone: tz.String(),
+		Unit: unit, Trades: tradeCount,
 		Totals: totals,
 		R:      analyticsR{PlannedTrades: hl.RTrades, AvgR: hl.AvgR, WinRate: hl.WinRateR, AvgWinR: hl.AvgWinR, AvgLossR: hl.AvgLossR},
 		Excursion: analyticsExcursion{
@@ -144,7 +153,7 @@ func (h *Handlers) APIAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.syncForAPIRead(r.Context(), apiWantsRefresh(r))
-	out, err := h.analyticsSummaryFor(r.Context(), af, rng)
+	out, err := h.analyticsSummaryFor(r.Context(), af, rng, analyticsUnit(r))
 	if err != nil {
 		h.logger().Warn("api analytics: load failed", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "could not load analytics")

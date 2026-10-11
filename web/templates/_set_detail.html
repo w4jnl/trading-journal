@@ -1,0 +1,78 @@
+{{/* set_detail: the sheet for a copy set (one decision across accounts).
+     Rendered into #trade-sheet-content like trade_detail. Data: Set
+     (setRow), SetID, Members ([]setMember with EntryDelta / ExitDelta in
+     ticks, favourable positive), TickSize, HasGroup / GroupID, chart keys. */}}
+{{define "set_detail"}}
+{{with .Set}}
+<div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
+  <span class="num" style="font-size: 18px; font-weight: 600;">{{.SymbolRoot}}</span>
+  <span class="muted">{{.Symbol}}</span>
+  {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
+  <span class="pill set-badge" title="One decision copied across accounts">set · {{.Accounts}} accounts</span>
+  <span class="ml-auto muted" style="font-size: 12px;">Set #{{$.SetID}}</span>
+</div>
+<div class="muted" style="margin-bottom: 12px; font-size: 12px;">
+  {{ltime .EntryTime "datetime"}}{{if .ExitTime}} → {{ltimep .ExitTime "time"}}{{end}} · {{len .Members}} trades
+</div>
+<div class="trade-stat-strip">
+  <div><div class="label">Qty</div><div class="num">{{.Qty}}</div></div>
+  <div><div class="label" title="Average entry across the accounts">Entry avg</div><div class="num">{{printf "%.2f" .EntryAvg}}</div></div>
+  <div><div class="label">Exit avg</div><div class="num">{{if .ExitAvg}}{{printf "%.2f" (deref .ExitAvg)}}{{else}}—{{end}}</div></div>
+  <div><div class="label">Gross</div><div class="num">{{pnlClass .GrossPnl}}</div></div>
+  <div><div class="label">Comm</div><div class="num">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</div></div>
+  <div><div class="label">Net</div><div class="num">{{pnlClass .NetPnl}}</div></div>
+</div>
+<div class="trade-stat-strip trade-stat-strip--4 trade-stat-strip--path">
+  <div><div class="label" title="Net over the planned risk summed across the set">R</div><div class="num">{{with .RMultiple}}<span class="{{pnlSign (deref $.Set.NetPnl)}}">{{printf "%+.2fR" (deref .)}}</span>{{else}}<span class="muted">—</span>{{end}}</div></div>
+  <div><div class="label" title="Spread between the best and worst entry across the accounts">Entry spread</div><div class="num">{{if gt .Spread 0.0}}{{printf "%g" .Spread}}{{if gt $.TickSize 0.0}} <span class="muted" style="font-weight:400;">{{printf "%g" (div .Spread $.TickSize)}} ticks</span>{{end}}{{else}}<span class="muted">none</span>{{end}}</div></div>
+  <div><div class="label" title="The account that got the best entry relative to the set's average">Best fill</div><div class="num">{{with $.BestFill}}{{.AccountName}} <span class="pnl-pos" style="font-weight:400;">{{printf "%+.1f" (deref .EntryDelta)}}</span>{{else}}<span class="muted">—</span>{{end}}</div></div>
+  <div><div class="label" title="The account that got the worst entry relative to the set's average">Worst fill</div><div class="num">{{with $.WorstFill}}{{.AccountName}} <span class="pnl-neg" style="font-weight:400;">{{printf "%+.1f" (deref .EntryDelta)}}</span>{{else}}<span class="muted">—</span>{{end}}</div></div>
+</div>
+{{end}}
+
+<div class="row-sm" style="margin: 14px 0 6px; align-items: center;">
+  <h3 style="margin: 0; font-size: 14px;">Accounts</h3>
+  <span class="muted" style="font-size: 11px;">Δ: entry and exit against the set's average, in {{if gt .TickSize 0.0}}ticks{{else}}points{{end}}, positive when better for the trade · click a row for the trade</span>
+</div>
+<div class="table-scroll">
+  <table class="set-members">
+    <thead>
+      <tr><th>Account</th><th>Symbol</th><th class="tabular">Qty</th><th class="tabular">Entry</th><th class="tabular">Δ</th><th class="tabular">Exit</th><th class="tabular">Δ</th><th class="tabular">Net</th><th class="tabular">R</th></tr>
+    </thead>
+    <tbody>
+    {{range .Members}}
+      <tr class="set-member-row" data-trade-id="{{.ID}}" tabindex="0" hx-get="/trades/{{.ID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" style="cursor: pointer;">
+        <td>{{.AccountName}}{{if .AccountFirm}} <code class="subtle">{{derefStr .AccountFirm}}</code>{{end}}</td>
+        <td class="num">{{.Symbol}}</td>
+        <td class="tabular num">{{.Qty}}</td>
+        <td class="tabular num">{{printf "%.2f" .EntryPrice}}</td>
+        <td class="tabular num">{{with .EntryDelta}}{{$d := deref .}}<span class="{{pnlSign $d}}">{{printf "%+.1f" $d}}</span>{{end}}</td>
+        <td class="tabular num">{{if .ExitPrice}}{{printf "%.2f" (deref .ExitPrice)}}{{else}}—{{end}}</td>
+        <td class="tabular num">{{with .ExitDelta}}{{$d := deref .}}<span class="{{pnlSign $d}}">{{printf "%+.1f" $d}}</span>{{end}}</td>
+        <td class="tabular num">{{pnlChip .NetPnl}}</td>
+        <td class="tabular num">{{$row := .}}{{with rMultiple $row.NetPnl $row.PlannedRisk}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{.}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+
+<div class="row-sm" style="margin: 16px 0 6px; align-items: center; gap: 10px;">
+  <h3 style="margin: 0; font-size: 14px;">Journal</h3>
+  {{if .HasGroup}}
+    <a class="btn btn--secondary btn--sm" href="/journal/group/{{.GroupID}}?back=%2Ftrades%3Fview%3Dsets">Open the group note</a>
+    <span class="muted" style="font-size: 12px;">one note for the whole set</span>
+  {{else}}
+    <form hx-post="/trades/sets/{{.SetID}}/journal" hx-swap="none" style="display: inline;">
+      <button type="submit" class="btn btn--primary btn--sm">Journal this set</button>
+    </form>
+    <span class="muted" style="font-size: 12px;">creates one group note covering every account's trade</span>
+  {{end}}
+</div>
+
+{{if .ChartEnabled}}
+<div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>
+{{end}}
+
+<span class="sheet-title-src" hidden data-sheet-title="{{.Set.SymbolRoot}} · set ×{{len .Members}}"></span>
+{{end}}
