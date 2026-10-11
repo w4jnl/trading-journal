@@ -35,7 +35,7 @@ INSERT INTO trades (
     ?, ?, ?, ?,
     ?, ?, ?, 'closed', ?
 )
-RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id
+RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk
 `
 
 type CreateImportedTradeParams struct {
@@ -93,6 +93,8 @@ func (q *Queries) CreateImportedTrade(ctx context.Context, arg CreateImportedTra
 		&i.Setup,
 		&i.CreatedAt,
 		&i.BrokerTradeID,
+		&i.PlannedStop,
+		&i.PlannedRisk,
 	)
 	return i, err
 }
@@ -107,7 +109,7 @@ INSERT INTO trades (
     ?, ?, ?, ?,
     ?, ?, ?, ?
 )
-RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id
+RETURNING id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk
 `
 
 type CreateTradeParams struct {
@@ -162,6 +164,8 @@ func (q *Queries) CreateTrade(ctx context.Context, arg CreateTradeParams) (Trade
 		&i.Setup,
 		&i.CreatedAt,
 		&i.BrokerTradeID,
+		&i.PlannedStop,
+		&i.PlannedRisk,
 	)
 	return i, err
 }
@@ -243,7 +247,7 @@ func (q *Queries) FirstEntryExecutionForTrade(ctx context.Context, tradeID int64
 }
 
 const getTradeByBrokerID = `-- name: GetTradeByBrokerID :one
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades WHERE account_id = ? AND broker_trade_id = ?
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk FROM trades WHERE account_id = ? AND broker_trade_id = ?
 `
 
 type GetTradeByBrokerIDParams struct {
@@ -273,12 +277,14 @@ func (q *Queries) GetTradeByBrokerID(ctx context.Context, arg GetTradeByBrokerID
 		&i.Setup,
 		&i.CreatedAt,
 		&i.BrokerTradeID,
+		&i.PlannedStop,
+		&i.PlannedRisk,
 	)
 	return i, err
 }
 
 const getTradeByID = `-- name: GetTradeByID :one
-SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, t.broker_trade_id, a.name AS account_name, a.firm AS account_firm
+SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price, t.exit_price, t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, t.status, t.tags, t.setup, t.created_at, t.broker_trade_id, t.planned_stop, t.planned_risk, a.name AS account_name, a.firm AS account_firm
 FROM trades t
 JOIN accounts a ON a.id = t.account_id
 WHERE t.id = ? AND a.user_id = ?
@@ -308,6 +314,8 @@ type GetTradeByIDRow struct {
 	Setup         *string    `json:"setup"`
 	CreatedAt     time.Time  `json:"created_at"`
 	BrokerTradeID *string    `json:"broker_trade_id"`
+	PlannedStop   *float64   `json:"planned_stop"`
+	PlannedRisk   *float64   `json:"planned_risk"`
 	AccountName   string     `json:"account_name"`
 	AccountFirm   *string    `json:"account_firm"`
 }
@@ -336,6 +344,8 @@ func (q *Queries) GetTradeByID(ctx context.Context, arg GetTradeByIDParams) (Get
 		&i.Setup,
 		&i.CreatedAt,
 		&i.BrokerTradeID,
+		&i.PlannedStop,
+		&i.PlannedRisk,
 		&i.AccountName,
 		&i.AccountFirm,
 	)
@@ -620,8 +630,57 @@ func (q *Queries) ListJournalLinksForAccountSymbol(ctx context.Context, arg List
 	return items, nil
 }
 
+const listTradePlansForAccountSymbol = `-- name: ListTradePlansForAccountSymbol :many
+SELECT id, entry_time, planned_stop, planned_risk
+FROM trades
+WHERE account_id = ? AND symbol = ?
+  AND (planned_stop IS NOT NULL OR planned_risk IS NOT NULL)
+`
+
+type ListTradePlansForAccountSymbolParams struct {
+	AccountID int64  `json:"account_id"`
+	Symbol    string `json:"symbol"`
+}
+
+type ListTradePlansForAccountSymbolRow struct {
+	ID          int64     `json:"id"`
+	EntryTime   time.Time `json:"entry_time"`
+	PlannedStop *float64  `json:"planned_stop"`
+	PlannedRisk *float64  `json:"planned_risk"`
+}
+
+// The plans a rebuild must carry over (positions.Builder): the FIFO replay
+// deletes and re-creates every trade of the (account, symbol) key.
+func (q *Queries) ListTradePlansForAccountSymbol(ctx context.Context, arg ListTradePlansForAccountSymbolParams) ([]ListTradePlansForAccountSymbolRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTradePlansForAccountSymbol, arg.AccountID, arg.Symbol)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTradePlansForAccountSymbolRow
+	for rows.Next() {
+		var i ListTradePlansForAccountSymbolRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EntryTime,
+			&i.PlannedStop,
+			&i.PlannedRisk,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listTradesByDate = `-- name: ListTradesByDate :many
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk FROM trades
 WHERE account_id = ? AND status = 'closed' AND exit_time IS NOT NULL
 ORDER BY exit_time, id
 `
@@ -654,6 +713,8 @@ func (q *Queries) ListTradesByDate(ctx context.Context, accountID int64) ([]Trad
 			&i.Setup,
 			&i.CreatedAt,
 			&i.BrokerTradeID,
+			&i.PlannedStop,
+			&i.PlannedRisk,
 		); err != nil {
 			return nil, err
 		}
@@ -669,7 +730,7 @@ func (q *Queries) ListTradesByDate(ctx context.Context, accountID int64) ([]Trad
 }
 
 const listTradesForAccount = `-- name: ListTradesForAccount :many
-SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id FROM trades WHERE account_id = ? ORDER BY entry_time, id
+SELECT id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, gross_pnl, commission, net_pnl, status, tags, setup, created_at, broker_trade_id, planned_stop, planned_risk FROM trades WHERE account_id = ? ORDER BY entry_time, id
 `
 
 func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]Trade, error) {
@@ -700,6 +761,8 @@ func (q *Queries) ListTradesForAccount(ctx context.Context, accountID int64) ([]
 			&i.Setup,
 			&i.CreatedAt,
 			&i.BrokerTradeID,
+			&i.PlannedStop,
+			&i.PlannedRisk,
 		); err != nil {
 			return nil, err
 		}
@@ -857,4 +920,46 @@ type RelinkJournalEntryParams struct {
 func (q *Queries) RelinkJournalEntry(ctx context.Context, arg RelinkJournalEntryParams) error {
 	_, err := q.db.ExecContext(ctx, relinkJournalEntry, arg.TradeID, arg.ID)
 	return err
+}
+
+const restoreTradePlan = `-- name: RestoreTradePlan :exec
+UPDATE trades SET planned_stop = ?, planned_risk = ? WHERE id = ?
+`
+
+type RestoreTradePlanParams struct {
+	PlannedStop *float64 `json:"planned_stop"`
+	PlannedRisk *float64 `json:"planned_risk"`
+	ID          int64    `json:"id"`
+}
+
+func (q *Queries) RestoreTradePlan(ctx context.Context, arg RestoreTradePlanParams) error {
+	_, err := q.db.ExecContext(ctx, restoreTradePlan, arg.PlannedStop, arg.PlannedRisk, arg.ID)
+	return err
+}
+
+const setTradePlan = `-- name: SetTradePlan :execrows
+UPDATE trades SET planned_stop = ?, planned_risk = ?
+WHERE trades.id = ? AND trades.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?)
+`
+
+type SetTradePlanParams struct {
+	PlannedStop *float64 `json:"planned_stop"`
+	PlannedRisk *float64 `json:"planned_risk"`
+	ID          int64    `json:"id"`
+	UserID      int64    `json:"user_id"`
+}
+
+// Planned stop / risk on one of the user's trades (NULLs clear the plan).
+// Scoped by user through the accounts subquery.
+func (q *Queries) SetTradePlan(ctx context.Context, arg SetTradePlanParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, setTradePlan,
+		arg.PlannedStop,
+		arg.PlannedRisk,
+		arg.ID,
+		arg.UserID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

@@ -2087,6 +2087,13 @@ tfoot td {
 .trades-table .c-acct { max-width: 170px; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
+@media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+
+/* Trade sheet: the plan row under the stat strip. */
+.trade-plan { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0 14px; }
+.trade-plan label { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-12); color: var(--fg-muted); }
+.trade-plan input { width: 120px; }
+.trade-plan-hint { flex-basis: 100%; font-size: var(--fs-11); color: var(--fg-subtle); }
 tr.trade-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 
 /* Filters collapse into one line on a phone (trades.html). */
@@ -2126,7 +2133,7 @@ tr.trade-row:focus-visible { outline: 2px solid var(--accent); outline-offset: -
   .trades-table td.c-dir { grid-area: dir; justify-self: end; }
   .trades-table td.c-net { grid-area: net; text-align: right; }
   .trades-table td.c-j, .trades-table td.c-hz, .trades-table td.c-qty, .trades-table td.c-entry,
-  .trades-table td.c-exit, .trades-table td.c-gross, .trades-table td.c-comm, .trades-table td.c-bal { display: none; }
+  .trades-table td.c-exit, .trades-table td.c-gross, .trades-table td.c-comm, .trades-table td.c-bal, .trades-table td.c-r { display: none; }
   .trades-table tfoot tr { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 12px; }
   .trades-table tfoot td { background: transparent; border: 0; padding: 0; }
   .trades-table tfoot td:empty, .trades-table tfoot td.c-gross, .trades-table tfoot td.c-comm { display: none; }

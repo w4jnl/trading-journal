@@ -821,3 +821,59 @@ func junctionsFor(t *testing.T, q *models.Queries, tradeID int64) map[string]map
 	}
 	return out
 }
+
+// TestRebuild_PreservesTradePlanAcrossRebuild: the planned stop survives a
+// rebuild (keyed on the opening fill, like journal links) and the risk is
+// recomputed from it against the rebuilt trade: 2 points on ES at 50/pt.
+func TestRebuild_PreservesTradePlanAcrossRebuild(t *testing.T) {
+	b, q, conn, accID := setupBuilder(t)
+	insertSynthExecutions(t, q, accID, "ESM6", "ES", []synthFill{
+		{"buy", 1, 7250, at(0), nil},
+		{"sell", 1, 7252, at(5), nil},
+	})
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("first rebuild: %v", err)
+	}
+	trades, _ := q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 {
+		t.Fatalf("setup expected 1 trade, got %d", len(trades))
+	}
+	if _, err := conn.Exec(`UPDATE trades SET planned_stop = 7248, planned_risk = 1 WHERE id = ?`, trades[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
+		t.Fatalf("rebuild with plan: %v", err)
+	}
+	trades, _ = q.ListTradesForAccount(context.Background(), accID)
+	if len(trades) != 1 || trades[0].PlannedStop == nil || *trades[0].PlannedStop != 7248 {
+		t.Fatalf("plan lost across rebuild: %+v", trades)
+	}
+	if trades[0].PlannedRisk == nil || *trades[0].PlannedRisk != 100 {
+		t.Errorf("planned_risk = %v, want 100 (2 pts x 50/pt x 1), recomputed from the stop", trades[0].PlannedRisk)
+	}
+}
+
+func TestPlannedRisk(t *testing.T) {
+	ts, tv := 0.25, 12.5
+	es := models.Instrument{TickSize: &ts, TickValue: &tv}
+	if r := PlannedRisk(7250, 7248, 2, es); r == nil || *r != 200 {
+		t.Errorf("ES 2 pts x 2 = %v, want 200", r)
+	}
+	if r := PlannedRisk(7250, 7252, 1, es); r == nil || *r != 100 {
+		t.Errorf("stop above entry still measures the distance: %v", r)
+	}
+	if r := PlannedRisk(7250, 7250, 1, es); r != nil {
+		t.Errorf("stop on the entry = %v, want nil", r)
+	}
+	if r := PlannedRisk(7250, 7248, 1, models.Instrument{}); r != nil {
+		t.Errorf("stub instrument = %v, want nil", r)
+	}
+	net, risk := 150.0, 100.0
+	if r := RMultiple(&net, &risk); r == nil || *r != 1.5 {
+		t.Errorf("R = %v, want 1.5", r)
+	}
+	zero := 0.0
+	if RMultiple(&net, &zero) != nil || RMultiple(nil, &risk) != nil {
+		t.Error("R with zero risk or no net must be nil")
+	}
+}

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/positions"
 )
 
 // ---- Trade projections (camelCase; we never serialize tradeRow / sqlc model
@@ -30,11 +31,16 @@ type apiTradeRow struct {
 	GrossPnl   *float64   `json:"grossPnl"`
 	Commission *float64   `json:"commission"`
 	NetPnl     *float64   `json:"netPnl"`
-	Status     string     `json:"status"`
-	Retired    bool       `json:"retired"`
-	HasJournal bool       `json:"hasJournal"`
-	JournalTag string     `json:"journalTag,omitempty"`
-	GroupCount int64      `json:"groupCount"`
+	// The trade's plan and the R multiple it yields (net / planned risk);
+	// null without a plan.
+	PlannedStop *float64 `json:"plannedStop"`
+	PlannedRisk *float64 `json:"plannedRisk"`
+	RMultiple   *float64 `json:"r"`
+	Status      string   `json:"status"`
+	Retired     bool     `json:"retired"`
+	HasJournal  bool     `json:"hasJournal"`
+	JournalTag  string   `json:"journalTag,omitempty"`
+	GroupCount  int64    `json:"groupCount"`
 }
 
 type apiExecution struct {
@@ -61,6 +67,9 @@ type apiTradeDetail struct {
 	GrossPnl       *float64       `json:"grossPnl"`
 	Commission     *float64       `json:"commission"`
 	NetPnl         *float64       `json:"netPnl"`
+	PlannedStop    *float64       `json:"plannedStop"`
+	PlannedRisk    *float64       `json:"plannedRisk"`
+	RMultiple      *float64       `json:"r"`
 	Status         string         `json:"status"`
 	BrokerTradeID  *string        `json:"brokerTradeId"`
 	HasJournal     bool           `json:"hasJournal"`
@@ -78,6 +87,7 @@ func apiTradeRowFrom(t tradeRow) apiTradeRow {
 		Symbol: t.Symbol, SymbolRoot: t.SymbolRoot, Direction: t.Direction, Qty: t.Qty,
 		EntryPrice: t.EntryPrice, ExitPrice: t.ExitPrice, EntryTime: t.EntryTime, ExitTime: t.ExitTime,
 		GrossPnl: t.GrossPnl, Commission: t.Commission, NetPnl: t.NetPnl, Status: t.Status,
+		PlannedStop: t.PlannedStop, PlannedRisk: t.PlannedRisk, RMultiple: positions.RMultiple(t.NetPnl, t.PlannedRisk),
 		Retired: t.AccountRetired, HasJournal: t.HasJournal, JournalTag: t.JournalTag, GroupCount: t.GroupCount,
 	}
 }
@@ -151,6 +161,7 @@ func (h *Handlers) tradeDetail(ctx context.Context, id int64) (apiTradeDetail, e
 		Symbol: t.Symbol, SymbolRoot: t.SymbolRoot, Direction: t.Direction, Qty: t.Qty,
 		EntryPrice: t.EntryPrice, ExitPrice: t.ExitPrice, EntryTime: t.EntryTime, ExitTime: t.ExitTime,
 		GrossPnl: t.GrossPnl, Commission: t.Commission, NetPnl: t.NetPnl, Status: t.Status,
+		PlannedStop: t.PlannedStop, PlannedRisk: t.PlannedRisk, RMultiple: positions.RMultiple(t.NetPnl, t.PlannedRisk),
 		BrokerTradeID: t.BrokerTradeID,
 		ChartPng:      fmt.Sprintf("/api/v1/trades/%d/chart.png", id),
 	}

@@ -359,6 +359,7 @@
         {{template "sort_th" (dict "Label" "Gross P&L" "Col" "gross" "Class" "tabular c-gross" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         {{template "sort_th" (dict "Label" "Comm" "Col" "comm" "Class" "tabular c-comm" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         {{template "sort_th" (dict "Label" "Net P&L" "Col" "net" "Class" "tabular c-net" "Sort" $sort "Dir" $dir "Refs" $refs)}}
+        {{template "sort_th" (dict "Label" "R" "Col" "r" "Class" "tabular c-r" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         <th class="tabular c-bal" title="Account balance after this trade">Bal after</th>
       </tr>
     </thead>
@@ -388,10 +389,11 @@
         <td class="tabular num c-gross" data-label="Gross">{{pnlClass .GrossPnl}}</td>
         <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
         <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
+        {{$row := .}}<td class="tabular num c-r" data-label="R" title="Net P&amp;L over the planned risk">{{with rMultiple $row.NetPnl $row.PlannedRisk}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{.}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="tabular num c-bal" data-label="Bal after">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}
-      <tr><td colspan="14" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+      <tr><td colspan="15" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
     {{end}}
     </tbody>
     {{if .Trades}}
@@ -403,6 +405,7 @@
         <td class="tabular num c-gross {{if gt .Totals.Gross 0.0}}pnl-pos{{else if lt .Totals.Gross 0.0}}pnl-neg{{end}}">{{printf "%.2f" .Totals.Gross}}</td>
         <td class="tabular num muted c-comm">{{printf "%.2f" .Totals.Commission}}</td>
         <td class="tabular num c-net {{if gt .Totals.Net 0.0}}pnl-pos{{else if lt .Totals.Net 0.0}}pnl-neg{{end}}" data-label="Net">{{printf "%.2f" .Totals.Net}}</td>
+        <td class="c-r"></td>
         <td class="c-bal"></td>
       </tr>
     </tfoot>

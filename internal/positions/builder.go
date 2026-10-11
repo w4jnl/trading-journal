@@ -139,6 +139,20 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 			entryExecByTrade[link.TradeID] = b.firstEntryExec(ctx, link.TradeID)
 		}
 	}
+	// Planned stops and risks ride along the same way: a trade's plan is
+	// the trader's, not the replay's, and the delete below would lose it.
+	plans, err := b.Queries.ListTradePlansForAccountSymbol(ctx, models.ListTradePlansForAccountSymbolParams{
+		AccountID: k.AccountID,
+		Symbol:    k.Symbol,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("list trade plans: %w", err)
+	}
+	for _, p := range plans {
+		if _, seen := entryExecByTrade[p.ID]; !seen {
+			entryExecByTrade[p.ID] = b.firstEntryExec(ctx, p.ID)
+		}
+	}
 	if err := b.Queries.DeleteTradesForAccountSymbol(ctx, models.DeleteTradesForAccountSymbolParams{
 		AccountID: k.AccountID,
 		Symbol:    k.Symbol,
@@ -219,6 +233,33 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 			// boundaries shifted; group link silently drops (same fallback).
 		default:
 			return closed, fmt.Errorf("find trade by signal (group): %w", err)
+		}
+	}
+
+	// Restore the plans. When the stop is known the risk is recomputed
+	// against the rebuilt trade (a re-paired trade can open at a different
+	// average or size); a typed-in risk without a stop is kept as is.
+	for _, p := range plans {
+		newID, err := b.findRebuiltTrade(ctx, k, entryExecByTrade[p.ID], p.EntryTime)
+		switch {
+		case err == nil:
+			risk := p.PlannedRisk
+			if p.PlannedStop != nil {
+				if t, err := b.Queries.GetTradeByID(ctx, models.GetTradeByIDParams{ID: newID, UserID: b.UserID}); err == nil {
+					if r := PlannedRisk(t.EntryPrice, *p.PlannedStop, t.Qty, instrument); r != nil {
+						risk = r
+					}
+				}
+			}
+			if err := b.Queries.RestoreTradePlan(ctx, models.RestoreTradePlanParams{
+				PlannedStop: p.PlannedStop, PlannedRisk: risk, ID: newID,
+			}); err != nil {
+				return closed, fmt.Errorf("restore trade plan %d: %w", newID, err)
+			}
+		case errors.Is(err, sql.ErrNoRows):
+			// the trade is gone with its boundaries; so is its plan.
+		default:
+			return closed, fmt.Errorf("find trade by signal (plan): %w", err)
 		}
 	}
 
