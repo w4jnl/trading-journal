@@ -45,6 +45,8 @@ type pdfEntry struct {
 	Trade    string
 	Tag      string
 	Strategy string
+	Mistakes []string // review labels, display names
+	Emotions []string
 	Body     string
 	Summary  GroupSummary
 	Trades   []linkedTrade
@@ -197,7 +199,8 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 	}
 	pdf.Ln(8)
 
-	// Meta line: "Account: X · Trade: Y …"
+	// Meta line: "Account: X · Trade: Y …", then the review labels on a
+	// line of their own ("Mistakes: … · Emotions: …").
 	if e.Account != "" || e.Trade != "" {
 		pdf.SetFont("Helvetica", "", smallFontSize)
 		pdf.SetTextColor(82, 82, 91)
@@ -212,6 +215,18 @@ func (r *pdfRenderer) renderEntry(e pdfEntry) {
 			meta += "Trade: " + e.Trade
 		}
 		pdf.MultiCell(r.contentWidth, 5, r.tr(meta), "", "L", false)
+	}
+	if len(e.Mistakes) > 0 || len(e.Emotions) > 0 {
+		pdf.SetFont("Helvetica", "", smallFontSize)
+		pdf.SetTextColor(82, 82, 91)
+		var parts []string
+		if len(e.Mistakes) > 0 {
+			parts = append(parts, "Mistakes: "+strings.Join(e.Mistakes, ", "))
+		}
+		if len(e.Emotions) > 0 {
+			parts = append(parts, "Emotions: "+strings.Join(e.Emotions, ", "))
+		}
+		pdf.MultiCell(r.contentWidth, 5, r.tr(strings.Join(parts, "  ·  ")), "", "L", false)
 	}
 
 	// Trades block — same look for day / week / group / trade entries.
