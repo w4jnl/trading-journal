@@ -58,11 +58,19 @@ func TestTradePlanSave(t *testing.T) {
 	if stop, risk := plan(); stop == nil || *stop != 7248 || risk == nil || *risk != 200 {
 		t.Fatalf("after stop: stop=%v risk=%v, want 7248 / 200", stop, risk)
 	}
+	// Risk alone derives the stop on the losing side, snapped to the tick:
+	// 250 over 50/pt x qty 2 = 2.5 pts below the entry.
+	if rec := post("10", url.Values{"risk": {"250"}}); rec.Code != http.StatusOK || !strings.Contains(rec.Header().Get("HX-Trigger"), "stop set to 7247.5 from the risk") {
+		t.Fatalf("risk only -> %d %q", rec.Code, rec.Header().Get("HX-Trigger"))
+	}
+	if stop, risk := plan(); stop == nil || *stop != 7247.5 || risk == nil || *risk != 250 {
+		t.Fatalf("after risk only: stop=%v risk=%v, want 7247.5 / 250", stop, risk)
+	}
 	if rec := post("10", url.Values{"stop": {"7248"}, "risk": {"150"}}); rec.Code != http.StatusOK {
 		t.Fatalf("typed risk -> %d", rec.Code)
 	}
-	if _, risk := plan(); risk == nil || *risk != 150 {
-		t.Fatalf("typed risk not kept: %v", risk)
+	if stop, risk := plan(); stop == nil || *stop != 7248 || risk == nil || *risk != 150 {
+		t.Fatalf("typed both not kept as typed: stop=%v risk=%v", stop, risk)
 	}
 	if rec := post("10", url.Values{"stop": {"-1"}}); rec.Code != http.StatusBadRequest {
 		t.Fatalf("negative stop -> %d, want 400", rec.Code)

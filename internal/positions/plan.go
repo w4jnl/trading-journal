@@ -25,6 +25,32 @@ func PlannedRisk(entry, stop, qty float64, inst models.Instrument) *float64 {
 	return &risk
 }
 
+// PlannedStop is the stop price that puts the given money at risk for qty
+// contracts: the risk over the point value, taken off the entry on the
+// losing side (below for a long, above for a short) and snapped to the
+// instrument's tick. nil on a stub instrument or non-positive inputs.
+func PlannedStop(entry, risk, qty float64, direction string, inst models.Instrument) *float64 {
+	mult, ok := PointValue(inst)
+	if !ok || entry <= 0 || risk <= 0 || qty <= 0 {
+		return nil
+	}
+	dist := risk / (mult * qty)
+	if inst.TickSize != nil && *inst.TickSize > 0 {
+		dist = math.Round(dist / *inst.TickSize) * *inst.TickSize
+	}
+	if dist <= 0 {
+		return nil
+	}
+	stop := entry - dist
+	if direction == "short" {
+		stop = entry + dist
+	}
+	if stop <= 0 {
+		return nil
+	}
+	return &stop
+}
+
 // PointValue is the money one contract makes per one point of price: the
 // tick value over the tick size, else the bare multiplier. ok is false on
 // a stub instrument (no specs yet) or a non-positive value.

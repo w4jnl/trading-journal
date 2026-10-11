@@ -2114,8 +2114,10 @@ tfoot td {
               background: var(--fg-muted); border: 1.5px solid var(--bg-elev); box-shadow: 0 0 0 1px currentColor; }
 .path__exit.pnl-pos { background: var(--pos); color: var(--pos); }
 .path__exit.pnl-neg { background: var(--neg); color: var(--neg); }
-/* Past the stop: one red dot beside the journal icon. */
-.past-stop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--neg); vertical-align: middle; margin-left: 3px; }
+/* Past the stop: one red dot leading the Risk cell (and labelling the
+   footer's count), for a planned trade whose heat went beyond the risk. */
+.past-stop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--neg); vertical-align: middle; }
+.past-stop-dot--lead { margin-right: 5px; }
 .past-stop-dot--inline { margin: 0 4px 0 0; }
 
 /* Trade sheet: the plan row under the stat strip. */

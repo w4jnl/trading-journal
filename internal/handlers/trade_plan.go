@@ -43,9 +43,17 @@ func (h *Handlers) TradePlanSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "risk must be a positive amount", http.StatusBadRequest)
 		return
 	}
-	if risk == nil && stop != nil {
-		if inst, err := h.Queries.GetInstrument(ctx, trade.SymbolRoot); err == nil {
+	// Either side derives the other through the instrument's point value:
+	// a stop sets the risk, a risk sets the stop (on the losing side of the
+	// entry, snapped to the tick). Typing both keeps both as typed.
+	derivedStop := false
+	if inst, err := h.Queries.GetInstrument(ctx, trade.SymbolRoot); err == nil {
+		switch {
+		case risk == nil && stop != nil:
 			risk = positions.PlannedRisk(trade.EntryPrice, *stop, trade.Qty, inst)
+		case stop == nil && risk != nil:
+			stop = positions.PlannedStop(trade.EntryPrice, *risk, trade.Qty, trade.Direction, inst)
+			derivedStop = stop != nil
 		}
 	}
 	n, err := h.Queries.SetTradePlan(ctx, models.SetTradePlanParams{PlannedStop: stop, PlannedRisk: risk, ID: id, UserID: userID(ctx)})
@@ -65,6 +73,10 @@ func (h *Handlers) TradePlanSave(w http.ResponseWriter, r *http.Request) {
 		msg = "Plan cleared"
 	case stop != nil && risk == nil:
 		msg = "Stop saved; set the instrument's tick size and value to derive the risk"
+	case stop == nil && risk != nil:
+		msg = "Risk saved; set the instrument's tick size and value to derive the stop"
+	case derivedStop:
+		msg = fmt.Sprintf("Plan saved; stop set to %g from the risk", *stop)
 	}
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Trigger", `{"toast":{"message":`+strconv.Quote(msg)+`,"kind":"success"}}`)

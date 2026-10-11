@@ -388,7 +388,7 @@
                handles [data-journal-open] before the row's own hx-get); the
                rest of the row opens the trade with the note folded. */}}
           <button type="button" class="j-open" data-journal-open="{{.ID}}" title="{{if .HasJournal}}Edit the note{{if .JournalTag}} ({{.JournalTag}}){{end}}{{else}}Add a note{{end}}" aria-label="{{if .HasJournal}}Edit the note on{{else}}Add a note to{{end}} trade {{.Symbol}}"><span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span></button>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
-        {{if .PastStop}}<span class="past-stop-dot" title="Past the stop: heat −{{printf "%.2f" (deref .MaePnl)}} against a planned risk of {{printf "%.2f" (deref .PlannedRisk)}}"></span>{{end}}</td>
+        </td>
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
         <td class="c-acct" data-label="Account" title="{{.AccountName}}">{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
         <td class="num c-sym" data-label="Symbol">{{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></td>
@@ -400,7 +400,7 @@
         <td class="tabular num c-gross" data-label="Gross">{{pnlClass .GrossPnl}}</td>
         <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
         <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
-        {{$row := .}}<td class="tabular num c-r" data-label="Risk" title="R: net P&amp;L over the planned risk · path: heat left, best seen right, exit as the dot">{{$r := rMultiple $row.NetPnl $row.PlannedRisk}}{{$path := $row.Path}}{{if $r}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{$r}}</span>{{end}}{{with $path}} <span class="path" title="{{.Title}}"><span class="path__heat" style="width: {{.HeatPct}}%"></span><span class="path__gain" style="width: {{.GainPct}}%"></span><span class="path__exit {{.Sign}}" style="left: {{.ExitPct}}%"></span></span>{{end}}{{if and (not $r) (not $path)}}<span class="muted">—</span>{{end}}</td>
+        {{$row := .}}<td class="tabular num c-r" data-label="Risk" title="R: net P&amp;L over the planned risk · path: heat left, best seen right, exit as the dot">{{$r := rMultiple $row.NetPnl $row.PlannedRisk}}{{$path := $row.Path}}{{if $row.PastStop}}<span class="past-stop-dot past-stop-dot--lead" title="Past the stop: heat −{{printf "%.2f" (deref $row.MaePnl)}} against a planned risk of {{printf "%.2f" (deref $row.PlannedRisk)}}"></span>{{end}}{{if $r}}<span class="{{pnlSign (deref $row.NetPnl)}}">{{$r}}</span>{{end}}{{with $path}} <span class="path" title="{{.Title}}"><span class="path__heat" style="width: {{.HeatPct}}%"></span><span class="path__gain" style="width: {{.GainPct}}%"></span><span class="path__exit {{.Sign}}" style="left: {{.ExitPct}}%"></span></span>{{end}}{{if and (not $r) (not $path)}}<span class="muted">—</span>{{end}}</td>
         <td class="tabular num c-bal" data-label="Bal after">{{$bal := index $.TradeBalances .ID}}{{if $bal}}{{printf "%.2f" (deref $bal)}}{{else}}<span class="muted">—</span>{{end}}</td>
       </tr>
     {{else}}

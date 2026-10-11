@@ -107,7 +107,7 @@ func TestTradesRiskOverview(t *testing.T) {
 	for _, want := range []string{
 		`<option value="past-stop" >Past stop</option>`,
 		`<option value="planned" selected>Planned</option>`,
-		`class="past-stop-dot" title="Past the stop: heat −300.00 against a planned risk of 100.00"`,
+		`<td class="tabular num c-r" data-label="Risk" title="R: net P&amp;L over the planned risk · path: heat left, best seen right, exit as the dot"><span class="past-stop-dot past-stop-dot--lead" title="Past the stop: heat −300.00 against a planned risk of 100.00"></span>`,
 		// html/template writes + as &#43; in attributes and text.
 		`<span class="path" title="Heat −300.00 · best seen &#43;500.00 · exit kept 80% (1m bars)">`,
 		`style="width: 30%"`, `style="left: 90%"`,

@@ -922,3 +922,21 @@ func TestRebuild_KeepsExcursionWhenBoundariesUnchanged(t *testing.T) {
 		}
 	}
 }
+
+func TestPlannedStop(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	es := models.Instrument{TickSize: f(0.25), TickValue: f(12.5)} // 50 per point
+	if s := PlannedStop(7250, 200, 2, "long", es); s == nil || *s != 7248 {
+		t.Errorf("long 200 risk x2 = %v, want 7248", s)
+	}
+	if s := PlannedStop(7250, 200, 2, "short", es); s == nil || *s != 7252 {
+		t.Errorf("short 200 risk x2 = %v, want 7252", s)
+	}
+	// 30 of risk on one contract is 0.6 pts: snapped to the 0.25 tick -> 0.5.
+	if s := PlannedStop(7250, 30, 1, "long", es); s == nil || *s != 7249.5 {
+		t.Errorf("tick snap = %v, want 7249.5", s)
+	}
+	if PlannedStop(7250, 200, 2, "long", models.Instrument{}) != nil || PlannedStop(7250, 0, 2, "long", es) != nil {
+		t.Error("stub instrument or zero risk must give no stop")
+	}
+}
