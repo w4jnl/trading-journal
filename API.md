@@ -511,6 +511,7 @@ Query parameters (all optional):
 | `symbol_root` | string | e.g. `MES` |
 | `direction` | `long` \| `short` | |
 | `outcome` | `win` \| `loss` \| `breakeven` | by net P&L sign |
+| `risk` | `planned` \| `past-stop` | trades carrying a plan; or planned trades whose measured heat exceeded the planned risk |
 | `from` | `YYYY-MM-DD` \| `today` \| `yesterday` \| `last` | inclusive lower bound on the exit day (trading timezone) |
 | `to` | same | inclusive upper bound |
 | `account_id` | integer | one account (`filter=acc:<id>` / `filter=type:<slug>` also work) |

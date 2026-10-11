@@ -2094,6 +2094,21 @@ tfoot td {
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
 @media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+/* Risk cell: the R number and the path glyph, a bar centred on the entry
+   with heat to the left, best seen to the right and the exit as a dot. */
+.trades-table .c-r { white-space: nowrap; }
+.path { position: relative; display: inline-block; width: 48px; height: 8px; vertical-align: middle; margin-left: 6px;
+        background: var(--bg-sunken); border-radius: 4px; overflow: visible; }
+.path::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--fg-subtle); }
+.path__heat { position: absolute; right: 50%; top: 0; height: 100%; background: var(--neg); opacity: 0.45; border-radius: 4px 0 0 4px; }
+.path__gain { position: absolute; left: 50%; top: 0; height: 100%; background: var(--pos); opacity: 0.45; border-radius: 0 4px 4px 0; }
+.path__exit { position: absolute; top: 50%; width: 7px; height: 7px; border-radius: 50%; transform: translate(-50%, -50%);
+              background: var(--fg-muted); border: 1.5px solid var(--bg-elev); box-shadow: 0 0 0 1px currentColor; }
+.path__exit.pnl-pos { background: var(--pos); color: var(--pos); }
+.path__exit.pnl-neg { background: var(--neg); color: var(--neg); }
+/* Past the stop: one red dot beside the journal icon. */
+.past-stop-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--neg); vertical-align: middle; margin-left: 3px; }
+.past-stop-dot--inline { margin: 0 4px 0 0; }
 
 /* Trade sheet: the plan row under the stat strip. */
 .trade-plan { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 12px; margin: 10px 0 14px; }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html/template"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -31,8 +32,12 @@ type tradeFilters struct {
 	// "breakeven" (net=0). nil = no filter. Trades with NULL net_pnl
 	// (stub instruments) are excluded by any non-nil outcome filter.
 	Outcome *string
-	From    *time.Time
-	To      *time.Time
+	// Risk narrows by the trade's plan: "planned" (carries a stop or risk),
+	// "past-stop" (planned, and the measured heat exceeded the risk: the
+	// stop was not honoured). nil = no filter.
+	Risk *string
+	From *time.Time
+	To   *time.Time
 	// FromDay / ToDay are the trading-timezone calendar days (YYYY-MM-DD)
 	// the bounds were built from, for echoing back to the form and chart
 	// title. From/To are UTC instants, so formatting them directly shows the
@@ -93,6 +98,61 @@ type tradeRow struct {
 	HasJournal     bool
 	JournalTag     string // "" if no entry or no tag set
 	GroupCount     int64  // number of group-journal entries that include this trade
+}
+
+// PastStop reports a planned trade whose measured heat exceeded the planned
+// risk: price went through the stop and the trade stayed on.
+func (r tradeRow) PastStop() bool {
+	return r.PlannedRisk != nil && *r.PlannedRisk > 0 && r.MaePnl != nil && *r.MaePnl > *r.PlannedRisk
+}
+
+// tradePath is the row glyph of a trade's price path: a bar centred on the
+// entry, heat to the left and best-seen to the right (each as a percent of
+// the full width, so 50 is the whole half), and the exit as a dot. Each row
+// is scaled to its own extreme, so the glyph shows shape, not size.
+type tradePath struct {
+	HeatPct int
+	GainPct int
+	ExitPct int // 0..100 across the bar; 50 is the entry
+	Title   string
+	Sign    string // pnl-pos | pnl-neg | "" for the exit dot
+}
+
+// Path is nil until the trade is measured (internal/excursion) and closed.
+func (r tradeRow) Path() *tradePath {
+	if r.MaePoints == nil || r.MfePoints == nil || r.ExitPrice == nil {
+		return nil
+	}
+	mae, mfe := *r.MaePoints, *r.MfePoints
+	scale := math.Max(mae, mfe)
+	if scale <= 0 {
+		return nil
+	}
+	realized := excursion.Realized(r.Direction, r.EntryPrice, *r.ExitPrice)
+	p := &tradePath{
+		HeatPct: int(math.Round(mae / scale * 50)),
+		GainPct: int(math.Round(mfe / scale * 50)),
+		ExitPct: int(math.Round(50 + realized/scale*50)),
+	}
+	p.ExitPct = min(max(p.ExitPct, 2), 98)
+	switch {
+	case realized > 0:
+		p.Sign = "pnl-pos"
+	case realized < 0:
+		p.Sign = "pnl-neg"
+	}
+	if r.MaePnl != nil && r.MfePnl != nil {
+		p.Title = fmt.Sprintf("Heat −%.2f · best seen +%.2f", *r.MaePnl, *r.MfePnl)
+	} else {
+		p.Title = fmt.Sprintf("Heat %g pts · best seen %g pts", mae, mfe)
+	}
+	if e := excursion.Efficiency(r.Direction, r.EntryPrice, *r.ExitPrice, mfe); e != nil {
+		p.Title += fmt.Sprintf(" · exit kept %.0f%%", *e*100)
+	}
+	if r.ExcursionTf != nil {
+		p.Title += " (" + *r.ExcursionTf + " bars)"
+	}
+	return p
 }
 
 // TradesPage renders /trades — a paginated, filterable table of closed trades.
@@ -720,6 +780,35 @@ type tradeTotals struct {
 	Gross      float64
 	Commission float64
 	Net        float64
+	// Risk, over the same filtered set. Planned trades carry a risk; RCount
+	// of them also have a net P&L (SumR is their R total). PastStop counts
+	// planned trades whose measured heat exceeded the risk. Measured trades
+	// have an excursion; MeasuredGross / MeasuredMfe is how much of the
+	// best move the exits kept.
+	Planned       int64
+	RCount        int64
+	SumR          float64
+	PastStop      int64
+	Measured      int64
+	MeasuredGross float64
+	MeasuredMfe   float64
+}
+
+// AvgR is the mean R over the planned trades with a P&L; 0 without any.
+func (t tradeTotals) AvgR() float64 {
+	if t.RCount == 0 {
+		return 0
+	}
+	return t.SumR / float64(t.RCount)
+}
+
+// ExitKept is total gross over total best-seen across the measured trades
+// (the analytics exit-efficiency figure, for this filter); 0 without MFE.
+func (t tradeTotals) ExitKept() float64 {
+	if t.MeasuredMfe <= 0 {
+		return 0
+	}
+	return t.MeasuredGross / t.MeasuredMfe
 }
 
 func totalsTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (tradeTotals, error) {
@@ -727,10 +816,18 @@ func totalsTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) (trad
 	q := `SELECT COUNT(*),
 	             COALESCE(SUM(CASE WHEN t.net_pnl > 0 THEN 1 ELSE 0 END), 0),
 	             COALESCE(SUM(CASE WHEN t.net_pnl < 0 THEN 1 ELSE 0 END), 0),
-	             COALESCE(SUM(t.gross_pnl), 0), COALESCE(SUM(t.commission), 0), COALESCE(SUM(t.net_pnl), 0)
+	             COALESCE(SUM(t.gross_pnl), 0), COALESCE(SUM(t.commission), 0), COALESCE(SUM(t.net_pnl), 0),
+	             COALESCE(SUM(CASE WHEN t.planned_risk > 0 THEN 1 ELSE 0 END), 0),
+	             COALESCE(SUM(CASE WHEN t.planned_risk > 0 AND t.net_pnl IS NOT NULL THEN 1 ELSE 0 END), 0),
+	             COALESCE(SUM(CASE WHEN t.planned_risk > 0 THEN t.net_pnl / t.planned_risk END), 0),
+	             COALESCE(SUM(CASE WHEN t.planned_risk > 0 AND t.mae_pnl > t.planned_risk THEN 1 ELSE 0 END), 0),
+	             COALESCE(SUM(CASE WHEN t.mfe_pnl IS NOT NULL THEN 1 ELSE 0 END), 0),
+	             COALESCE(SUM(CASE WHEN t.mfe_pnl IS NOT NULL THEN t.gross_pnl END), 0),
+	             COALESCE(SUM(t.mfe_pnl), 0)
 	      FROM trades t WHERE ` + where
 	var tt tradeTotals
-	if err := db.QueryRowContext(ctx, q, args...).Scan(&tt.Count, &tt.Wins, &tt.Losses, &tt.Gross, &tt.Commission, &tt.Net); err != nil {
+	if err := db.QueryRowContext(ctx, q, args...).Scan(&tt.Count, &tt.Wins, &tt.Losses, &tt.Gross, &tt.Commission, &tt.Net,
+		&tt.Planned, &tt.RCount, &tt.SumR, &tt.PastStop, &tt.Measured, &tt.MeasuredGross, &tt.MeasuredMfe); err != nil {
 		return tradeTotals{}, err
 	}
 	return tt, nil
@@ -803,6 +900,14 @@ func buildWhere(f tradeFilters, uid int64) (string, []any) {
 			w.and("t.net_pnl = 0")
 		}
 	}
+	if f.Risk != nil {
+		switch *f.Risk {
+		case "planned":
+			w.and("t.planned_risk > 0")
+		case "past-stop":
+			w.and("t.planned_risk > 0 AND t.mae_pnl > t.planned_risk")
+		}
+	}
 	if f.From != nil {
 		w.and("t.exit_time >= ?", *f.From)
 	}
@@ -841,6 +946,9 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	}
 	if v := strings.TrimSpace(q.Get("outcome")); v == "win" || v == "loss" || v == "breakeven" {
 		f.Outcome = &v
+	}
+	if v := strings.TrimSpace(q.Get("risk")); v == "planned" || v == "past-stop" {
+		f.Risk = &v
 	}
 	// Dates are trading-tz calendar days (keywords today|yesterday|last are
 	// resolved server-side), converted to UTC instants: exit_time is stored
@@ -901,6 +1009,9 @@ func filtersAsForm(f tradeFilters) map[string]string {
 	}
 	if f.Outcome != nil {
 		out["Outcome"] = *f.Outcome
+	}
+	if f.Risk != nil {
+		out["Risk"] = *f.Risk
 	}
 	if f.From != nil {
 		out["From"] = f.fromLabel()

@@ -540,6 +540,7 @@
           { "name": "symbol_root", "in": "query", "schema": { "type": "string" }, "description": "e.g. MES" },
           { "name": "direction", "in": "query", "schema": { "type": "string", "enum": ["long", "short"] } },
           { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["win", "loss", "breakeven"] } },
+          { "name": "risk", "in": "query", "schema": { "type": "string", "enum": ["planned", "past-stop"] }, "description": "planned: trades carrying a stop or risk; past-stop: planned trades whose measured heat (mae) exceeded plannedRisk." },
           { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" }, "description": "Inclusive lower bound on the exit day (trading timezone): YYYY-MM-DD or today|yesterday|last (resolved server-side)." },
           { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" }, "description": "Inclusive upper bound: YYYY-MM-DD or today|yesterday|last. For today's trades send from=today&to=today." },
           { "name": "account_id", "in": "query", "schema": { "type": "integer" } },
