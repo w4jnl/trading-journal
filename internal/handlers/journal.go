@@ -1181,6 +1181,11 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 	if len(rows) == 0 {
 		b.WriteString("_No entries match the active filters._\n")
 	}
+	labels, err := loadEntryLabels(ctx, h.rdb(), feedRowIDs(rows))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("export labels: %w", err))
+		return
+	}
 
 	for _, row := range rows {
 		entryDate := row.EntryDate.In(tz)
@@ -1214,7 +1219,14 @@ func (h *Handlers) JournalExportMarkdown(w http.ResponseWriter, r *http.Request)
 		if row.StrategyName != nil && *row.StrategyName != "" {
 			fmt.Fprintf(&b, "- **Strategy:** %s\n", *row.StrategyName)
 		}
-		if (row.Tag != nil && *row.Tag != "") || (row.StrategyName != nil && *row.StrategyName != "") {
+		mistakes, emotions := labelNames(labels[row.ID])
+		if len(mistakes) > 0 {
+			fmt.Fprintf(&b, "- **Mistakes:** %s\n", strings.Join(mistakes, ", "))
+		}
+		if len(emotions) > 0 {
+			fmt.Fprintf(&b, "- **Emotions:** %s\n", strings.Join(emotions, ", "))
+		}
+		if (row.Tag != nil && *row.Tag != "") || (row.StrategyName != nil && *row.StrategyName != "") || len(mistakes) > 0 || len(emotions) > 0 {
 			b.WriteString("\n")
 		}
 
@@ -1270,6 +1282,11 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	labels, err := loadEntryLabels(ctx, h.rdb(), feedRowIDs(rows))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("export labels (pdf): %w", err))
+		return
+	}
 	entries := make([]pdfEntry, 0, len(rows))
 	for _, row := range rows {
 		entryDate := row.EntryDate.In(tz)
@@ -1309,6 +1326,7 @@ func (h *Handlers) JournalExportPDF(w http.ResponseWriter, r *http.Request) {
 		if row.StrategyName != nil {
 			e.Strategy = *row.StrategyName
 		}
+		e.Mistakes, e.Emotions = labelNames(labels[row.ID])
 		entries = append(entries, e)
 	}
 
@@ -1352,6 +1370,16 @@ func filterDescription(f journalFilters) string {
 			n++
 		}
 		parts = append(parts, fmt.Sprintf("strategy: %d selected", n))
+	}
+	if len(f.mistakes) > 0 || f.mistakeNone {
+		ms := append([]string{}, f.mistakes...)
+		if f.mistakeNone {
+			ms = append(ms, "none")
+		}
+		parts = append(parts, "mistake: "+strings.Join(ms, ", "))
+	}
+	if len(f.emotions) > 0 {
+		parts = append(parts, "emotion: "+strings.Join(f.emotions, ", "))
 	}
 	if len(parts) == 0 {
 		return ""

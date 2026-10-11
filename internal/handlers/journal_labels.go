@@ -61,6 +61,26 @@ func loadEntryLabels(ctx context.Context, db *sql.DB, entryIDs []int64) (map[int
 	return out, rows.Err()
 }
 
+// feedRowIDs collects the entry ids of a feed page (batch loaders).
+func feedRowIDs(rows []feedRow) []int64 {
+	ids := make([]int64, 0, len(rows))
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	return ids
+}
+
+// labelNames turns one entry's label keys into display names per kind.
+func labelNames(byKind map[string][]string) (mistakes, emotions []string) {
+	for _, k := range byKind[journal.KindMistake] {
+		mistakes = append(mistakes, journal.LabelName(journal.KindMistake, k))
+	}
+	for _, k := range byKind[journal.KindEmotion] {
+		emotions = append(emotions, journal.LabelName(journal.KindEmotion, k))
+	}
+	return mistakes, emotions
+}
+
 // journalLabelPattern is one label with its count over the listed entries
 // and a link that adds it to the filter (or drops it when already active).
 type journalLabelPattern struct {
