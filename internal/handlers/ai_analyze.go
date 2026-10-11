@@ -40,20 +40,23 @@ Interpret the numbers; do not just restate them. Never invent prices or times no
 // (never overwriting your choice) and only when one clearly fits - the model returns
 // "none" otherwise, so nothing is forced. language (e.g. "Czech"), when non-empty, makes
 // the model write the review prose in that language; empty = the model default (English).
+// aiCoachNote tells the model what the coachChecks in its context are.
+const aiCoachNote = "\n\nWhen the context carries coachChecks, they are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms). Treat them as objective evidence: cite the relevant ones with their numbers, weigh them against the trader's notes, and do not restate them as your own discovery. They are observations, not verdicts."
+
 func aiSystemPrompt(language string) string {
 	verdict := "\n\n" + `End with EXACTLY one final line - a machine-readable verdict (it is removed before saving):
 <!-- tj-ai:verdict tag=<good|neutral|bad|none> strategy=<id|none> -->
 - tag: your honest read - good / neutral / bad. Use none ONLY when a good/neutral/bad verdict genuinely does not apply.
 - strategy: identify the SINGLE best-fitting entry from "availableStrategies" and give its id or exact name. Weigh the trade (structure, direction, timing) AND the trader's own notes - a note like "3bar" points to a "Three-Bar Reversal". The trader has NOT pre-tagged one, so choosing the fit is YOUR job: do not answer none just because nothing was tagged or you are not fully certain. Use none only when nothing in the list is plausibly related (and always for a whole day or a group of mixed setups). Use only an id or name from that list; never invent one.`
 	if language == "" {
-		return aiSystemBase + verdict
+		return aiSystemBase + aiCoachNote + verdict
 	}
 	// Local models tend to default to English when the language directive is buried at the
 	// end of a long English prompt, so LEAD and CLOSE with it. The verdict line is parsed,
 	// so it is the explicit exception that stays in English.
 	lead := "WRITE YOUR ENTIRE REVIEW IN " + language + ". Every sentence, every bold section label, and every bullet must be in " + language + " - even though these instructions are written in English. The ONLY part that stays in English is the final machine-readable verdict line (the literal <!-- tj-ai:verdict ... --> comment and its keywords).\n\n"
 	tail := "\n\nReminder: everything above the verdict line - all prose and labels - must be written in " + language + ", not English."
-	return lead + aiSystemBase + verdict + tail
+	return lead + aiSystemBase + aiCoachNote + verdict + tail
 }
 
 // userAILanguage returns the calling user's configured AI-review language (e.g. "Czech"),
@@ -181,6 +184,25 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 		detail["chart"] = compactChartForAI(ce)
 	}
 	out := map[string]any{"entry": detail}
+
+	// The day's coach checks, narrowed to this entry's trades (all of them
+	// for a day entry): objective, rule-based evidence for the review.
+	if e.Scope != "week" {
+		if rep := h.coachReport(ctx, e.EntryDate.In(tz)); rep != nil {
+			var ids []int64
+			if e.Scope != "day" {
+				if trades, err := h.apiTradesForEntry(ctx, e, tz); err == nil {
+					ids = []int64{}
+					for _, t := range trades {
+						ids = append(ids, t.ID)
+					}
+				}
+			}
+			if narrowed := coachFor(rep, ids); narrowed != nil && len(narrowed.Findings) > 0 {
+				out["coachChecks"] = narrowed.Findings
+			}
+		}
+	}
 
 	if e.StrategyID != nil {
 		if s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *e.StrategyID, UserID: userID(ctx)}); err == nil {

@@ -695,10 +695,29 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mistakes, emotions := h.entryLabels(ctx, entry.ID)
+	// A coach finding's "add label" link opens the editor with the chip
+	// pre-checked (?edit=1&mistake=revenge); nothing is saved until Save.
+	q := r.URL.Query()
+	journalOpen := q.Get("edit") == "1"
+	for _, k := range q["mistake"] {
+		if journal.ValidLabel(journal.KindMistake, k) && !hasString(mistakes, k) {
+			mistakes = append(mistakes, k)
+			journalOpen = true
+		}
+	}
+	for _, k := range q["emotion"] {
+		if journal.ValidLabel(journal.KindEmotion, k) && !hasString(emotions, k) {
+			emotions = append(emotions, k)
+			journalOpen = true
+		}
+	}
+	coachRep := h.coachReport(ctx, date)
 
 	data := map[string]any{
 		"NavActive":        "journal",
 		"BackHref":         backHref,
+		"JournalOpen":      journalOpen,
+		"Coach":            coachRep,
 		"Date":             dateStr,
 		"ChartEnabled":     h.chartShow(dayTrades),
 		"ChartEndpoint":    "/charts/day/" + dateStr,
@@ -750,6 +769,15 @@ func parseTag(s string) *string {
 		return &s
 	}
 	return nil
+}
+
+func hasString(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
 }
 
 // JournalSave handles POST /journal/{date}: upserts a day-level entry for

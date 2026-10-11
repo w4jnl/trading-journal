@@ -29,6 +29,7 @@ var apiIndexEndpoints = []map[string]string{
 	{"method": "POST", "path": "/api/v1/journal/{id}/strategy", "summary": "Assign a strategy (only if the entry has none; never overwrites)"},
 	{"method": "POST", "path": "/api/v1/journal/{id}/tag", "summary": "Set a tag good|neutral|bad (only if the entry has none; never overwrites)"},
 	{"method": "POST", "path": "/api/v1/journal/{id}/labels", "summary": "Add mistake / emotion labels from the fixed vocabulary (additive; never removes)"},
+	{"method": "GET", "path": "/api/v1/coach", "summary": "Rule-based coach checks for a trading day, with the numbers and the labels they suggest"},
 	{"method": "GET", "path": "/api/v1/journal/{id}/chart.png", "summary": "Rendered chart PNG"},
 	{"method": "GET", "path": "/api/v1/trades", "summary": "List trades (filtered, paged)"},
 	{"method": "GET", "path": "/api/v1/trades/{id}", "summary": "Trade detail (fills + chart)"},

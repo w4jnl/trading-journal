@@ -82,7 +82,7 @@ func (h *Handlers) mcpDebugMW(next mcpserver.ToolHandlerFunc) mcpserver.ToolHand
 func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	s.AddTool(mcpgo.NewTool("prepare_day",
 		mcpgo.WithDestructiveHintAnnotation(false),
-		mcpgo.WithDescription("Prepare a trading day for review: clusters copytrader fan-out into group entries and solos into trade entries, CREATES the missing journal entries (idempotent - reuses existing), and returns them. You then analyze each returned entry by its entryId (get_chart_image + append_note) and NEVER handle raw trade ids yourself. This is the entry point for the daily review. Defaults to the last trading day before today."),
+		mcpgo.WithDescription("Prepare a trading day for review: clusters copytrader fan-out into group entries and solos into trade entries, CREATES the missing journal entries (idempotent - reuses existing), and returns them. You then analyze each returned entry by its entryId (get_chart_image + append_note) and NEVER handle raw trade ids yourself. This is the entry point for the daily review. Defaults to the last trading day before today. The result also carries 'checks': the day's rule-based coach checks with trade ids and suggested labels - cite them as evidence in each entry's review and add the suggested labels you agree with."),
 		mcpgo.WithString("date", mcpgo.Description("YYYY-MM-DD; default = the last trading day before today (skips weekends/holidays/no-trade days).")),
 	), h.mcpPrepareDay)
 
@@ -195,6 +195,12 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithArray("mistakes", mcpgo.Description("Mistake keys to add."), mcpgo.WithStringItems()),
 		mcpgo.WithArray("emotions", mcpgo.Description("Emotion keys to add."), mcpgo.WithStringItems()),
 	), h.mcpAddLabels)
+
+	s.AddTool(mcpgo.NewTool("get_coach_checks",
+		mcpgo.WithReadOnlyHintAnnotation(true),
+		mcpgo.WithDescription("Deterministic coach checks for a trading day: re-entry within a minute of a loss, size up after a loss, heat past the planned stop, a winner that kept under a quarter of its best move, a loser held several times longer than a usual winner, more decisions than the trader's usual day, entries past the usual hour. Each finding carries the numbers, the trade ids and, where one fits, the review label it suggests (add it with add_labels on the entry that covers those trades). Rule-based and objective: cite them in a review as evidence, not as verdicts. prepare_day returns the same checks under 'checks'."),
+		mcpgo.WithString("day", mcpgo.Description("Trading day: YYYY-MM-DD or today|yesterday|last; default = the last trading day.")),
+	), h.mcpGetCoachChecks)
 
 	s.AddTool(mcpgo.NewTool("get_daily_stats",
 		mcpgo.WithReadOnlyHintAnnotation(true),
