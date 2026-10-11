@@ -306,3 +306,37 @@ func TestJournalFeedLabels(t *testing.T) {
 		t.Errorf("api list = %+v", out.Items)
 	}
 }
+
+// The exports carry the labels: lines in the markdown, a meta line in the
+// PDF, and the label filters in the header's filter description.
+func TestJournalExportIncludesLabels(t *testing.T) {
+	conn := dbtest.Open(t, "boot")
+	uid := dbtest.BootstrapUserID(t, conn, "boot")
+	for _, stmt := range []string{
+		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope, tag) VALUES (1, ` + itoa64(uid) + `, '2026-10-08', 'moved the stop again', 'day', 'bad')`,
+		`INSERT INTO journal_entry_labels (journal_entry_id, kind, label) VALUES (1, 'mistake', 'chased'), (1, 'mistake', 'moved-stop'), (1, 'emotion', 'tilted')`,
+	} {
+		if _, err := conn.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &Handlers{DB: conn, Queries: models.New(conn), Templates: web.TemplatesFS, Timezone: time.UTC}
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: uid, Username: "boot", DisplayName: "Boot"})
+
+	rec := httptest.NewRecorder()
+	h.JournalExportMarkdown(rec, httptest.NewRequest(http.MethodGet, "/journal/export.md?mistake=chased&emotion=tilted", nil).WithContext(ctx))
+	md := rec.Body.String()
+	for _, want := range []string{
+		"- **Tag:** bad\n- **Mistakes:** Chased the entry, Moved the stop\n- **Emotions:** Tilted\n\n",
+		"mistake: chased; emotion: tilted",
+	} {
+		if !strings.Contains(md, want) {
+			t.Errorf("markdown export missing %q in:\n%s", want, md)
+		}
+	}
+	rec = httptest.NewRecorder()
+	h.JournalExportPDF(rec, httptest.NewRequest(http.MethodGet, "/journal/export.pdf", nil).WithContext(ctx))
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "application/pdf" || !strings.HasPrefix(rec.Body.String(), "%PDF") {
+		t.Errorf("pdf export -> %d %s (%d bytes)", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
+	}
+}
