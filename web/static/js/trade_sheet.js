@@ -50,6 +50,7 @@
     bindKeyboard(state);
     bindAfterSwap(state);
     bindBackdropClick(state);
+    bindPlanMirror(state);
     bindDeepLink(state);
   }
 
@@ -162,6 +163,36 @@
     state.nextBtn && state.nextBtn.addEventListener("click", function () { step(state, 1); });
     var closeBtn = state.backdrop.querySelector("[data-trade-sheet-close]");
     closeBtn && closeBtn.addEventListener("click", function () { close(state); });
+  }
+
+  // ---------- Plan row: stop <-> risk mirror ----------
+  // Typing a stop fills the risk, typing a risk fills the stop (losing side
+  // of the entry, snapped to the tick), from the instrument facts on the
+  // form. The server redoes the same math on save, so no-JS still works.
+  function bindPlanMirror(state) {
+    document.addEventListener("input", function (e) {
+      var input = e.target;
+      if (!input || !input.form || !input.form.classList || !input.form.classList.contains("trade-plan")) return;
+      var f = input.form;
+      var entry = parseFloat(f.dataset.planEntry), qty = parseFloat(f.dataset.planQty);
+      var pv = parseFloat(f.dataset.planPointValue), tick = parseFloat(f.dataset.planTick);
+      if (!(entry > 0) || !(qty > 0) || !(pv > 0)) return;
+      var stop = f.elements.stop, risk = f.elements.risk;
+      if (!stop || !risk) return;
+      if (input === stop) {
+        var sv = parseFloat(stop.value.replace(",", "."));
+        if (!(sv > 0)) { if (stop.value.trim() === "") risk.value = ""; return; }
+        risk.value = (Math.abs(entry - sv) * pv * qty).toFixed(2);
+      } else if (input === risk) {
+        var rv = parseFloat(risk.value.replace(",", "."));
+        if (!(rv > 0)) { if (risk.value.trim() === "") stop.value = ""; return; }
+        var dist = rv / (pv * qty);
+        if (tick > 0) dist = Math.round(dist / tick) * tick;
+        if (!(dist > 0)) return;
+        var sp = f.dataset.planDirection === "short" ? entry + dist : entry - dist;
+        stop.value = String(Math.round(sp * 1e6) / 1e6);
+      }
+    });
   }
 
   function bindBackdropClick(state) {

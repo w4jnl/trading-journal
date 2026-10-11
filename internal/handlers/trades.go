@@ -17,6 +17,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/positions"
 )
 
 const tradesPageSize = 50
@@ -561,10 +562,23 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 	// The row click opens the trade with its note folded (read view, or a
 	// one-line "add note"); the row's journal icon asks for the editor.
 	journalOpen := r.Method == http.MethodGet && r.URL.Query().Get("journal") == "1"
+	// The plan row mirrors stop<->risk live in the browser; it needs the
+	// instrument's point value and tick (0 on a stub: no mirroring).
+	var pointValue, tickSize float64
+	if inst, err := h.Queries.GetInstrument(ctx, trade.SymbolRoot); err == nil {
+		if pv, ok := positions.PointValue(inst); ok {
+			pointValue = pv
+			if inst.TickSize != nil {
+				tickSize = *inst.TickSize
+			}
+		}
+	}
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
 		"Trade":            trade,
 		"TradeID":          id,
 		"JournalOpen":      journalOpen,
+		"PointValue":       pointValue,
+		"TickSize":         tickSize,
 		"Executions":       execs,
 		"ChartEnabled":     h.chartShow(chartTrades),
 		"ChartEndpoint":    fmt.Sprintf("/charts/trade/%d", id),

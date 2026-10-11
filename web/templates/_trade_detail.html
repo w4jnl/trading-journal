@@ -68,12 +68,13 @@
 </div>
 {{/* The plan: stop price and money at risk. Risk follows the stop through
      the instrument's tick value; a typed risk overrides; empty clears. */}}
-<form class="trade-plan" hx-post="/trades/{{$.TradeID}}/plan" hx-target="#trade-sheet-content" hx-swap="innerHTML">
+<form class="trade-plan" hx-post="/trades/{{$.TradeID}}/plan" hx-target="#trade-sheet-content" hx-swap="innerHTML"
+      data-plan-entry="{{.EntryPrice}}" data-plan-qty="{{.Qty}}" data-plan-direction="{{.Direction}}" data-plan-point-value="{{$.PointValue}}" data-plan-tick="{{$.TickSize}}">
   <span class="label">Plan</span>
   <label>Stop <input type="number" step="any" inputmode="decimal" name="stop" value="{{if .PlannedStop}}{{printf "%g" (deref .PlannedStop)}}{{end}}" placeholder="price"></label>
   <label>Risk <input type="number" step="any" inputmode="decimal" name="risk" value="{{if .PlannedRisk}}{{printf "%.2f" (deref .PlannedRisk)}}{{end}}" placeholder="from stop"></label>
   <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
-  <span class="trade-plan-hint">a stop sets the risk and a risk sets the stop, through the instrument's tick value; type both to keep both as typed</span>
+  <span class="trade-plan-hint">a stop sets the risk and a risk sets the stop, through the instrument's tick value</span>
 </form>
 {{end}}
 
