@@ -176,6 +176,8 @@ func (h *Handlers) DashboardPage(w http.ResponseWriter, r *http.Request) {
 		"Stats":         stats,
 		"Equity":        equity,
 		"DateLabel":     stats.Date.Format("Mon, 2 Jan 2006"),
+		"TodayDate":     todayLocal(tz).Format("2006-01-02"),
+		"TodayPlan":     planSummary(h.dayPlan(ctx, todayLocal(tz).Format("2006-01-02"))),
 		"IsStale":       isStale,
 		"LastSyncs":     lastSyncs,
 		"RecentTrades":  recent,

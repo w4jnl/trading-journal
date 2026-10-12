@@ -59,6 +59,9 @@
   function holdsInput(region) {
     var el = document.activeElement;
     if (el && el !== document.body && region.contains(el)) return true;
+    // A form the user unfolded (rendered closed, open now) would fold back
+    // under them; one rendered open comes back open.
+    if (region.querySelector('details[data-keep-open][open]:not([data-rendered-open])')) return true;
     if (region.querySelector('.row-dirty, .htmx-request')) return true;
     return modified(region);
   }

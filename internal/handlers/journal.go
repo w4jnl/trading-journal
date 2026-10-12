@@ -716,12 +716,21 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	coachRep := h.coachReport(ctx, date)
+	plan := h.dayPlan(ctx, dateStr)
+	var planOutcome any
+	if coachRep != nil && coachRep.Plan != nil {
+		planOutcome = coachRep.Plan
+	}
+	todayStr := time.Now().In(h.localTZ()).Format("2006-01-02")
 
 	data := map[string]any{
 		"NavActive":        "journal",
 		"BackHref":         backHref,
 		"JournalOpen":      journalOpen,
 		"Coach":            coachRep,
+		"DayPlan":          plan,
+		"PlanOutcome":      planOutcome,
+		"PlanOpen":         plan == nil && dateStr >= todayStr,
 		"Date":             dateStr,
 		"ChartEnabled":     h.chartShow(dayTrades),
 		"ChartEndpoint":    "/charts/day/" + dateStr,

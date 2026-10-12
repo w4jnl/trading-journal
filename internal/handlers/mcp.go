@@ -82,7 +82,7 @@ func (h *Handlers) mcpDebugMW(next mcpserver.ToolHandlerFunc) mcpserver.ToolHand
 func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	s.AddTool(mcpgo.NewTool("prepare_day",
 		mcpgo.WithDestructiveHintAnnotation(false),
-		mcpgo.WithDescription("Prepare a trading day for review: clusters copytrader fan-out into group entries and solos into trade entries, CREATES the missing journal entries (idempotent - reuses existing), and returns them. You then analyze each returned entry by its entryId (get_chart_image + append_note) and NEVER handle raw trade ids yourself. This is the entry point for the daily review. Defaults to the last trading day before today. The result also carries 'checks': the day's rule-based coach checks with trade ids and suggested labels - cite them as evidence in each entry's review and add the suggested labels you agree with."),
+		mcpgo.WithDescription("Prepare a trading day for review: clusters copytrader fan-out into group entries and solos into trade entries, CREATES the missing journal entries (idempotent - reuses existing), and returns them. You then analyze each returned entry by its entryId (get_chart_image + append_note) and NEVER handle raw trade ids yourself. This is the entry point for the daily review. Defaults to the last trading day before today. The result also carries 'checks': the day's rule-based coach checks with trade ids and suggested labels - cite them as evidence in each entry's review and add the suggested labels you agree with. When the trader wrote a pre-market plan, checks.plan holds it with one check per rule (held or not)."),
 		mcpgo.WithString("date", mcpgo.Description("YYYY-MM-DD; default = the last trading day before today (skips weekends/holidays/no-trade days).")),
 	), h.mcpPrepareDay)
 
@@ -201,6 +201,24 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithDescription("Deterministic coach checks for a trading day: re-entry within a minute of a loss, size up after a loss, heat past the planned stop, a winner that kept under a quarter of its best move, a loser held several times longer than a usual winner, more decisions than the trader's usual day, entries past the usual hour. Each finding carries the numbers, the trade ids and, where one fits, the review label it suggests (add it with add_labels on the entry that covers those trades). Rule-based and objective: cite them in a review as evidence, not as verdicts. prepare_day returns the same checks under 'checks'."),
 		mcpgo.WithString("day", mcpgo.Description("Trading day: YYYY-MM-DD or today|yesterday|last; default = the last trading day.")),
 	), h.mcpGetCoachChecks)
+
+	s.AddTool(mcpgo.NewTool("get_day_plan",
+		mcpgo.WithReadOnlyHintAnnotation(true),
+		mcpgo.WithDescription("The trader's pre-market plan for a day (bias long|short|neutral|flat, levels, max decisions, stop time, max loss per account, notes) and how the day measured against it: one check per rule with what the plan said, what the day did and whether it held, plus flags when the plan was written or edited after the first trade. Read it before reviewing a day; the same outcome rides along in get_coach_checks and prepare_day under checks.plan."),
+		mcpgo.WithString("day", mcpgo.Description("YYYY-MM-DD or today|yesterday|last; default today.")),
+	), h.mcpGetDayPlan)
+
+	s.AddTool(mcpgo.NewTool("set_day_plan",
+		mcpgo.WithDestructiveHintAnnotation(false),
+		mcpgo.WithDescription("Write or amend the trader's pre-market plan for today or a future day (past days are refused). Only the fields you pass change; the rest stay. Use it when the trader states their plan for the session in conversation; do not invent rules they did not state. A decision counts a copy set once; max loss is per account."),
+		mcpgo.WithString("day", mcpgo.Description("YYYY-MM-DD or today; default today.")),
+		mcpgo.WithString("bias", mcpgo.Enum("long", "short", "neutral", "flat", ""), mcpgo.Description("long | short | neutral (both ways) | flat (stay out); empty clears.")),
+		mcpgo.WithString("levels", mcpgo.Description("Key levels, one per line.")),
+		mcpgo.WithNumber("maxTrades", mcpgo.Description("At most this many decisions; 0 clears.")),
+		mcpgo.WithString("stopTime", mcpgo.Description("HH:MM in the trading timezone after which no new entries; empty clears.")),
+		mcpgo.WithNumber("maxLoss", mcpgo.Description("Stop trading at this loss per account (positive money); 0 clears.")),
+		mcpgo.WithString("notes", mcpgo.Description("Free-form plan notes (markdown).")),
+	), h.mcpSetDayPlan)
 
 	s.AddTool(mcpgo.NewTool("get_daily_stats",
 		mcpgo.WithReadOnlyHintAnnotation(true),

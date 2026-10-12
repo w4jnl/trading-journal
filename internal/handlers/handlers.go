@@ -22,6 +22,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/dayplan"
 	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/gex"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
@@ -392,6 +393,14 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return fmt.Sprintf("%+.2fR", *r)
 		},
+		"derefInt": func(p *int64) int64 {
+			if p == nil {
+				return 0
+			}
+			return *p
+		},
+		"biasName":    dayplan.BiasName,
+		"biasOptions": func() []dayplan.Bias { return dayplan.Biases },
 		"deref": func(p *float64) float64 {
 			if p == nil {
 				return 0

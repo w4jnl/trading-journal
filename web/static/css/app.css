@@ -2117,6 +2117,35 @@ tfoot td {
 .checklist-preview { margin-top: 10px; font-size: var(--fs-12); color: var(--fg-muted); }
 .checklist-preview ol { margin: 4px 0 0; padding-left: 20px; }
 
+/* Plan card on the day page: the plan, then each rule against the day. */
+.plan-summary { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; font-size: var(--fs-13); margin-bottom: 6px; }
+.plan-bias--long { background: var(--pos-soft); color: var(--pos); }
+.plan-bias--short { background: var(--neg-soft); color: var(--neg); }
+.plan-bias--neutral { background: var(--bg-sunken); color: var(--fg-muted); }
+.plan-bias--flat { background: var(--warn-soft); color: var(--warn-text); }
+.plan-late { background: var(--warn-soft); color: var(--warn-text); font-weight: 400; margin-left: 6px; text-transform: none; }
+.plan-levels { display: flex; gap: 8px; align-items: flex-start; font-size: var(--fs-12); margin: 4px 0; }
+.plan-levels pre { margin: 0; font-family: var(--font-mono); white-space: pre-wrap; color: var(--fg); }
+.plan-notes { font-size: var(--fs-13); margin: 4px 0 8px; }
+.plan-checks { list-style: none; margin: 8px 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.plan-check { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-13); }
+.plan-check__mark { width: 14px; font-weight: 800; }
+.plan-check--held .plan-check__mark { color: var(--pos); }
+.plan-check--broken .plan-check__mark { color: var(--neg); }
+.plan-check__rule { font-weight: var(--fw-semibold); min-width: 210px; }
+.plan-check__actual { color: var(--fg-muted); }
+.plan-wait { font-size: var(--fs-12); margin: 6px 0 0; }
+.plan-edit { margin-top: 10px; }
+.plan-edit > summary { list-style: none; display: inline-flex; cursor: pointer; }
+.plan-edit > summary::-webkit-details-marker { display: none; }
+.plan-edit[open] > summary { margin-bottom: 10px; }
+.plan-form textarea { width: 100%; font: inherit; font-size: var(--fs-13); }
+.plan-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 8px; }
+@media (max-width: 760px) { .plan-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .plan-check__rule { min-width: 0; } .plan-check { flex-wrap: wrap; } }
+.dash-plan { display: block; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: var(--fs-12); color: var(--fg-muted); text-decoration: none; }
+.dash-plan:hover { color: var(--fg); }
+.dash-plan .label { margin-right: 4px; }
+
 /* Coach card on the day page: one line per finding, a dot for severity,
    the label the finding suggests as a button into the editor. */
 .coach-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

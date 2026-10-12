@@ -16,7 +16,9 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/copyset"
+	"github.com/w4jnl/trading-journal/internal/dayplan"
 	"github.com/w4jnl/trading-journal/internal/journal"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // Trade is what the checks need from a closed trade.
@@ -65,11 +67,12 @@ type Baseline struct {
 
 // Report is the day's checks.
 type Report struct {
-	Date      string    `json:"date"`
-	Trades    int       `json:"trades"`
-	Decisions int       `json:"decisions"`
-	Baseline  Baseline  `json:"baseline"`
-	Findings  []Finding `json:"findings"`
+	Date      string       `json:"date"`
+	Trades    int          `json:"trades"`
+	Decisions int          `json:"decisions"`
+	Baseline  Baseline     `json:"baseline"`
+	Findings  []Finding    `json:"findings"`
+	Plan      *PlanOutcome `json:"plan,omitempty"` // the day's pre-market plan against the day; nil without one
 }
 
 // Warnings counts the findings that read as mistakes rather than notes.
@@ -132,7 +135,11 @@ func Run(ctx context.Context, db *sql.DB, userID int64, day time.Time, tz *time.
 			today = append(today, t)
 		}
 	}
-	return Analyze(day, tz, today, history), nil
+	plan, err := dayplan.Get(ctx, models.New(db), userID, day.Format("2006-01-02"))
+	if err != nil {
+		return nil, fmt.Errorf("coach: %w", err)
+	}
+	return Analyze(day, tz, today, history, plan), nil
 }
 
 // decision is a copy set or a lone trade: the unit the checks reason in.
@@ -221,11 +228,17 @@ func mistake(key string) *Label {
 }
 
 // Analyze checks today's trades against the history (closed trades of the
-// preceding weeks). Pure: Run feeds it from the database.
-func Analyze(day time.Time, tz *time.Location, today, history []Trade) *Report {
+// preceding weeks) and the day's plan (nil without one). Pure: Run feeds
+// it from the database.
+func Analyze(day time.Time, tz *time.Location, today, history []Trade, plan *dayplan.Plan) *Report {
 	r := &Report{Date: day.Format("2006-01-02"), Trades: len(today)}
 	ds := decisions(today)
 	r.Decisions = len(ds)
+	if plan != nil {
+		out, findings := planOutcome(*plan, ds, today, tz)
+		r.Plan = out
+		defer func() { r.Findings = append(findings, r.Findings...) }() // the plan's own rules lead
+	}
 
 	// Norms from the history: decisions per trading day, the usual last
 	// entry (90th percentile of entry times) and how long winners are on.
@@ -371,8 +384,9 @@ func Analyze(day time.Time, tz *time.Location, today, history []Trade) *Report {
 		}
 	}
 
-	// Overtraded: decisions well above the usual day.
-	if m := r.Baseline.MedianDecisions; m > 0 {
+	// Overtraded: decisions well above the usual day (the plan's own cap,
+	// when it has one, says it better).
+	if m := r.Baseline.MedianDecisions; m > 0 && (plan == nil || plan.MaxTrades == nil) {
 		limit := math.Max(overtradeFloor, overtradeFactor*m)
 		if float64(len(ds)) > limit {
 			var all []int64
@@ -387,8 +401,9 @@ func Analyze(day time.Time, tz *time.Location, today, history []Trade) *Report {
 		}
 	}
 
-	// Late session: entries past the usual last entry.
-	if r.Baseline.UsualLastEntry != "" {
+	// Late session: entries past the usual last entry (unless the plan set
+	// its own stop time).
+	if r.Baseline.UsualLastEntry != "" && (plan == nil || plan.StopTime == "") {
 		cutoff := usualLast + lateSessionSlack.Minutes()
 		var late []int64
 		var first time.Time
