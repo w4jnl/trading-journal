@@ -431,7 +431,11 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	mistakes, emotions := h.entryLabels(ctx, entry.ID)
+	checklists, checked := h.checklistData(ctx, entry.ID)
 	h.renderPage(w, r, "journal_group.html", map[string]any{
+		"Checklists":       checklists,
+		"Checked":          checked,
+		"Checklist":        h.entryChecklist(ctx, entry.ID),
 		"NavActive":        "journal",
 		"BackHref":         validBackHref(r),
 		"EntryID":          id,
@@ -519,7 +523,7 @@ func (h *Handlers) GroupJournalSave(w http.ResponseWriter, r *http.Request) {
 	tag := parseTag(r.FormValue("tag"))
 	strategyID := h.parseStrategyID(r)
 	mistakes, emotions := labelFields(r)
-	out, err := h.journalSvc().SaveGroup(ctx, userID(ctx), id, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions})
+	out, err := h.journalSvc().SaveGroup(ctx, userID(ctx), id, journal.Fields{Body: body, Tag: tag, StrategyID: strategyID, Mistakes: mistakes, Emotions: emotions, Checks: checkFields(r)})
 	if err != nil {
 		h.saveFailed(w, "save group", err)
 		return

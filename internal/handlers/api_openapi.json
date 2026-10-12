@@ -40,6 +40,9 @@
             "maxDrawdownRecoverAt": { "type": ["string", "null"], "format": "date-time", "description": "null while the fall is still open" },
             "maxDrawdownDays": { "type": "integer" }, "currentDrawdown": { "type": "number" }, "underwater": { "type": "boolean" },
             "peakAt": { "type": ["string", "null"], "format": "date-time" } } },
+          "compliance": { "type": "array", "description": "playbook checklist compliance per strategy, over trades whose note carries a strategy with a checklist", "items": { "type": "object", "properties": {
+            "strategy": { "type": "string" }, "trades": { "type": "integer" }, "avgPct": { "type": "number", "description": "mean share of rules ticked, 0..1" },
+            "complete": { "type": "integer", "description": "trades with every rule ticked" }, "completeNet": { "type": "number" }, "incompleteNet": { "type": "number" } } } },
           "streaks": { "type": "object", "properties": {
             "longestWinTrades": { "type": "integer" }, "longestLossTrades": { "type": "integer" }, "currentTrades": { "type": "integer", "description": "signed: +n wins running, -n losses" },
             "longestGreenDays": { "type": "integer" }, "longestRedDays": { "type": "integer" }, "currentDays": { "type": "integer", "description": "signed" } } },
@@ -166,6 +169,9 @@
           "mood": { "type": ["integer", "null"] },
           "notes": { "type": "string", "description": "Markdown; image refs rewritten to API URLs." },
           "labels": { "$ref": "#/components/schemas/Labels" },
+          "checklist": { "type": ["object", "null"], "description": "The entry's strategy playbook checklist with the trader's ticks; null without a strategy or when the strategy has no checklist.", "properties": {
+            "strategyId": { "type": "integer" }, "done": { "type": "integer" }, "total": { "type": "integer" },
+            "items": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "integer" }, "text": { "type": "string" }, "checked": { "type": "boolean" } } } } } },
           "strategy": {
             "type": ["object", "null"],
             "properties": { "id": { "type": "integer" }, "name": { "type": "string" } },

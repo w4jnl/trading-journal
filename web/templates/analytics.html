@@ -395,6 +395,31 @@
 </div>
 {{end}}
 
+{{/* Playbook compliance: per strategy, how often every checklist rule was
+     ticked and what the complete versus the incomplete trades made. */}}
+{{if $.Compliance}}
+<div class="card mb-16">
+  <div class="card-title">Playbook compliance <span class="muted" style="font-weight: 400; font-size: 11px;">· trades whose note carries a strategy with a checklist</span></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Strategy</th><th class="tabular">Trades</th><th class="tabular" title="Mean share of the checklist ticked">Rules ticked</th><th class="tabular" title="Trades with every rule ticked">All rules</th><th class="tabular">Net, all rules</th><th class="tabular">Net, rules missed</th></tr></thead>
+      <tbody>
+      {{range $.Compliance}}
+        <tr>
+          <td><code>{{.Strategy}}</code></td>
+          <td class="tabular num">{{.Trades}}</td>
+          <td class="tabular num">{{printf "%.0f%%" (mul .AvgPct 100.0)}}</td>
+          <td class="tabular num">{{.Complete}}</td>
+          <td class="tabular num {{pnlSign .CompleteNet}}">{{printf "%.2f" .CompleteNet}}</td>
+          <td class="tabular num {{pnlSign .IncompleteNet}}">{{printf "%.2f" .IncompleteNet}}</td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+
 <!-- Account equity breakdown (per-type, end-of-range) -->
 <div class="card mb-16">
   <div class="card-title">Account equity <span class="muted" style="font-weight: 400; font-size: 11px;">· at end of filter range</span></div>

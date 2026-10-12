@@ -2102,6 +2102,21 @@ tfoot td {
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
 @media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+/* Playbook checklist: tick items under the strategy picker; the read view
+   shows a pill with the score and the missed rules. */
+.checklist-picker { flex-basis: 100%; }
+.checklist-block { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.checklist-items { display: flex; flex-direction: column; gap: 4px; }
+.checklist-item { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); cursor: pointer; }
+.checklist-item input { margin: 0; accent-color: var(--accent); }
+.checklist-pill--ok { background: var(--pos-soft); color: var(--pos); }
+.checklist-pill--miss { background: var(--warn-soft); color: var(--warn-text); }
+.checklist-missed { font-size: var(--fs-12); color: var(--warn-text); margin: -6px 0 10px; }
+.checklist-missed .label { margin-right: 4px; }
+.checklist-text { width: 100%; min-height: 72px; font: inherit; font-size: var(--fs-13); padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-sm, 4px); background: var(--bg-elev); color: var(--fg); }
+.checklist-preview { margin-top: 10px; font-size: var(--fs-12); color: var(--fg-muted); }
+.checklist-preview ol { margin: 4px 0 0; padding-left: 20px; }
+
 /* Coach card on the day page: one line per finding, a dot for severity,
    the label the finding suggests as a button into the editor. */
 .coach-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }

@@ -231,6 +231,8 @@ Query parameters (all optional):
   "mood": null,
   "notes": "Good day overall...\n\n![](/api/v1/attachments/1)",  // markdown, image refs rewritten
   "strategy": { "id": 3, "name": "ORB fade" },                    // short name ONLY (never the body), or null
+  "checklist": { "strategyId": 3, "done": 2, "total": 3,             // the strategy's playbook rules and the trader's ticks; null without one
+                 "items": [ { "id": 9, "text": "Stop placed before the entry", "checked": true }, { "id": 10, "text": "Flat by 15:58", "checked": false } ] },
   "summary": { "trades": 57, "net": 688.81, "gross": 836.25, "commission": 147.44, "wins": 51, "losses": 6 },
   "trades": [ Trade, ... ],
   "attachments": [ { "id": 1, "url": "/api/v1/attachments/1" } ],
@@ -704,6 +706,7 @@ defaults (last 30 days), same
   "r": { "plannedTrades": 9, "avgR": 0.62, "winRate": 0.67, "avgWinR": 1.45, "avgLossR": -1.03 },
   "excursion": { "trades": 120, "exitEfficiency": 0.58, "avgMae": 41.2, "avgMfe": 96.5,   // MAE/MFE off cached bars
                  "winnersAvgMae": 28.0, "losersAvgMfe": 44.7 },
+  "compliance": [ { "strategy": "ORB fade", "trades": 18, "avgPct": 0.83, "complete": 11, "completeNet": 410.0, "incompleteNet": -62.5 } ],  // playbook checklists
   "drawdown": {
     "maxDrawdown": 612.0,                         // positive magnitude
     "maxDrawdownPeakAt": "2026-08-11T20:01:00Z", "maxDrawdownTroughAt": "2026-08-14T19:12:00Z",

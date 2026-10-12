@@ -898,8 +898,12 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	mistakes, emotions := h.entryLabels(ctx, journalEntryID)
+	checklists, checked := h.checklistData(ctx, journalEntryID)
 
 	h.renderPage(w, r, "journal_trade.html", map[string]any{
+		"Checklists":       checklists,
+		"Checked":          checked,
+		"Checklist":        h.entryChecklist(ctx, journalEntryID),
 		"NavActive":        "journal",
 		"BackHref":         validBackHref(r),
 		"Trade":            trade,

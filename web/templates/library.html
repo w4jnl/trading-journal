@@ -144,6 +144,8 @@
           "Placeholder" "## Setup\n\n## Entry\n\n## Exit / management\n\n## Invalidation"
           "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "300px" "EntryID" 0)}}
       </div>
+      <label class="field"><span class="field-label">Checklist <span class="muted" style="font-weight:400;">· one rule per line; ticked on every trade or group note that uses this strategy</span></span>
+        <textarea name="checklist" rows="4" class="checklist-text" placeholder="Entry at the level, not chasing&#10;Stop placed before the entry&#10;Size from the stop&#10;Flat by the session end"></textarea></label>
       <div class="row"><button type="submit" class="btn btn--primary">Create strategy</button></div>
     </form>
   </details>
@@ -160,6 +162,7 @@
           <button type="button" class="btn btn--secondary btn--sm" data-lib-edit>Edit</button>
         </div>
         <div class="markdown-preview">{{markdown .Body}}</div>
+        {{with index $.ChecklistText .ID}}<div class="checklist-preview"><span class="label">Checklist</span><ol>{{range (splitLines .)}}<li>{{.}}</li>{{end}}</ol></div>{{end}}
       </div>
       <form method="post" action="/library/strategies/{{.ID}}" class="lib-form" hidden>
         <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
@@ -171,6 +174,8 @@
             "Placeholder" "Strategy body…"
             "Templates" false "HideRecall" true "Mode" "single" "MinHeight" "300px" "EntryID" 0)}}
         </div>
+        <label class="field"><span class="field-label">Checklist <span class="muted" style="font-weight:400;">· one rule per line; ticked on every trade or group note that uses this strategy</span></span>
+          <textarea name="checklist" rows="4" class="checklist-text" placeholder="Entry at the level, not chasing&#10;Stop placed before the entry&#10;Size from the stop&#10;Flat by the session end">{{index $.ChecklistText .ID}}</textarea></label>
         <div class="row">
           <button type="submit" class="btn btn--primary btn--sm">Save</button>
           <button type="button" class="btn btn--ghost btn--sm" data-lib-cancel>Cancel</button>
