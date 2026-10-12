@@ -93,7 +93,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcpgo.NewTool("list_trades",
 		mcpgo.WithReadOnlyHintAnnotation(true),
-		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) plus entryTime, direction, account and entryPrice (use them to cluster copytrader copies: same symbolRoot+direction+entryTime within ~2s across >=2 accounts). Page size 50. Dates are trading-timezone days; the keywords today, yesterday and last (last trading day) are resolved server-side - use day=\"today\" for today's trades, never compute the date yourself. Accounts hidden in Settings are left out unless accountId names one."),
+		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) and setId / setSize: copies of one decision across accounts (a copy set) share a setId, so group by it instead of guessing from timestamps. Page size 50. Dates are trading-timezone days; the keywords today, yesterday and last (last trading day) are resolved server-side - use day=\"today\" for today's trades, never compute the date yourself. Accounts hidden in Settings are left out unless accountId names one."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
 		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive).")),
 		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive).")),
@@ -212,6 +212,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("from", mcpgo.Description("Range start YYYY-MM-DD or today|yesterday|last (inclusive, trading tz); default = to minus 29 days.")),
 		mcpgo.WithString("to", mcpgo.Description("Range end YYYY-MM-DD or today|yesterday|last (inclusive); default = today. Span at most 400 days.")),
 		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id (also lifts the excluded-from-stats rule for it).")),
+		mcpgo.WithString("unit", mcpgo.Enum("trades", "sets"), mcpgo.Description("What one count means: trades (default), or sets, where a copy set (the same decision fanned across accounts) counts once with its money summed. Use sets for win rate, streaks and 'how many setups' questions on a copytrader book.")),
 		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s).")),
 	), h.mcpGetAnalyticsSummary)
 }
@@ -322,7 +323,7 @@ func (h *Handlers) mcpGetAnalyticsSummary(ctx context.Context, req mcpgo.CallToo
 		af = accountFilter{Active: true, AccountIDs: []int64{*v}}
 	}
 	h.syncForAPIRead(ctx, req.GetBool("refresh", false))
-	out, err := h.analyticsSummaryFor(ctx, af, rng)
+	out, err := h.analyticsSummaryFor(ctx, af, rng, req.GetString("unit", "trades"))
 	if err != nil {
 		return mcpgo.NewToolResultError("could not load analytics"), nil
 	}

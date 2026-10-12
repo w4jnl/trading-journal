@@ -106,10 +106,18 @@
 
   // navigateToTrade actively loads /trades/{id} into the sheet — for keyboard
   // nav and deep links where no row click happened.
+  // sheetURL is the sheet content for a row id: a trade, or a copy set
+  // ("set:N" rows of the sets view).
+  function sheetURL(id) {
+    id = String(id);
+    if (id.indexOf("set:") === 0) return "/trades/sets/" + id.slice(4);
+    return "/trades/" + id;
+  }
+
   function navigateToTrade(state, id, query) {
     revealSheet(state, id);
     if (window.htmx && state.content) {
-      window.htmx.ajax("GET", "/trades/" + id + (query || ""), "#trade-sheet-content");
+      window.htmx.ajax("GET", sheetURL(id) + (query || ""), "#trade-sheet-content");
     }
   }
 
@@ -313,6 +321,7 @@
     var ids = [];
     var seen = {};
     document.querySelectorAll("[data-trade-id]").forEach(function (el) {
+      if (el.hidden || (el.offsetParent === null && el.tagName === "TR")) return; // folded set members
       var id = String(el.getAttribute("data-trade-id"));
       if (id && !seen[id]) { seen[id] = true; ids.push(id); }
     });

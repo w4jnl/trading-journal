@@ -14,7 +14,14 @@
   <button type="submit" class="btn btn--primary">Apply</button>
   {{template "date_presets" .}}
   <a href="/analytics" class="btn btn--ghost btn--sm">Clear</a>
-  <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades</span>
+  {{/* Unit: every trade, or one count per decision with a copy set's
+       accounts summed (win rate, streaks and counts per setup rather than
+       per account; money is the same either way). */}}
+  <span class="seg seg--sm" role="group" aria-label="Count by" title="What one count means">
+    <a href="/analytics?{{.UnitTradesQS}}" class="{{if ne .Unit "sets"}}active{{end}}">Trades</a>
+    <a href="/analytics?{{.UnitSetsQS}}" class="{{if eq .Unit "sets"}}active{{end}}" title="A copy set (one decision across accounts) counts once">Decisions</a>
+  </span>
+  <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades{{if eq .Unit "sets"}} · <span class="num">{{.UnitCount}}</span> decisions{{end}}</span>
 </form>
 
 {{template "analytics_live" .}}
@@ -271,7 +278,7 @@
   <div class="card card--hero">
     <div class="label">Trade win %</div>
     <div class="num--hero">{{printf "%.1f%%" (mul .WinRate 100.0)}}</div>
-    <div class="sub"><span class="pnl-pos num">{{.Wins}}W</span> / <span class="pnl-neg num">{{.Losses}}L</span> · <span class="num">{{.Trades}}</span> trades</div>
+    <div class="sub"><span class="pnl-pos num">{{.Wins}}W</span> / <span class="pnl-neg num">{{.Losses}}L</span> · <span class="num">{{.Trades}}</span> {{if eq $.Unit "sets"}}decisions{{else}}trades{{end}}</div>
   </div>
   <div class="card card--hero">
     <div class="label">Profit factor</div>

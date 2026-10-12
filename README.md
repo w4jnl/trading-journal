@@ -17,7 +17,11 @@ around it.
   the rest. Format is auto-detected from the header row.
 - **Trades** are derived from fills by a FIFO position builder: partial
   closes, long→short flips, and commission allocation all handled per
-  account per symbol.
+  account per symbol. Copies of one decision fanned across accounts by a
+  copytrader (same underlying, same direction, entries within two
+  seconds, two or more accounts) form a **copy set**: `/trades` can list
+  by set with the accounts folded underneath, the set's sheet compares
+  the fills, and analytics can count per decision.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from

@@ -32,6 +32,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/copyset"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -85,6 +86,13 @@ func (b *Builder) Rebuild(ctx context.Context, keys []Key) (Result, error) {
 			return res, fmt.Errorf("rebuild daily_stats account %d: %w", acc, err)
 		}
 		res.AccountsTouched++
+	}
+	// Copy sets span accounts, so they are recomputed for the whole user
+	// once the trades of every touched key are back.
+	if b.UserID != 0 {
+		if _, err := copyset.Rebuild(ctx, b.Queries, b.UserID); err != nil {
+			return res, err
+		}
 	}
 	return res, nil
 }

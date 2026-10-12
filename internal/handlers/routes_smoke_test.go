@@ -43,6 +43,7 @@ type smokeFixture struct {
 	week    string // ISO week of that day, "2026-W19"
 	tradeID int64
 	groupID int64
+	setID   int64 // a copy set from the sample (the sample's accounts copy each other)
 	dayID   int64
 	attID   int64
 }
@@ -86,6 +87,11 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 	if err := conn.QueryRow(`SELECT id, exit_time FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT 1`).Scan(&tradeID, &exit); err != nil {
 		t.Fatalf("no closed trades after import: %v", err)
 	}
+	// Copy sets: the import's rebuild builds them; take one for the set routes.
+	var setID int64
+	if err := conn.QueryRow(`SELECT id FROM trade_sets ORDER BY id LIMIT 1`).Scan(&setID); err != nil {
+		t.Fatalf("no copy set after import (the sample has copied accounts): %v", err)
+	}
 	local := exit.In(loc)
 	day := local.Format("2006-01-02")
 	y, w := local.ISOWeek()
@@ -121,7 +127,7 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 		user:    &auth.User{ID: uid, Username: "bootstrap", DisplayName: "Bootstrap", IsAdmin: true},
 		day:     day,
 		week:    fmt.Sprintf("%d-W%02d", y, w),
-		tradeID: tradeID, groupID: groupEntry.ID, dayID: dayEntry.ID, attID: attID,
+		tradeID: tradeID, groupID: groupEntry.ID, setID: setID, dayID: dayEntry.ID, attID: attID,
 	}
 }
 
@@ -135,7 +141,9 @@ func (f *smokeFixture) routes() []smokeRoute {
 		{"/import", hf(h.ImportPage), true, ""},
 		{"/trades", hf(h.TradesPage), true, ""},
 		{"/trades/{id}", hf(h.TradeDetail), true, ""},
+		{"/trades/sets/{id}", hf(h.TradeSetDetail), true, ""},
 		{"/charts/trade/{id}", hf(h.ChartTrade), false, ""},
+		{"/charts/set/{id}", hf(h.ChartSet), false, ""},
 		{"/charts/group/{id}", hf(h.ChartGroup), false, ""},
 		{"/charts/day/{date}", hf(h.ChartDay), false, ""},
 		{"/charts/week/{week}", hf(h.ChartWeek), false, ""},
@@ -189,6 +197,8 @@ func (f *smokeFixture) fill(pattern string) string {
 		p = strings.Replace(p, "{id}", fmt.Sprint(f.groupID), 1)
 	case strings.HasPrefix(pattern, "/journal/attachments/"):
 		p = strings.Replace(p, "{id}", fmt.Sprint(f.attID), 1)
+	case strings.HasPrefix(pattern, "/trades/sets/"), strings.HasPrefix(pattern, "/charts/set/"):
+		p = strings.Replace(p, "{id}", fmt.Sprint(f.setID), 1)
 	default:
 		p = strings.Replace(p, "{id}", fmt.Sprint(f.tradeID), 1)
 	}

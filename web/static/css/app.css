@@ -2102,6 +2102,28 @@ tfoot td {
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
 @media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+/* Sets view of /trades: one row per decision. The chevron folds the
+   member rows (one per account) under their set. */
+.trades-table .c-x { width: 22px; padding-left: 8px; padding-right: 0; }
+.set-toggle { background: none; border: 0; padding: 2px 4px; cursor: pointer; color: var(--fg-muted); font: inherit; font-size: 12px; line-height: 1; border-radius: var(--r-sm, 4px); }
+.set-toggle:hover { color: var(--fg); background: var(--bg-hover); }
+.set-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.set-row td.c-set { font-weight: var(--fw-semibold); white-space: nowrap; }
+.set-badge { display: inline-block; padding: 1px 7px; border-radius: var(--r-pill); font-size: var(--fs-10); font-weight: var(--fw-semibold);
+             background: var(--accent-soft); color: var(--accent-text); vertical-align: middle; margin-left: 4px; }
+.trades-table tr.set-member td { background: var(--bg-sunken); font-size: var(--fs-12); padding-top: 5px; padding-bottom: 5px; }
+.trades-table tr.set-member td.c-set { padding-left: 18px; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.trades-view-seg { margin-right: 10px; }
+.seg--sm > a, .seg--sm > button { padding: 3px 10px; font-size: var(--fs-12); }
+/* The set sheet's per-account table. */
+table.set-members th, table.set-members td { padding: 6px 10px; font-size: var(--fs-12); }
+table.set-members tr.set-member-row:hover td { background: var(--bg-hover); }
+@media (max-width: 1279px) { .trades-table .c-acc { display: none; } }
+@media (max-width: 600px) {
+  .trades-table td.c-set { grid-area: acct; max-width: none; }
+  .trades-table td.c-x, .trades-table td.c-acc { display: none; }
+}
+
 /* Live refresh landed a change on this row: a soft accent wash that fades
    out, so the eye finds what moved without a reload. */
 @keyframes row-flash { from { background-color: var(--accent-soft); } to { background-color: transparent; } }

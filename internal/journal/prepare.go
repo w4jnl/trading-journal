@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/w4jnl/trading-journal/internal/marketdata"
+	"github.com/w4jnl/trading-journal/internal/copyset"
 )
 
 // PrepTrade is one closed trade on the target day plus what the clusterer
@@ -227,52 +227,30 @@ func (s *Service) FindGroupForTrades(ctx context.Context, userID int64, ids []in
 }
 
 // ClusterCopytrader groups trades that look like one decision fanned across
-// accounts: same underlying + direction, entries within ~2s, on >=2 distinct
-// accounts. Micros fold into the full-size series (see CopyClusterKey), so a
-// master's ES and a follower's MES at the same instant count as one cluster.
-// Those clusters become group entries; everything else is a solo.
+// accounts (the copy-set rule in internal/copyset: same underlying and
+// direction, entries within two seconds, two or more accounts). Those
+// clusters become group entries; everything else is a solo.
 func ClusterCopytrader(trs []PrepTrade) (groups [][]PrepTrade, solos []PrepTrade) {
-	const window = 2 * time.Second
-	key := func(t PrepTrade) string { return CopyClusterKey(t.SymbolRoot) }
-	sort.SliceStable(trs, func(i, j int) bool {
-		ki, kj := key(trs[i]), key(trs[j])
-		if ki != kj {
-			return ki < kj
+	cs := make([]copyset.Trade, len(trs))
+	for i, t := range trs {
+		cs[i] = copyset.Trade{ID: t.ID, AccountID: t.AccountID, SymbolRoot: t.SymbolRoot, Direction: t.Direction, EntryTime: t.EntryTime}
+	}
+	sets, solo := copyset.Cluster(cs)
+	for _, g := range sets {
+		grp := make([]PrepTrade, 0, len(g))
+		for _, k := range g {
+			grp = append(grp, trs[k])
 		}
-		if trs[i].Direction != trs[j].Direction {
-			return trs[i].Direction < trs[j].Direction
-		}
-		return trs[i].EntryTime.Before(trs[j].EntryTime)
-	})
-	for i := 0; i < len(trs); {
-		j := i + 1
-		for j < len(trs) &&
-			key(trs[j]) == key(trs[i]) &&
-			trs[j].Direction == trs[i].Direction &&
-			trs[j].EntryTime.Sub(trs[i].EntryTime) <= window {
-			j++
-		}
-		cluster := trs[i:j]
-		if distinctAccounts(cluster) >= 2 {
-			groups = append(groups, cluster)
-		} else {
-			solos = append(solos, cluster...)
-		}
-		i = j
+		groups = append(groups, grp)
+	}
+	for _, k := range solo {
+		solos = append(solos, trs[k])
 	}
 	return groups, solos
 }
 
-// CopyClusterKey is the underlying-price key for copytrader grouping: micros
-// fold into their full-size series (MES->ES=F, MNQ->NQ=F, ...) so a master's
-// ES and a follower's MES at the same time are one decision. Unmapped roots
-// key on themselves.
-func CopyClusterKey(symbolRoot string) string {
-	if sym, ok := marketdata.YahooSymbol(symbolRoot); ok {
-		return sym
-	}
-	return strings.ToUpper(strings.TrimSpace(symbolRoot))
-}
+// CopyClusterKey is the copy-set underlying key (see copyset.Key).
+func CopyClusterKey(symbolRoot string) string { return copyset.Key(symbolRoot) }
 
 func distinctAccounts(c []PrepTrade) int {
 	seen := map[int64]bool{}

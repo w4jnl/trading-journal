@@ -99,6 +99,18 @@ type tradeRow struct {
 	HasJournal     bool
 	JournalTag     string // "" if no entry or no tag set
 	GroupCount     int64  // number of group-journal entries that include this trade
+	// Copy set (internal/copyset) the trade belongs to, nil when it is a
+	// decision of its own; SetSize is the member count.
+	SetID   *int64
+	SetSize int64
+}
+
+// GroupKey is the row's unit in the sets view: the set, or the trade itself.
+func (r tradeRow) GroupKey() string {
+	if r.SetID != nil {
+		return "set:" + strconv.FormatInt(*r.SetID, 10)
+	}
+	return strconv.FormatInt(r.ID, 10)
 }
 
 // PastStop reports a planned trade whose measured heat exceeded the planned
@@ -188,7 +200,14 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	rows, err := listTradesFiltered(ctx, h.rdb(), filters)
+	view := h.tradesView(r, isFragment)
+	var rows []tradeRow
+	var sets []setRow
+	if view == "sets" {
+		sets, err = listTradeSetsFiltered(ctx, h.rdb(), filters)
+	} else {
+		rows, err = listTradesFiltered(ctx, h.rdb(), filters)
+	}
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list trades: %w", err))
 		return
@@ -199,6 +218,13 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	total := totals.Count
+	units := total // what the pager counts: trades, or decisions in the sets view
+	if view == "sets" {
+		if units, err = countTradeSetsFiltered(ctx, h.rdb(), filters); err != nil {
+			h.serverError(w, fmt.Errorf("count sets: %w", err))
+			return
+		}
+	}
 
 	accounts, err := h.Queries.ListAccounts(ctx, auth.MustUser(ctx).ID)
 	if err != nil {
@@ -211,7 +237,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pages := int((total + tradesPageSize - 1) / tradesPageSize)
+	pages := int((units + tradesPageSize - 1) / tradesPageSize)
 	if pages < 1 {
 		pages = 1
 	}
@@ -277,6 +303,11 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"Trades":           rows,
 		"Total":            total,
 		"Totals":           totals,
+		"View":             view,
+		"Sets":             sets,
+		"Units":            units,
+		"ViewTradesQS":     template.URL(viewQuery(r, "")),
+		"ViewSetsQS":       template.URL(viewQuery(r, "sets")),
 		"Sort":             filters.Sort,
 		"Dir":              filters.Dir,
 		"SortRefs":         sortRefs(r, filters),
@@ -662,24 +693,35 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 // listTradesFiltered + countTradesFiltered build a SQL WHERE clause from
 // optional filter fields. Each filter contributes a "AND col = ?" clause and
 // pushes its value onto the args slice — straightforward, no narg trickery.
-func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]tradeRow, error) {
-	where, args := buildWhere(f, userID(ctx))
-	args = append(args, tradesPageSize, (f.Page-1)*tradesPageSize)
-
-	q := `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
+// tradeRowSelect is the SELECT every trade-row query shares (the page, the
+// sets view, the set sheet); scanTradeRows reads its columns. Aliases: t
+// trades, a accounts, je the trade's own journal entry, m the copy-set
+// membership.
+const tradeRowSelect = `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
 	             t.gross_pnl, t.commission, t.net_pnl, t.planned_stop, t.planned_risk,
 	             t.mae_points, t.mfe_points, t.mae_pnl, t.mfe_pnl, t.excursion_tf, t.status,
 	             a.name, a.firm, a.active,
 	             je.id, je.tag,
-	             (SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count
+	             (SELECT COUNT(*) FROM journal_entry_trades jet WHERE jet.trade_id = t.id) AS group_count,
+	             m.set_id,
+	             COALESCE((SELECT COUNT(*) FROM trade_set_members m2 WHERE m2.set_id = m.set_id), 0) AS set_size
 	      FROM trades t
 	      JOIN accounts a ON a.id = t.account_id
 	      LEFT JOIN journal_entries je ON je.trade_id = t.id
+	      LEFT JOIN trade_set_members m ON m.trade_id = t.id`
+
+func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]tradeRow, error) {
+	where, args := buildWhere(f, userID(ctx))
+	args = append(args, tradesPageSize, (f.Page-1)*tradesPageSize)
+	q := tradeRowSelect + `
 	      WHERE ` + where + `
 	      ORDER BY ` + orderBySQL(f) + `
 	      LIMIT ? OFFSET ?`
+	return scanTradeRows(ctx, db, q, args...)
+}
 
+func scanTradeRows(ctx context.Context, db *sql.DB, q string, args ...any) ([]tradeRow, error) {
 	rs, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, err
@@ -699,7 +741,7 @@ func listTradesFiltered(ctx context.Context, db *sql.DB, f tradeFilters) ([]trad
 			&r.MaePoints, &r.MfePoints, &r.MaePnl, &r.MfePnl, &r.ExcursionTf, &r.Status,
 			&r.AccountName, &r.AccountFirm, &accountActive,
 			&journalID, &journalTag,
-			&r.GroupCount,
+			&r.GroupCount, &r.SetID, &r.SetSize,
 		); err != nil {
 			return nil, err
 		}

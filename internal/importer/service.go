@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/copyset"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
 )
@@ -661,6 +662,9 @@ func (s *ImportService) ingestTrades(ctx context.Context, records []TradeRecord,
 	if err := RefreshDailyStatsForAccount(ctx, q, accountID, s.Timezone); err != nil {
 		return fmt.Errorf("refresh daily_stats: %w", err)
 	}
+	if _, err := copyset.RebuildForAccount(ctx, q, accountID); err != nil {
+		return fmt.Errorf("rebuild copy sets: %w", err)
+	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit: %w", err)
@@ -1197,6 +1201,9 @@ func (s *ImportService) RebuildTradesForAccount(ctx context.Context, accountID i
 	if acct.CommissionSource == "inline" {
 		if err := RefreshDailyStatsForAccount(ctx, q, accountID, s.Timezone); err != nil {
 			return fmt.Errorf("refresh daily_stats: %w", err)
+		}
+		if _, err := copyset.RebuildForAccount(ctx, q, accountID); err != nil {
+			return fmt.Errorf("rebuild copy sets: %w", err)
 		}
 		return tx.Commit()
 	}

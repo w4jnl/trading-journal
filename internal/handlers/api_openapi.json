@@ -200,6 +200,8 @@
           "maePoints": { "type": ["number", "null"] }, "mfePoints": { "type": ["number", "null"] },
           "exitEfficiency": { "type": ["number", "null"], "description": "Realized move over MFE: 1 = out at the best price, negative = had profit and closed red. null without MFE." },
           "excursionBars": { "type": ["string", "null"], "description": "Bar size the excursion was read from (1m, 5m, 1h, 1d)." },
+          "setId": { "type": ["integer", "null"], "description": "Copy set: copies of one decision across accounts share a setId. null for a decision of its own. Ids change when trades are rebuilt." },
+          "setSize": { "type": "integer", "description": "Members of the set (0 when not in one)." },
           "status": { "type": "string" },
           "retired": { "type": "boolean", "description": "Trade is on a retired account." },
           "hasJournal": { "type": "boolean" },
@@ -233,6 +235,8 @@
           "maePoints": { "type": ["number", "null"] }, "mfePoints": { "type": ["number", "null"] },
           "exitEfficiency": { "type": ["number", "null"], "description": "Realized move over MFE: 1 = out at the best price, negative = had profit and closed red. null without MFE." },
           "excursionBars": { "type": ["string", "null"], "description": "Bar size the excursion was read from (1m, 5m, 1h, 1d)." },
+          "setId": { "type": ["integer", "null"], "description": "Copy set: copies of one decision across accounts share a setId. null for a decision of its own. Ids change when trades are rebuilt." },
+          "setSize": { "type": "integer", "description": "Members of the set (0 when not in one)." },
           "status": { "type": "string" },
           "brokerTradeId": { "type": ["string", "null"] },
           "hasJournal": { "type": "boolean" },
@@ -291,7 +295,8 @@
           { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last." },
           { "name": "day", "in": "query", "schema": { "type": "string", "example": "yesterday" }, "description": "Shorthand for from=to=day." },
           { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug>. An explicit filter lifts the excluded-from-stats rule." },
-          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s)." }
+          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s)." },
+          { "name": "unit", "in": "query", "schema": { "type": "string", "enum": ["trades", "sets"] }, "description": "What one count means: trades (default), or sets, where a copy set counts once with its money summed." }
         ],
         "responses": {
           "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnalyticsSummary" } } } },
