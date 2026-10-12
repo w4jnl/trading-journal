@@ -90,7 +90,7 @@
      - "Add to group" links the selected trades into an existing group entry
        (picked from the adjacent select) and stays on /trades. -->
 <form id="group-form" method="post" action="/journal/group/new" class="sel-bar sticky-action-bar">
-  <input type="hidden" name="back" value="/trades{{if .Filters}}{{end}}">
+  <input type="hidden" name="back" value="{{.CurrentURL}}">
   <span class="muted"><strong id="sel-count" class="num">0</strong> trade(s) selected.</span>
   <div class="row-sm" style="margin-left: auto; gap: 8px; flex-wrap: wrap; align-items: center;">
     {{if .GroupOptions}}
@@ -115,7 +115,7 @@
      separate from #group-form so the regular "Journal selected"
      submit doesn't accidentally pick up its hidden inputs. */}}
 <form id="group-link-form" method="post" action="" style="display: none;">
-  <input type="hidden" name="back" value="/trades{{if .Filters}}{{end}}">
+  <input type="hidden" name="back" value="{{.CurrentURL}}">
 </form>
 
 {{template "trade_sheet" .}}

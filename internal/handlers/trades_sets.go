@@ -615,6 +615,7 @@ func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
 		"ChartEnabled":  h.chartShow(linked),
 		"ChartEndpoint": fmt.Sprintf("/charts/set/%d", id),
 		"ChartCached":   h.chartCached(ctx, linked),
+		"Back":          hxPageURL(r, "/trades?view=sets"),
 	})
 }
 
@@ -661,7 +662,7 @@ func (h *Handlers) TradeSetJournal(w http.ResponseWriter, r *http.Request) {
 		}
 		eid = e.ID
 	}
-	target := fmt.Sprintf("/journal/group/%d?back=%s", eid, url.QueryEscape("/trades?view=sets"))
+	target := fmt.Sprintf("/journal/group/%d?back=%s", eid, url.QueryEscape(hxPageURL(r, "/trades?view=sets")))
 	if r.Header.Get("HX-Request") == "true" {
 		w.Header().Set("HX-Redirect", target)
 		w.WriteHeader(http.StatusOK)

@@ -212,6 +212,7 @@
 {{define "bucket_table"}}
 {{- $buckets := .Buckets -}}
 {{- $linkBase := .LinkBase -}}
+{{- $back := .Back -}}
 <div class="table-scroll">
   <table>
     <thead>
@@ -222,7 +223,7 @@
       <tr>
         <td>
           {{if $linkBase}}
-            <a href="{{$linkBase}}{{.Key}}" class="bucket-key" title="Filter trades by {{.Key}}"><code>{{.Key}}</code> <span class="bucket-arrow">→</span></a>
+            <a href="{{$linkBase}}{{.Key}}{{if $back}}&back={{$back}}{{end}}" class="bucket-key" title="Filter trades by {{.Key}}"><code>{{.Key}}</code> <span class="bucket-arrow">→</span></a>
           {{else}}
             <code>{{.Key}}</code>
           {{end}}
@@ -613,11 +614,11 @@
 <div class="breakdown-grid">
   <section>
     <h3>By symbol</h3>
-    {{template "bucket_table" (dict "Buckets" .BySymbol "LinkBase" "/trades?symbol_root=")}}
+    {{template "bucket_table" (dict "Buckets" .BySymbol "LinkBase" "/trades?symbol_root=" "Back" $.CurrentURLQS)}}
   </section>
   <section>
     <h3>By direction</h3>
-    {{template "bucket_table" (dict "Buckets" .ByDirection "LinkBase" "/trades?direction=")}}
+    {{template "bucket_table" (dict "Buckets" .ByDirection "LinkBase" "/trades?direction=" "Back" $.CurrentURLQS)}}
   </section>
   <section>
     <h3>By strategy</h3>

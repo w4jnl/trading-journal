@@ -306,6 +306,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"View":             view,
 		"Sets":             sets,
 		"Units":            units,
+		"CurrentURL":       pageURL(r),
 		"ViewTradesQS":     template.URL(viewQuery(r, "")),
 		"ViewSetsQS":       template.URL(viewQuery(r, "sets")),
 		"Sort":             filters.Sort,

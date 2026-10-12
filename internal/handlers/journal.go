@@ -85,6 +85,9 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		GroupLosses int64
 		GroupHasPnl bool // true when at least one linked trade has net_pnl set
 	}
+	// Entries opened from the feed come back to this exact feed: the
+	// filters and the view it was in.
+	feedBack := "?back=" + url.QueryEscape(pageURL(r))
 	items := make([]feedItem, 0, len(rows))
 	for _, row := range rows {
 		fi := feedItem{
@@ -104,7 +107,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		switch row.Scope {
 		case "day":
 			fi.DateLabel = fi.Date.Format("Mon, 2 Jan 2006")
-			fi.EditURL = "/journal/" + fi.Date.Format("2006-01-02") + "?back=/journal"
+			fi.EditURL = "/journal/" + fi.Date.Format("2006-01-02") + feedBack
 		case "trade":
 			fi.DateLabel = fi.Date.Format("Mon, 2 Jan 2006")
 			meta := ""
@@ -132,17 +135,17 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 				// experience is identical to day/week/group entries. The
 				// centered modal on /trades is still available when the user
 				// arrives at the trade list directly.
-				fi.EditURL = fmt.Sprintf("/journal/trade/%d?back=/journal", *row.TradeID)
+				fi.EditURL = fmt.Sprintf("/journal/trade/%d", *row.TradeID) + feedBack
 			}
 		case "week":
 			y, w := fi.Date.ISOWeek()
 			sunday := fi.Date.AddDate(0, 0, 6)
 			fi.DateLabel = fmt.Sprintf("Week %d", w)
 			fi.MetaLabel = fmt.Sprintf("%s – %s", fi.Date.Format("Jan 2"), sunday.Format("Jan 2"))
-			fi.EditURL = fmt.Sprintf("/journal/week/%d-W%02d?back=/journal", y, w)
+			fi.EditURL = fmt.Sprintf("/journal/week/%d-W%02d", y, w) + feedBack
 		case "group":
 			fi.DateLabel = fi.Date.Format("Mon, 2 Jan 2006")
-			fi.EditURL = fmt.Sprintf("/journal/group/%d?back=/journal", row.ID)
+			fi.EditURL = fmt.Sprintf("/journal/group/%d", row.ID) + feedBack
 			if s, ok := groupSummaries[row.ID]; ok {
 				fi.GroupN = s.N
 				fi.GroupNet = s.Net
@@ -215,6 +218,7 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		"FilterCount":         filterCount,
 		"ActiveFilters":       activeChips,
 		"ExportQS":            template.URL(exportQueryString(filters)), // ready-to-append (without leading '?')
+		"FeedBack":            pageURL(r),
 	})
 }
 
