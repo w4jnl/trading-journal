@@ -132,6 +132,22 @@
         "type": "object",
         "properties": { "v": { "type": "integer", "description": "Opaque per-user data version. Compare for inequality only (process-local; resets on restart)." } }
       },
+      "CoachReport": {
+        "type": "object",
+        "properties": {
+          "date": { "type": "string" },
+          "trades": { "type": "integer" },
+          "decisions": { "type": "integer", "description": "copy sets count once" },
+          "baseline": { "type": "object", "description": "the trader's own norms from the preceding weeks; the norm-based checks need 5 trading days", "properties": {
+            "days": { "type": "integer" }, "medianDecisions": { "type": "number" }, "usualLastEntry": { "type": "string", "description": "HH:MM trading timezone, 90th percentile of entry times" }, "medianWinnerHoldSec": { "type": "number" } } },
+          "findings": { "type": "array", "items": { "type": "object", "properties": {
+            "key": { "type": "string", "enum": ["revenge-entry", "size-up-after-loss", "past-stop", "left-on-table", "held-loser", "overtraded", "late-session"] },
+            "title": { "type": "string" }, "detail": { "type": "string", "description": "one sentence with the numbers" },
+            "severity": { "type": "string", "enum": ["warn", "info"] },
+            "tradeIds": { "type": "array", "items": { "type": "integer" } },
+            "label": { "type": ["object", "null"], "description": "the review label the finding suggests", "properties": { "kind": { "type": "string" }, "key": { "type": "string" }, "name": { "type": "string" } } } } } }
+        }
+      },
       "Labels": {
         "type": "object",
         "description": "Review labels from the fixed vocabulary. mistakes: chased, early-exit, late-exit, oversized, no-stop, moved-stop, held-loser, revenge, fomo, hesitated, overtraded, against-plan. emotions: calm, focused, confident, anxious, greedy, frustrated, bored, tilted, rushed.",
@@ -415,7 +431,8 @@
                     "tradeIds": { "type": "array", "items": { "type": "integer" } }
                   }
                 } },
-                "note": { "type": "string" }
+                "note": { "type": "string" },
+                "checks": { "$ref": "#/components/schemas/CoachReport", "description": "The day's coach checks (see GET /coach); absent when they could not run." }
               }
             } } }
           }
@@ -509,6 +526,19 @@
           } } } },
           "400": { "description": "Unknown label key or empty body", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
           "404": { "description": "Entry not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/coach": {
+      "get": {
+        "operationId": "getCoachChecks",
+        "summary": "Rule-based coach checks for a trading day: re-entry within a minute of a loss, size up after a loss, heat past the planned stop, a winner that kept under a quarter of its best move, a loser held several times a usual winner, more decisions than the trader's usual day, entries past the usual hour. Observations with numbers, trade ids and suggested labels; not verdicts.",
+        "parameters": [
+          { "name": "day", "in": "query", "schema": { "type": "string", "example": "yesterday" }, "description": "Trading day: YYYY-MM-DD or today|yesterday|last; default = the last trading day." }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CoachReport" } } } },
+          "400": { "description": "Bad day", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },

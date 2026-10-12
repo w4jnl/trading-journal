@@ -150,6 +150,7 @@ surface:
 | `POST` | `/api/v1/journal/{id}/strategy` | Assign a strategy (only if the entry has none) |
 | `POST` | `/api/v1/journal/{id}/tag` | Set a tag (only if the entry has none) |
 | `POST` | `/api/v1/journal/{id}/labels` | Add mistake / emotion labels (additive) |
+| `GET` | `/api/v1/coach` | Rule-based coach checks for a trading day |
 | `GET`  | `/api/v1/journal/{id}/chart.png` | Server-rendered chart image |
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
 | `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
@@ -415,7 +416,44 @@ trading day before today (skips weekends, holidays and no-trade days).
 ```
 
 `alreadyAnalyzed` reflects the analysis marker in the entry's notes, so a
-re-run knows what to skip. `400` for a malformed or future date.
+re-run knows what to skip. `400` for a malformed or future date. The
+response also carries `checks`: the day's coach checks (below), so the
+reviewer has the objective observations next to the entries.
+
+### Coach checks
+
+`GET /api/v1/coach?day=YYYY-MM-DD|today|yesterday|last` (default: the
+last trading day) runs deterministic checks over the day's trades and
+returns observations, not verdicts. The MCP tool `get_coach_checks`
+returns the same object.
+
+| Key | Fires when | Suggests |
+|---|---|---|
+| `revenge-entry` | a decision opens within a minute of a losing exit on the same market | `revenge` |
+| `size-up-after-loss` | an account's position grows right after its losing trade | `oversized` |
+| `past-stop` | measured heat exceeded the planned risk | `moved-stop` |
+| `left-on-table` | a winner kept under a quarter of the best move it saw | `early-exit` |
+| `held-loser` | a losing decision was on for three or more times a usual winner's hold | `held-loser` |
+| `overtraded` | decisions exceed 1.5 x the usual day (and at least 10) | `overtraded` |
+| `late-session` | entries after the usual last entry plus 30 minutes | - |
+
+A decision is a copy set or a lone trade. The norms (`baseline`: median
+decisions per day, usual last entry at the 90th percentile of entry
+times, median winner hold) come from the preceding weeks and the last
+three checks stay quiet until five trading days of history exist.
+
+```jsonc
+// 200
+{
+  "date": "2026-10-09", "trades": 71, "decisions": 12,
+  "baseline": { "days": 22, "medianDecisions": 9, "usualLastEntry": "21:40", "medianWinnerHoldSec": 48 },
+  "findings": [
+    { "key": "revenge-entry", "title": "Re-entry right after a loss", "severity": "warn",
+      "detail": "MES short opened 20s after a -40.00 loss on the same market.",
+      "tradeIds": [4412, 4413], "label": { "kind": "mistake", "key": "revenge", "name": "Revenge trade" } }
+  ]
+}
+```
 
 ### Assign a strategy (only if unset)
 

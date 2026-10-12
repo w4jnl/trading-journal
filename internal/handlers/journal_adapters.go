@@ -76,8 +76,16 @@ func (h *Handlers) entryHasMarker(ctx context.Context, entryID int64, marker str
 	return h.journalSvc().EntryHasMarker(ctx, userID(ctx), entryID, marker)
 }
 
-func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string) (*journal.PrepResult, error) {
-	return h.journalSvc().PrepareDay(ctx, userID(ctx), dateStr)
+func (h *Handlers) prepareDayEntries(ctx context.Context, dateStr string) (*prepDayResponse, error) {
+	res, err := h.journalSvc().PrepareDay(ctx, userID(ctx), dateStr)
+	if err != nil {
+		return nil, err
+	}
+	out := &prepDayResponse{PrepResult: res}
+	if day, err := time.ParseInLocation("2006-01-02", res.Date, h.localTZ()); err == nil {
+		out.Checks = h.coachReport(ctx, day)
+	}
+	return out, nil
 }
 
 // lastTradingDay: the trading-tz date of the caller's most recent closed

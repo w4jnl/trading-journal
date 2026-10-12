@@ -37,9 +37,9 @@
 </div>
 {{end}}
 
-<section class="journal-entry" data-journal-entry>
-  {{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{end}}
-  <form method="post" action="/journal/{{.Date}}" class="journal-form"{{if .Entry.Body}} hidden{{end}}>
+<section class="journal-entry" id="journal-entry" data-journal-entry>
+  {{if .Entry.Body}}{{if .JournalOpen}}<div hidden data-journal-view>{{end}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{if .JournalOpen}}</div>{{end}}{{end}}
+  <form method="post" action="/journal/{{.Date}}" class="journal-form"{{if and .Entry.Body (not .JournalOpen)}} hidden{{end}}>
     {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
     <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
       <div>
@@ -123,6 +123,7 @@
      outside - an update must never touch entry content mid-edit. */}}
 {{define "journal_live"}}
 <div id="journal-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+{{template "coach_card" .}}
 {{template "journal_summary" (dict
   "Summary"      .Summary
   "Trades"       .Trades
@@ -137,4 +138,38 @@
 {{template "journal_live" .}}
 {{template "live_refresh_oob" .}}
 {{template "nav_open_badge_oob" .}}
+{{end}}
+
+
+{{/* coach_card: the day's rule-based checks (internal/coach). Each finding
+     names its trades and, when a review label fits, links to the editor
+     with that chip pre-checked (?edit=1&mistake=key); nothing is saved
+     until Save. Data: Coach (*coach.Report, nil when the checks could not
+     run), Date. */}}
+{{define "coach_card"}}
+{{with .Coach}}
+<div class="card mt-16 coach-card">
+  <div class="card-title">Coach · {{if .Findings}}<span class="num">{{len .Findings}}</span> finding{{if ne (len .Findings) 1}}s{{end}}{{else}}nothing flagged{{end}}
+    <span class="muted" style="font-weight: 400; font-size: 11px;">· <span class="num">{{.Decisions}}</span> decision{{if ne .Decisions 1}}s{{end}} in <span class="num">{{.Trades}}</span> trade{{if ne .Trades 1}}s{{end}}{{if ge .Baseline.Days 5}} · usual day <span class="num">{{printf "%.0f" .Baseline.MedianDecisions}}</span>{{if .Baseline.UsualLastEntry}}, last entry by <span class="num">{{.Baseline.UsualLastEntry}}</span>{{end}}{{else}} · norms need 5 trading days of history{{end}}</span>
+  </div>
+  {{if .Findings}}
+  <ul class="coach-list">
+    {{range .Findings}}
+    <li class="coach-item coach-item--{{.Severity}}">
+      <span class="coach-dot" title="{{if eq .Severity "warn"}}Reads as a mistake{{else}}Worth a look{{end}}"></span>
+      <div class="coach-body">
+        <div class="coach-title">{{.Title}}
+          {{if .TradeIDs}}<a class="coach-trades" href="/trades?sheet={{index .TradeIDs 0}}&back=%2Fjournal%2F{{$.Date}}" title="Open the first of these trades">{{len .TradeIDs}} trade{{if ne (len .TradeIDs) 1}}s{{end}}</a>{{end}}
+        </div>
+        <div class="coach-detail">{{.Detail}}</div>
+      </div>
+      {{with .Label}}<a class="btn btn--secondary btn--sm coach-label" href="/journal/{{$.Date}}?edit=1&{{.Kind}}={{.Key}}#journal-entry" title="Open the note with this label checked">+ {{.Name}}</a>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted" style="font-size: 12px; margin: 0;">No re-entries after a loss, size-ups, stops run through, winners cut short, losers held, overtrading or late entries today.</p>
+  {{end}}
+</div>
+{{end}}
 {{end}}

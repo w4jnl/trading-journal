@@ -2102,6 +2102,19 @@ tfoot td {
 @media (max-width: 1599px) { .trades-table .c-bal { display: none; } }
 @media (max-width: 1439px) { .trades-table .c-gross { display: none; } }
 @media (max-width: 1279px) { .trades-table .c-r { display: none; } }
+/* Coach card on the day page: one line per finding, a dot for severity,
+   the label the finding suggests as a button into the editor. */
+.coach-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.coach-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elev); }
+.coach-dot { flex: 0 0 8px; width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; background: var(--info); }
+.coach-item--warn .coach-dot { background: var(--warn); }
+.coach-body { flex: 1; min-width: 0; }
+.coach-title { font-weight: var(--fw-semibold); font-size: var(--fs-13); display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.coach-trades { font-size: var(--fs-11); font-weight: 400; color: var(--fg-muted); }
+.coach-detail { font-size: var(--fs-12); color: var(--fg-muted); margin-top: 2px; }
+.coach-label { flex-shrink: 0; white-space: nowrap; }
+@media (max-width: 600px) { .coach-item { flex-wrap: wrap; } .coach-label { margin-left: 18px; } }
+
 /* Sets view of /trades: one row per decision. The chevron folds the
    member rows (one per account) under their set. */
 .trades-table .c-x { width: 22px; padding-left: 8px; padding-right: 0; }
