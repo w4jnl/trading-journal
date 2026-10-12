@@ -76,6 +76,19 @@ type DailyStat struct {
 	LargestLoss *float64  `json:"largest_loss"`
 }
 
+type DayPlan struct {
+	UserID    int64     `json:"user_id"`
+	Day       string    `json:"day"`
+	Bias      string    `json:"bias"`
+	Levels    string    `json:"levels"`
+	MaxTrades *int64    `json:"max_trades"`
+	StopTime  string    `json:"stop_time"`
+	MaxLoss   *float64  `json:"max_loss"`
+	Notes     string    `json:"notes"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Execution struct {
 	ID           int64      `json:"id"`
 	AccountID    int64      `json:"account_id"`

@@ -135,6 +135,9 @@
       </div>
     {{end}}
     {{end}}
+    <a class="dash-plan" href="/journal/{{$.TodayDate}}?back=%2Fdashboard#day-plan" title="Today's pre-market plan">
+      {{if $.TodayPlan}}<span class="label">Plan</span> {{$.TodayPlan}} →{{else}}No plan for today yet · write it →{{end}}
+    </a>
   </section>
 </div>
 

@@ -28,7 +28,11 @@ around it.
   a fixed vocabulary (so analytics can tell you what "moved the stop"
   costs), rich markdown editor (paste screenshots, drag-drop images,
   apply built-in templates, recall prior entries), and the related
-  trades panel. The day view opens with the **coach**: rule-based checks
+  trades panel. The day view opens with the **plan**: a pre-market plan
+  (bias, levels, a cap on decisions, a stop time, a max loss per account,
+  notes) written before the session and read rule by rule against the
+  day's trades, flagged when it was written after the first trade; the
+  dashboard nudges when today has none. Then the **coach**: rule-based checks
   over the day's trades (re-entry after a loss, size-up after a loss, a
   stop run through, a winner cut short, a loser held, overtrading,
   late entries) with the numbers and a one-click label; the same checks

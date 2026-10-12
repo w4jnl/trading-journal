@@ -135,6 +135,41 @@
         "type": "object",
         "properties": { "v": { "type": "integer", "description": "Opaque per-user data version. Compare for inequality only (process-local; resets on restart)." } }
       },
+      "DayPlan": {
+        "type": "object",
+        "properties": {
+          "day": { "type": "string", "example": "2026-10-12" },
+          "bias": { "type": "string", "enum": ["long", "short", "neutral", "flat", ""], "description": "neutral = both ways, flat = stay out" },
+          "levels": { "type": "string", "description": "one level per line" },
+          "maxTrades": { "type": ["integer", "null"], "description": "decisions; a copy set counts once" },
+          "stopTime": { "type": "string", "description": "HH:MM trading timezone; empty for none" },
+          "maxLoss": { "type": ["number", "null"], "description": "per account, positive money" },
+          "notes": { "type": "string" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "DayPlanInput": {
+        "type": "object",
+        "properties": {
+          "day": { "type": "string", "description": "YYYY-MM-DD or today; default today" },
+          "bias": { "type": "string", "enum": ["long", "short", "neutral", "flat", ""] },
+          "levels": { "type": "string" }, "maxTrades": { "type": "integer" }, "stopTime": { "type": "string" },
+          "maxLoss": { "type": "number" }, "notes": { "type": "string" }
+        }
+      },
+      "PlanOutcome": {
+        "type": "object",
+        "properties": {
+          "plan": { "$ref": "#/components/schemas/DayPlan" },
+          "checks": { "type": "array", "description": "empty until the day has trades", "items": { "type": "object", "properties": {
+            "key": { "type": "string", "enum": ["bias", "max-trades", "stop-time", "max-loss"] },
+            "rule": { "type": "string" }, "actual": { "type": "string" }, "held": { "type": "boolean" } } } },
+          "held": { "type": "integer" },
+          "writtenLate": { "type": "boolean", "description": "the plan was saved after the day's first entry" },
+          "editedLate": { "type": "boolean", "description": "the plan was changed after the day's first entry" }
+        }
+      },
       "CoachReport": {
         "type": "object",
         "properties": {
@@ -143,8 +178,9 @@
           "decisions": { "type": "integer", "description": "copy sets count once" },
           "baseline": { "type": "object", "description": "the trader's own norms from the preceding weeks; the norm-based checks need 5 trading days", "properties": {
             "days": { "type": "integer" }, "medianDecisions": { "type": "number" }, "usualLastEntry": { "type": "string", "description": "HH:MM trading timezone, 90th percentile of entry times" }, "medianWinnerHoldSec": { "type": "number" } } },
+          "plan": { "oneOf": [ { "$ref": "#/components/schemas/PlanOutcome" }, { "type": "null" } ], "description": "the day's pre-market plan against the day; absent without one" },
           "findings": { "type": "array", "items": { "type": "object", "properties": {
-            "key": { "type": "string", "enum": ["revenge-entry", "size-up-after-loss", "past-stop", "left-on-table", "held-loser", "overtraded", "late-session"] },
+            "key": { "type": "string", "enum": ["plan-bias", "plan-max-trades", "plan-stop-time", "plan-max-loss", "revenge-entry", "size-up-after-loss", "past-stop", "left-on-table", "held-loser", "overtraded", "late-session"] },
             "title": { "type": "string" }, "detail": { "type": "string", "description": "one sentence with the numbers" },
             "severity": { "type": "string", "enum": ["warn", "info"] },
             "tradeIds": { "type": "array", "items": { "type": "integer" } },
@@ -545,6 +581,33 @@
         "responses": {
           "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CoachReport" } } } },
           "400": { "description": "Bad day", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
+    "/plan": {
+      "get": {
+        "operationId": "getDayPlan",
+        "summary": "The trader's pre-market plan for a day and how the day measured against it (one check per rule, held or not).",
+        "parameters": [
+          { "name": "day", "in": "query", "schema": { "type": "string", "example": "today" }, "description": "YYYY-MM-DD or today|yesterday|last; default today." }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": {
+            "type": "object", "properties": {
+              "day": { "type": "string" },
+              "plan": { "oneOf": [ { "$ref": "#/components/schemas/DayPlan" }, { "type": "null" } ] },
+              "outcome": { "oneOf": [ { "$ref": "#/components/schemas/PlanOutcome" }, { "type": "null" } ] } } } } } },
+          "400": { "description": "Bad day", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      },
+      "post": {
+        "operationId": "setDayPlan",
+        "summary": "Write or amend the plan for today or a future day. Present fields replace the stored ones (an empty string or 0 clears), absent fields are kept; a plan left empty is removed. Past days are refused: their record is edited in the app, where a late edit is flagged.",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DayPlanInput" } } } },
+        "responses": {
+          "200": { "description": "The stored plan (null when it ended up empty)", "content": { "application/json": { "schema": {
+            "type": "object", "properties": { "plan": { "oneOf": [ { "$ref": "#/components/schemas/DayPlan" }, { "type": "null" } ] } } } } } },
+          "400": { "description": "Past day or invalid field", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
         }
       }
     },

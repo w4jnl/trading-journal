@@ -59,7 +59,7 @@ func TestAnalyzeRules(t *testing.T) {
 	}
 	today = append(today, mk(200, 1, "MES", "long", 1, 4*3600, 4*3600+30, 2, day)) // 18:00 entry
 
-	r := Analyze(day, tz, today, history)
+	r := Analyze(day, tz, today, history, nil)
 	if r.Trades != len(today) || r.Decisions != 14 || r.Baseline.Days != 10 || r.Baseline.MedianDecisions != 4 || r.Baseline.UsualLastEntry != "14:30" || r.Baseline.MedianWinnerHoldSec != 40 {
 		t.Fatalf("report shape: trades %d decisions %d baseline %+v", r.Trades, r.Decisions, r.Baseline)
 	}
@@ -106,7 +106,7 @@ func TestAnalyzeRules(t *testing.T) {
 	}
 
 	// Without enough history the norm-based checks stay quiet; the rest speak.
-	thin := Analyze(day, tz, today, history[:8])
+	thin := Analyze(day, tz, today, history[:8], nil)
 	got = strings.Join(keys(thin), ",")
 	for _, no := range []string{"held-loser", "overtraded", "late-session"} {
 		if strings.Contains(got, no) {
@@ -117,7 +117,7 @@ func TestAnalyzeRules(t *testing.T) {
 		t.Errorf("history-free checks missing: %s", got)
 	}
 	// An empty day reports the baseline and nothing else.
-	if e := Analyze(day, tz, nil, history); e.Trades != 0 || len(e.Findings) != 0 || e.Baseline.Days != 10 {
+	if e := Analyze(day, tz, nil, history, nil); e.Trades != 0 || len(e.Findings) != 0 || e.Baseline.Days != 10 {
 		t.Errorf("empty day: %+v", e)
 	}
 }

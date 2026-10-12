@@ -811,6 +811,7 @@ func run() error {
 	mux.HandleFunc("POST /journal/preview", h.JournalPreview)
 	mux.HandleFunc("POST /journal/attachments", h.JournalAttachmentUpload)
 	mux.HandleFunc("GET /journal/attachments/{id}", h.JournalAttachmentServe)
+	mux.HandleFunc("POST /journal/plan/{date}", h.DayPlanSave)
 	mux.HandleFunc("GET /journal/week/{week}", h.WeekJournalPage)
 	mux.HandleFunc("POST /journal/week/{week}", h.WeekJournalSave)
 	mux.HandleFunc("POST /journal/week/{week}/delete", h.WeekJournalDelete)

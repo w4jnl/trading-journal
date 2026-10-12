@@ -151,6 +151,8 @@ surface:
 | `POST` | `/api/v1/journal/{id}/tag` | Set a tag (only if the entry has none) |
 | `POST` | `/api/v1/journal/{id}/labels` | Add mistake / emotion labels (additive) |
 | `GET` | `/api/v1/coach` | Rule-based coach checks for a trading day |
+| `GET` | `/api/v1/plan` | A day's pre-market plan and how the day measured against it |
+| `POST` | `/api/v1/plan` | Write or amend the plan for today or a future day |
 | `GET`  | `/api/v1/journal/{id}/chart.png` | Server-rendered chart image |
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
 | `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
@@ -422,6 +424,46 @@ re-run knows what to skip. `400` for a malformed or future date. The
 response also carries `checks`: the day's coach checks (below), so the
 reviewer has the objective observations next to the entries.
 
+### Day plan
+
+A pre-market plan per trading day: a `bias` (`long`, `short`, `neutral`
+for both ways, `flat` to stay out), key `levels` (free text, one per
+line), `maxTrades` (decisions, a copy set counts once), `stopTime` (HH:MM,
+trading timezone; no new entries after it), `maxLoss` (per account: stop
+once any account is this much down on the day) and `notes`. The day's
+journal page shows it with each rule checked against the day.
+
+`GET /api/v1/plan?day=YYYY-MM-DD|today|yesterday|last` (default today)
+returns the plan and its outcome so far:
+
+```jsonc
+{
+  "day": "2026-10-09",
+  "plan": { "day": "2026-10-09", "bias": "short", "levels": "7860 HVL\n7900 call wall",
+            "maxTrades": 6, "stopTime": "21:00", "maxLoss": 300, "notes": "",
+            "createdAt": "2026-10-09T06:40:11Z", "updatedAt": "2026-10-09T06:40:11Z" },
+  "outcome": {
+    "checks": [
+      { "key": "bias", "rule": "Short bias", "actual": "9 with it (+412.00), 2 against (-61.50)", "held": false },
+      { "key": "max-trades", "rule": "At most 6 decision(s)", "actual": "took 11", "held": false },
+      { "key": "stop-time", "rule": "Done by 21:00", "actual": "last entry 20:47", "held": true },
+      { "key": "max-loss", "rule": "Stop at 300.00 down per account", "actual": "worst account -84.20 (APEX-1)", "held": true }
+    ],
+    "held": 2, "writtenLate": false, "editedLate": false
+  }
+}
+```
+
+`outcome.checks` stays empty until the day has trades; `writtenLate` /
+`editedLate` flag a plan saved or changed after the day's first entry.
+
+`POST /api/v1/plan` with `{"day": "today", "bias": "short", "maxTrades": 6,
+"stopTime": "21:00"}` writes or amends the plan for **today or a future
+day**; a past day is refused (its record is edited on the journal page,
+where a late edit is flagged). Present fields replace the stored ones, an
+empty string or `0` clears one, absent fields are kept; a plan left empty
+is removed. The MCP tools `get_day_plan` and `set_day_plan` do the same.
+
 ### Coach checks
 
 `GET /api/v1/coach?day=YYYY-MM-DD|today|yesterday|last` (default: the
@@ -438,6 +480,12 @@ returns the same object.
 | `held-loser` | a losing decision was on for three or more times a usual winner's hold | `held-loser` |
 | `overtraded` | decisions exceed 1.5 x the usual day (and at least 10) | `overtraded` |
 | `late-session` | entries after the usual last entry plus 30 minutes | - |
+
+When the trader wrote a pre-market plan for the day (below), its rules
+come first as `plan-bias`, `plan-max-trades`, `plan-stop-time` and
+`plan-max-loss` findings, and the report carries the plan's outcome under
+`plan`. A plan's cap and stop time replace `overtraded` and
+`late-session` for that day.
 
 A decision is a copy set or a lone trade. The norms (`baseline`: median
 decisions per day, usual last entry at the 90th percentile of entry

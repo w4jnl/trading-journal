@@ -123,6 +123,7 @@
      outside - an update must never touch entry content mid-edit. */}}
 {{define "journal_live"}}
 <div id="journal-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+{{template "plan_card" .}}
 {{template "coach_card" .}}
 {{template "journal_summary" (dict
   "Summary"      .Summary
@@ -172,4 +173,63 @@
   {{end}}
 </div>
 {{end}}
+{{end}}
+
+{{/* plan_card: the day's pre-market plan (internal/dayplan) and, once the
+     day has trades, each rule against the day (internal/coach). The form
+     is a <details>: open by default on today or a future day without a
+     plan; data-keep-open lets live refresh know a form the user opened
+     must not be swapped closed under them. Data: DayPlan, PlanOutcome,
+     PlanOpen, Date, BackHref. */}}
+{{define "plan_card"}}
+<div class="card mt-16 plan-card" id="day-plan">
+  <div class="card-title">Plan
+    {{with .PlanOutcome}}{{if .Checks}} · <span class="num">{{.Held}}</span>/<span class="num">{{len .Checks}}</span> rules held{{end}}
+      {{if .WrittenLate}}<span class="pill plan-late" title="The plan was saved after the day's first entry, so it records the day rather than planning it">written after the first trade</span>{{else if .EditedLate}}<span class="pill plan-late" title="The plan was changed after the day's first entry">edited after the first trade</span>{{end}}
+    {{end}}
+  </div>
+  {{with .DayPlan}}
+  <div class="plan-summary">
+    {{if .Bias}}<span class="pill plan-bias plan-bias--{{.Bias}}">{{biasName .Bias}}</span>{{end}}
+    {{if .MaxTrades}}<span>at most <b class="num">{{derefInt .MaxTrades}}</b> decision{{if ne (derefInt .MaxTrades) 1}}s{{end}}</span>{{end}}
+    {{if .StopTime}}<span>done by <b class="num">{{.StopTime}}</b></span>{{end}}
+    {{if .MaxLoss}}<span>stop at <b class="num">−{{printf "%.2f" (deref .MaxLoss)}}</b> per account</span>{{end}}
+  </div>
+  {{if .Levels}}<div class="plan-levels"><span class="label">Levels</span><pre>{{.Levels}}</pre></div>{{end}}
+  {{if .Notes}}<div class="plan-notes markdown-preview">{{markdown .Notes}}</div>{{end}}
+  {{end}}
+  {{with .PlanOutcome}}{{if .Checks}}
+  <ul class="plan-checks">
+    {{range .Checks}}<li class="plan-check plan-check--{{if .Held}}held{{else}}broken{{end}}"><span class="plan-check__mark" aria-label="{{if .Held}}held{{else}}broken{{end}}">{{if .Held}}✓{{else}}✗{{end}}</span><span class="plan-check__rule">{{.Rule}}</span><span class="plan-check__actual">{{.Actual}}</span></li>{{end}}
+  </ul>
+  {{else}}<p class="muted plan-wait">No trades yet; each rule is checked as the day's trades close.</p>{{end}}{{end}}
+  {{if not .DayPlan}}{{if not .PlanOpen}}<p class="muted plan-wait">No plan for this day.</p>{{end}}{{end}}
+  <details class="plan-edit" data-keep-open{{if .PlanOpen}} open data-rendered-open{{end}}>
+    <summary class="btn btn--secondary btn--sm">{{if .DayPlan}}Edit the plan{{else}}+ Write the plan{{end}}</summary>
+    <form method="post" action="/journal/plan/{{.Date}}" class="plan-form">
+      {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
+      <div class="plan-grid">
+        <label class="field"><span class="field-label">Bias</span>
+          <select name="bias">
+            <option value="">— none —</option>
+            {{range biasOptions}}<option value="{{.Key}}"{{if and $.DayPlan (eq $.DayPlan.Bias .Key)}} selected{{end}}>{{.Name}}</option>{{end}}
+          </select></label>
+        <label class="field"><span class="field-label" title="A copy set counts once">Max decisions</span>
+          <input type="number" name="max_trades" min="1" step="1" inputmode="numeric" value="{{with .DayPlan}}{{with .MaxTrades}}{{derefInt .}}{{end}}{{end}}"></label>
+        <label class="field"><span class="field-label" title="No new entries after this time">Done by</span>
+          <input type="time" name="stop_time" value="{{with .DayPlan}}{{.StopTime}}{{end}}"></label>
+        <label class="field"><span class="field-label" title="Stop trading once any account is this much down on the day">Max loss per account</span>
+          <input type="number" name="max_loss" min="0" step="any" inputmode="decimal" value="{{with .DayPlan}}{{with .MaxLoss}}{{printf "%g" (deref .)}}{{end}}{{end}}"></label>
+      </div>
+      <label class="field"><span class="field-label">Levels <span class="muted" style="font-weight:400;">· one per line</span></span>
+        <textarea name="levels" rows="3" placeholder="ES 7860 HVL&#10;7900 call wall&#10;Overnight low 7832">{{with .DayPlan}}{{.Levels}}{{end}}</textarea></label>
+      <label class="field"><span class="field-label">Notes</span>
+        <textarea name="notes" rows="3" placeholder="What has to happen before I take a trade; what I stay away from today.">{{with .DayPlan}}{{.Notes}}{{end}}</textarea></label>
+      <div class="row-sm">
+        <button type="submit" class="btn btn--primary btn--sm">Save the plan</button>
+        {{if .DayPlan}}<button type="submit" name="_action" value="delete" class="btn btn--ghost btn--sm" data-confirm="Delete the plan for this day?">Delete</button>{{end}}
+      </div>
+    </form>
+  </details>
+</div>
 {{end}}
