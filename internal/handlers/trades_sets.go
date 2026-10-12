@@ -282,6 +282,226 @@ type setMember struct {
 	tradeRow
 	EntryDelta *float64 // ticks (or points without a tick size), signed in the trade's favour
 	ExitDelta  *float64
+	// StopFlag names a plan that cannot mean what it says on this leg:
+	// "entry beyond the stop" when the fill sits on the wrong side of it.
+	StopFlag string
+}
+
+// setPlan is the set's view of its members' plans: one stop when every leg
+// shares it (else the range), the summed risk, and the legs that carry a
+// stop but no money (stub instrument).
+type setPlan struct {
+	Stop     *float64 // uniform stop, nil when none or mixed
+	StopMin  *float64
+	StopMax  *float64
+	Mixed    bool
+	Risk     float64 // summed planned risk
+	Priced   int     // legs with a risk
+	Unpriced int     // legs with a stop but no risk
+	Exposure float64 // sum of qty x point value over priced legs: money per point for the set
+}
+
+// planOf folds the members' plans into the set's view and flags legs whose
+// entry sits beyond their stop.
+func planOf(members []setMember, pointValue map[string]float64) setPlan {
+	var p setPlan
+	for i := range members {
+		m := &members[i]
+		if pv, ok := pointValue[m.SymbolRoot]; ok {
+			p.Exposure += m.Qty * pv
+		}
+		if m.PlannedStop != nil {
+			st := *m.PlannedStop
+			if p.StopMin == nil || st < *p.StopMin {
+				p.StopMin = &st
+			}
+			if p.StopMax == nil || st > *p.StopMax {
+				p.StopMax = &st
+			}
+			if (m.Direction == "long" && st >= m.EntryPrice) || (m.Direction == "short" && st <= m.EntryPrice) {
+				m.StopFlag = "entry beyond the stop"
+			}
+			if m.PlannedRisk == nil {
+				p.Unpriced++
+			}
+		}
+		if m.PlannedRisk != nil {
+			p.Risk += *m.PlannedRisk
+			p.Priced++
+		}
+	}
+	if p.StopMin != nil {
+		if *p.StopMin == *p.StopMax {
+			st := *p.StopMin
+			p.Stop = &st
+		} else {
+			p.Mixed = true
+		}
+	}
+	return p
+}
+
+// wrongSide reports a stop that does not protect the leg.
+func wrongSide(direction string, entry, stop float64) bool {
+	return (direction == "long" && stop >= entry) || (direction == "short" && stop <= entry)
+}
+
+// TradeSetPlanSave handles POST /trades/sets/{id}/plan. A stop price is a
+// market level, so it goes on every leg and each leg's risk follows from
+// its own entry, size and contract; a total risk alone splits by exposure
+// (contracts times point value), which gives every leg the same distance
+// from its own entry, snapped to its tick. With both posted, the one that
+// differs from the stored plan is the edit; both changed, the stop wins.
+// An empty form clears every leg.
+func (h *Handlers) TradeSetPlanSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.Queries.GetTradeSet(ctx, models.GetTradeSetParams{ID: id, UserID: userID(ctx)}); err != nil {
+		http.Error(w, "set not found", http.StatusNotFound)
+		return
+	}
+	stop, ok := parsePositiveFloat(r.FormValue("stop"))
+	if !ok {
+		http.Error(w, "stop must be a positive price", http.StatusBadRequest)
+		return
+	}
+	risk, ok := parsePositiveFloat(r.FormValue("risk"))
+	if !ok {
+		http.Error(w, "risk must be a positive amount", http.StatusBadRequest)
+		return
+	}
+	rows, err := h.loadSetRows(ctx, id)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load set members: %w", err))
+		return
+	}
+	insts := map[string]models.Instrument{}
+	pointValue := map[string]float64{}
+	for _, m := range rows {
+		if _, seen := insts[m.SymbolRoot]; seen {
+			continue
+		}
+		inst, err := h.Queries.GetInstrument(ctx, m.SymbolRoot)
+		if err == nil {
+			insts[m.SymbolRoot] = inst
+			if pv, ok := positions.PointValue(inst); ok {
+				pointValue[m.SymbolRoot] = pv
+			}
+		} else {
+			insts[m.SymbolRoot] = models.Instrument{}
+		}
+	}
+	members := make([]setMember, 0, len(rows))
+	for _, m := range rows {
+		members = append(members, setMember{tradeRow: m})
+	}
+	current := planOf(members, pointValue)
+
+	// Which side was edited.
+	var curRisk *float64
+	if current.Priced > 0 {
+		v := current.Risk
+		curRisk = &v
+	}
+	stopEdited := !sameFloat(stop, current.Stop) || (current.Mixed && stop != nil)
+	riskEdited := !sameFloat(risk, curRisk)
+	mode := "clear"
+	switch {
+	case stop != nil && (risk == nil || stopEdited || !riskEdited):
+		mode = "stop"
+	case risk != nil:
+		mode = "risk"
+	}
+
+	set := func(m tradeRow, st, rk *float64) error {
+		_, err := h.Queries.SetTradePlan(ctx, models.SetTradePlanParams{PlannedStop: st, PlannedRisk: rk, ID: m.ID, UserID: userID(ctx)})
+		return err
+	}
+	var msg string
+	switch mode {
+	case "clear":
+		for _, m := range rows {
+			if err := set(m, nil, nil); err != nil {
+				h.serverError(w, fmt.Errorf("clear plan: %w", err))
+				return
+			}
+		}
+		msg = "Plan cleared on every leg"
+	case "stop":
+		total, unpriced := 0.0, 0
+		for _, m := range rows {
+			st := *stop
+			rk := positions.PlannedRisk(m.EntryPrice, st, m.Qty, insts[m.SymbolRoot])
+			if rk == nil {
+				unpriced++
+			} else {
+				total += *rk
+			}
+			if err := set(m, &st, rk); err != nil {
+				h.serverError(w, fmt.Errorf("set plan: %w", err))
+				return
+			}
+		}
+		msg = fmt.Sprintf("Stop %g on %d legs; risk %.2f in total", *stop, len(rows), total)
+		if unpriced > 0 {
+			msg += fmt.Sprintf(" (%d leg(s) unpriced: set the instrument's ticks)", unpriced)
+		}
+	case "risk":
+		if current.Exposure <= 0 {
+			http.Error(w, "no leg has instrument ticks to size a risk from; type a stop price instead", http.StatusBadRequest)
+			return
+		}
+		dist := *risk / current.Exposure // points, the same on every leg
+		total := 0.0
+		var lo, hi float64
+		first := true
+		for _, m := range rows {
+			pv, ok := pointValue[m.SymbolRoot]
+			if !ok {
+				continue // no ticks: cannot place a stop from money; leave the leg as is
+			}
+			share := dist * pv * m.Qty
+			st := positions.PlannedStop(m.EntryPrice, share, m.Qty, m.Direction, insts[m.SymbolRoot])
+			if st == nil {
+				continue
+			}
+			rk := positions.PlannedRisk(m.EntryPrice, *st, m.Qty, insts[m.SymbolRoot])
+			if rk != nil {
+				total += *rk
+			}
+			if first || *st < lo {
+				lo = *st
+			}
+			if first || *st > hi {
+				hi = *st
+			}
+			first = false
+			if err := set(m, st, rk); err != nil {
+				h.serverError(w, fmt.Errorf("set plan: %w", err))
+				return
+			}
+		}
+		if lo == hi {
+			msg = fmt.Sprintf("Risk %.2f split by exposure: stop %g on every leg (%.2f after tick rounding)", *risk, lo, total)
+		} else {
+			msg = fmt.Sprintf("Risk %.2f split by exposure: stops %g to %g (%.2f after tick rounding)", *risk, lo, hi, total)
+		}
+	}
+	h.LiveData.Bump(userID(ctx))
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Trigger", `{"toast":{"message":`+strconv.Quote(msg)+`,"kind":"success"}}`)
+		h.TradeSetDetail(w, r)
+		return
+	}
+	http.Redirect(w, r, "/trades?view=sets&sheet=set:"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 // loadSetRows is the set's members as trade rows, newest-entry last.
@@ -316,10 +536,22 @@ func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
 	}
 	unit.finish()
 
-	// Tick size for the deltas; points when the instrument has none.
+	// Tick size for the deltas; points when the instrument has none. Point
+	// values per contract size the plan.
 	var tick float64
 	if inst, err := h.Queries.GetInstrument(ctx, set.SymbolRoot); err == nil && inst.TickSize != nil && *inst.TickSize > 0 {
 		tick = *inst.TickSize
+	}
+	pointValue := map[string]float64{}
+	for _, m := range rows {
+		if _, seen := pointValue[m.SymbolRoot]; seen {
+			continue
+		}
+		if inst, err := h.Queries.GetInstrument(ctx, m.SymbolRoot); err == nil {
+			if pv, ok := positions.PointValue(inst); ok {
+				pointValue[m.SymbolRoot] = pv
+			}
+		}
 	}
 	members := make([]setMember, 0, len(rows))
 	ids := make([]int64, 0, len(rows))
@@ -369,6 +601,7 @@ func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
 	if best != nil && worst != nil && *best.EntryDelta == *worst.EntryDelta {
 		best, worst = nil, nil // every account got the same fill
 	}
+	plan := planOf(members, pointValue)
 	h.renderPartial(w, "_set_detail.html", "set_detail", map[string]any{
 		"Set":           unit,
 		"SetID":         id,
@@ -376,6 +609,7 @@ func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
 		"BestFill":      best,
 		"WorstFill":     worst,
 		"TickSize":      tick,
+		"Plan":          plan,
 		"HasGroup":      hasGroup,
 		"GroupID":       groupID,
 		"ChartEnabled":  h.chartShow(linked),
