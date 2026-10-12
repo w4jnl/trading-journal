@@ -584,6 +584,33 @@
         }
       }
     },
+    "/digest": {
+      "get": {
+        "operationId": "getWeeklyDigest",
+        "summary": "The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before, keep and fix sentences derived from the numbers, best and worst decision, the coach's findings tallied across the days, how the day plans held, and the week's analytics summary.",
+        "parameters": [
+          { "name": "week", "in": "query", "schema": { "type": "string", "example": "2026-W41" }, "description": "YYYY-Www; default the week of the last trading day." }
+        ],
+        "responses": {
+          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": {
+            "week": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "string" }, "tradingDays": { "type": "integer" },
+            "kpis": { "type": "array", "items": { "type": "object", "properties": {
+              "key": { "type": "string", "enum": ["net", "decisions", "winRate", "profitFactor", "avgR", "exitKept"] },
+              "label": { "type": "string" }, "value": { "type": ["number", "null"] }, "previous": { "type": ["number", "null"] } } } },
+            "keep": { "type": "array", "items": { "type": "string" } },
+            "fix": { "type": "array", "items": { "type": "string" } },
+            "bestDecision": { "type": ["object", "null"] }, "worstDecision": { "type": ["object", "null"] },
+            "coach": { "type": "array", "items": { "type": "object", "properties": {
+              "key": { "type": "string" }, "title": { "type": "string" }, "severity": { "type": "string" }, "count": { "type": "integer" }, "days": { "type": "integer" } } } },
+            "plan": { "type": "object", "properties": {
+              "tradingDays": { "type": "integer" }, "planned": { "type": "integer" }, "writtenLate": { "type": "integer" },
+              "rules": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "name": { "type": "string" }, "held": { "type": "integer" }, "total": { "type": "integer" } } } } } },
+            "this": { "$ref": "#/components/schemas/AnalyticsSummary" },
+            "previous": { "$ref": "#/components/schemas/AnalyticsSummary" } } } } } },
+          "400": { "description": "Bad week", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
+        }
+      }
+    },
     "/plan": {
       "get": {
         "operationId": "getDayPlan",

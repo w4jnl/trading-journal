@@ -50,6 +50,11 @@ around it.
   flags), measures every trade's path from cached bars (max heat, best
   seen, how much of it the exit kept), and lets you drill into `/trades`
   from breakdown rows by symbol or direction.
+- **Digest** reads one ISO week per decision against the week before:
+  the headline numbers, one-sentence keep and fix lists derived from
+  them, the best and worst decision, the coach's findings tallied across
+  the days and how the day plans held; downloadable as markdown, served
+  to the API and MCP, and the basis of the AI's week review.
 - **Calendar** is the at-a-glance month view with per-day P&L heat and
   weekly summaries — clicking a day pivots to the trades on it.
 - **Exports** to Markdown and PDF, filterable by the same controls as
