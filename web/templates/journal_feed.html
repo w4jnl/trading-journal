@@ -8,12 +8,12 @@
 <!-- ADD-NEW panel: starts a new entry; does NOT filter the feed. -->
 <div class="card card--accent mb-16">
   <div class="row">
-    <a class="btn btn--primary" href="/journal/{{.Today}}?back=/journal">+ Today</a>
-    <a class="btn btn--secondary" href="/journal/week/{{.ThisWeek}}?back=/journal">This week</a>
+    <a class="btn btn--primary" href="/journal/{{.Today}}?back={{.FeedBack}}">+ Today</a>
+    <a class="btn btn--secondary" href="/journal/week/{{.ThisWeek}}?back={{.FeedBack}}">This week</a>
     <label class="field">
       <span class="field-label">Any day</span>
       <input type="date" max="{{.Today}}"
-             data-goto="/journal/" data-goto-suffix="?back=/journal">
+             data-goto="/journal/" data-goto-suffix="?back={{.FeedBack}}">
     </label>
     <label class="field">
       {{/* No preset value: selecting the current week from a pre-filled input
@@ -22,7 +22,7 @@
            week — including the current one — from the empty picker. */}}
       <span class="field-label">Any week</span>
       <input type="week"
-             data-goto="/journal/week/" data-goto-suffix="?back=/journal">
+             data-goto="/journal/week/" data-goto-suffix="?back={{.FeedBack}}">
     </label>
   </div>
 </div>

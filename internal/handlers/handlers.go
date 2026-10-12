@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -663,6 +664,43 @@ func (h *Handlers) logger() *slog.Logger {
 		return h.Logger
 	}
 	return slog.Default()
+}
+
+// pageURL is the request's own page as a back link: path plus query with
+// the transient parameters (live-refresh fragment, a sheet deep link)
+// dropped, so a page can send the user on and get them back with every
+// filter intact.
+func pageURL(r *http.Request) string {
+	return stripTransient(r.URL.Path, r.URL.Query())
+}
+
+func stripTransient(path string, q url.Values) string {
+	for _, k := range []string{"fragment", "sheet", "modal"} {
+		q.Del(k)
+	}
+	if enc := q.Encode(); enc != "" {
+		return path + "?" + enc
+	}
+	return path
+}
+
+// hxPageURL is the page an htmx partial sits on (the HX-Current-URL
+// header), as a back link; fallback when the header is missing or not a
+// same-origin path.
+func hxPageURL(r *http.Request, fallback string) string {
+	cur := r.Header.Get("HX-Current-URL")
+	if cur == "" {
+		return fallback
+	}
+	u, err := url.Parse(cur)
+	if err != nil || u.Path == "" {
+		return fallback
+	}
+	out := stripTransient(u.Path, u.Query())
+	if !auth.SafeLocalPath(out) {
+		return fallback
+	}
+	return out
 }
 
 // validBackHref extracts and validates a ?back= URL from the request. The

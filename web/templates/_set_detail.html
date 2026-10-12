@@ -78,7 +78,7 @@
 <div class="row-sm" style="margin: 16px 0 6px; align-items: center; gap: 10px;">
   <h3 style="margin: 0; font-size: 14px;">Journal</h3>
   {{if .HasGroup}}
-    <a class="btn btn--secondary btn--sm" href="/journal/group/{{.GroupID}}?back=%2Ftrades%3Fview%3Dsets">Open the group note</a>
+    <a class="btn btn--secondary btn--sm" href="/journal/group/{{.GroupID}}?back={{.Back}}">Open the group note</a>
     <span class="muted" style="font-size: 12px;">one note for the whole set</span>
   {{else}}
     <form hx-post="/trades/sets/{{.SetID}}/journal" hx-swap="none" style="display: inline;">

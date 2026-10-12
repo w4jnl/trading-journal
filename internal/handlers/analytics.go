@@ -212,13 +212,17 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"To":               formTo,
 		"TradeCount":       int64(tradeCount),
 		"Unit":             unit,
-		"UnitCount":        int64(len(trades)),
-		"UnitTradesQS":     template.URL(unitQuery(r, "trades")),
-		"UnitSetsQS":       template.URL(unitQuery(r, "sets")),
-		"EquityNow":        equityNow,
-		"EquityByType":     equityByType,
-		"EquityIncluded":   balIncluded,
-		"EquityExcluded":   balExcluded,
+		// Pre-escaped for the bucket links: their href starts with a dynamic
+		// prefix, where html/template only normalises and would leave the
+		// back value's own ? and & to split the query.
+		"CurrentURLQS":   url.QueryEscape(pageURL(r)),
+		"UnitCount":      int64(len(trades)),
+		"UnitTradesQS":   template.URL(unitQuery(r, "trades")),
+		"UnitSetsQS":     template.URL(unitQuery(r, "sets")),
+		"EquityNow":      equityNow,
+		"EquityByType":   equityByType,
+		"EquityIncluded": balIncluded,
+		"EquityExcluded": balExcluded,
 	}
 	if isFragment {
 		h.renderPageFragment(w, r, "analytics.html", "analytics_fragment", data)

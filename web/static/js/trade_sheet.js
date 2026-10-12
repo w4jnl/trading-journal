@@ -17,6 +17,11 @@
 //     phase so the row's own hx-get does not fire as well.
 //   - Shortcuts that conflict with typing (j/k/g/n/b/e) are suppressed when
 //     focus is in an input/textarea/contenteditable.
+//   - History: opening the sheet pushes a history entry (the URL stays as
+//     it is, filters included); opening a trade from inside a set sheet
+//     pushes another. The browser's Back and Esc therefore return to the
+//     set, then close the sheet, and the page underneath never changes.
+//     j/k replace the entry instead of pushing, so Back still closes.
 //
 // Host page may set `window.tradeSheetOnClose` for page-specific cleanup
 // (e.g., /trades reloads when journal changed; /analytics just hides).
@@ -35,14 +40,17 @@
     var backdrop = document.getElementById("trade-sheet-backdrop");
     if (!backdrop) return; // page doesn't host a sheet
 
-    var state = {
+    state = {
       backdrop: backdrop,
       sheet: backdrop.querySelector(".trade-sheet"),
       content: document.getElementById("trade-sheet-content"),
       title: document.getElementById("trade-sheet-title"),
       prevBtn: backdrop.querySelector("[data-trade-sheet-prev]"),
       nextBtn: backdrop.querySelector("[data-trade-sheet-next]"),
+      backBtn: backdrop.querySelector("[data-trade-sheet-back]"),
       currentId: null,
+      pushed: 0, // history entries the sheet owns right now
+      depth: 0,  // nested opens (a trade from inside a set) beyond the first
     };
 
     bindRowClicks(state);
@@ -51,6 +59,7 @@
     bindAfterSwap(state);
     bindBackdropClick(state);
     bindPlanMirror(state);
+    bindHistory(state);
     bindDeepLink(state);
   }
 
@@ -64,6 +73,7 @@
       if (!btn) return;
       e.stopPropagation();
       e.preventDefault();
+      remember(state, btn.getAttribute("data-journal-open"), false);
       navigateToTrade(state, btn.getAttribute("data-journal-open"), "?journal=1");
     }, true);
     document.addEventListener("click", function (e) {
@@ -78,7 +88,10 @@
       var id = trigger.getAttribute("data-trade-id");
       if (!id) return;
       // HTMX on the trigger already fires the request into the sheet;
-      // reveal without re-fetching.
+      // reveal without re-fetching. A row inside the sheet (a set's
+      // member) opens on top of what is shown: one more step to come back.
+      var nested = state.backdrop.classList.contains("show") && state.content && state.content.contains(trigger);
+      remember(state, id, nested);
       revealSheet(state, id);
     });
     // Keyboard: a focused row (rows carry tabindex="0") opens on Enter or
@@ -102,6 +115,65 @@
     show(state);
     refreshNavButtons(state);
     focusSheet(state);
+  }
+
+  // ---------- History ----------
+
+  // remember records the step in the browser history before a sheet opens:
+  // a fresh open pushes one entry, a nested open (a trade from inside a
+  // set) pushes another, a sibling (j/k) replaces the current one. The
+  // URL is left as it is, so filters survive and nothing reopens on reload.
+  function remember(state, id, nested) {
+    if (!window.history || !history.pushState) return;
+    var entry = { tjSheet: String(id) };
+    var open = state.backdrop.classList.contains("show");
+    if (!open) {
+      history.pushState(entry, "", location.href);
+      state.pushed = 1;
+      state.depth = 0;
+    } else if (nested) {
+      history.pushState(entry, "", location.href);
+      state.pushed++;
+      state.depth++;
+    } else if (state.pushed > 0) {
+      history.replaceState(entry, "", location.href);
+    }
+    updateBackButton(state);
+  }
+
+  function updateBackButton(state) {
+    if (state.backBtn) state.backBtn.hidden = state.depth <= 0;
+  }
+
+  // goBack steps one level up: the parent sheet when nested, else closed.
+  function goBack(state) {
+    if (state.pushed > 0) {
+      history.back(); // the popstate handler does the rest
+      return;
+    }
+    close(state);
+  }
+
+  function bindHistory(state) {
+    state.backBtn && state.backBtn.addEventListener("click", function () { goBack(state); });
+    window.addEventListener("popstate", function (e) {
+      if (!state.backdrop.classList.contains("show")) return;
+      if (e.state && e.state.tjSheet && state.pushed > 1) {
+        // Up one level: the parent sheet (a set, or the trade this one was
+        // opened from).
+        state.pushed--;
+        state.depth = Math.max(0, state.depth - 1);
+        updateBackButton(state);
+        navigateToTrade(state, e.state.tjSheet);
+        return;
+      }
+      // Back past the first open: the sheet closes, the page is as it was.
+      state.pushed = 0;
+      state.depth = 0;
+      updateBackButton(state);
+      if (typeof window.tradeSheetOnClose === "function") window.tradeSheetOnClose();
+      hide(state);
+    });
   }
 
   // navigateToTrade actively loads /trades/{id} into the sheet — for keyboard
@@ -211,6 +283,16 @@
   }
 
   function close(state) {
+    if (state.pushed > 0) {
+      // Unwind every entry the sheet pushed; the popstate handler hides it
+      // (and runs the page's close hook) once the page's own entry is back.
+      var n = state.pushed;
+      state.pushed = 0;
+      state.depth = 0;
+      updateBackButton(state);
+      history.go(-n);
+      return;
+    }
     if (typeof window.tradeSheetOnClose === "function") {
       // Page-specific cleanup may decide to leave the sheet open or reload.
       // If it returns false, abort the close.
@@ -229,6 +311,7 @@
 
       if (e.key === "Escape") {
         e.preventDefault();
+        if (state.depth > 0) { goBack(state); return; }
         close(state);
         return;
       }
@@ -317,11 +400,13 @@
 
   // ---------- Navigation between trades ----------
 
+  var state; // set by init; collectTradeIds needs the sheet to skip its own rows
   function collectTradeIds() {
     var ids = [];
     var seen = {};
     document.querySelectorAll("[data-trade-id]").forEach(function (el) {
       if (el.hidden || (el.offsetParent === null && el.tagName === "TR")) return; // folded set members
+      if (state && state.content && state.content.contains(el)) return; // rows inside the sheet (a set's legs)
       var id = String(el.getAttribute("data-trade-id"));
       if (id && !seen[id]) { seen[id] = true; ids.push(id); }
     });
@@ -335,6 +420,7 @@
     if (idx < 0) return;
     var next = idx + delta;
     if (next < 0 || next >= ids.length) return;
+    remember(state, ids[next], false);
     navigateToTrade(state, ids[next]);
   }
 
