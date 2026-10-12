@@ -803,6 +803,8 @@ func run() error {
 	mux.HandleFunc("POST /settings/ibkr/gateways/{id}/test", h.SettingsIbkrGatewayTest)
 	mux.HandleFunc("POST /settings/ibkr/gateways/{id}/toggle", h.SettingsIbkrGatewayToggle)
 	mux.HandleFunc("POST /settings/ibkr/gateways/{id}/delete", h.SettingsIbkrGatewayDelete)
+	mux.HandleFunc("GET /digest", h.DigestPage)
+	mux.HandleFunc("GET /digest.md", h.DigestMarkdown)
 	mux.HandleFunc("GET /journal", h.JournalFeed)
 	mux.HandleFunc("GET /journal/export.md", h.JournalExportMarkdown)
 	mux.HandleFunc("GET /journal/export.pdf", h.JournalExportPDF)

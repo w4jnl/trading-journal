@@ -1,0 +1,88 @@
+{{define "title"}}Weekly digest — Week {{.WeekNum}} — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+
+<div class="journal-title-row">
+  <h1>Week {{.WeekNum}} <span class="muted" style="font-weight:400; font-size: 14px;">{{.RangeLabel}}</span></h1>
+</div>
+
+<div class="row-sm mb-16">
+  <a href="/digest?week={{.PrevWeek}}" class="btn btn--secondary btn--sm">‹ Prev week</a>
+  {{if .HasNext}}<a href="/digest?week={{.NextWeek}}" class="btn btn--secondary btn--sm">Next week ›</a>{{end}}
+  <input type="week" value="{{.D.Week}}" data-goto="/digest?week=" style="margin-left: 8px;">
+  <span class="ml-auto row-sm">
+    <a href="/journal/week/{{.D.Week}}?back={{.Self}}" class="btn btn--secondary btn--sm" title="The week's journal entry">Week review →</a>
+    <a href="/digest.md?week={{.D.Week}}" class="btn btn--secondary btn--sm" title="Download as markdown, to mail or post">Download .md</a>
+  </span>
+</div>
+
+{{with .D}}
+{{if not .This.Totals.Trades}}
+<div class="empty-state">
+  <div class="empty-title">No closed trades in week {{$.WeekNum}}</div>
+  <div class="empty-sub">Pick another week above.</div>
+</div>
+{{else}}
+<p class="muted digest-lede"><span class="num">{{.This.Totals.Trades}}</span> decision{{if ne .This.Totals.Trades 1}}s{{end}} over <span class="num">{{.TradingDays}}</span> trading day{{if ne .TradingDays 1}}s{{end}}, counted per decision (a copy set once, its accounts' money summed){{if .Prev.Totals.Trades}}, against the week before{{end}}.</p>
+
+<div class="digest-kpis">
+  {{range .KPIs}}
+  <div class="card digest-kpi">
+    <div class="label">{{.Label}}</div>
+    <div class="num--lg">{{.Display}}</div>
+    <div class="sub">{{if .Delta}}<span class="num {{.DeltaSign}}">{{.Delta}}</span> <span class="muted">vs {{.PrevShown}}</span>{{else}}<span class="muted">no comparison</span>{{end}}</div>
+  </div>
+  {{end}}
+</div>
+
+<div class="digest-grid">
+  <section class="card digest-card">
+    <div class="card-title">Keep</div>
+    {{if .Keep}}<ul class="digest-list digest-list--keep">{{range .Keep}}<li>{{.}}</li>{{end}}</ul>{{else}}<p class="muted digest-empty">Nothing stood out on the positive side.</p>{{end}}
+    {{with .Best}}<a class="digest-decision" href="/trades?sheet={{.TradeID}}&back={{$.Self}}"><span class="label">Best decision</span> {{.Day}} · {{.Symbol}} {{.Direction}}{{if gt .Accounts 1}} · {{.Accounts}} accounts{{end}} · <span class="num pnl-pos">{{printf "%+.2f" .Net}}</span>{{if .Strategy}} · {{.Strategy}}{{end}}</a>{{end}}
+  </section>
+  <section class="card digest-card">
+    <div class="card-title">Fix</div>
+    {{if .Fix}}<ul class="digest-list digest-list--fix">{{range .Fix}}<li>{{.}}</li>{{end}}</ul>{{else}}<p class="muted digest-empty">No mistakes logged, no recurring coach finding, every plan held.</p>{{end}}
+    {{with .Worst}}<a class="digest-decision" href="/trades?sheet={{.TradeID}}&back={{$.Self}}"><span class="label">Worst decision</span> {{.Day}} · {{.Symbol}} {{.Direction}}{{if gt .Accounts 1}} · {{.Accounts}} accounts{{end}} · <span class="num pnl-neg">{{printf "%+.2f" .Net}}</span>{{if .Strategy}} · {{.Strategy}}{{end}}</a>{{end}}
+  </section>
+</div>
+
+<div class="digest-grid">
+  <section class="card digest-card">
+    <div class="card-title">Coach over the week</div>
+    {{if .Coach}}
+    <table class="digest-table">
+      <thead><tr><th>Finding</th><th class="tabular">Days</th><th class="tabular">Times</th></tr></thead>
+      <tbody>{{range .Coach}}{{$f := .}}<tr><td><span class="digest-dot digest-dot--{{.Severity}}" title="{{if eq .Severity "warn"}}Reads as a mistake{{else}}Worth a look{{end}}"></span>{{.Title}}{{with .Label}}{{if ne .Name $f.Title}} <span class="muted">· {{.Name}}</span>{{end}}{{end}}</td><td class="tabular num">{{.Days}}</td><td class="tabular num">{{.Count}}</td></tr>{{end}}</tbody>
+    </table>
+    {{else}}<p class="muted digest-empty">Nothing flagged on any day.</p>{{end}}
+  </section>
+  <section class="card digest-card">
+    <div class="card-title">Day plans · <span class="num">{{.Plan.Planned}}</span> of <span class="num">{{.Plan.TradingDays}}</span> days{{if .Plan.WrittenLate}} <span class="pill plan-late">{{.Plan.WrittenLate}} written after the first trade</span>{{end}}</div>
+    {{if .Plan.Rules}}
+    <table class="digest-table">
+      <thead><tr><th>Rule</th><th class="tabular">Held</th></tr></thead>
+      <tbody>{{range .Plan.Rules}}<tr><td>{{.Name}}</td><td class="tabular num {{if lt .Held .Total}}pnl-neg{{else}}pnl-pos{{end}}">{{.Held}} / {{.Total}}</td></tr>{{end}}</tbody>
+    </table>
+    {{else}}<p class="muted digest-empty">{{if .Plan.Planned}}The plans had no rules to check.{{else}}Write a plan on the day's journal page to see how it held.{{end}}</p>{{end}}
+  </section>
+</div>
+
+<div class="digest-grid">
+  <section class="digest-card"><h3 class="digest-h3">By strategy</h3>{{template "digest_buckets" (index .This.Breakdowns "byStrategy")}}</section>
+  <section class="digest-card"><h3 class="digest-h3">By mistake</h3>{{template "digest_buckets" (index .This.Breakdowns "byMistake")}}</section>
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "digest_buckets"}}
+{{if .}}
+<div class="table-scroll"><table>
+  <thead><tr><th>Group</th><th class="tabular">Decisions</th><th>W/L</th><th class="tabular">Net</th></tr></thead>
+  <tbody>{{range .}}<tr><td><code>{{.Key}}</code></td><td class="tabular num">{{.Trades}}</td><td><span class="pnl-pos num">{{.Wins}}</span><span class="muted">/</span><span class="pnl-neg num">{{.Losses}}</span></td><td class="tabular num {{pnlSign .Net}}">{{printf "%.2f" .Net}}</td></tr>{{end}}</tbody>
+</table></div>
+{{else}}<p class="muted digest-empty">None this week.</p>{{end}}
+{{end}}

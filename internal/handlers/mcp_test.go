@@ -48,7 +48,7 @@ func TestMCPToolsList(t *testing.T) {
 		"list_trades", "get_trade", "list_journal", "get_journal_entry",
 		"list_strategies", "get_strategy", "get_chart_image",
 		"create_journal_entry", "append_note", "assign_strategy", "set_tag", "add_labels",
-		"get_daily_stats", "get_analytics_summary", "get_coach_checks", "get_day_plan", "set_day_plan",
+		"get_daily_stats", "get_analytics_summary", "get_coach_checks", "get_day_plan", "set_day_plan", "get_weekly_digest",
 	}
 	for _, w := range want {
 		if !got[w] {
@@ -66,7 +66,7 @@ func TestMCPToolsList(t *testing.T) {
 	readOnly := map[string]bool{
 		"server_info": true, "list_trades": true, "get_trade": true, "list_journal": true,
 		"get_journal_entry": true, "list_strategies": true, "get_strategy": true,
-		"get_chart_image": true, "get_daily_stats": true, "get_analytics_summary": true, "get_coach_checks": true, "get_day_plan": true,
+		"get_chart_image": true, "get_daily_stats": true, "get_analytics_summary": true, "get_coach_checks": true, "get_day_plan": true, "get_weekly_digest": true,
 	}
 	for _, tl := range res.Tools {
 		ro := tl.Annotations.ReadOnlyHint != nil && *tl.Annotations.ReadOnlyHint

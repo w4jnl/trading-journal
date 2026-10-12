@@ -152,6 +152,7 @@ surface:
 | `POST` | `/api/v1/journal/{id}/labels` | Add mistake / emotion labels (additive) |
 | `GET` | `/api/v1/coach` | Rule-based coach checks for a trading day |
 | `GET` | `/api/v1/plan` | A day's pre-market plan and how the day measured against it |
+| `GET` | `/api/v1/digest` | The weekly edge digest |
 | `POST` | `/api/v1/plan` | Write or amend the plan for today or a future day |
 | `GET`  | `/api/v1/journal/{id}/chart.png` | Server-rendered chart image |
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
@@ -423,6 +424,41 @@ trading day before today (skips weekends, holidays and no-trade days).
 re-run knows what to skip. `400` for a malformed or future date. The
 response also carries `checks`: the day's coach checks (below), so the
 reviewer has the objective observations next to the entries.
+
+### Weekly digest
+
+`GET /api/v1/digest?week=YYYY-Www` (default: the week of the last trading
+day) is the `/digest` page as one object: the ISO week counted **per
+decision** (a copy set once, its accounts' money summed) against the
+week before. The MCP tool `get_weekly_digest` returns the same object and
+the in-app AI review of a week entry is built on it.
+
+```jsonc
+{
+  "week": "2026-W41", "from": "2026-10-05", "to": "2026-10-11", "tradingDays": 5,
+  "kpis": [ { "key": "net", "label": "Net P&L", "value": 1906.65, "previous": 1204.10 },
+            { "key": "decisions", "value": 61, "previous": 58 },
+            { "key": "winRate", "value": 0.82 }, { "key": "profitFactor", "value": 2.1 },
+            { "key": "avgR", "value": null }, { "key": "exitKept", "value": 0.16 } ],
+  "keep": [ "VWAP Bounce carried the week: +812.00 over 9 decision(s)." ],
+  "fix":  [ "Moved the stop cost -240.50 over 3 decision(s).",
+            "Re-entry right after a loss came up on 3 of 5 trading days.",
+            "No day plan on 4 of 5 trading days." ],
+  "bestDecision":  { "tradeId": 340404, "day": "2026-10-09", "symbolRoot": "ES", "direction": "short", "accounts": 4, "net": 82.02 },
+  "worstDecision": { "tradeId": 339872, "day": "2026-10-06", "symbolRoot": "MES", "direction": "long", "accounts": 6, "net": -96.30 },
+  "coach": [ { "key": "revenge-entry", "title": "Re-entry right after a loss", "severity": "warn", "count": 4, "days": 3 } ],
+  "plan": { "tradingDays": 5, "planned": 1, "writtenLate": 0,
+            "rules": [ { "key": "max-trades", "name": "decision cap", "held": 0, "total": 1 } ] },
+  "this": { /* the analytics summary of the week, unit=sets */ },
+  "previous": { /* the week before */ }
+}
+```
+
+`keep` and `fix` are one sentence each, derived from the numbers only:
+the strategy that carried the week, the best entry hour, better exits;
+the costliest logged mistake, a warning that recurred on two or more
+days, missing day plans and the plan rule that held least. `GET
+/digest.md?week=` downloads the same digest as markdown.
 
 ### Day plan
 

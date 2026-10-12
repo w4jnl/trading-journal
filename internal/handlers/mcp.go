@@ -220,6 +220,12 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("notes", mcpgo.Description("Free-form plan notes (markdown).")),
 	), h.mcpSetDayPlan)
 
+	s.AddTool(mcpgo.NewTool("get_weekly_digest",
+		mcpgo.WithReadOnlyHintAnnotation(true),
+		mcpgo.WithDescription("The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before (net, decisions, win rate, profit factor, avg R, exit kept), what to keep and what to fix in one sentence each, the best and worst decision, the coach's findings tallied across the days, how the day plans held, and the analytics breakdowns. The starting point for a weekly review; write the week entry from it."),
+		mcpgo.WithString("week", mcpgo.Description("YYYY-Www, e.g. 2026-W41; default the week of the last trading day.")),
+	), h.mcpGetWeeklyDigest)
+
 	s.AddTool(mcpgo.NewTool("get_daily_stats",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Daily P&L + trade stats per trading day (trades, wins, losses, net, gross, commission, winRate, largestWin/largestLoss) with totals over the range - the same numbers as the journal's Calendar. Use it for overview figures instead of summing trades yourself; for 'how am I doing today' call it with day=\"today\", refresh=true. A trade belongs to the day of its exit (trading tz); the keywords today, yesterday and last (last trading day) are resolved server-side - never compute the date yourself. Retired accounts never count and excluded-from-stats accounts are dropped unless accountId is given. Days without closed trades are omitted."),

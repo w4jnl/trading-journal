@@ -41,7 +41,7 @@ Interpret the numbers; do not just restate them. Never invent prices or times no
 // "none" otherwise, so nothing is forced. language (e.g. "Czech"), when non-empty, makes
 // the model write the review prose in that language; empty = the model default (English).
 // aiCoachNote tells the model what the coachChecks in its context are.
-const aiCoachNote = "\n\nWhen the context carries coachChecks, they are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms). Treat them as objective evidence: cite the relevant ones with their numbers, weigh them against the trader's notes, and do not restate them as your own discovery. They are observations, not verdicts. When the context carries dayPlan, it is the trader's own pre-market plan with one check per rule (what the plan said, what the day did, held or not); judge the day against the trader's plan first, and say so when the plan was written or edited after the first trade."
+const aiCoachNote = "\n\nWhen the context carries coachChecks, they are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms). Treat them as objective evidence: cite the relevant ones with their numbers, weigh them against the trader's notes, and do not restate them as your own discovery. They are observations, not verdicts. When the context carries dayPlan, it is the trader's own pre-market plan with one check per rule (what the plan said, what the day did, held or not); judge the day against the trader's plan first, and say so when the plan was written or edited after the first trade. When the context carries weeklyDigest (a week entry), build the week review on it: its numbers are per decision and set against the week before, its keep and fix lists are derived from the numbers, and its coach and plan tallies say what recurred."
 
 func aiSystemPrompt(language string) string {
 	verdict := "\n\n" + `End with EXACTLY one final line - a machine-readable verdict (it is removed before saving):
@@ -204,6 +204,16 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 			if e.Scope == "day" && rep.Plan != nil {
 				out["dayPlan"] = rep.Plan
 			}
+		}
+	}
+
+	if e.Scope == "week" {
+		monday := e.EntryDate.In(tz)
+		y, w := monday.ISOWeek()
+		if d, err := h.buildDigest(ctx, monday, fmt.Sprintf("%d-W%02d", y, w)); err == nil {
+			out["weeklyDigest"] = digestForAI(d)
+		} else {
+			h.logger().Warn("ai week digest", "err", err)
 		}
 	}
 

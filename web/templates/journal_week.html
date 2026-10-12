@@ -14,6 +14,7 @@
   <input type="week" value="{{.WeekID}}"
          data-goto="/journal/week/" data-goto-suffix="{{if .BackHref}}?back={{.BackHref}}{{end}}"
          style="margin-left: 8px;">
+  <a href="/digest?week={{.WeekID}}" class="btn btn--secondary btn--sm ml-auto" title="The week's numbers, coach and plan tallies, what to keep and fix">Digest →</a>
 </div>
 
 {{if .Flash}}

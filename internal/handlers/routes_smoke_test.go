@@ -168,6 +168,8 @@ func (f *smokeFixture) routes() []smokeRoute {
 		{"/calendar", hf(h.CalendarPage), true, ""},
 		{"/dashboard", hf(h.DashboardPage), true, ""},
 		{"/analytics", hf(h.AnalyticsPage), true, ""},
+		{"/digest", hf(h.DigestPage), true, ""},
+		{"/digest.md", hf(h.DigestMarkdown), false, ""},
 		{"/data/version", hf(h.DataVersion), true, ""},
 		{"/oi", hf(h.OIDashboardPage), true, ""},
 		{"/oi/{date}", hf(h.OIDashboardPage), false, ""},
