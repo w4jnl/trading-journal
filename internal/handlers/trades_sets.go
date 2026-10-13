@@ -647,7 +647,6 @@ func (h *Handlers) renderSetDetail(w http.ResponseWriter, r *http.Request, flash
 		"Flash":         flash,
 		"GroupBody":     "", // a string for aiAnalyzed even without a note
 	}
-	data["Levels"], data["LevelsPending"], data["LevelsError"] = h.levelsState(ctx, "set:"+strconv.FormatInt(id, 10))
 	if hasGroup {
 		data["AIPending"] = h.AIReviews.EntryPending(groupID)
 		data["AIError"] = h.aiReviewError(r, groupID)

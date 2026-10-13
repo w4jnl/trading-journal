@@ -77,7 +77,6 @@
   <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
   <span class="trade-plan-hint">{{with rewardRisk .EntryPrice .PlannedStop .PlannedTarget}}reward:risk <strong class="num">{{.}}</strong> · {{end}}a stop sets the risk and a risk sets the stop, through the instrument's tick value</span>
 </form>
-{{template "ai_levels" (dict "Ref" $.LevelsRef "Post" (printf "/trades/%d" $.TradeID) "Levels" $.Levels "Pending" $.LevelsPending "Error" $.LevelsError)}}
 {{end}}
 
 <section class="{{if $.AIPending}}journal-entry--locked{{end}}" data-trade-journal data-journal-entry>

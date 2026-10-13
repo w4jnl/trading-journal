@@ -608,11 +608,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 			}
 		}
 	}
-	lv, lvPending, lvErr := h.levelsState(ctx, "trade:"+strconv.FormatInt(id, 10))
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
-		"Levels":           lv,
-		"LevelsPending":    lvPending,
-		"LevelsError":      lvErr,
 		"Trade":            trade,
 		"TradeID":          id,
 		"JournalOpen":      journalOpen,
@@ -636,7 +632,6 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"AIPending":        h.AIReviews.EntryPending(journalEntryID),
 		"AIError":          h.aiReviewError(r, journalEntryID),
 		"Suggestions":      h.entrySuggestions(ctx, journalEntryID),
-		"LevelsRef":        "trade:" + strconv.FormatInt(id, 10),
 		"LabelSrc":         h.labelSources(ctx, journalEntryID),
 		"TagSrc":           journalTagSrc,
 		"Strategies":       strategies,

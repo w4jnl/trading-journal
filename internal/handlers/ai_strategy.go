@@ -711,31 +711,15 @@ func evidenceLine(ev strategyEvidence) string {
 }
 
 // AITaskStatus: GET /ai/tasks/status?k=... (htmx) - the poll of a view
-// showing a background AI task: 204 while it runs. Once it has ended:
-// then=trade:N or then=set:N re-renders that sheet in place (HX-Retarget);
-// anything else reloads the page.
+// showing a background AI task: 204 while it runs, then a reload.
 func (h *Handlers) AITaskStatus(w http.ResponseWriter, r *http.Request) {
-	q := r.URL.Query()
-	k := q.Get("k")
+	k := r.URL.Query().Get("k")
 	if k == "" || h.AITasks.Pending(aiTaskKey(userID(r.Context()), k)) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	then, ref, _ := strings.Cut(q.Get("then"), ":")
-	switch then {
-	case "trade", "set":
-		r.SetPathValue("id", ref)
-		w.Header().Set("HX-Retarget", "#trade-sheet-content")
-		w.Header().Set("HX-Reswap", "innerHTML")
-		if then == "trade" {
-			h.renderTradeDetail(w, r, "")
-		} else {
-			h.renderSetDetail(w, r, "")
-		}
-	default:
-		w.Header().Set("HX-Refresh", "true")
-		w.WriteHeader(http.StatusOK)
-	}
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
 }
 
 // ---- the Library's view of them ---------------------------------------------------
