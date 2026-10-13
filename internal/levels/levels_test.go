@@ -117,7 +117,7 @@ func TestReplay(t *testing.T) {
 	if short.Hit != "target" || short.Points != 8 {
 		t.Errorf("short = %+v", short)
 	}
-	if o := Replay(nil, "long", 7000, 6995, 7010, entry); o.Hit != "neither" {
+	if o := Replay(nil, "long", 7000, 6995, 7010, entry); o.Hit != "nodata" {
 		t.Errorf("no bars = %+v", o)
 	}
 }
@@ -140,5 +140,41 @@ func TestCandidatesKeepNearestSwings(t *testing.T) {
 	}
 	if n != 3 {
 		t.Errorf("swing-low stops kept = %d, want 3", n)
+	}
+}
+
+func TestGridAndBaseline(t *testing.T) {
+	t0 := time.Date(2026, 10, 9, 14, 0, 0, 0, time.UTC)
+	entry := t0.Add(30 * time.Second).Unix()
+	up := bars(t0, [2]float64{6999, 7001}, [2]float64{6999, 7003}, [2]float64{7002, 7006})   // runs +6
+	down := bars(t0, [2]float64{6999, 7001}, [2]float64{6996, 7000}, [2]float64{6990, 6997}) // falls -10
+	ds := []LabDecision{
+		{Direction: "long", Entry: 7000, EntryTime: entry, After: up, Actual: 2},
+		{Direction: "long", Entry: 7000, EntryTime: entry, After: up, Actual: 1},
+		{Direction: "long", Entry: 7000, EntryTime: entry, After: down, Actual: -3},
+		{Direction: "long", Entry: 7000, EntryTime: entry, After: bars(t0, [2]float64{6999, 7001})}, // only the entry bar: skipped
+	}
+	g := Grid(ds, []float64{2, 5}, []float64{4, 0}, 0)
+	// stop 2 / target 4: two targets (+4), one stop (-2) -> +2 avg.
+	if c := g[0][0]; c.N != 3 || c.Wins != 2 || c.Avg != 2 || c.Total != 6 || c.WinRate != 0.667 {
+		t.Errorf("stop 2 / target 4 = %+v", c)
+	}
+	// stop 5 / no target: the ups run to the last close (+4), the down is stopped (-5).
+	if c := g[1][1]; c.N != 3 || c.Total != 3 || c.Unresolved != 2 {
+		t.Errorf("stop 5 / no target = %+v", c)
+	}
+	if c := g[0][0]; c.CILow > c.Avg || c.CIHigh < c.Avg {
+		t.Errorf("interval %v..%v does not hold the mean %v", c.CILow, c.CIHigh, c.Avg)
+	}
+	// A 1-minute time stop closes each at the close of the first bar after
+	// the entry: +1, +1 and -2.
+	if c := Grid(ds, []float64{20}, []float64{0}, 1)[0][0]; c.N != 3 || c.Total != 0 || c.Unresolved != 3 {
+		t.Errorf("time stop = %+v", c)
+	}
+	if b := Actuals(ds[:3]); b.N != 3 || b.Avg != 0 || b.WinRate != 0.667 {
+		t.Errorf("baseline = %+v", b)
+	}
+	if s := Spread([]float64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}, 0.5, 0.9, 3, 0.25); len(s) != 3 || s[0] != 6 || s[2] != 9 {
+		t.Errorf("spread = %v", s)
 	}
 }

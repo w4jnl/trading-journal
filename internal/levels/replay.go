@@ -7,8 +7,8 @@ import (
 // Outcome is what a stop and a target did on the bars after an entry.
 type Outcome struct {
 	// Hit: target, stop, both (the same bar reached both, so which came
-	// first is unknown - counted as the stop by a cautious reader), or
-	// neither within the bars.
+	// first is unknown - counted as the stop by a cautious reader), neither
+	// within the bars, or nodata (no bar after the entry's own).
 	Hit     string  `json:"hit"`
 	At      int64   `json:"at,omitempty"` // the deciding bar's time
 	Points  float64 `json:"points"`       // result: +target, -stop, or the last close for neither
@@ -47,7 +47,7 @@ func Replay(after []marketdata.Bar, direction string, entry, stop, target float6
 		}
 	}
 	if last == nil {
-		return Outcome{Hit: "neither"}
+		return Outcome{Hit: "nodata"}
 	}
 	return Outcome{Hit: "neither", Points: round2((last.Close - entry) * sign), Minutes: round2(float64(last.Time-entryTime) / 60)}
 }

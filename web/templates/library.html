@@ -214,6 +214,7 @@
           </form>
           {{end}}
           {{end}}
+          <a class="btn btn--ghost btn--sm" href="/analytics/lab?strategy={{.Name}}" title="Replay this strategy's decisions under other stops and targets">Stops &amp; targets lab</a>
           <button type="button" class="btn btn--secondary btn--sm" data-lib-edit>Edit</button>
         </div>
         {{with $draftErr}}<div class="flash error" role="alert">Drafting failed: {{.}}</div>{{end}}

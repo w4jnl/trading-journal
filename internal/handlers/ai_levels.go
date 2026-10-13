@@ -267,8 +267,7 @@ func (h *Handlers) proposeLevels(ctx context.Context, s *levelsSubject) error {
 	for _, l := range s.legs {
 		data.Legs = append(data.Legs, l.ID)
 	}
-	if len(after) > 0 {
-		o := levels.Replay(after, s.direction, s.entry, res.Stop, res.Target, s.entryTime.Unix())
+	if o := levels.Replay(after, s.direction, s.entry, res.Stop, res.Target, s.entryTime.Unix()); o.Hit != "nodata" {
 		data.Outcome = &o
 	}
 	if s.exit != nil {

@@ -809,3 +809,9 @@ func (h *Handlers) strategyAI(ctx context.Context, strategies []models.Strategy)
 	}
 	return v
 }
+
+// jsonIndent marshals v for a model's user turn.
+func jsonIndent(v any) (string, error) {
+	b, err := json.MarshalIndent(v, "", "  ")
+	return string(b), err
+}

@@ -1,0 +1,95 @@
+{{define "title"}}Stop & target lab — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+<div class="journal-title-row">
+  <h1>Stop &amp; target lab</h1>
+  <a href="/analytics" class="btn btn--ghost btn--sm ml-auto">‹ Analytics</a>
+</div>
+<p class="muted mb-16" style="font-size: 13px; max-width: 900px;">
+  Your past decisions (a copy set counts once) replayed on the cached 1-minute bars after each entry under fixed
+  stops and targets in points - the axes come from how much heat your winners took and how far they ran - and an
+  optional time stop. Each cell is the average result per decision with its 90% range; compare it with what your own
+  exits made. The best cell of any grid flatters itself: it was picked after the fact.
+</p>
+{{with .Err}}<div class="flash error mb-16" role="alert">{{.}}</div>{{end}}
+
+<form method="get" action="/analytics/lab" class="lab-filters">
+  <label class="field"><span class="field-label">Strategy</span>
+    <select name="strategy"><option value="">All</option>{{range .Strategies}}<option value="{{.Name}}" {{if eq .Name $.F.Strategy}}selected{{end}}>{{.Name}}</option>{{end}}</select></label>
+  <label class="field"><span class="field-label">Instrument</span>
+    <select name="root"><option value="">All</option>{{range .Res.Roots}}<option {{if eq . $.F.Root}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label class="field"><span class="field-label">Direction</span>
+    <select name="direction"><option value="">Both</option><option value="long" {{if eq .F.Direction "long"}}selected{{end}}>Long</option><option value="short" {{if eq .F.Direction "short"}}selected{{end}}>Short</option></select></label>
+  <label class="field"><span class="field-label">Part of the day <span class="muted">(Chicago)</span></span>
+    <select name="session"><option value="">All</option>{{range .Sessions}}<option {{if eq . $.F.Session}}selected{{end}}>{{.}}</option>{{end}}</select></label>
+  <label class="field"><span class="field-label">From</span><input type="date" name="from" value="{{.F.From}}"></label>
+  <label class="field"><span class="field-label">To</span><input type="date" name="to" value="{{.F.To}}"></label>
+  <label class="field"><span class="field-label">Time stop (min)</span><input type="number" name="timestop" min="0" step="1" value="{{if .F.TimeStop}}{{.F.TimeStop}}{{end}}" placeholder="none" style="width: 90px;"></label>
+  <label class="field"><span class="field-label">Stops (pts)</span><input type="text" name="stops" value="{{range $i, $s := .F.Stops}}{{if $i}},{{end}}{{$s}}{{end}}" placeholder="from your winners' heat" style="width: 150px;"></label>
+  <label class="field"><span class="field-label">Targets (pts, 0 = none)</span><input type="text" name="targets" value="{{range $i, $s := .F.Targets}}{{if $i}},{{end}}{{$s}}{{end}}" placeholder="from your winners' best" style="width: 150px;"></label>
+  <button type="submit" class="btn btn--primary btn--sm" style="align-self: flex-end;">Run</button>
+</form>
+
+{{with .Res}}
+{{if not .Decisions}}
+<p class="muted">No decisions with cached bars after the entry in this selection{{if .Skipped}} ({{.Skipped}} without bars){{end}}. Widen the dates or the filters; bars are cached when a trade's chart is opened.</p>
+{{else}}
+<div class="lab-summary">
+  <span><strong class="num">{{.Decisions}}</strong> decisions replayed{{if .Skipped}} <span class="muted">· {{.Skipped}} without cached bars left out</span>{{end}}</span>
+  {{with .Baseline}}<span>Your exits: <strong class="num {{pnlSign .Avg}}">{{printf "%+.2f" .Avg}} pts</strong> a decision <span class="muted">(90%: {{printf "%+.2f" .CILow}} to {{printf "%+.2f" .CIHigh}})</span> · win <span class="num">{{printf "%.0f" (mul .WinRate 100.0)}}%</span></span>{{end}}
+  {{if .BestFound}}<span>Best rule here: stop <strong class="num">{{printf "%g" .BestStop}}</strong>{{if .BestTgt}}, target <strong class="num">{{printf "%g" .BestTgt}}</strong>{{else}}, no target{{end}}{{if $.F.TimeStop}}, out after {{$.F.TimeStop}} min{{end}}</span>{{end}}
+</div>
+
+<div class="card lab-grid-card">
+  <table class="lab-grid">
+    <thead><tr><th class="lab-corner">stop ↓ · target →</th>{{range .Targets}}<th class="num">{{if .}}{{printf "%g" .}} pts{{else}}none{{end}}</th>{{end}}</tr></thead>
+    <tbody>
+      {{range $i, $row := .Grid}}
+      <tr><th class="num">{{printf "%g" (index $.Res.Stops $i)}} pts</th>
+        {{range $row}}
+        <td class="lab-cell{{if and $.Res.BestFound (eq .Stop $.Res.BestStop) (eq .Target $.Res.BestTgt)}} lab-best{{end}}"
+            title="{{.N}} decisions · {{.Both}} decided inside one bar (counted as the stop) · {{.Unresolved}} reached neither level · total {{printf "%+.2f" .Total}} pts">
+          <div class="num {{pnlSign .Avg}} lab-avg">{{printf "%+.2f" .Avg}}</div>
+          {{if $.Res.PointUSD}}<div class="muted lab-usd">{{printf "%+.0f" (mul .Avg $.Res.PointUSD)}} $/ct</div>{{end}}
+          <div class="muted lab-meta">{{printf "%.0f" (mul .WinRate 100.0)}}% · {{printf "%+.2f" .CILow}}…{{printf "%+.2f" .CIHigh}}</div>
+        </td>
+        {{end}}
+      </tr>
+      {{end}}
+    </tbody>
+  </table>
+  <p class="muted" style="font-size: 12px; margin: 8px 0 0;">Points per decision (green pays), the win rate and the 90% range of the average. A bar that reached both levels counts as the stop; "none" lets the stop{{if $.F.TimeStop}}, the time stop{{end}} or the 4-hour window decide.</p>
+</div>
+
+{{if .Scatter}}
+<div class="card lab-scatter-card">
+  <div class="card-title">Heat against best seen <span class="muted" style="font-weight: 400;">(points per decision; winners green, losers red)</span></div>
+  <svg class="lab-scatter" viewBox="0 0 560 320" role="img" aria-label="Maximum adverse excursion against maximum favourable excursion">
+    <line x1="40" y1="290" x2="545" y2="290" class="lab-axis"/><line x1="40" y1="290" x2="40" y2="15" class="lab-axis"/>
+    <text x="545" y="310" text-anchor="end" class="lab-axis-label">heat (MAE) → {{printf "%.1f" .HeatMax}} pts</text>
+    <text x="44" y="14" class="lab-axis-label">best seen (MFE) ↑ {{printf "%.1f" .BestMax}} pts</text>
+    {{range .Scatter}}<circle cx="{{printf "%.1f" .X}}" cy="{{printf "%.1f" .Y}}" r="2.4" class="{{if .Win}}lab-pt-win{{else}}lab-pt-loss{{end}}"/>{{end}}
+  </svg>
+  <p class="muted" style="font-size: 12px; margin: 6px 0 0;">Winners clustered on the left say how much heat a good trade takes - a stop just beyond them keeps them; losers far up had profit they gave back.</p>
+</div>
+{{end}}
+{{end}}
+{{end}}
+
+{{if aiEnabled}}
+<div class="card ai-action lab-explain">
+  <div class="card-title">AI reading</div>
+  {{if .ExplainPending}}
+  <p class="ai-lock-note" role="status"><span class="ai-spinner" aria-hidden="true"></span> Reading the grid…
+    <span hidden hx-get="/ai/tasks/status?k=lab:{{.Key}}" hx-trigger="every 3s" hx-swap="none"></span></p>
+  {{else}}
+  <form method="post" action="/analytics/lab/explain?{{.QS}}">
+    <button type="submit" class="btn btn--secondary btn--sm" {{if not .Res.Decisions}}disabled{{end}}>✨ {{if .Explain}}Read it again{{else}}Explain this grid{{end}}</button>
+  </form>
+  {{end}}
+  {{with .ExplainError}}<div class="flash error" role="alert">Reading failed: {{.}}</div>{{end}}
+  {{with .Explain}}<div class="markdown-preview" style="margin-top: 10px;">{{.}}</div><p class="ai-model-line">{{$.ExplainModel}} · {{ltime $.ExplainAt "datetime"}}</p>{{end}}
+</div>
+{{end}}
+{{end}}

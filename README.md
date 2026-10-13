@@ -56,6 +56,14 @@ around it.
   flags), measures every trade's path from cached bars (max heat, best
   seen, how much of it the exit kept), and lets you drill into `/trades`
   from breakdown rows by symbol or direction.
+- **Stop & target lab** (`/analytics/lab`, linked from Analytics and each
+  strategy) replays your past decisions on the cached 1-minute bars under a
+  grid of fixed stops and targets - the axes from how much heat your
+  winners took and how far they ran - with an optional time stop: the
+  average result per decision with its 90% bootstrap range and win rate
+  per cell, against what your own exits made, plus the heat-against-best
+  scatter of winners and losers. "Explain this grid" has the AI recommend a
+  rule and say how far to trust it.
 - **Digest** reads one ISO week per decision against the week before:
   the headline numbers, one-sentence keep and fix lists derived from
   them, the best and worst decision, the coach's findings tallied across
