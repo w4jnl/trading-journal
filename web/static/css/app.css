@@ -1933,6 +1933,19 @@ body[data-ai="off"] .ai-action { display: none !important; }
 /* A value written through the API or an AI tool, not yet confirmed in an editor. */
 .pill--api { border-style: dashed !important; border-width: 1px; }
 .pill--api::after { content: " · API"; opacity: 0.6; font-size: 0.85em; }
+/* Library: the AI strategy co-author. */
+.lib-ai { margin: 0 0 14px; }
+.ai-found, .ai-draft { margin-top: 10px; padding: 12px 14px; border: 1px dashed var(--accent); border-radius: 8px; }
+.ai-draft { margin: 0 0 14px; }
+.ai-found__head, .ai-draft__head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+.ai-found__group { padding: 10px 0; border-top: 1px solid var(--border); }
+.ai-found__group p { margin: 6px 0; }
+.ai-found__rules { margin: 4px 0 0 18px; font-size: var(--fs-13); }
+.ai-evidence { font-size: var(--fs-12); margin: 2px 0 6px; }
+.ai-draft__diff { margin-top: 10px; }
+.ai-verdict--keep { color: var(--pos); }
+.ai-verdict--fix { color: var(--warn, #b7791f); }
+.ai-verdict--drop { color: var(--neg); }
 .ai-model-line { margin: 8px 0 0; font-size: var(--fs-12); color: var(--fg-muted); font-style: italic; }
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */

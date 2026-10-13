@@ -40,7 +40,13 @@ around it.
   checklist** (its rules, one per line, edited in the Library); trade and
   group notes that use the strategy tick the rules, the note shows the
   score and the misses, and analytics reports compliance per strategy
-  with the net of complete versus incomplete trades.
+  with the net of complete versus incomplete trades. In the Library the AI
+  **drafts a strategy's playbook and checklist from your own trades** (the
+  numbers measured by the app, your notes, where you trade differently from
+  what you wrote) and **finds strategies in your untagged trades**
+  (grouped by instrument, time of day and holding time, named and judged
+  keep / fix / drop); nothing changes until you apply a draft or create
+  the strategy.
 - **Dashboard** leads with a 60-day cumulative P&L curve, a Today panel
   with the day's net P&L as a hero number, and a five-tile stat strip
   with inline-SVG sparklines for trades / win rate / R-multiple /

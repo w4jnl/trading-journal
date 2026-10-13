@@ -464,9 +464,11 @@ func run() error {
 		slog.Info("AI: users may bring their own provider key (Settings > AI)")
 	}
 	var aiReviews *ai.Reviews
+	var aiTasks *ai.Tasks
 	if aiClient != nil || aiSecrets != nil {
 		aiJobs = ai.NewJobManager(ctx)
 		aiReviews = ai.NewReviews(ctx, 2)
+		aiTasks = ai.NewTasks(ctx, 1)
 	}
 
 	// Gamma-exposure annotations (gex-engine). Nil when disabled; the
@@ -604,6 +606,7 @@ func run() error {
 	if aiReviews != nil {
 		// A review starting or ending redraws the open lists (row spinners).
 		aiReviews.OnChange = liveData.Bump
+		aiTasks.OnChange = liveData.Bump
 	}
 
 	// MAE/MFE off the bar cache: filled after each prefetch pass, on sheet
@@ -718,6 +721,7 @@ func run() error {
 		AI:               aiClient,
 		AIJobs:           aiJobs,
 		AIReviews:        aiReviews,
+		AITasks:          aiTasks,
 		AISecrets:        aiSecrets,
 		AIModel:          cfg.AI.Model,
 		GEX:              gexClient,
@@ -798,6 +802,13 @@ func run() error {
 	mux.HandleFunc("POST /library/strategies/{id}/delete", h.StrategyDelete)
 	mux.HandleFunc("POST /library/strategies/{id}/archive", h.StrategyArchive)
 	mux.HandleFunc("POST /library/strategies/{id}/unarchive", h.StrategyUnarchive)
+	mux.HandleFunc("POST /library/strategies/{id}/draft", h.StrategyDraftStart)
+	mux.HandleFunc("POST /library/strategies/{id}/draft/apply", h.StrategyDraftApply)
+	mux.HandleFunc("POST /library/strategies/{id}/draft/discard", h.StrategyDraftDiscard)
+	mux.HandleFunc("POST /library/strategies/discover", h.StrategyDiscoverStart)
+	mux.HandleFunc("POST /library/strategies/discover/create", h.StrategyDiscoverCreate)
+	mux.HandleFunc("POST /library/strategies/discover/discard", h.StrategyDiscoverDiscard)
+	mux.HandleFunc("GET /ai/tasks/status", h.AITaskStatus)
 	mux.HandleFunc("POST /library/playbook", h.PlaybookSave)
 	// Settings: per-user API key management (session + CSRF chain).
 	mux.HandleFunc("GET /settings", h.SettingsPage)
@@ -1092,6 +1103,9 @@ func run() error {
 		}
 		if err := aiReviews.Wait(shutdownCtx); err != nil {
 			slog.Warn("ai reviews did not finish before shutdown", "err", err)
+		}
+		if err := aiTasks.Wait(shutdownCtx); err != nil {
+			slog.Warn("ai tasks did not finish before shutdown", "err", err)
 		}
 	}
 	// Let SQLite refresh its planner statistics while nothing is writing;
