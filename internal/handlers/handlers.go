@@ -117,6 +117,11 @@ type Handlers struct {
 	AI     ai.Client
 	AIJobs *ai.JobManager
 
+	// AIReviews runs the per-note reviews in the background and knows which
+	// notes are under review (spinners, locked editors). Created with AIJobs;
+	// nil-safe for the views.
+	AIReviews *ai.Reviews
+
 	// AISecrets opens the per-user AI provider keys (user_ai_settings). Nil
 	// when users may not bring their own key (ai.user_keys false, or no
 	// secrets encryption key configured).
@@ -314,6 +319,11 @@ func (h *Handlers) funcMap() template.FuncMap {
 		// server default gets data-ai="off" on <body> (renderPage), which hides
 		// the .ai-action buttons.
 		"aiEnabled": func() bool { return h.AIJobs != nil },
+		// aiReviewingTrade / aiReviewingEntry: an AI review covering the
+		// trade, or of the entry, is running in the background (ids are
+		// global, so no user is needed). Lists show a spinner for it.
+		"aiReviewingTrade": func(tradeID int64) bool { return h.AIReviews.TradePending(tradeID) },
+		"aiReviewingEntry": func(entryID int64) bool { return h.AIReviews.EntryPending(entryID) },
 		// gexEnabled gates the Market > Gamma (GEX) nav item + palette entry.
 		"gexEnabled": func() bool { return h.GEX != nil },
 		// aiAnalyzed reports whether a body already carries the LOCAL AI marker, so the

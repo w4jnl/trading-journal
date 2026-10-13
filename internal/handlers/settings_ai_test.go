@@ -32,6 +32,8 @@ type fakeProvider struct {
 	key    string
 	reply  string
 	mu     sync.Mutex
+	gate   chan struct{} // when set, completions wait for it to close
+	status int           // when set, completions fail with it
 	auths  []string
 	model  string
 	system string // the last completion's system and user messages
@@ -44,6 +46,12 @@ func newFakeProvider(t *testing.T, key, reply string) *fakeProvider {
 	f := &fakeProvider{key: key, reply: reply}
 	f.Server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
+		gate := f.gate
+		f.mu.Unlock()
+		if gate != nil && r.URL.Path != "/models" {
+			<-gate
+		}
+		f.mu.Lock()
 		defer f.mu.Unlock()
 		auth := r.Header.Get("Authorization")
 		f.auths = append(f.auths, auth)
@@ -51,6 +59,11 @@ func newFakeProvider(t *testing.T, key, reply string) *fakeProvider {
 		if f.key != "" && auth != "Bearer "+f.key {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = w.Write([]byte(`{"error":{"message":"Incorrect API key provided"}}`))
+			return
+		}
+		if f.status != 0 {
+			w.WriteHeader(f.status)
+			_, _ = w.Write([]byte(`{"error":{"message":"the model is overloaded"}}`))
 			return
 		}
 		if r.URL.Path == "/models" {
@@ -125,7 +138,7 @@ func newAIHandlers(t *testing.T) (*Handlers, *sql.DB, *models.Queries) {
 	q := models.New(db)
 	h := &Handlers{
 		DB: db, Queries: q, Templates: web.TemplatesFS, Timezone: time.UTC,
-		AISecrets: box, AIJobs: ai.NewJobManager(nil),
+		AISecrets: box, AIJobs: ai.NewJobManager(nil), AIReviews: ai.NewReviews(nil, 2),
 	}
 	return h, db, q
 }

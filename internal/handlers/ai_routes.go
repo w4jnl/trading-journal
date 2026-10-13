@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // ---- web routes for server-side AI analysis (all under /ai/, session-authed) ----
@@ -106,13 +107,18 @@ func (h *Handlers) AIDayCancel(w http.ResponseWriter, r *http.Request) {
 // reviewed it writes a fresh review below the earlier one (force) - an explicit
 // click is never a no-op. Only the day job skips reviewed entries, so a
 // cancelled run resumes where it stopped.
+//
+// The review itself runs in the background (h.AIReviews): the click returns
+// at once with the note shown as under review, and the review carries on when
+// the trader closes the sheet or leaves the page. While it runs the note
+// shows a spinner wherever it is listed and its editor is locked; the page or
+// sheet polls GET /ai/review/{entry} and redraws when the review lands.
 
-// aiButtonGuard is the common preamble of the button routes: 404 when AI is off
-// on this server, 409 without a provider or while the day job writes, and the
-// write deadline lifted for the wait on the model. False = stop.
+// aiButtonGuard is the common preamble of the button routes: 404 when AI is
+// off on this server, 409 without a provider or while the day job writes.
+// False = stop.
 func (h *Handlers) aiButtonGuard(w http.ResponseWriter, r *http.Request) bool {
-	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
-	if h.AIJobs == nil {
+	if h.AIJobs == nil || h.AIReviews == nil {
 		http.NotFound(w, r)
 		return false
 	}
@@ -133,19 +139,6 @@ func (h *Handlers) aiEnsureEntry(ctx context.Context, in apiCreateInput) (int64,
 	return e.ID, nil
 }
 
-// aiReviewAndReload analyzes entryID and has htmx reload the page. A reload
-// (not an in-place swap) is deliberate: a newly-assigned strategy renders in
-// the strategy card and the labels in the editor, both outside the note view.
-// Matches how Save already behaves on these pages.
-func (h *Handlers) aiReviewAndReload(w http.ResponseWriter, r *http.Request, entryID int64) {
-	if _, err := h.analyzeEntry(r.Context(), entryID, true); err != nil {
-		http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	w.Header().Set("HX-Refresh", "true")
-	w.WriteHeader(http.StatusOK)
-}
-
 // aiEnsureError answers a failed aiEnsureEntry: the service's validation
 // errors (a bad date or week, a trade that is not the caller's) are the
 // caller's fault.
@@ -158,8 +151,60 @@ func (h *Handlers) aiEnsureError(w http.ResponseWriter, err error) {
 	http.Error(w, "could not prepare entry: "+err.Error(), http.StatusInternalServerError)
 }
 
+// aiStartReview starts the background review of the caller's entryID (a no-op
+// when one is already running). The review gets the caller's identity and the
+// app's lifetime, not the request's.
+func (h *Handlers) aiStartReview(ctx context.Context, entryID int64) {
+	user := auth.MustUser(ctx)
+	h.AIReviews.Start(user.ID, entryID, h.entryTradeIDs(ctx, entryID), func(bg context.Context) error {
+		_, err := h.analyzeEntry(auth.WithUser(bg, user), entryID, true)
+		if err != nil {
+			h.logger().Warn("ai review failed", "entry", entryID, "err", err)
+		}
+		return err
+	})
+}
+
+// entryTradeIDs lists the trades a trade or group entry covers (none for a
+// day or week), so the trades list can mark them while it is under review.
+func (h *Handlers) entryTradeIDs(ctx context.Context, entryID int64) []int64 {
+	e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: userIDPtr(ctx)})
+	if err != nil {
+		return nil
+	}
+	switch e.Scope {
+	case "trade":
+		if e.TradeID != nil {
+			return []int64{*e.TradeID}
+		}
+	case "group":
+		rows, err := h.rdb().QueryContext(ctx, `SELECT trade_id FROM journal_entry_trades WHERE journal_entry_id = ?`, entryID)
+		if err != nil {
+			return nil
+		}
+		defer rows.Close()
+		var ids []int64
+		for rows.Next() {
+			var id int64
+			if rows.Scan(&id) == nil {
+				ids = append(ids, id)
+			}
+		}
+		return ids
+	}
+	return nil
+}
+
+// aiStartAndReload starts the review of entryID and reloads the page, which
+// then shows the note under review and polls for the result.
+func (h *Handlers) aiStartAndReload(w http.ResponseWriter, r *http.Request, entryID int64) {
+	h.aiStartReview(r.Context(), entryID)
+	w.Header().Set("HX-Refresh", "true")
+	w.WriteHeader(http.StatusOK)
+}
+
 // AIAnalyzeEntry: POST /ai/entry/{id} - review an existing entry (any scope;
-// the group note page uses it), then reload the page.
+// the group note page uses it).
 func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
 	if !h.aiButtonGuard(w, r) {
 		return
@@ -169,7 +214,11 @@ func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	h.aiReviewAndReload(w, r, id)
+	if _, err := h.Queries.GetJournalEntryByID(r.Context(), models.GetJournalEntryByIDParams{ID: id, UserID: userIDPtr(r.Context())}); err != nil {
+		http.Error(w, "entry not found", http.StatusNotFound)
+		return
+	}
+	h.aiStartAndReload(w, r, id)
 }
 
 // AIAnalyzeDayNote: POST /ai/note/day/{date} - review the day's note (the day
@@ -184,7 +233,7 @@ func (h *Handlers) AIAnalyzeDayNote(w http.ResponseWriter, r *http.Request) {
 		h.aiEnsureError(w, err)
 		return
 	}
-	h.aiReviewAndReload(w, r, id)
+	h.aiStartAndReload(w, r, id)
 }
 
 // AIAnalyzeWeekNote: POST /ai/note/week/{week} - review the week's note
@@ -198,14 +247,13 @@ func (h *Handlers) AIAnalyzeWeekNote(w http.ResponseWriter, r *http.Request) {
 		h.aiEnsureError(w, err)
 		return
 	}
-	h.aiReviewAndReload(w, r, id)
+	h.aiStartAndReload(w, r, id)
 }
 
 // AIAnalyzeTrade: POST /ai/trade/{id} - review the trade's note, creating it
-// when the trade has none. analyzeEntry fills an unset tag, strategy and labels
-// from the verdict when they clearly fit (never overwriting yours). From the
-// trade sheet it re-renders the sheet in place (like Save) so the review
-// appears inline; ?page=1 (the trade journal page) reloads the page instead.
+// when the trade has none. From the trade sheet it re-renders the sheet in
+// place, now showing the note under review; ?page=1 (the trade journal page)
+// reloads the page instead.
 func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
 	if !h.aiButtonGuard(w, r) {
 		return
@@ -221,19 +269,16 @@ func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if r.URL.Query().Get("page") == "1" {
-		h.aiReviewAndReload(w, r, entryID)
+		h.aiStartAndReload(w, r, entryID)
 		return
 	}
-	if _, err := h.analyzeEntry(r.Context(), entryID, true); err != nil {
-		http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
-		return
-	}
-	h.renderTradeDetail(w, r, "analyzed")
+	h.aiStartReview(r.Context(), entryID)
+	h.renderTradeDetail(w, r, "")
 }
 
 // AIAnalyzeSet: POST /ai/set/{id} - review a copy set as one decision: its
 // group note (created when no note covers the set's trades yet) gets the group
-// review, and the set sheet re-renders in place showing it.
+// review; the set sheet re-renders in place showing it under review.
 func (h *Handlers) AIAnalyzeSet(w http.ResponseWriter, r *http.Request) {
 	if !h.aiButtonGuard(w, r) {
 		return
@@ -252,9 +297,46 @@ func (h *Handlers) AIAnalyzeSet(w http.ResponseWriter, r *http.Request) {
 		h.aiEnsureError(w, err)
 		return
 	}
-	if _, err := h.analyzeEntry(r.Context(), entryID, true); err != nil {
-		http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
+	h.aiStartReview(r.Context(), entryID)
+	h.renderSetDetail(w, r, "")
+}
+
+// AIReviewStatus: GET /ai/review/{id} - the poll of a page or sheet showing
+// entry {id} under review. 204 while it runs (htmx swaps nothing). Once it
+// has landed: then=trade&trade=N or then=set&set=N re-render that sheet in
+// place (HX-Retarget), with the review or its error; anything else reloads
+// the page, which shows them.
+func (h *Handlers) AIReviewStatus(w http.ResponseWriter, r *http.Request) {
+	if h.AIReviews == nil {
+		http.NotFound(w, r)
 		return
 	}
-	h.renderSetDetail(w, r, "analyzed")
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	if _, err := h.Queries.GetJournalEntryByID(r.Context(), models.GetJournalEntryByIDParams{ID: id, UserID: userIDPtr(r.Context())}); err != nil {
+		http.Error(w, "entry not found", http.StatusNotFound)
+		return
+	}
+	if h.AIReviews.EntryPending(id) {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+	q := r.URL.Query()
+	switch q.Get("then") {
+	case "trade", "set":
+		r.SetPathValue("id", q.Get(q.Get("then")))
+		w.Header().Set("HX-Retarget", "#trade-sheet-content")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		if q.Get("then") == "trade" {
+			h.renderTradeDetail(w, r, "analyzed")
+		} else {
+			h.renderSetDetail(w, r, "analyzed")
+		}
+	default:
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+	}
 }

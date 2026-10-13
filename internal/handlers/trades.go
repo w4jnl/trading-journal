@@ -627,6 +627,8 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"JournalEntryID":   journalEntryID,
 		"JournalRendered":  journalRendered,
 		"Flash":            flash,
+		"AIPending":        h.AIReviews.EntryPending(journalEntryID),
+		"AIError":          h.aiReviewError(r, journalEntryID),
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(journalStrategyID),
 		"AssignedStrategy": h.loadAssignedStrategy(r, journalStrategyID),

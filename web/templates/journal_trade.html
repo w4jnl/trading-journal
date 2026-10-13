@@ -7,7 +7,7 @@
 <div class="journal-title-row">
   <h1>Trade journal <span class="muted" style="font-weight:400; font-size: 14px;">· {{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></span></h1>
   {{if $.JournalEntryID}}{{template "id_ref" (dict "Label" "Entry" "ID" $.JournalEntryID)}}{{end}}
-  {{template "ai_analyze_button" (dict "URL" (printf "/ai/trade/%d?page=1" $.TradeID) "Analyzed" (aiAnalyzed $.JournalBody) "Spin" "ai-note-spin" "What" "trade")}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/trade/%d?page=1" $.TradeID) "Analyzed" (aiAnalyzed $.JournalBody) "Spin" "ai-note-spin" "What" "trade" "Pending" $.AIPending "Poll" (printf "/ai/review/%d" $.JournalEntryID))}}
 </div>
 
 <div class="muted" style="margin-bottom: 16px; font-size: 12px;">
@@ -33,11 +33,14 @@
 </div>
 {{end}}
 
+{{with .AIError}}<div class="flash error mb-16" role="alert">AI review failed: {{.}}</div>{{end}}
+
 {{if .GexRefresh}}
 {{template "gex_refresh_form" .JournalEntryID}}
 {{end}}
 
-<section class="journal-entry" data-journal-entry>
+<section class="journal-entry{{if .AIPending}} journal-entry--locked{{end}}" data-journal-entry>
+{{if .AIPending}}{{template "ai_review_lock"}}{{end}}
 {{if .JournalBody}}{{template "journal_view" (dict "Body" .JournalBody "Tag" $.JournalTag "ID" .JournalEntryID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}{{end}}
 <form method="post" action="/trades/{{.TradeID}}/journal" class="journal-form"{{if .JournalBody}} hidden{{end}}>
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}

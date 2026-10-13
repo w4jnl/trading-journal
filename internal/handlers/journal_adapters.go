@@ -51,6 +51,7 @@ func (h *Handlers) journalSvc() *journal.Service {
 				}
 			},
 			NewAnnotator: func() journal.Annotator { return &gexAnnotator{h: h} },
+			Locked:       func(entryID int64) bool { return h.AIReviews.EntryPending(entryID) },
 		}
 	})
 	return h.journal

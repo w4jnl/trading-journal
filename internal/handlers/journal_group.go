@@ -443,6 +443,8 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		"ChartEndpoint":    fmt.Sprintf("/charts/group/%d", id),
 		"ChartCached":      h.chartCached(ctx, trades),
 		"Entry":            entry,
+		"AIPending":        h.AIReviews.EntryPending(entry.ID),
+		"AIError":          h.aiReviewError(r, entry.ID),
 		"GexRefresh":       h.GEX != nil && gexRefreshable(entry.Body),
 		"EntryDate":        entry.EntryDate.In(tz).Format("2006-01-02"),
 		"EntryDateNice":    entry.EntryDate.In(tz).Format("Mon, 2 Jan 2006"),
@@ -549,7 +551,7 @@ func (h *Handlers) GroupJournalDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.journalSvc().Delete(ctx, userID(ctx), entryID); err != nil {
-		h.serverError(w, fmt.Errorf("delete group: %w", err))
+		h.saveFailed(w, "delete group", err)
 		return
 	}
 	q := url.Values{}

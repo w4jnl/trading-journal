@@ -17,7 +17,8 @@
 // reordered while the page is busy (open sheet, row selection, open picker)
 // defer to a click-to-refresh toast, since the list shifting under an open
 // sheet is disorienting. A region that holds the trader's input right now
-// (focus, unsaved edits, an in-flight request) is never swapped under them.
+// (a focused field, unsaved edits, an in-flight request) is never swapped
+// under them; a focused row is swapped and keeps the focus.
 (function () {
   'use strict';
 
@@ -58,7 +59,13 @@
   // trader's hands.
   function holdsInput(region) {
     var el = document.activeElement;
-    if (el && el !== document.body && region.contains(el)) return true;
+    if (el && el !== document.body && region.contains(el)) {
+      // Focus on a row (keyboard navigation, or the row a closing sheet hands
+      // focus back to) or a button in it is not input: the row is swapped
+      // and swapBundle moves focus to its replacement. A field in it is.
+      var row = el.closest && el.closest('tr[data-trade-id]');
+      if (!row || el.matches('input, textarea, select')) return true;
+    }
     // A form the user unfolded (rendered closed, open now) would fold back
     // under them; one rendered open comes back open.
     if (region.querySelector('details[data-keep-open][open]:not([data-rendered-open])')) return true;
@@ -117,7 +124,16 @@
   // marker included), keeps the row selection, and flashes changed rows.
   function swapBundle(html, changed) {
     var checked = Array.prototype.map.call(document.querySelectorAll('input.trade-sel:checked'), function (cb) { return cb.value; });
+    var active = document.activeElement;
+    var focusRow = active && active.closest ? active.closest('tr[data-trade-id]') : null;
+    var focusID = focusRow ? focusRow.getAttribute('data-trade-id') : null;
     htmx.swap(document.body, html, { swapStyle: 'none' });
+    if (focusID && (!document.activeElement || document.activeElement === document.body)) {
+      var again = document.querySelector('tr[data-trade-id="' + focusID + '"]');
+      if (again) {
+        try { again.focus({ preventScroll: true }); } catch (_) { again.focus(); }
+      }
+    }
     checked.forEach(function (v) {
       var cb = document.querySelector('input.trade-sel[value="' + v + '"]');
       if (cb && !cb.checked) {

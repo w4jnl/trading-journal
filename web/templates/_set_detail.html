@@ -88,9 +88,9 @@
     </form>
     <span class="muted" style="font-size: 12px;">creates one group note covering every account's trade</span>
   {{end}}
-  {{template "ai_analyze_button" (dict "URL" (printf "/ai/set/%d" .SetID) "Analyzed" (aiAnalyzed .GroupBody) "Spin" "ai-set-spin" "What" "set" "Target" "#trade-sheet-content")}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/set/%d" .SetID) "Analyzed" (aiAnalyzed .GroupBody) "Spin" "ai-set-spin" "What" "set" "Target" "#trade-sheet-content" "Pending" .AIPending "Poll" (printf "/ai/review/%d?then=set&set=%d" .GroupID .SetID))}}
 </div>
-{{if eq .Flash "analyzed"}}<div class="flash saved">✨ AI review added to the group note.</div>{{end}}
+{{with .AIError}}<div class="flash error" role="alert">AI review failed: {{.}}</div>{{else}}{{if eq .Flash "analyzed"}}<div class="flash saved">✨ AI review added to the group note.</div>{{end}}{{end}}
 {{if .GroupBody}}
 <div class="set-note">
   {{if or .GroupTag .GroupMistakes .GroupEmotions}}

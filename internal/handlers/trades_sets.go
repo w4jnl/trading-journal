@@ -625,6 +625,10 @@ func (h *Handlers) renderSetDetail(w http.ResponseWriter, r *http.Request, flash
 		"Flash":         flash,
 		"GroupBody":     "", // a string for aiAnalyzed even without a note
 	}
+	if hasGroup {
+		data["AIPending"] = h.AIReviews.EntryPending(groupID)
+		data["AIError"] = h.aiReviewError(r, groupID)
+	}
 	// The group note shows in the sheet, so a set review reads where it was
 	// asked for.
 	if hasGroup {

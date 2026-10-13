@@ -619,7 +619,7 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 			return ctx.Err()
 		}
 		progress(done, total, pe.Label)
-		if _, err := h.analyzeEntry(ctx, pe.EntryID, force); err != nil {
+		if err := h.aiTrackedReview(ctx, pe.EntryID, force); err != nil {
 			return err
 		}
 		done++
@@ -642,7 +642,7 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 			dayID = day.ID
 		}
 		if dayID != 0 {
-			if _, err := h.analyzeEntry(ctx, dayID, force); err != nil {
+			if err := h.aiTrackedReview(ctx, dayID, force); err != nil {
 				return err
 			}
 		}
@@ -650,4 +650,22 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 	done++
 	progress(done, total, "")
 	return nil
+}
+
+// aiTrackedReview runs one of the day job's reviews under the review tracker,
+// so its note shows as under review (spinner, locked editor) like one started
+// from a button. An entry a button review is already writing is skipped: it
+// gets that review.
+func (h *Handlers) aiTrackedReview(ctx context.Context, entryID int64, force bool) error {
+	done, ok := h.AIReviews.Track(userID(ctx), entryID, h.entryTradeIDs(ctx, entryID))
+	if !ok {
+		if h.AIReviews != nil {
+			return nil // a button review of this entry is running
+		}
+		_, err := h.analyzeEntry(ctx, entryID, force) // no tracker (tests)
+		return err
+	}
+	_, err := h.analyzeEntry(ctx, entryID, force)
+	done(err)
+	return err
 }

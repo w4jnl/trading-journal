@@ -741,6 +741,8 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Today":            time.Now().In(h.localTZ()).Format("2006-01-02"),
 		"HasEntry":         hasEntry,
 		"Entry":            entry,
+		"AIPending":        h.AIReviews.EntryPending(entry.ID),
+		"AIError":          h.aiReviewError(r, entry.ID),
 		"Mood":             mood,
 		"Tag":              tag,
 		"Mistakes":         mistakes,
@@ -847,7 +849,7 @@ func (h *Handlers) JournalSave(w http.ResponseWriter, r *http.Request) {
 	// pattern matching (neither pattern is uniformly more specific).
 	if r.FormValue("_action") == "delete" {
 		if _, err := h.journalSvc().DeleteDay(ctx, userID(ctx), date); err != nil {
-			h.serverError(w, fmt.Errorf("delete day journal: %w", err))
+			h.saveFailed(w, "delete day journal", err)
 			return
 		}
 		http.Redirect(w, r, redirectQuery("deleted"), http.StatusSeeOther)
@@ -930,6 +932,8 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		"Mistakes":         mistakes,
 		"Emotions":         emotions,
 		"JournalEntryID":   journalEntryID,
+		"AIPending":        h.AIReviews.EntryPending(journalEntryID),
+		"AIError":          h.aiReviewError(r, journalEntryID),
 		"GexRefresh":       h.GEX != nil && gexRefreshable(journalBody),
 		"Summary":          summary,
 		"Trades":           trades,
@@ -1003,6 +1007,8 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		"NextWeek":         fmt.Sprintf("%d-W%02d", ny, nw),
 		"HasEntry":         hasEntry,
 		"Entry":            entry,
+		"AIPending":        h.AIReviews.EntryPending(entry.ID),
+		"AIError":          h.aiReviewError(r, entry.ID),
 		"Tag":              tag,
 		"Mistakes":         mistakes,
 		"Emotions":         emotions,
@@ -1072,7 +1078,7 @@ func (h *Handlers) WeekJournalDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.journalSvc().DeleteWeek(ctx, userID(ctx), monday); err != nil {
-		h.serverError(w, fmt.Errorf("delete week journal: %w", err))
+		h.saveFailed(w, "delete week journal", err)
 		return
 	}
 	q := url.Values{}

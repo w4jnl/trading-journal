@@ -151,6 +151,7 @@
         </span>
         <span class="entry-pills">
           {{/* Machine blocks are badged, not previewed (see preview.go). */}}
+          {{if aiReviewingEntry .ID}}<span class="pill ai-pending-pill" title="An AI review of this note is running"><span class="ai-spinner" aria-hidden="true"></span> reviewing</span>{{end}}
           {{if hasAIReview .Body}}<span class="pill info" title="Contains an AI review">AI</span>{{end}}
           {{if hasGexContext .Body}}<span class="pill" title="Contains gamma (GEX) context">GEX</span>{{end}}
           {{range .Mistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}

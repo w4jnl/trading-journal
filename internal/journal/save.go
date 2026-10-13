@@ -35,6 +35,9 @@ func (s *Service) SaveDay(ctx context.Context, userID int64, day time.Time, f Fi
 	case err != nil:
 		return "", fmt.Errorf("load day entry: %w", err)
 	default:
+		if s.locked(existing.ID) {
+			return "", ErrReviewPending
+		}
 		if f.Body == "" {
 			return s.deleteEntry(ctx, userID, existing.ID)
 		}
@@ -85,6 +88,9 @@ func (s *Service) SaveWeek(ctx context.Context, userID int64, monday time.Time, 
 	case err != nil:
 		return "", fmt.Errorf("load week entry: %w", err)
 	default:
+		if s.locked(existing.ID) {
+			return "", ErrReviewPending
+		}
 		if f.Body == "" {
 			return s.deleteEntry(ctx, userID, existing.ID)
 		}
@@ -145,6 +151,9 @@ func (s *Service) SaveTrade(ctx context.Context, userID, tradeID int64, f Fields
 	case err != nil:
 		return "", fmt.Errorf("load trade entry: %w", err)
 	default:
+		if s.locked(existing.ID) {
+			return "", ErrReviewPending
+		}
 		if f.Body == "" {
 			return s.deleteEntry(ctx, userID, existing.ID)
 		}
@@ -168,6 +177,9 @@ func (s *Service) SaveTrade(ctx context.Context, userID, tradeID int64, f Fields
 // SaveGroup saves the body of the user's group entry; an empty body deletes
 // it (the junction rows go with ON DELETE CASCADE).
 func (s *Service) SaveGroup(ctx context.Context, userID, entryID int64, f Fields) (Outcome, error) {
+	if s.locked(entryID) {
+		return "", ErrReviewPending
+	}
 	if f.Body == "" {
 		return s.deleteEntry(ctx, userID, entryID)
 	}
@@ -194,6 +206,9 @@ func (s *Service) Delete(ctx context.Context, userID, entryID int64) error {
 }
 
 func (s *Service) deleteEntry(ctx context.Context, userID, entryID int64) (Outcome, error) {
+	if s.locked(entryID) {
+		return "", ErrReviewPending
+	}
 	if err := s.Q.DeleteJournalEntry(ctx, models.DeleteJournalEntryParams{ID: entryID, UserID: &userID}); err != nil {
 		return "", fmt.Errorf("delete entry: %w", err)
 	}

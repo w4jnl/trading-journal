@@ -3,13 +3,25 @@
      hides it for a user without a provider). On a note that does not exist
      yet the click creates it; on a reviewed note the button reads
      "Re-analyze" and adds a fresh review below the earlier one.
+     While a review of the note runs (in the background: it carries on when
+     the trader leaves), the button gives way to a spinner that polls Poll
+     every 2s; GET /ai/review/{entry} answers 204 until the review lands, then
+     reloads the page or re-renders the sheet.
      Dict: URL (POST target), Analyzed (bool), Spin (unique spinner id),
      What ("trade" | "set" | "group" | "day" | "week"), Target (optional:
      the element the response renders into; empty = the server reloads the
-     page). journal_editor.js holds the click while an editor has unsaved
-     text, since the review is appended to the saved note. */}}
+     page), Pending (bool), Poll (the status URL while pending).
+     journal_editor.js holds the click while an editor has unsaved text,
+     since the review is appended to the saved note. */}}
 {{define "ai_analyze_button"}}
 {{if aiEnabled}}
+{{if .Pending}}
+<span class="ai-analyze ai-analyze--pending" role="status"
+      title="An AI review of this {{.What}} is running. It carries on if you leave; the note can be edited again when it lands.">
+  <span class="ai-spinner" aria-hidden="true"></span><span>AI review in progress…</span>
+  <span hidden hx-get="{{.Poll}}" hx-trigger="every 2s" hx-swap="none"></span>
+</span>
+{{else}}
 <span class="ai-analyze ai-action">
   <button type="button" class="btn btn--secondary btn--sm" data-ai-analyze
           hx-post="{{.URL}}" {{if .Target}}hx-target="{{.Target}}" hx-swap="innerHTML"{{else}}hx-swap="none"{{end}}
@@ -19,3 +31,16 @@
 </span>
 {{end}}
 {{end}}
+{{end}}
+
+{{/* ai_review_lock - the notice an editor shows instead of its form while an
+     AI review of the note runs (the section carries journal-entry--locked,
+     which hides the form and the Edit / Add note buttons; the server refuses
+     a save meanwhile). */}}
+{{define "ai_review_lock"}}
+<p class="ai-lock-note" role="status"><span class="ai-spinner" aria-hidden="true"></span>
+  AI review in progress. It carries on if you leave; the note can be edited again once it lands.</p>
+{{end}}
+
+{{/* ai_pending_icon - the journal-icon stand-in for a trade under review. */}}
+{{define "ai_pending_icon"}}<span class="ai-spinner ai-spinner--icon" role="img" aria-label="AI review in progress" title="AI review in progress"></span>{{end}}
