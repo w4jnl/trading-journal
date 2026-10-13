@@ -80,12 +80,7 @@ around it.
   strategy or labels: what it proposes shows on the note as dashed pills
   to accept or dismiss (a dismissed one is not proposed again). Values
   written through the API or MCP are marked until you save the note, and
-  analytics can count only what you set or confirmed ("Confirmed by me").
-  **Suggest stop & target** on a trade or set proposes the levels from what
-  was known at the entry only - the structure and volatility in the bars
-  before it, how much heat your earlier winners took and how far they ran,
-  the gamma levels then - shows what they would have done afterwards, and
-  "Use as plan" sets the stop (risk per leg) and the new planned target. A review runs in the
+  analytics can count only what you set or confirmed ("Confirmed by me"). A review runs in the
   background: it carries on when you close the sheet or leave the page,
   the note shows a spinner wherever it is listed (trades, sets, the
   journal feed) and cannot be edited until the review lands. A whole-day
