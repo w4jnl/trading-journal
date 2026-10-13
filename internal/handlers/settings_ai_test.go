@@ -38,6 +38,7 @@ type fakeProvider struct {
 	model  string
 	system string // the last completion's system and user messages
 	user   string
+	images int // images on the last completion's user turn
 	calls  int
 }
 
@@ -73,19 +74,36 @@ func newFakeProvider(t *testing.T, key, reply string) *fakeProvider {
 		var body struct {
 			Model    string `json:"model"`
 			Messages []struct {
-				Role    string `json:"role"`
-				Content string `json:"content"`
+				Role    string          `json:"role"`
+				Content json.RawMessage `json:"content"`
 			} `json:"messages"`
 		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &body)
 		f.model = body.Model
 		for _, m := range body.Messages {
+			// A plain string, or text and image parts (a vision request).
+			var text string
+			images := 0
+			if json.Unmarshal(m.Content, &text) != nil {
+				var parts []struct {
+					Type string `json:"type"`
+					Text string `json:"text"`
+				}
+				_ = json.Unmarshal(m.Content, &parts)
+				for _, p := range parts {
+					if p.Type == "text" {
+						text += p.Text
+					} else {
+						images++
+					}
+				}
+			}
 			switch m.Role {
 			case "system":
-				f.system = m.Content
+				f.system = text
 			case "user":
-				f.user = m.Content
+				f.user, f.images = text, images
 			}
 		}
 		f.calls++

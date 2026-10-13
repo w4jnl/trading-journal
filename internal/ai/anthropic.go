@@ -3,6 +3,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -24,9 +25,22 @@ type anthropicRequest struct {
 	Temperature *float64           `json:"temperature,omitempty"`
 }
 
+// anthropicMessage's Content is a string, or []anthropicBlock with images.
 type anthropicMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+type anthropicBlock struct {
+	Type   string           `json:"type"`
+	Text   string           `json:"text,omitempty"`
+	Source *anthropicSource `json:"source,omitempty"`
+}
+
+type anthropicSource struct {
+	Type      string `json:"type"`
+	MediaType string `json:"media_type"`
+	Data      string `json:"data"`
 }
 
 type anthropicResponse struct {
@@ -45,11 +59,25 @@ func (c *anthropicClient) auth(req *http.Request) {
 // Generate sends one user turn under the system prompt and returns the text
 // blocks of the reply.
 func (c *anthropicClient) Generate(ctx context.Context, system, user string) (string, error) {
+	return c.GenerateImages(ctx, system, user, nil)
+}
+
+// GenerateImages is Generate with PNGs as base64 image blocks before the text.
+func (c *anthropicClient) GenerateImages(ctx context.Context, system, user string, pngs [][]byte) (string, error) {
+	var content any = user
+	if len(pngs) > 0 {
+		blocks := make([]anthropicBlock, 0, len(pngs)+1)
+		for _, p := range pngs {
+			blocks = append(blocks, anthropicBlock{Type: "image", Source: &anthropicSource{
+				Type: "base64", MediaType: "image/png", Data: base64.StdEncoding.EncodeToString(p)}})
+		}
+		content = append(blocks, anthropicBlock{Type: "text", Text: user})
+	}
 	payload, err := json.Marshal(anthropicRequest{
 		Model:       c.model,
 		MaxTokens:   c.maxTokens,
 		System:      system,
-		Messages:    []anthropicMessage{{Role: "user", Content: user}},
+		Messages:    []anthropicMessage{{Role: "user", Content: content}},
 		Temperature: c.temperature,
 	})
 	if err != nil {

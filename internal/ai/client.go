@@ -13,6 +13,7 @@ package ai
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -45,6 +46,26 @@ type Options struct {
 // Client turns a system+user prompt into a single completion.
 type Client interface {
 	Generate(ctx context.Context, system, user string) (string, error)
+}
+
+// ImageGenerator is implemented by every Client New returns: Generate with
+// PNG images attached to the user turn, for vision models. A model that
+// cannot read images answers with a *StatusError (4xx).
+type ImageGenerator interface {
+	GenerateImages(ctx context.Context, system, user string, pngs [][]byte) (string, error)
+}
+
+// StatusError is a non-200 answer from the provider. Code is the HTTP status.
+type StatusError struct {
+	Code int
+	Msg  string
+}
+
+func (e *StatusError) Error() string {
+	if e.Code == http.StatusUnauthorized || e.Code == http.StatusForbidden {
+		return fmt.Sprintf("ai: the provider rejected the API key (status %d): %s", e.Code, e.Msg)
+	}
+	return fmt.Sprintf("ai: status %d: %s", e.Code, e.Msg)
 }
 
 // ModelLister is implemented by every Client New returns: it lists the model
@@ -131,11 +152,7 @@ func (c *baseClient) do(req *http.Request) ([]byte, error) {
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if resp.StatusCode != http.StatusOK {
-		msg := providerError(body)
-		if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-			return nil, fmt.Errorf("ai: the provider rejected the API key (status %d): %s", resp.StatusCode, msg)
-		}
-		return nil, fmt.Errorf("ai: status %d: %s", resp.StatusCode, msg)
+		return nil, &StatusError{Code: resp.StatusCode, Msg: providerError(body)}
 	}
 	return body, nil
 }
@@ -179,9 +196,20 @@ type openAIClient struct {
 	completionTokens bool
 }
 
+// chatMessage's Content is a string, or a []chatPart for a turn with images.
 type chatMessage struct {
 	Role    string `json:"role"`
-	Content string `json:"content"`
+	Content any    `json:"content"`
+}
+
+type chatPart struct {
+	Type     string        `json:"type"`
+	Text     string        `json:"text,omitempty"`
+	ImageURL *chatImageURL `json:"image_url,omitempty"`
+}
+
+type chatImageURL struct {
+	URL string `json:"url"`
 }
 
 type chatRequest struct {
@@ -232,11 +260,26 @@ func contentText(raw json.RawMessage) string {
 
 // Generate POSTs a single-turn chat completion and returns the assistant content.
 func (c *openAIClient) Generate(ctx context.Context, system, user string) (string, error) {
+	return c.GenerateImages(ctx, system, user, nil)
+}
+
+// GenerateImages is Generate with PNGs attached to the user turn as data URLs
+// (the OpenAI vision format, which Gemini, Mistral, OpenRouter and local
+// vision servers accept too).
+func (c *openAIClient) GenerateImages(ctx context.Context, system, user string, pngs [][]byte) (string, error) {
+	var content any = user
+	if len(pngs) > 0 {
+		parts := []chatPart{{Type: "text", Text: user}}
+		for _, p := range pngs {
+			parts = append(parts, chatPart{Type: "image_url", ImageURL: &chatImageURL{URL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(p)}})
+		}
+		content = parts
+	}
 	cr := chatRequest{
 		Model: c.model,
 		Messages: []chatMessage{
 			{Role: "system", Content: system},
-			{Role: "user", Content: user},
+			{Role: "user", Content: content},
 		},
 		Temperature: c.temperature,
 		Stream:      false,

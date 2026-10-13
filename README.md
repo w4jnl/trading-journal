@@ -59,7 +59,8 @@ around it.
   a group, a day or a week, also one not written yet; once reviewed it
   reads Re-analyze and adds a fresh review below) or on a whole day
   writes a review into the journal, briefed for what it reviews (a trade's
-  entry, risk and exit against its plan and price path; a copy set's
+  entry, risk and exit against its plan, its price path and the bars
+  around it - optionally the chart image too, for vision models; a copy set's
   consistency across accounts; a day against its plan; a week from the
   digest) and headed by the model that wrote it. It never writes your tag,
   strategy or labels: what it proposes shows on the note as dashed pills

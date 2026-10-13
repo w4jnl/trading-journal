@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -217,5 +218,48 @@ func TestProviderError(t *testing.T) {
 	long := strings.Repeat("x", 500)
 	if got := providerError([]byte(long)); len([]rune(got)) != 301 {
 		t.Errorf("long body not capped: %d runes", len([]rune(got)))
+	}
+}
+
+// Images ride on the user turn: data URLs in the OpenAI format, base64
+// blocks before the text for Anthropic. A rejection is a *StatusError.
+func TestGenerateImages(t *testing.T) {
+	png := []byte{0x89, 'P', 'N', 'G'}
+	srv := newJSONServer(t, 200, `{"choices":[{"message":{"content":"seen"}}]}`)
+	c, _ := New(Options{BaseURL: srv.URL, Model: "vision"})
+	out, err := c.(ImageGenerator).GenerateImages(context.Background(), "s", "look", [][]byte{png})
+	if err != nil || out != "seen" {
+		t.Fatalf("out=%q err=%v", out, err)
+	}
+	msgs := srv.body["messages"].([]any)
+	parts, ok := msgs[1].(map[string]any)["content"].([]any)
+	if !ok || len(parts) != 2 {
+		t.Fatalf("user content = %v", msgs[1])
+	}
+	img := parts[1].(map[string]any)
+	if img["type"] != "image_url" || !strings.HasPrefix(img["image_url"].(map[string]any)["url"].(string), "data:image/png;base64,iVBORw") {
+		t.Errorf("image part = %v", img)
+	}
+	if msgs[0].(map[string]any)["content"] != "s" {
+		t.Error("system turn changed shape")
+	}
+
+	ant := newJSONServer(t, 200, `{"content":[{"type":"text","text":"seen"}],"stop_reason":"end_turn"}`)
+	c, _ = New(Options{Provider: "anthropic", BaseURL: ant.URL, Model: "claude"})
+	if _, err := c.(ImageGenerator).GenerateImages(context.Background(), "s", "look", [][]byte{png}); err != nil {
+		t.Fatal(err)
+	}
+	blocks := ant.body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	b0, b1 := blocks[0].(map[string]any), blocks[1].(map[string]any)
+	if b0["type"] != "image" || b0["source"].(map[string]any)["media_type"] != "image/png" || b1["type"] != "text" || b1["text"] != "look" {
+		t.Errorf("anthropic blocks = %v", blocks)
+	}
+
+	bad := newJSONServer(t, 400, `{"error":{"message":"this model does not support images"}}`)
+	c, _ = New(Options{BaseURL: bad.URL, Model: "text-only"})
+	_, err = c.(ImageGenerator).GenerateImages(context.Background(), "s", "look", [][]byte{png})
+	var se *StatusError
+	if !errors.As(err, &se) || se.Code != 400 || !strings.Contains(se.Msg, "does not support images") {
+		t.Errorf("err = %v", err)
 	}
 }
