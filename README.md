@@ -67,7 +67,9 @@ around it.
   choice, and says at its foot what it filled. A review runs in the
   background: it carries on when you close the sheet or leave the page,
   the note shows a spinner wherever it is listed (trades, sets, the
-  journal feed) and cannot be edited until the review lands. Each user runs it on **their own
+  journal feed) and cannot be edited until the review lands. A whole-day
+  run locks only the notes it is writing; the rest of the journal stays
+  open, and single notes can be analyzed alongside it. Each user runs it on **their own
   provider key** (Settings → AI: OpenAI, Anthropic, Google Gemini,
   Mistral, OpenRouter), or on a server-wide default such as a local
   model. See [In-app AI reviews](#in-app-ai-reviews).

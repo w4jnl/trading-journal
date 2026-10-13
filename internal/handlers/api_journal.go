@@ -161,9 +161,6 @@ func (h *Handlers) journalDetailJSON(ctx context.Context, e models.JournalEntry,
 
 // APIJournalAppendNote: POST /api/v1/journal/{id}/notes  (append-only)
 func (h *Handlers) APIJournalAppendNote(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
-		return
-	}
 	ctx := r.Context()
 	id, ok := apiPathID(r)
 	if !ok {
@@ -199,9 +196,6 @@ func (h *Handlers) APIJournalAppendNote(w http.ResponseWriter, r *http.Request) 
 // with the existing entryId (use the notes endpoint to append). Group entries
 // have no uniqueness and always create.
 func (h *Handlers) APIJournalCreate(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
-		return
-	}
 	tz := h.localTZ()
 	var in apiCreateInput
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&in); err != nil {
@@ -371,7 +365,7 @@ func apiSnippet(s string, n int) string {
 
 // APIPrepareDay: POST /api/v1/journal/prepare-day  {date?: "YYYY-MM-DD"}
 func (h *Handlers) APIPrepareDay(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
+	if h.guardDayRun(w, r) {
 		return
 	}
 	var body struct {
@@ -396,9 +390,6 @@ func (h *Handlers) APIPrepareDay(w http.ResponseWriter, r *http.Request) {
 // APIJournalAssignStrategy: POST /api/v1/journal/{id}/strategy  {strategyId}
 // Assigns a strategy only if the entry has none yet (never overwrites).
 func (h *Handlers) APIJournalAssignStrategy(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
-		return
-	}
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")
@@ -427,9 +418,6 @@ func (h *Handlers) APIJournalAssignStrategy(w http.ResponseWriter, r *http.Reque
 // APIJournalAssignTag: POST /api/v1/journal/{id}/tag  {tag}
 // Sets the tag only if the entry has none yet (never overwrites).
 func (h *Handlers) APIJournalAssignTag(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
-		return
-	}
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")

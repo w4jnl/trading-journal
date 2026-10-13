@@ -644,9 +644,6 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 // behave.
 func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	if h.guardJournalingDuringAI(w, r) {
-		return
-	}
 	idStr := r.PathValue("id")
 	tradeID, err := strconv.ParseInt(idStr, 10, 64)
 	if err != nil {

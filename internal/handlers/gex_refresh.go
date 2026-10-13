@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -140,9 +141,6 @@ func (h *Handlers) refreshEntryGex(ctx context.Context, e models.JournalEntry) (
 // JournalGexRefresh handles POST /journal/{id}/gex/refresh for one entry and
 // redirects back to its page with the outcome flash.
 func (h *Handlers) JournalGexRefresh(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAI(w, r) {
-		return
-	}
 	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -156,6 +154,11 @@ func (h *Handlers) JournalGexRefresh(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.serverError(w, fmt.Errorf("gex refresh: load entry: %w", err))
+		return
+	}
+	if h.AIReviews.EntryPending(e.ID) {
+		// The refresh rewrites the body; the review is appending to it.
+		http.Error(w, journal.ErrReviewPending.Error(), http.StatusConflict)
 		return
 	}
 	var back string
@@ -246,6 +249,9 @@ func (h *Handlers) AdminGexRefresh(w http.ResponseWriter, r *http.Request) {
 	var changed, same, failed, streak int
 	aborted := false
 	for _, id := range ids {
+		if h.AIReviews.EntryPending(id) {
+			continue // under AI review: its body is being written; the next run catches it
+		}
 		e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: id, UserID: userIDPtr(ctx)})
 		if err != nil {
 			failed++

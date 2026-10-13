@@ -922,7 +922,7 @@ Operator setup (config block, reverse-proxy routing, per-client steps):
 | `400` | Bad request (malformed id, bad/missing field, malformed or inverted date range, range too large) |
 | `401` | Missing/invalid/disabled key |
 | `404` | Not found, or not owned by you |
-| `409` | Conflict - a singleton entry already exists (carries `entryId`) |
+| `409` | Conflict - a singleton entry already exists (carries `entryId`); or, for prepare-day only, the user's in-app AI day review is running |
 | `500` | Server error |
 
 ## Worked example

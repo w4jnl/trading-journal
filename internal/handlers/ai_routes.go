@@ -31,12 +31,14 @@ func (h *Handlers) guardNoAIProvider(w http.ResponseWriter, r *http.Request) boo
 	return false
 }
 
-// guardJournalingDuringAI writes a 409 and returns true when the user's AI day job
-// is running, so journal edits (and ad-hoc single analyses) wait for it to finish or
-// be cancelled - the day job writes those same entries.
-func (h *Handlers) guardJournalingDuringAI(w http.ResponseWriter, r *http.Request) bool {
+// guardDayRun writes a 409 and returns true while the user's AI day run is
+// going, for the one thing that cannot share a day with it: preparing a day
+// for another full review (prepare_day). Everything else is locked per note:
+// the run holds the notes it writes (h.AIReviews), the rest of the journal
+// stays open.
+func (h *Handlers) guardDayRun(w http.ResponseWriter, r *http.Request) bool {
 	if h.aiJobRunning(r.Context()) {
-		http.Error(w, aiBusyMessage, http.StatusConflict)
+		writeJSONError(w, http.StatusConflict, aiDayRunMessage)
 		return true
 	}
 	return false
@@ -115,14 +117,14 @@ func (h *Handlers) AIDayCancel(w http.ResponseWriter, r *http.Request) {
 // sheet polls GET /ai/review/{entry} and redraws when the review lands.
 
 // aiButtonGuard is the common preamble of the button routes: 404 when AI is
-// off on this server, 409 without a provider or while the day job writes.
-// False = stop.
+// off on this server, 409 without a provider. A note the day run is about to
+// write is simply already under review. False = stop.
 func (h *Handlers) aiButtonGuard(w http.ResponseWriter, r *http.Request) bool {
 	if h.AIJobs == nil || h.AIReviews == nil {
 		http.NotFound(w, r)
 		return false
 	}
-	return !h.guardNoAIProvider(w, r) && !h.guardJournalingDuringAI(w, r)
+	return !h.guardNoAIProvider(w, r)
 }
 
 // aiEnsureEntry returns the id of the entry in, creating it with the review

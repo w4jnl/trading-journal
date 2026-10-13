@@ -595,10 +595,16 @@ func firstN(keys []string, n int) []string {
 }
 
 // runDayAnalysis is the day-job body: cluster + create the day's entries
-// (prepareDayEntries), analyze each, then add a day-level synthesis. Reports progress and
-// stops promptly when ctx is cancelled. force re-analyzes already-marked entries too;
-// otherwise marked entries are skipped (which also makes a re-run resume where a cancelled
-// run left off).
+// (prepareDayEntries) and the day note, review each entry, then the day note
+// as the synthesis. Reports progress and stops promptly when ctx is cancelled.
+// force re-reviews already-reviewed entries too; otherwise they are skipped
+// (which also makes a re-run resume where a cancelled run left off).
+//
+// The run locks only what it writes: every note it will review is held under
+// review (h.AIReviews) from the start until its own review lands, so those
+// notes show the spinner and refuse manual edits while the rest of the
+// journal stays open. A note a button review is already writing is left to
+// that review.
 func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force bool, progress func(done, total int, current string)) error {
 	// Fail before preparing any entry when the user has no usable provider.
 	if _, _, err := h.aiFor(ctx); err != nil {
@@ -608,64 +614,61 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 	if err != nil {
 		return err
 	}
-	resolvedDate, entries := prep.Date, prep.Entries
+	type item struct {
+		id    int64
+		label string
+	}
+	items := make([]item, 0, len(prep.Entries)+1)
+	for _, pe := range prep.Entries {
+		items = append(items, item{pe.EntryID, pe.Label})
+	}
+	// The day note goes last - it is the synthesis over the trades - but is
+	// created now, so the run's whole set of notes is held from the start. A
+	// day spans mixed setups: it may pick up an overall tag, never a strategy.
+	if prep.Date != "" {
+		if id, err := h.aiEnsureEntry(ctx, apiCreateInput{Scope: "day", Date: prep.Date}); err == nil {
+			items = append(items, item{id, "day summary"})
+		}
+	}
 
-	total := len(entries) + 1 // + the day synthesis
-	done := 0
+	held := map[int64]func(error){}
+	defer func() {
+		for _, release := range held {
+			release(nil) // cancelled or stopped by an error: let the rest go
+		}
+	}()
+	for _, it := range items {
+		if !force && h.entryHasMarker(ctx, it.id, aiMarkerLocal) {
+			continue // reviewed already; the run skips it
+		}
+		if release, ok := h.AIReviews.Track(userID(ctx), it.id, h.entryTradeIDs(ctx, it.id)); ok {
+			held[it.id] = release
+		}
+	}
+
+	total, done := len(items), 0
 	progress(done, total, "")
-
-	for _, pe := range entries {
+	for _, it := range items {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		progress(done, total, pe.Label)
-		if err := h.aiTrackedReview(ctx, pe.EntryID, force); err != nil {
-			return err
+		progress(done, total, it.label)
+		release, ok := held[it.id]
+		switch {
+		case ok:
+			delete(held, it.id)
+			_, err := h.analyzeEntry(ctx, it.id, force)
+			release(err)
+			if err != nil {
+				return err
+			}
+		case h.AIReviews == nil: // no tracker (tests): review in place
+			if _, err := h.analyzeEntry(ctx, it.id, force); err != nil {
+				return err
+			}
 		}
 		done++
 		progress(done, total, "")
 	}
-
-	// Day-level synthesis: ensure a day-scope entry, then analyze it. A day spans mixed
-	// setups, so it may pick up an overall tag but never an auto-strategy (see analyzeEntry).
-	if ctx.Err() != nil {
-		return ctx.Err()
-	}
-	if resolvedDate != "" {
-		progress(done, total, "day summary")
-		var dayID int64
-		day, conflict, err := h.createJournalEntry(ctx, apiCreateInput{Scope: "day", Date: resolvedDate, Body: aiPlaceholderBody})
-		switch {
-		case conflict != nil:
-			dayID = conflict.EntryID
-		case err == nil:
-			dayID = day.ID
-		}
-		if dayID != 0 {
-			if err := h.aiTrackedReview(ctx, dayID, force); err != nil {
-				return err
-			}
-		}
-	}
-	done++
-	progress(done, total, "")
 	return nil
-}
-
-// aiTrackedReview runs one of the day job's reviews under the review tracker,
-// so its note shows as under review (spinner, locked editor) like one started
-// from a button. An entry a button review is already writing is skipped: it
-// gets that review.
-func (h *Handlers) aiTrackedReview(ctx context.Context, entryID int64, force bool) error {
-	done, ok := h.AIReviews.Track(userID(ctx), entryID, h.entryTradeIDs(ctx, entryID))
-	if !ok {
-		if h.AIReviews != nil {
-			return nil // a button review of this entry is running
-		}
-		_, err := h.analyzeEntry(ctx, entryID, force) // no tracker (tests)
-		return err
-	}
-	_, err := h.analyzeEntry(ctx, entryID, force)
-	done(err)
-	return err
 }

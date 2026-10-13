@@ -677,9 +677,6 @@ func (h *Handlers) ensureSetGroup(ctx context.Context, setID int64, body string)
 // TradeSetJournal handles POST /trades/sets/{id}/journal: opens the set's
 // group note, creating it when none covers these trades yet.
 func (h *Handlers) TradeSetJournal(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAI(w, r) {
-		return
-	}
 	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

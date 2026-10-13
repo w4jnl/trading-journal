@@ -204,9 +204,6 @@ func labelFields(r *http.Request) (mistakes, emotions []string) {
 // Adds labels; never removes what the trader set (the page editors do
 // that). Unknown keys are a 400 naming the vocabulary.
 func (h *Handlers) APIJournalAddLabels(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
-		return
-	}
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")
