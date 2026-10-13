@@ -716,21 +716,16 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	coachRep := h.coachReport(ctx, date)
-	plan := h.dayPlan(ctx, dateStr)
 	var planOutcome any
 	if coachRep != nil && coachRep.Plan != nil {
 		planOutcome = coachRep.Plan
 	}
-	todayStr := time.Now().In(h.localTZ()).Format("2006-01-02")
 
 	data := map[string]any{
 		"NavActive":        "journal",
 		"BackHref":         backHref,
 		"JournalOpen":      journalOpen,
 		"Coach":            coachRep,
-		"DayPlan":          plan,
-		"PlanOutcome":      planOutcome,
-		"PlanOpen":         plan == nil && dateStr >= todayStr,
 		"Date":             dateStr,
 		"ChartEnabled":     h.chartShow(dayTrades),
 		"ChartEndpoint":    "/charts/day/" + dateStr,
@@ -758,6 +753,13 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(entry.StrategyID),
 		"AssignedStrategy": h.loadAssignedStrategy(r, entry.StrategyID),
+	}
+	// The plan card: the plan, its outcome, the open lessons and the draft.
+	for k, v := range h.planCardData(ctx, dateStr, backHref, planOutcome) {
+		data[k] = v
+	}
+	if msg := q.Get("plan_err"); msg != "" {
+		data["PlanDraftError"] = msg
 	}
 	if isFragment {
 		h.renderPageFragment(w, r, "journal.html", "journal_fragment", data)

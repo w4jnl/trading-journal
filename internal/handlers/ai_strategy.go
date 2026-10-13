@@ -711,15 +711,32 @@ func evidenceLine(ev strategyEvidence) string {
 }
 
 // AITaskStatus: GET /ai/tasks/status?k=... (htmx) - the poll of a view
-// showing a background AI task: 204 while it runs, then a reload.
+// showing a background AI task: 204 while it runs. Once it has ended:
+// then=plan:DATE swaps the day page's plan card in place (HX-Retarget);
+// anything else reloads the page.
 func (h *Handlers) AITaskStatus(w http.ResponseWriter, r *http.Request) {
-	k := r.URL.Query().Get("k")
+	q := r.URL.Query()
+	k := q.Get("k")
 	if k == "" || h.AITasks.Pending(aiTaskKey(userID(r.Context()), k)) {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	w.Header().Set("HX-Refresh", "true")
-	w.WriteHeader(http.StatusOK)
+	then, ref, _ := strings.Cut(q.Get("then"), ":")
+	switch then {
+	case "plan": // the day page's plan card, in place
+		var outcome any
+		if d, err := time.ParseInLocation("2006-01-02", ref, h.localTZ()); err == nil {
+			if rep := h.coachReport(r.Context(), d); rep != nil && rep.Plan != nil {
+				outcome = rep.Plan
+			}
+		}
+		w.Header().Set("HX-Retarget", "#day-plan")
+		w.Header().Set("HX-Reswap", "outerHTML")
+		h.renderPartial(w, "journal.html", "plan_card", h.planCardData(r.Context(), ref, validBackHref(r), outcome))
+	default:
+		w.Header().Set("HX-Refresh", "true")
+		w.WriteHeader(http.StatusOK)
+	}
 }
 
 // ---- the Library's view of them ---------------------------------------------------

@@ -588,7 +588,7 @@
     "/digest": {
       "get": {
         "operationId": "getWeeklyDigest",
-        "summary": "The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before, keep and fix sentences derived from the numbers, best and worst decision, the coach's findings tallied across the days, how the day plans held, and the week's analytics summary.",
+        "summary": "The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before, keep and fix sentences derived from the numbers, best and worst decision, the coach's findings tallied across the days, how the day plans held, the week's AI review lessons, and the week's analytics summary.",
         "parameters": [
           { "name": "week", "in": "query", "schema": { "type": "string", "example": "2026-W41" }, "description": "YYYY-Www; default the week of the last trading day." }
         ],
@@ -606,6 +606,9 @@
             "plan": { "type": "object", "properties": {
               "tradingDays": { "type": "integer" }, "planned": { "type": "integer" }, "writtenLate": { "type": "integer" },
               "rules": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "name": { "type": "string" }, "held": { "type": "integer" }, "total": { "type": "integer" } } } } } },
+            "lessons": { "type": "array", "description": "The week's AI review lessons, grouped by the mistake they are about.", "items": { "type": "object", "properties": {
+              "mistake": { "type": "string" }, "mistakeName": { "type": "string" }, "count": { "type": "integer" }, "open": { "type": "integer", "description": "Not yet marked learned." },
+              "lesson": { "type": "string", "description": "The newest lesson's words." }, "day": { "type": "string" } } } },
             "this": { "$ref": "#/components/schemas/AnalyticsSummary" },
             "previous": { "$ref": "#/components/schemas/AnalyticsSummary" } } } } } },
           "400": { "description": "Bad week", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }

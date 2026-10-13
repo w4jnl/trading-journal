@@ -449,6 +449,8 @@ the in-app AI review of a week entry is built on it.
   "coach": [ { "key": "revenge-entry", "title": "Re-entry right after a loss", "severity": "warn", "count": 4, "days": 3 } ],
   "plan": { "tradingDays": 5, "planned": 1, "writtenLate": 0,
             "rules": [ { "key": "max-trades", "name": "decision cap", "held": 0, "total": 1 } ] },
+  "lessons": [ { "mistake": "chased", "mistakeName": "Chased the entry", "count": 2, "open": 2,
+                 "lesson": "Wait for the retest.", "day": "2026-10-09" } ],
   "this": { /* the analytics summary of the week, unit=sets */ },
   "previous": { /* the week before */ }
 }
@@ -457,7 +459,10 @@ the in-app AI review of a week entry is built on it.
 `keep` and `fix` are one sentence each, derived from the numbers only:
 the strategy that carried the week, the best entry hour, better exits;
 the costliest logged mistake, a warning that recurred on two or more
-days, missing day plans and the plan rule that held least. `GET
+days, missing day plans and the plan rule that held least. `lessons` are
+the one-line lessons the in-app AI reviews of the week's notes named,
+grouped by the mistake they are about (`count`; `open` = not yet marked
+learned on `/journal/lessons`); a lesson about no mistake stands alone. `GET
 /digest.md?week=` downloads the same digest as markdown.
 
 ### Day plan
