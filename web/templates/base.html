@@ -24,6 +24,7 @@
     })();
   </script>
   <meta name="csrf-token" content="{{.CSRFToken}}">
+  {{if .Guardrail}}<meta name="tj-guardrail" content="on">{{end}}
   {{/* Configured trading timezone (IANA name) so chart libraries can render
        their time axes in it instead of UTC. */}}
   <meta name="trading-tz" content="{{tradingTZ}}">
@@ -340,6 +341,7 @@
   <script src="/static/js/toast.js{{assetVer}}" defer></script>
   <script src="/static/js/app_feedback.js{{assetVer}}" defer></script>
   <script src="/static/js/live_refresh.js{{assetVer}}" defer></script>
+  <script src="/static/js/guardrail.js{{assetVer}}" defer></script>
   <script src="/static/js/dirty_table.js{{assetVer}}" defer></script>
   <script src="/static/js/journal_editor.js{{assetVer}}" defer></script>
   <script src="/static/js/journal_view.js{{assetVer}}" defer></script>

@@ -23,7 +23,7 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, is_admin, display_name)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart
+RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail
 `
 
 type CreateUserParams struct {
@@ -57,6 +57,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.LastLoginAt,
 		&i.AiLanguage,
 		&i.AiSendChart,
+		&i.Guardrail,
 	)
 	return i, err
 }
@@ -75,7 +76,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart FROM users WHERE id = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail FROM users WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -93,12 +94,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.LastLoginAt,
 		&i.AiLanguage,
 		&i.AiSendChart,
+		&i.Guardrail,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart FROM users WHERE username = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail FROM users WHERE username = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -116,12 +118,41 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.LastLoginAt,
 		&i.AiLanguage,
 		&i.AiSendChart,
+		&i.Guardrail,
 	)
 	return i, err
 }
 
+const listGuardrailUserIDs = `-- name: ListGuardrailUserIDs :many
+SELECT id FROM users WHERE guardrail = 1 ORDER BY id
+`
+
+// The users the intraday guardrail watches.
+func (q *Queries) ListGuardrailUserIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listGuardrailUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart FROM users ORDER BY username
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -145,6 +176,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.LastLoginAt,
 			&i.AiLanguage,
 			&i.AiSendChart,
+			&i.Guardrail,
 		); err != nil {
 			return nil, err
 		}
@@ -214,6 +246,20 @@ type SetUserAdminParams struct {
 
 func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
+const setUserGuardrail = `-- name: SetUserGuardrail :exec
+UPDATE users SET guardrail = ? WHERE id = ?
+`
+
+type SetUserGuardrailParams struct {
+	Guardrail int64 `json:"guardrail"`
+	ID        int64 `json:"id"`
+}
+
+func (q *Queries) SetUserGuardrail(ctx context.Context, arg SetUserGuardrailParams) error {
+	_, err := q.db.ExecContext(ctx, setUserGuardrail, arg.Guardrail, arg.ID)
 	return err
 }
 

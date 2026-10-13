@@ -20,6 +20,7 @@
 {{if eq .Flash "ai-saved"}}<div class="flash saved mb-16">AI provider verified and saved — reviews now run on your key.</div>{{end}}
 {{if eq .Flash "ai-test-ok"}}<div class="flash saved mb-16">AI provider answered — your key works.</div>{{end}}
 {{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
+{{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
 {{if eq .Flash "ai-removed"}}<div class="flash saved mb-16">Your AI provider and key were removed.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
@@ -258,6 +259,30 @@
     </select>
     <button type="submit" class="btn btn--primary btn--sm">Save</button>
   </form>
+</div>
+{{end}}
+
+{{if .GuardrailRuns}}
+<div class="card mb-16" id="guardrail">
+  <div class="card-title">Guardrail</div>
+  <p class="muted" style="font-size: 12px; margin: 0 0 10px;">
+    While you trade, the journal re-reads the day as fills arrive and nudges you once when it starts going wrong: the
+    coach's warnings on the trades that just closed (a re-entry right after a loss, a size-up after a loss, a stop run
+    through, overtrading, trading against the plan), the plan's decision cap reached, an account near or at the plan's
+    max loss, and the plan's stop time. Each nudge quotes your own open lesson about that mistake. It runs on the server
+    from your data; no AI model is involved.
+  </p>
+  <form method="post" action="/settings/guardrail">
+    <label class="row-sm" style="gap: 8px; align-items: center; font-size: 13px;">
+      <input type="checkbox" name="on" value="1" {{if .Guardrail}}checked{{end}} data-autosubmit>
+      <span>Nudge me during the session <span class="muted" style="font-size: 12px;">(a toast on the open page)</span></span>
+    </label>
+  </form>
+  <div class="row-sm" style="gap: 10px; align-items: center; margin-top: 10px;">
+    <button type="button" class="btn btn--secondary btn--sm" data-notify-permission="#notify-state">Allow browser notifications</button>
+    <span id="notify-state" class="muted" style="font-size: 12px;"></span>
+  </div>
+  <p class="muted" style="font-size: 12px; margin: 6px 0 0;">With notifications allowed, a nudge also pops up while the journal's tab is in the background.</p>
 </div>
 {{end}}
 

@@ -155,6 +155,8 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"NewKey":          newKey,
 		"AILanguage":      h.userAILanguage(ctx),
 		"AISendChart":     h.userSendsChart(ctx),
+		"GuardrailRuns":   h.Guardrail != nil,
+		"Guardrail":       h.guardrailOn(ctx),
 		"AILanguages":     aiLanguageOptions,
 		"AIEnabled":       h.AIJobs != nil,
 		"AI":              h.aiSettings(ctx),

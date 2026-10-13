@@ -48,3 +48,10 @@ SELECT COUNT(*) FROM users WHERE is_admin = 1 AND is_active = 1;
 -- transactional wipe sequence (FK NO ACTION on trades/executions/etc.
 -- forces explicit leaf deletes first).
 DELETE FROM users WHERE id = ?;
+
+-- name: SetUserGuardrail :exec
+UPDATE users SET guardrail = ? WHERE id = ?;
+
+-- name: ListGuardrailUserIDs :many
+-- The users the intraday guardrail watches.
+SELECT id FROM users WHERE guardrail = 1 ORDER BY id;

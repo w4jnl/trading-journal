@@ -758,6 +758,7 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 	for k, v := range h.planCardData(ctx, dateStr, backHref, planOutcome) {
 		data[k] = v
 	}
+	data["Nudges"] = h.dayNudges(ctx, dateStr)
 	if msg := q.Get("plan_err"); msg != "" {
 		data["PlanDraftError"] = msg
 	}
