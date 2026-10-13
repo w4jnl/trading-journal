@@ -1946,6 +1946,21 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .ai-verdict--keep { color: var(--pos); }
 .ai-verdict--fix { color: var(--warn, #b7791f); }
 .ai-verdict--drop { color: var(--neg); }
+/* The stop/target lab. */
+.lab-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 14px; }
+.lab-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 12px; font-size: var(--fs-13); }
+.lab-grid-card, .lab-scatter-card, .lab-explain { margin-bottom: 14px; overflow-x: auto; }
+.lab-grid { border-collapse: collapse; font-size: var(--fs-12); }
+.lab-grid th, .lab-grid td { padding: 6px 10px; border: 1px solid var(--border); text-align: right; white-space: nowrap; }
+.lab-grid .lab-corner { text-align: left; color: var(--fg-muted); font-weight: 400; }
+.lab-cell .lab-avg { font-size: var(--fs-13); font-weight: 600; }
+.lab-cell .lab-meta, .lab-cell .lab-usd { font-size: 11px; }
+.lab-best { outline: 2px solid var(--accent); outline-offset: -2px; }
+.lab-scatter { width: 100%; max-width: 640px; height: auto; }
+.lab-axis { stroke: var(--border); }
+.lab-axis-label { font-size: 11px; fill: var(--fg-muted); }
+.lab-pt-win { fill: var(--pos); opacity: 0.55; }
+.lab-pt-loss { fill: var(--neg); opacity: 0.55; }
 .ai-model-line { margin: 8px 0 0; font-size: var(--fs-12); color: var(--fg-muted); font-style: italic; }
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */

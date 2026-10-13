@@ -5,7 +5,10 @@
 {{template "back_button" .}}
 {{template "live_refresh" .}}
 
-<h1>Analytics</h1>
+<div class="journal-title-row">
+  <h1>Analytics</h1>
+  <a href="/analytics/lab" class="btn btn--secondary btn--sm ml-auto" title="Replay your past decisions under other stops and targets">Stop &amp; target lab →</a>
+</div>
 
 <form method="get" action="/analytics" class="filter-row" id="analytics-filter">
   {{template "account_filter" .}}
