@@ -55,7 +55,9 @@ around it.
   them, the best and worst decision, the coach's findings tallied across
   the days and how the day plans held; downloadable as markdown, served
   to the API and MCP, and the basis of the AI's week review.
-- **AI reviews** in the app: ✨ Analyze on a trade, a note or a whole day
+- **AI reviews** in the app: ✨ Analyze on any note (a trade, a copy set,
+  a group, a day or a week, also one not written yet; once reviewed it
+  reads Re-analyze and adds a fresh review below) or on a whole day
   writes a review into the journal, briefed for what it reviews (a trade's
   entry, risk and exit against its plan and price path; a copy set's
   consistency across accounts; a day against its plan; a week from the

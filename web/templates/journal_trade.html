@@ -7,6 +7,7 @@
 <div class="journal-title-row">
   <h1>Trade journal <span class="muted" style="font-weight:400; font-size: 14px;">· {{.Symbol}} <span class="subtle">({{.SymbolRoot}})</span></span></h1>
   {{if $.JournalEntryID}}{{template "id_ref" (dict "Label" "Entry" "ID" $.JournalEntryID)}}{{end}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/trade/%d?page=1" $.TradeID) "Analyzed" (aiAnalyzed $.JournalBody) "Spin" "ai-note-spin" "What" "trade")}}
 </div>
 
 <div class="muted" style="margin-bottom: 16px; font-size: 12px;">

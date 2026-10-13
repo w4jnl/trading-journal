@@ -1909,6 +1909,11 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .ai-models { display: inline-flex; align-items: center; gap: 8px; }
 .ai-models-msg { font-size: var(--fs-12); color: var(--fg-muted); }
 .ai-models-msg--err { color: var(--neg); }
+.ai-analyze { display: inline-flex; align-items: center; gap: 6px; }
+.journal-title-row .ai-analyze { margin-left: auto; }
+.journal-title-row .id-ref + .ai-analyze { margin-left: 0; }
+.set-note { max-height: 420px; overflow-y: auto; margin-bottom: 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px; }
 .ai-model-line { margin: 8px 0 0; font-size: var(--fs-12); color: var(--fg-muted); font-style: italic; }
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */

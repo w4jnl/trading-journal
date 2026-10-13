@@ -194,6 +194,19 @@
     return dirtyEditors.size > 0;
   };
 
+  // An AI review is appended to the SAVED note, which then reloads or
+  // re-renders: unsaved text in an editor would be lost, or saved later over
+  // the review. Hold the click and ask for a save first.
+  document.addEventListener("htmx:confirm", function (e) {
+    var el = e.target;
+    if (!el || !el.closest || !el.closest("[data-ai-analyze]")) return;
+    if (!window.journalEditorDirty()) return;
+    e.preventDefault();
+    if (window.toast) {
+      window.toast("Save or discard your edits first: the AI review is added to the saved note.", { kind: "warn" });
+    }
+  });
+
   window.addEventListener("beforeunload", function (e) {
     if (window.journalEditorDirty()) {
       e.preventDefault();

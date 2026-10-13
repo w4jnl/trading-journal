@@ -6,6 +6,7 @@
 <div class="journal-title-row">
   <h1>{{.WeekLabel}} <span class="muted" style="font-weight:400; font-size: 14px;">{{.RangeLabel}}</span></h1>
   {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/note/week/%s" .WeekID) "Analyzed" (aiAnalyzed .Entry.Body) "Spin" "ai-note-spin" "What" "week")}}
 </div>
 
 <div class="row-sm mb-16">

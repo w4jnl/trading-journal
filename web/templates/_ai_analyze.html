@@ -1,0 +1,21 @@
+{{/* ai_analyze_button - the ✨ Analyze button of a journal note, offered on
+     every note whenever this server can run AI (renderPage's data-ai="off"
+     hides it for a user without a provider). On a note that does not exist
+     yet the click creates it; on a reviewed note the button reads
+     "Re-analyze" and adds a fresh review below the earlier one.
+     Dict: URL (POST target), Analyzed (bool), Spin (unique spinner id),
+     What ("trade" | "set" | "group" | "day" | "week"), Target (optional:
+     the element the response renders into; empty = the server reloads the
+     page). journal_editor.js holds the click while an editor has unsaved
+     text, since the review is appended to the saved note. */}}
+{{define "ai_analyze_button"}}
+{{if aiEnabled}}
+<span class="ai-analyze ai-action">
+  <button type="button" class="btn btn--secondary btn--sm" data-ai-analyze
+          hx-post="{{.URL}}" {{if .Target}}hx-target="{{.Target}}" hx-swap="innerHTML"{{else}}hx-swap="none"{{end}}
+          hx-disabled-elt="this" hx-indicator="#{{.Spin}}"
+          title="{{if .Analyzed}}Write a fresh AI review of this {{.What}} below the earlier one{{else}}Write an AI review of this {{.What}} into its note{{end}}, and fill what is still unset when it fits">✨ {{if .Analyzed}}Re-analyze{{else}}Analyze{{end}}</button>
+  <span id="{{.Spin}}" class="htmx-indicator ai-spinner" aria-hidden="true"></span>
+</span>
+{{end}}
+{{end}}
