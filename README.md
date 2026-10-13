@@ -90,12 +90,7 @@ around it.
   (`/journal/lessons`): lessons about the same mistake are counted while
   open, the next reviews are told your recent ones and say whether a trade
   repeated or applied them, and you mark a lesson learned once it stops
-  coming back.
-  **Suggest stop & target** on a trade or set proposes the levels from what
-  was known at the entry only - the structure and volatility in the bars
-  before it, how much heat your earlier winners took and how far they ran,
-  the gamma levels then - shows what they would have done afterwards, and
-  "Use as plan" sets the stop (risk per leg) and the new planned target. A review runs in the
+  coming back. A review runs in the
   background: it carries on when you close the sheet or leave the page,
   the note shows a spinner wherever it is listed (trades, sets, the
   journal feed) and cannot be edited until the review lands. A whole-day
