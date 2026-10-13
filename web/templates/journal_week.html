@@ -36,11 +36,12 @@
   <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">
     <div>
       <span class="label" style="margin-right: 4px;">Tag</span>
-      {{template "tag_picker" (dict "Tag" $.Tag)}}
+      {{template "tag_picker" (dict "Tag" $.Tag "Suggested" $.Suggestions)}}
     </div>
-    {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
-    {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes)}}
-    {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions)}}
+    {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID "Suggested" $.Suggestions)}}
+    {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes "Suggested" $.Suggestions)}}
+    {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions "Suggested" $.Suggestions)}}
+    {{template "ai_suggest_hint" $.Suggestions}}
   </div>
 
   {{template "journal_editor" (dict

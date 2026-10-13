@@ -18,9 +18,22 @@ import (
 // dismiss. Values written through the API or MCP carry source 'api' and show
 // marked until the trader saves the note in its editor.
 
-// suggestionView is one open suggestion as a pill: Label is what it reads.
+// suggestionView is one open suggestion as a pill: Label is what it reads on
+// the note ("Tag: bad"), Name the bare value ("bad") where the pill's colour
+// already says the kind (the feed row).
 type suggestionView struct {
-	Kind, Value, Label string
+	Kind, Value, Label, Name string
+}
+
+// suggestedIn reports whether the open suggestions hold kind/value: the
+// editors mark that choice in their pickers.
+func suggestedIn(list []suggestionView, kind, value string) bool {
+	for _, sg := range list {
+		if sg.Kind == kind && sg.Value == value {
+			return true
+		}
+	}
+	return false
 }
 
 // entrySuggestions loads the open suggestions of the caller's entry as pills.
@@ -44,16 +57,19 @@ func suggestionViews(list []journal.Suggestion, strategyName func(id int64) (str
 		v := suggestionView{Kind: sg.Kind, Value: sg.Value}
 		switch sg.Kind {
 		case journal.SuggestTag:
-			v.Label = "Tag: " + sg.Value
+			v.Name = sg.Value
+			v.Label = "Tag: " + v.Name
 		case journal.SuggestStrategy:
 			id, _ := strconv.ParseInt(sg.Value, 10, 64)
 			name, ok := strategyName(id)
 			if !ok {
 				continue
 			}
+			v.Name = name
 			v.Label = "Strategy: " + name
 		default:
-			v.Label = journal.LabelName(sg.Kind, sg.Value)
+			v.Name = journal.LabelName(sg.Kind, sg.Value)
+			v.Label = v.Name
 		}
 		out = append(out, v)
 	}

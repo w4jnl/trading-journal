@@ -80,6 +80,7 @@ type Handlers struct {
 	Timezone        *time.Location
 	Logger          *slog.Logger
 	Version         string // build version shown in the sidebar; set from cmd/server appVersion()
+	DevAssetHash    string // development builds: StaticHash of the embedded static files (see assetQuery)
 
 	// CSRF mints + verifies session-bound CSRF tokens. main wires this from
 	// cfg.Auth.SessionSecret. Nil = no CSRF (acceptable in proxy mode where
@@ -350,6 +351,9 @@ func (h *Handlers) funcMap() template.FuncMap {
 		// global, so no user is needed). Lists show a spinner for it.
 		"aiReviewingTrade": func(tradeID int64) bool { return h.AIReviews.TradePending(tradeID) },
 		"aiReviewingEntry": func(entryID int64) bool { return h.AIReviews.EntryPending(entryID) },
+		// suggested reports an open AI suggestion (kind, value) among a note's
+		// Suggestions: the editors' pickers mark that choice.
+		"suggested": suggestedIn,
 		// gexEnabled gates the Market > Gamma (GEX) nav item + palette entry.
 		"gexEnabled": func() bool { return h.GEX != nil },
 		// aiAnalyzed reports whether a body already carries the LOCAL AI marker, so the
@@ -374,7 +378,7 @@ func (h *Handlers) funcMap() template.FuncMap {
 		"heldFor":      heldFor,
 		"lower":        strings.ToLower,
 		"appVersion":   func() string { return h.Version }, // build string in the sidebar footer
-		"assetVer":     h.assetQuery,                       // "?v=<build>" on /static URLs; "" for dev builds
+		"assetVer":     h.assetQuery,                       // "?v=<build>" on /static URLs; a content hash for dev builds
 		// tradingTZ is the configured trading timezone as an IANA name (e.g.
 		// "America/Chicago"), exposed to the client so chart libraries can render
 		// their time axes in it instead of UTC. See web/static/js/trade-chart.js.

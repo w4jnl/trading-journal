@@ -120,11 +120,12 @@
     <div class="row-sm" style="margin-bottom: 8px; gap: 20px; align-items: flex-start; flex-wrap: wrap;">
       <div>
         <span class="label" style="margin-right: 4px;">Tag</span>
-        {{template "tag_picker" (dict "Tag" $.JournalTag)}}
+        {{template "tag_picker" (dict "Tag" $.JournalTag "Suggested" $.Suggestions)}}
       </div>
-      {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID)}}
-      {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes)}}
-      {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions)}}
+      {{template "strategy_picker" (dict "Strategies" $.Strategies "StrategyID" $.StrategyID "Suggested" $.Suggestions)}}
+      {{template "label_picker" (dict "Kind" "mistake" "Title" "Mistakes" "Options" (labelOptions "mistake") "Selected" $.Mistakes "Suggested" $.Suggestions)}}
+      {{template "label_picker" (dict "Kind" "emotion" "Title" "Emotions" "Options" (labelOptions "emotion") "Selected" $.Emotions "Suggested" $.Suggestions)}}
+    {{template "ai_suggest_hint" $.Suggestions}}
       {{template "checklist_picker" (dict "Blocks" $.Checklists "Checked" $.Checked "StrategyID" $.StrategyID)}}
     </div>
     {{template "journal_editor" (dict
@@ -200,17 +201,20 @@
      Wrapper carries role="radiogroup" + aria-label so screen readers announce
      the field; the per-chip <input type=radio> elements provide the actual
      radio semantics. */}}
+{{/* tag_picker: the good / neutral / bad / none radios. Dict: Tag (current),
+     Suggested (the note's open AI suggestions, optional: the suggested tag
+     is marked). */}}
 {{define "tag_picker"}}
 <div class="tag-picker" role="radiogroup" aria-label="Trade tag">
-  <label class="chip tag-good {{if eq .Tag "good"}}chip-on{{end}}">
+  <label class="chip tag-good {{if eq .Tag "good"}}chip-on{{end}}{{if suggested .Suggested "tag" "good"}} chip--suggested" title="Suggested by the AI review{{end}}">
     <input type="radio" name="tag" value="good" {{if eq .Tag "good"}}checked{{end}}>
     {{template "thumb_up"}}<span>good</span>
   </label>
-  <label class="chip tag-neutral {{if eq .Tag "neutral"}}chip-on{{end}}">
+  <label class="chip tag-neutral {{if eq .Tag "neutral"}}chip-on{{end}}{{if suggested .Suggested "tag" "neutral"}} chip--suggested" title="Suggested by the AI review{{end}}">
     <input type="radio" name="tag" value="neutral" {{if eq .Tag "neutral"}}checked{{end}}>
     {{template "neutral_dot"}}<span>neutral</span>
   </label>
-  <label class="chip tag-bad {{if eq .Tag "bad"}}chip-on{{end}}">
+  <label class="chip tag-bad {{if eq .Tag "bad"}}chip-on{{end}}{{if suggested .Suggested "tag" "bad"}} chip--suggested" title="Suggested by the AI review{{end}}">
     <input type="radio" name="tag" value="bad" {{if eq .Tag "bad"}}checked{{end}}>
     {{template "thumb_down"}}<span>bad</span>
   </label>

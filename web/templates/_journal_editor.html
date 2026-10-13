@@ -78,7 +78,9 @@
      may be nil). Submits strategy_id; empty value = detach. Renders a
      "manage" hint linking to /library when the user has no strategies yet.
      Archived (retired) strategies are not offered, except the one already
-     assigned to this entry (kept, shown "(retired)", so saving won't drop it). */}}
+     assigned to this entry (kept, shown "(retired)", so saving won't drop it).
+     Suggested (the note's open AI suggestions, optional) marks the suggested
+     strategy in the list and offers it as a dashed chip that picks it. */}}
 {{define "strategy_picker"}}
 <label class="field je-strategy-field">
   <span class="field-label">Strategy</span>
@@ -87,7 +89,7 @@
     <option value="">— none —</option>
     {{range .Strategies}}
       {{if or (not .ArchivedAt) (eq $.StrategyID .ID)}}
-      <option value="{{.ID}}" {{if eq $.StrategyID .ID}}selected{{end}}>{{.Name}}{{if .ArchivedAt}} (retired){{end}}</option>
+      <option value="{{.ID}}" {{if eq $.StrategyID .ID}}selected{{end}}>{{if suggested $.Suggested "strategy" (printf "%d" .ID)}}✨ {{end}}{{.Name}}{{if .ArchivedAt}} (retired){{end}}</option>
       {{end}}
     {{end}}
   </select>
@@ -95,7 +97,12 @@
   <span class="muted" style="font-size:12px;">No strategies yet — <a href="/library?tab=strategies">create one</a>.</span>
   {{end}}
 </label>
+{{if .Strategies}}{{range .Suggested}}{{if eq .Kind "strategy"}}<button type="button" class="chip chip--suggested je-suggest-btn" data-set-field="strategy_id" data-set-value="{{.Value}}" title="Suggested by the AI review: click to pick it">{{.Name}}</button>{{end}}{{end}}{{end}}
 {{end}}
+
+{{/* ai_suggest_hint: one line under an editor's pickers when the AI review
+     left open suggestions (the dict's Suggested), which the pickers mark. */}}
+{{define "ai_suggest_hint"}}{{if .}}<p class="ai-suggest-hint">✨ Dashed = suggested by the AI review: pick it to keep it, and saving makes it yours.</p>{{end}}{{end}}
 
 {{/* strategy_card — full render of the strategy attached to a saved entry.
      Dict is the Strategy itself (.Name, .Body). Place below the entry's

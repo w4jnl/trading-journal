@@ -424,7 +424,14 @@ func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An older review's no-stop: the data cannot show one, so it never shows.
+	// And a strategy suggestion, which the editor offers as a chip.
 	if _, err := h.DB.Exec(`INSERT INTO journal_suggestions (journal_entry_id, kind, value) VALUES (?, 'mistake', 'no-stop')`, eid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.DB.Exec(`INSERT INTO strategies (id, user_id, name, body) VALUES (77, ?, 'Power Hour', '')`, uid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.DB.Exec(`INSERT INTO journal_suggestions (journal_entry_id, kind, value) VALUES (?, 'strategy', '77')`, eid); err != nil {
 		t.Fatal(err)
 	}
 	sheet := serve(ctx, mux, http.MethodGet, "/trades/12").Body.String()
@@ -436,9 +443,25 @@ func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
 	if strings.Contains(sheet, "✨ No stop") {
 		t.Error("the sheet proposes no-stop")
 	}
-	// The feed row shows the same proposals as plain dashed pills.
+	// The editor marks the suggested choices in its pickers.
+	for _, want := range []string{
+		`chip tag-bad  chip--suggested" title="Suggested by the AI review"`,
+		`label-chip--mistake chip--suggested" title="Suggested by the AI review"><input type="checkbox" name="mistake" value="chased">`,
+		`label-chip--emotion chip--suggested" title="Suggested by the AI review"><input type="checkbox" name="emotion" value="rushed">`,
+		`class="ai-suggest-hint"`,
+		`<option value="77" >✨ Power Hour</option>`,
+		`data-set-field="strategy_id" data-set-value="77" title="Suggested by the AI review: click to pick it">Power Hour</button>`,
+	} {
+		if !strings.Contains(sheet, want) {
+			t.Errorf("sheet editor lacks %q", want)
+		}
+	}
+	if strings.Contains(sheet, `chip--suggested" title="Suggested by the AI review"><input type="checkbox" name="mistake" value="no-stop">`) {
+		t.Error("the editor marks no-stop")
+	}
+	// The feed row shows the same proposals as dashed pills tinted by kind.
 	feed := serve(ctx, mux, http.MethodGet, "/journal").Body.String()
-	for _, want := range []string{`pill--suggest" title="Suggested by the AI review: open the note to accept or dismiss">✨ Tag: bad<`, "✨ Chased the entry<", "✨ Rushed<"} {
+	for _, want := range []string{`pill--suggest pill--suggest-strategy" title="Suggested by the AI review (Strategy: Power Hour): open the note to accept or dismiss">✨ Power Hour<`, `pill--suggest pill--suggest-tag pill--suggest-tag-bad" title="Suggested by the AI review (Tag: bad): open the note to accept or dismiss">✨ bad<`, `pill--suggest-mistake" title="Suggested by the AI review (Chased the entry): open the note to accept or dismiss">✨ Chased the entry<`, "✨ Rushed<"} {
 		if !strings.Contains(feed, want) {
 			t.Errorf("feed lacks %q", want)
 		}
@@ -469,7 +492,7 @@ func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
 	}
 	// The feed follows: the accepted label is a plain pill, the dismissed one gone.
 	feed = serve(ctx, mux, http.MethodGet, "/journal").Body.String()
-	if !strings.Contains(feed, `label-pill--mistake" title="Mistake">Chased the entry<`) || strings.Contains(feed, "✨ Chased the entry") || strings.Contains(feed, "✨ Rushed") || !strings.Contains(feed, "✨ Tag: bad") {
+	if !strings.Contains(feed, `label-pill--mistake" title="Mistake">Chased the entry<`) || strings.Contains(feed, "✨ Chased the entry") || strings.Contains(feed, "✨ Rushed") || !strings.Contains(feed, "✨ bad<") {
 		t.Errorf("feed after accept / dismiss: %q", feed[strings.Index(feed, `<ul class="feed">`):])
 	}
 	if rec := act("/journal/suggestions/"+itoa64(eid), "tag", "bad", "maybe"); rec.Code != http.StatusBadRequest {
