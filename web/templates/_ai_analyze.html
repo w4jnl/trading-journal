@@ -44,3 +44,25 @@
 
 {{/* ai_pending_icon - the journal-icon stand-in for a trade under review. */}}
 {{define "ai_pending_icon"}}<span class="ai-spinner ai-spinner--icon" role="img" aria-label="AI review in progress" title="AI review in progress"></span>{{end}}
+
+{{/* ai_suggestions - the AI review's open proposals for a note, as dashed
+     pills to accept (the value becomes the trader's own) or dismiss (never
+     proposed again). Dict: Items ([]suggestionView: Kind, Value, Label),
+     EntryID, Then ("trade:N" / "set:N" re-render that sheet; "" reloads the
+     page), Target (the element a sheet re-renders into). */}}
+{{define "ai_suggestions"}}
+{{if .Items}}
+<span class="ai-suggest" role="group" aria-label="Suggested by the AI review">
+  {{range .Items}}
+  <form class="ai-suggest-pill ai-suggest-pill--{{.Kind}}" title="Suggested by the AI review"
+        hx-post="/journal/suggestions/{{$.EntryID}}{{if $.Then}}?then={{$.Then}}{{end}}"
+        {{if $.Target}}hx-target="{{$.Target}}" hx-swap="innerHTML"{{else}}hx-swap="none"{{end}}>
+    <input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="value" value="{{.Value}}">
+    <span class="ai-suggest-pill__text">✨ {{.Label}}</span>
+    <button type="submit" name="do" value="accept" class="ai-suggest-pill__btn" title="Accept: set it on this note" aria-label="Accept {{.Label}}">✓</button>
+    <button type="submit" name="do" value="dismiss" class="ai-suggest-pill__btn" title="Dismiss: do not suggest it again" aria-label="Dismiss {{.Label}}">✕</button>
+  </form>
+  {{end}}
+</span>
+{{end}}
+{{end}}

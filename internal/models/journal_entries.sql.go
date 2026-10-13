@@ -34,7 +34,7 @@ func (q *Queries) AppendJournalEntryBody(ctx context.Context, arg AppendJournalE
 const createJournalEntry = `-- name: CreateJournalEntry :one
 INSERT INTO journal_entries (user_id, trade_id, account_id, entry_date, body, mood, tag, scope, strategy_id)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id
+RETURNING id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id, tag_source, strategy_source
 `
 
 type CreateJournalEntryParams struct {
@@ -75,6 +75,8 @@ func (q *Queries) CreateJournalEntry(ctx context.Context, arg CreateJournalEntry
 		&i.Scope,
 		&i.UserID,
 		&i.StrategyID,
+		&i.TagSource,
+		&i.StrategySource,
 	)
 	return i, err
 }
@@ -94,7 +96,7 @@ func (q *Queries) DeleteJournalEntry(ctx context.Context, arg DeleteJournalEntry
 }
 
 const getDayJournalEntry = `-- name: GetDayJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id, tag_source, strategy_source FROM journal_entries
 WHERE user_id = ? AND entry_date = ? AND scope = 'day'
 LIMIT 1
 `
@@ -120,12 +122,14 @@ func (q *Queries) GetDayJournalEntry(ctx context.Context, arg GetDayJournalEntry
 		&i.Scope,
 		&i.UserID,
 		&i.StrategyID,
+		&i.TagSource,
+		&i.StrategySource,
 	)
 	return i, err
 }
 
 const getJournalEntryByID = `-- name: GetJournalEntryByID :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries WHERE id = ? AND user_id = ?
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id, tag_source, strategy_source FROM journal_entries WHERE id = ? AND user_id = ?
 `
 
 type GetJournalEntryByIDParams struct {
@@ -150,12 +154,14 @@ func (q *Queries) GetJournalEntryByID(ctx context.Context, arg GetJournalEntryBy
 		&i.Scope,
 		&i.UserID,
 		&i.StrategyID,
+		&i.TagSource,
+		&i.StrategySource,
 	)
 	return i, err
 }
 
 const getJournalEntryByTradeID = `-- name: GetJournalEntryByTradeID :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries WHERE trade_id = ? LIMIT 1
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id, tag_source, strategy_source FROM journal_entries WHERE trade_id = ? LIMIT 1
 `
 
 // The trade itself is already user-owned (verified via GetTradeByID), so
@@ -176,12 +182,14 @@ func (q *Queries) GetJournalEntryByTradeID(ctx context.Context, tradeID *int64) 
 		&i.Scope,
 		&i.UserID,
 		&i.StrategyID,
+		&i.TagSource,
+		&i.StrategySource,
 	)
 	return i, err
 }
 
 const getWeekJournalEntry = `-- name: GetWeekJournalEntry :one
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id, tag_source, strategy_source FROM journal_entries
 WHERE user_id = ? AND entry_date = ? AND scope = 'week'
 LIMIT 1
 `
@@ -208,6 +216,8 @@ func (q *Queries) GetWeekJournalEntry(ctx context.Context, arg GetWeekJournalEnt
 		&i.Scope,
 		&i.UserID,
 		&i.StrategyID,
+		&i.TagSource,
+		&i.StrategySource,
 	)
 	return i, err
 }
@@ -333,7 +343,7 @@ func (q *Queries) ListJournalFeed(ctx context.Context, arg ListJournalFeedParams
 }
 
 const listRecentJournalEntries = `-- name: ListRecentJournalEntries :many
-SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id FROM journal_entries
+SELECT id, trade_id, account_id, entry_date, body, mood, created_at, updated_at, tag, scope, user_id, strategy_id, tag_source, strategy_source FROM journal_entries
 WHERE user_id = ? AND scope = 'day'
 ORDER BY entry_date DESC, id DESC
 LIMIT ?
@@ -366,6 +376,8 @@ func (q *Queries) ListRecentJournalEntries(ctx context.Context, arg ListRecentJo
 			&i.Scope,
 			&i.UserID,
 			&i.StrategyID,
+			&i.TagSource,
+			&i.StrategySource,
 		); err != nil {
 			return nil, err
 		}

@@ -234,7 +234,7 @@ type aiAnalyzeResult struct {
 	Skipped    bool // already had the marker
 	Tag        string
 	StrategyID int64
-	Mistakes   []string // label keys the review filled
+	Mistakes   []string // label keys the review suggests (open suggestions)
 	Emotions   []string
 }
 
@@ -489,51 +489,59 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	// scope only (a day/week spans mixed setups). only-if-fitting comes from the model
 	// answering "none" when nothing clearly applies. The strategy token is resolved by id OR
 	// name (resolveStrategyID) - models often echo the name rather than the numeric id.
+	// The verdict's tag, strategy and labels become suggestions on the note,
+	// never the fields themselves: the trader accepts or dismisses each
+	// (journal.Suggest drops what does not apply - a tag or strategy already
+	// set, a label already there, a strategy on a day). The strategy token is
+	// resolved by id OR name (resolveStrategyID) - models often echo the name.
 	v := parseAIVerdict(out)
 	body := stripAIVerdict(out)
-	if v.Tag != "" {
-		if ok, err := h.assignTagIfUnset(ctx, entryID, v.Tag); err == nil && ok {
-			res.Tag = v.Tag
-		}
-	}
 	var resolvedSID int64
 	var strategyName string
 	if v.Strategy != "" {
 		strats, _ := h.Queries.ListActiveStrategies(ctx, userID(ctx))
 		if resolvedSID = resolveStrategyID(v.Strategy, strats); resolvedSID > 0 {
-			if ok, err := h.assignStrategyIfUnset(ctx, entryID, resolvedSID); err == nil && ok {
-				res.StrategyID = resolvedSID
-				for _, st := range strats {
-					if st.ID == resolvedSID {
-						strategyName = st.Name
-					}
+			for _, st := range strats {
+				if st.ID == resolvedSID {
+					strategyName = st.Name
 				}
 			}
 		}
 	}
+	var mistakes, emotions []string
 	if e.Scope == "trade" || e.Scope == "group" {
-		svc := h.journalSvc()
-		if keys, err := svc.AssignLabelsIfUnset(ctx, userID(ctx), entryID, journal.KindMistake, firstN(v.Mistakes, aiMaxMistakes)); err == nil {
-			res.Mistakes = keys
-		}
-		if keys, err := svc.AssignLabelsIfUnset(ctx, userID(ctx), entryID, journal.KindEmotion, firstN(v.Emotions, aiMaxEmotions)); err == nil {
-			res.Emotions = keys
+		mistakes, emotions = firstN(v.Mistakes, aiMaxMistakes), firstN(v.Emotions, aiMaxEmotions)
+	}
+	open, err := h.journalSvc().Suggest(ctx, userID(ctx), entryID, v.Tag, resolvedSID, mistakes, emotions)
+	if err != nil {
+		h.logger().Warn("ai suggestions not recorded", "entry", entryID, "err", err)
+	}
+	for _, sg := range open {
+		switch sg.Kind {
+		case journal.SuggestTag:
+			res.Tag = sg.Value
+		case journal.SuggestStrategy:
+			res.StrategyID = resolvedSID
+		case journal.KindMistake:
+			res.Mistakes = append(res.Mistakes, sg.Value)
+		case journal.KindEmotion:
+			res.Emotions = append(res.Emotions, sg.Value)
 		}
 	}
-	// Visible with -d. Reveals what the model proposed and what was actually applied
-	// (vs already set by the trader).
+	// Visible with -d. Reveals what the model proposed and what is now open as a
+	// suggestion (vs already set, or dismissed before).
 	slog.Debug("ai analysis verdict",
 		"entry", entryID, "scope", e.Scope, "model", model,
-		"tag", v.Tag, "tagAssigned", res.Tag != "",
-		"strategyToken", v.Strategy, "strategyResolved", resolvedSID, "strategyAssigned", res.StrategyID,
-		"mistakes", v.Mistakes, "mistakesAssigned", res.Mistakes,
-		"emotions", v.Emotions, "emotionsAssigned", res.Emotions)
+		"tag", v.Tag, "tagSuggested", res.Tag != "",
+		"strategyToken", v.Strategy, "strategyResolved", resolvedSID, "strategySuggested", res.StrategyID,
+		"mistakes", v.Mistakes, "mistakesSuggested", res.Mistakes,
+		"emotions", v.Emotions, "emotionsSuggested", res.Emotions)
 	words := aiWordsFor(lang)
 	note := "### " + words.Review + " — " + time.Now().In(tz).Format("2006-01-02") + "\n" +
 		"*" + mdEscapeInline(model.Label(words)) + "*\n\n" +
 		strings.TrimSpace(body) + "\n\n"
-	if filled := aiFilledLine(res, strategyName, words); filled != "" {
-		note += filled + "\n\n"
+	if suggested := aiSuggestedLine(res, strategyName, words); suggested != "" {
+		note += suggested + "\n\n"
 	}
 	note += "<!-- " + aiMarkerLocal + " -->"
 	if err := h.journalSvc().AppendNoteAs(ctx, userID(ctx), e, note, words.NoteAdded); err != nil {
@@ -542,11 +550,11 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	return res, nil
 }
 
-// aiFilledLine says, at the foot of a review and in its language, which unset
-// fields the review filled in, so a tag or label the trader did not choose is
-// never a mystery. Tag values and label names read as on the app's pills. ""
-// when it filled nothing.
-func aiFilledLine(res aiAnalyzeResult, strategyName string, w aiWords) string {
+// aiSuggestedLine says, at the foot of a review and in its language, what the
+// review suggests for the note (the trader accepts or dismisses each on the
+// note). Tag values and label names read as on the app's pills. "" when it
+// suggests nothing.
+func aiSuggestedLine(res aiAnalyzeResult, strategyName string, w aiWords) string {
 	var parts []string
 	if res.Tag != "" {
 		parts = append(parts, w.Tag+" **"+res.Tag+"**")
@@ -570,7 +578,7 @@ func aiFilledLine(res aiAnalyzeResult, strategyName string, w aiWords) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return "*" + w.Filled + ": " + strings.Join(parts, " · ") + ".*"
+	return "*" + w.Suggested + ": " + strings.Join(parts, " · ") + ".*"
 }
 
 // mdEscapeInline backslash-escapes the Markdown punctuation that could

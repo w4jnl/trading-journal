@@ -35,7 +35,7 @@
      linked-trades list so the eye lands on the writing surface first. -->
 <section class="journal-entry{{if .AIPending}} journal-entry--locked{{end}}" data-journal-entry>
 {{if .AIPending}}{{template "ai_review_lock"}}{{end}}
-{{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}{{end}}
+{{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist "Suggestions" $.Suggestions "LabelSrc" $.LabelSrc "TagSrc" $.TagSrc)}}{{end}}
 <form method="post" action="/journal/group/{{.EntryID}}" class="journal-form"{{if .Entry.Body}} hidden{{end}}>
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
   <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">

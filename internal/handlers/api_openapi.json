@@ -354,7 +354,8 @@
           { "name": "day", "in": "query", "schema": { "type": "string", "example": "yesterday" }, "description": "Shorthand for from=to=day." },
           { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug>. An explicit filter lifts the excluded-from-stats rule." },
           { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s)." },
-          { "name": "unit", "in": "query", "schema": { "type": "string", "enum": ["trades", "sets"] }, "description": "What one count means: trades (default), or sets, where a copy set counts once with its money summed." }
+          { "name": "unit", "in": "query", "schema": { "type": "string", "enum": ["trades", "sets"] }, "description": "What one count means: trades (default), or sets, where a copy set counts once with its money summed." },
+          { "name": "src", "in": "query", "schema": { "type": "string", "enum": ["confirmed"] }, "description": "confirmed: count only tags, strategies and labels the trader set or confirmed in the app, leaving out values written through the API or MCP and never saved in an editor." }
         ],
         "responses": {
           "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnalyticsSummary" } } } },

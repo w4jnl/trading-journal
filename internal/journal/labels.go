@@ -150,23 +150,37 @@ func (s *Service) SetLabels(ctx context.Context, userID, entryID int64, kind str
 		}
 		return fmt.Errorf("load entry: %w", err)
 	}
-	if err := s.writeLabels(ctx, entryID, kind, norm, replace); err != nil {
+	src := SourceAPI // the API and MCP add; only the page editors replace
+	if replace {
+		src = SourceTrader
+	}
+	if err := s.writeLabels(ctx, entryID, kind, norm, replace, src); err != nil {
 		return err
 	}
 	s.changed(ctx, userID)
 	return nil
 }
 
+// Who set a value (journal_entry_labels.source, journal_entries.tag_source /
+// strategy_source): the trader in a page editor (or by accepting an AI
+// suggestion), or a client of the REST API or MCP - typically an AI tool -
+// without the trader confirming it.
+const (
+	SourceTrader = "trader"
+	SourceAPI    = "api"
+)
+
 // writeLabels is SetLabels without the ownership check, for the save paths
-// that already hold the entry. Keys must be normalized.
-func (s *Service) writeLabels(ctx context.Context, entryID int64, kind string, keys []string, replace bool) error {
+// that already hold the entry. Keys must be normalized. source says who set
+// them; a label already on the entry keeps its row unless replace drops it.
+func (s *Service) writeLabels(ctx context.Context, entryID int64, kind string, keys []string, replace bool, source string) error {
 	if replace {
 		if err := s.Q.DeleteEntryLabelsOfKind(ctx, models.DeleteEntryLabelsOfKindParams{JournalEntryID: entryID, Kind: kind}); err != nil {
 			return fmt.Errorf("clear %s labels: %w", kind, err)
 		}
 	}
 	for _, k := range keys {
-		if err := s.Q.InsertEntryLabel(ctx, models.InsertEntryLabelParams{JournalEntryID: entryID, Kind: kind, Label: k}); err != nil {
+		if err := s.Q.InsertEntryLabel(ctx, models.InsertEntryLabelParams{JournalEntryID: entryID, Kind: kind, Label: k, Source: source}); err != nil {
 			return fmt.Errorf("label %s/%s: %w", kind, k, err)
 		}
 	}
@@ -184,10 +198,30 @@ func (s *Service) applyFieldLabels(ctx context.Context, entryID int64, f Fields)
 	if err != nil {
 		return err
 	}
-	if err := s.writeLabels(ctx, entryID, KindMistake, m, true); err != nil {
+	if err := s.writeLabels(ctx, entryID, KindMistake, m, true, SourceTrader); err != nil {
 		return err
 	}
-	return s.writeLabels(ctx, entryID, KindEmotion, e, true)
+	return s.writeLabels(ctx, entryID, KindEmotion, e, true, SourceTrader)
+}
+
+// EntryLabelSources returns who set each of the user's entry's labels, keyed
+// "kind:key" (empty when the entry is not theirs or has none).
+func (s *Service) EntryLabelSources(ctx context.Context, userID, entryID int64) map[string]string {
+	out := map[string]string{}
+	if entryID == 0 {
+		return out
+	}
+	if _, err := s.Q.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: &userID}); err != nil {
+		return out
+	}
+	rows, err := s.Q.ListEntryLabels(ctx, entryID)
+	if err != nil {
+		return out
+	}
+	for _, r := range rows {
+		out[r.Kind+":"+r.Label] = r.Source
+	}
+	return out
 }
 
 // EntryLabels returns the user's entry's labels by kind (empty map when the
@@ -211,54 +245,4 @@ func (s *Service) EntryLabels(ctx context.Context, userID, entryID int64) (map[s
 		out[r.Kind] = append(out[r.Kind], r.Label)
 	}
 	return out, nil
-}
-
-// AssignLabelsIfUnset adds keys of one kind to a trade or group entry only
-// when the entry carries no label of that kind yet: the AI reviewer fills an
-// empty field, never second-guesses one the trader set. Keys outside the
-// vocabulary are dropped rather than refused (they come from a model).
-// Returns the keys written, in vocabulary order; none when the kind was
-// already set, nothing valid was offered, or the scope takes no labels.
-func (s *Service) AssignLabelsIfUnset(ctx context.Context, userID, entryID int64, kind string, keys []string) ([]string, error) {
-	vocab, ok := labelVocabulary[kind]
-	if !ok {
-		return nil, BadInput("unknown label kind %q", kind)
-	}
-	want := map[string]bool{}
-	for _, k := range keys {
-		want[strings.TrimSpace(strings.ToLower(k))] = true
-	}
-	var add []string
-	for _, l := range vocab {
-		if want[l.Key] {
-			add = append(add, l.Key)
-		}
-	}
-	if len(add) == 0 {
-		return nil, nil
-	}
-	e, err := s.Q.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: &userID})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrNotFound
-		}
-		return nil, fmt.Errorf("load entry: %w", err)
-	}
-	if e.Scope != "trade" && e.Scope != "group" {
-		return nil, nil
-	}
-	rows, err := s.Q.ListEntryLabels(ctx, entryID)
-	if err != nil {
-		return nil, fmt.Errorf("list labels: %w", err)
-	}
-	for _, r := range rows {
-		if r.Kind == kind {
-			return nil, nil
-		}
-	}
-	if err := s.writeLabels(ctx, entryID, kind, add, false); err != nil {
-		return nil, err
-	}
-	s.changed(ctx, userID)
-	return add, nil
 }

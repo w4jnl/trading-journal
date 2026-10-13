@@ -81,19 +81,19 @@ func TestAISystemPromptPerScope(t *testing.T) {
 
 func TestAIFilledLineAndEscape(t *testing.T) {
 	en := aiWordsFor("")
-	if got := aiFilledLine(aiAnalyzeResult{}, "", en); got != "" {
+	if got := aiSuggestedLine(aiAnalyzeResult{}, "", en); got != "" {
 		t.Errorf("nothing filled = %q", got)
 	}
 	res := aiAnalyzeResult{Tag: "bad", StrategyID: 5, Mistakes: []string{"chased", "late-exit"}, Emotions: []string{"rushed"}}
-	got := aiFilledLine(res, "ORB_v2", en)
-	want := "*Filled in by this review: tag **bad** · strategy **ORB\\_v2** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*"
+	got := aiSuggestedLine(res, "ORB_v2", en)
+	want := "*Suggested by this review: tag **bad** · strategy **ORB\\_v2** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*"
 	if got != want {
-		t.Errorf("filled line =\n%s\nwant\n%s", got, want)
+		t.Errorf("suggested line =\n%s\nwant\n%s", got, want)
 	}
 	// In the review language: the framing translated, the pill names kept.
-	cs := aiFilledLine(res, "ORB", aiWordsFor("Czech"))
-	if cs != "*Doplněno tímto hodnocením: štítek **bad** · strategie **ORB** · chyby **Chased the entry, Exited too late** · emoce **Rushed**.*" {
-		t.Errorf("czech filled line = %s", cs)
+	cs := aiSuggestedLine(res, "ORB", aiWordsFor("Czech"))
+	if cs != "*Navrženo tímto hodnocením: štítek **bad** · strategie **ORB** · chyby **Chased the entry, Exited too late** · emoce **Rushed**.*" {
+		t.Errorf("czech suggested line = %s", cs)
 	}
 	if got := mdEscapeInline("mlx-community/Qwen3_VL*4bit [x]"); got != "mlx-community/Qwen3\\_VL\\*4bit \\[x\\]" {
 		t.Errorf("escape = %q", got)
@@ -140,7 +140,7 @@ func TestAIWordsCoverEveryLanguage(t *testing.T) {
 			continue
 		}
 		for name, v := range map[string]string{"Review": w.Review, "NoteAdded": w.NoteAdded, "Via": w.Via, "ThisServer": w.ThisServer,
-			"Filled": w.Filled, "Tag": w.Tag, "Strategy": w.Strategy, "Mistakes": w.Mistakes, "Emotions": w.Emotions} {
+			"Suggested": w.Suggested, "Tag": w.Tag, "Strategy": w.Strategy, "Mistakes": w.Mistakes, "Emotions": w.Emotions} {
 			if strings.TrimSpace(v) == "" {
 				t.Errorf("%q: %s is empty", o.Value, name)
 			}

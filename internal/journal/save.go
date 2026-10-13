@@ -51,6 +51,10 @@ func (s *Service) SaveDay(ctx context.Context, userID int64, day time.Time, f Fi
 	if err := s.applyFieldLabels(ctx, entryID, f); err != nil {
 		return "", err
 	}
+	// A page save confirms what the entry now holds as the trader's own.
+	if err := s.Q.MarkEntrySourcesTrader(ctx, entryID); err != nil {
+		return "", fmt.Errorf("mark sources: %w", err)
+	}
 	s.changed(ctx, userID)
 	return OutcomeSaved, nil
 }
@@ -103,6 +107,10 @@ func (s *Service) SaveWeek(ctx context.Context, userID int64, monday time.Time, 
 	}
 	if err := s.applyFieldLabels(ctx, entryID, f); err != nil {
 		return "", err
+	}
+	// A page save confirms what the entry now holds as the trader's own.
+	if err := s.Q.MarkEntrySourcesTrader(ctx, entryID); err != nil {
+		return "", fmt.Errorf("mark sources: %w", err)
 	}
 	s.changed(ctx, userID)
 	return OutcomeSaved, nil
@@ -170,6 +178,10 @@ func (s *Service) SaveTrade(ctx context.Context, userID, tradeID int64, f Fields
 	if err := s.applyFieldChecks(ctx, entryID, f); err != nil {
 		return "", err
 	}
+	// A page save confirms what the entry now holds as the trader's own.
+	if err := s.Q.MarkEntrySourcesTrader(ctx, entryID); err != nil {
+		return "", fmt.Errorf("mark sources: %w", err)
+	}
 	s.changed(ctx, userID)
 	return OutcomeSaved, nil
 }
@@ -193,6 +205,10 @@ func (s *Service) SaveGroup(ctx context.Context, userID, entryID int64, f Fields
 	}
 	if err := s.applyFieldChecks(ctx, entryID, f); err != nil {
 		return "", err
+	}
+	// A page save confirms what the entry now holds as the trader's own.
+	if err := s.Q.MarkEntrySourcesTrader(ctx, entryID); err != nil {
+		return "", fmt.Errorf("mark sources: %w", err)
 	}
 	s.changed(ctx, userID)
 	return OutcomeSaved, nil

@@ -407,3 +407,57 @@ func TestDayRunCancelReleasesItsNotes(t *testing.T) {
 		}
 	}
 }
+
+// The review's proposals show as pills on the note; accepting one from the
+// sheet makes it the trader's and redraws the sheet; dismissing one drops it;
+// a value written through the API shows marked until the note is saved.
+func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
+	h, ctx, uid := setsFixture(t)
+	useOwnProvider(t, h, uid, "- **Exit:** late.\n\n<!-- tj-ai:verdict tag=bad strategy=none mistakes=chased emotions=rushed -->")
+	mux := aiButtonMux(h)
+	mux.HandleFunc("POST /journal/suggestions/{id}", h.JournalSuggestion)
+	serve(ctx, mux, http.MethodPost, "/ai/trade/12")
+	settle(t, h)
+	var eid int64
+	if err := h.DB.QueryRow(`SELECT id FROM journal_entries WHERE trade_id = 12`).Scan(&eid); err != nil {
+		t.Fatal(err)
+	}
+	sheet := serve(ctx, mux, http.MethodGet, "/trades/12").Body.String()
+	for _, want := range []string{"✨ Tag: bad", "✨ Chased the entry", "✨ Rushed", `hx-post="/journal/suggestions/` + itoa64(eid) + `?then=trade:12"`} {
+		if !strings.Contains(sheet, want) {
+			t.Errorf("sheet lacks %q", want)
+		}
+	}
+	act := func(target, kind, value, do string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(url.Values{"kind": {kind}, "value": {value}, "do": {do}}.Encode())).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("HX-Request", "true")
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+	rec := act("/journal/suggestions/"+itoa64(eid)+"?then=trade:12", "mistake", "chased", "accept")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `id="trow-jicon-12" hx-swap-oob="true"`) || strings.Contains(rec.Body.String(), "✨ Chased the entry") {
+		t.Errorf("accept from the sheet = %d, body %.200q", rec.Code, rec.Body.String())
+	}
+	if src := h.labelSources(ctx, eid); src["mistake:chased"] != "trader" {
+		t.Errorf("accepted label source = %v", src)
+	}
+	if rec := act("/journal/suggestions/"+itoa64(eid), "emotion", "rushed", "dismiss"); rec.Code != http.StatusOK || rec.Header().Get("HX-Refresh") != "true" {
+		t.Errorf("dismiss from a page = %d %v", rec.Code, rec.Header())
+	}
+	if rec := act("/journal/suggestions/"+itoa64(eid), "emotion", "rushed", "accept"); rec.Code != http.StatusNotFound {
+		t.Errorf("accepting a dismissed suggestion = %d", rec.Code)
+	}
+	if rec := act("/journal/suggestions/"+itoa64(eid), "tag", "bad", "maybe"); rec.Code != http.StatusBadRequest {
+		t.Errorf("bad action = %d", rec.Code)
+	}
+
+	// An API-set label reads marked on the note.
+	if err := h.journalSvc().SetLabels(ctx, uid, eid, "emotion", []string{"calm"}, false); err != nil {
+		t.Fatal(err)
+	}
+	if sheet := serve(ctx, mux, http.MethodGet, "/trades/12").Body.String(); !strings.Contains(sheet, `label-pill--emotion pill--api`) {
+		t.Error("an API-set label is not marked")
+	}
+}

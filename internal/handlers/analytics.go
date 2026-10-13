@@ -72,6 +72,10 @@ type analyticsBucket struct {
 // trader the numbers they need; equity curve is a later addition.
 func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
+	srcConfirmed := r.URL.Query().Get("src") == "confirmed"
+	if srcConfirmed {
+		ctx = withConfirmedOnly(ctx)
+	}
 	isFragment := liveFragment(r)
 	h.TopstepxSync.MaybeEnqueueUser(userID(ctx)) // throttled background API sync; nil-safe
 	h.IbkrSync.MaybeEnqueueUser(userID(ctx))     // throttled IBKR gateway poll; nil-safe
@@ -219,6 +223,9 @@ func (h *Handlers) AnalyticsPage(w http.ResponseWriter, r *http.Request) {
 		"UnitCount":      int64(len(trades)),
 		"UnitTradesQS":   template.URL(unitQuery(r, "trades")),
 		"UnitSetsQS":     template.URL(unitQuery(r, "sets")),
+		"SrcConfirmed":   srcConfirmed,
+		"SrcAllQS":       template.URL(paramQuery(r, "src", "")),
+		"SrcMineQS":      template.URL(paramQuery(r, "src", "confirmed")),
 		"EquityNow":      equityNow,
 		"EquityByType":   equityByType,
 		"EquityIncluded": balIncluded,
@@ -531,26 +538,26 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	                 t.entry_time, t.exit_time,
 	                 t.mae_pnl, t.mfe_pnl, m.set_id,
 	                 COALESCE((SELECT COUNT(*) FROM strategy_checklist_items ci WHERE ci.strategy_id = COALESCE(
-	                           (SELECT je.strategy_id FROM journal_entries je WHERE je.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1),
+	                           (SELECT je.strategy_id FROM journal_entries je WHERE je.trade_id = t.id AND je.strategy_id IS NOT NULL /*strat*/ LIMIT 1),
 	                           (SELECT je.strategy_id FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
-	                            WHERE jet.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1))), 0) AS checklist_total,
+	                            WHERE jet.trade_id = t.id AND je.strategy_id IS NOT NULL /*strat*/ LIMIT 1))), 0) AS checklist_total,
 	                 COALESCE((SELECT COUNT(*) FROM journal_entry_checks c WHERE c.journal_entry_id = COALESCE(
-	                           (SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1),
+	                           (SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id AND je.strategy_id IS NOT NULL /*strat*/ LIMIT 1),
 	                           (SELECT jet.journal_entry_id FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
-	                            WHERE jet.trade_id = t.id AND je.strategy_id IS NOT NULL LIMIT 1))), 0) AS checklist_done,
+	                            WHERE jet.trade_id = t.id AND je.strategy_id IS NOT NULL /*strat*/ LIMIT 1))), 0) AS checklist_done,
 	                 a.name,
-	                 COALESCE((SELECT s.name FROM journal_entries je JOIN strategies s ON s.id = je.strategy_id WHERE je.trade_id = t.id LIMIT 1),
+	                 COALESCE((SELECT s.name FROM journal_entries je JOIN strategies s ON s.id = je.strategy_id WHERE je.trade_id = t.id /*strat*/ LIMIT 1),
 	                          (SELECT s.name FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
-	                           JOIN strategies s ON s.id = je.strategy_id WHERE jet.trade_id = t.id LIMIT 1), '') AS strategy,
-	                 COALESCE((SELECT je.tag FROM journal_entries je WHERE je.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1),
+	                           JOIN strategies s ON s.id = je.strategy_id WHERE jet.trade_id = t.id /*strat*/ LIMIT 1), '') AS strategy,
+	                 COALESCE((SELECT je.tag FROM journal_entries je WHERE je.trade_id = t.id AND je.tag IS NOT NULL /*tag*/ LIMIT 1),
 	                          (SELECT je.tag FROM journal_entry_trades jet JOIN journal_entries je ON je.id = jet.journal_entry_id
-	                           WHERE jet.trade_id = t.id AND je.tag IS NOT NULL LIMIT 1), '') AS tag,
+	                           WHERE jet.trade_id = t.id AND je.tag IS NOT NULL /*tag*/ LIMIT 1), '') AS tag,
 	                 COALESCE((SELECT GROUP_CONCAT(DISTINCT l.label) FROM journal_entry_labels l
-	                           WHERE l.kind = 'mistake' AND l.journal_entry_id IN (
+	                           WHERE l.kind = 'mistake' /*label*/ AND l.journal_entry_id IN (
 	                             SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id
 	                             UNION SELECT jet.journal_entry_id FROM journal_entry_trades jet WHERE jet.trade_id = t.id)), '') AS mistakes,
 	                 COALESCE((SELECT GROUP_CONCAT(DISTINCT l.label) FROM journal_entry_labels l
-	                           WHERE l.kind = 'emotion' AND l.journal_entry_id IN (
+	                           WHERE l.kind = 'emotion' /*label*/ AND l.journal_entry_id IN (
 	                             SELECT je.id FROM journal_entries je WHERE je.trade_id = t.id
 	                             UNION SELECT jet.journal_entry_id FROM journal_entry_trades jet WHERE jet.trade_id = t.id)), '') AS emotions
 	          FROM trades t
@@ -558,6 +565,7 @@ func (h *Handlers) fetchAnalyticsTrades(ctx context.Context, af accountFilter, f
 	          LEFT JOIN trade_set_members m ON m.trade_id = t.id
 	          WHERE ` + where + `
 	          ORDER BY t.exit_time`
+	query = analyticsSourceFilter(ctx).Replace(query)
 	rows, err := h.rdb().QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
@@ -616,6 +624,50 @@ func unitQuery(r *http.Request, unit string) string {
 		}
 	}
 	q.Set("unit", unit)
+	return q.Encode()
+}
+
+// confirmedOnlyKey marks a request whose analytics leave out the tags,
+// strategies and labels set through the API or an AI tool (source 'api'),
+// counting only what the trader set or confirmed (?src=confirmed).
+type confirmedOnlyKey struct{}
+
+func withConfirmedOnly(ctx context.Context) context.Context {
+	return context.WithValue(ctx, confirmedOnlyKey{}, true)
+}
+
+func confirmedOnly(ctx context.Context) bool {
+	v, _ := ctx.Value(confirmedOnlyKey{}).(bool)
+	return v
+}
+
+// analyticsSourceFilter fills the /*strat*/ /*tag*/ /*label*/ markers in the
+// analytics queries: empty normally, a source condition under confirmedOnly.
+func analyticsSourceFilter(ctx context.Context) *strings.Replacer {
+	if !confirmedOnly(ctx) {
+		return strings.NewReplacer("/*strat*/", "", "/*tag*/", "", "/*label*/", "")
+	}
+	return strings.NewReplacer(
+		"/*strat*/", "AND COALESCE(je.strategy_source, '') != 'api'",
+		"/*tag*/", "AND COALESCE(je.tag_source, '') != 'api'",
+		"/*label*/", "AND l.source != 'api'")
+}
+
+// paramQuery is the request's query with key set to val (fragment dropped):
+// the links of a toggle that keeps every other filter.
+func paramQuery(r *http.Request, key, val string) string {
+	q := url.Values{}
+	for k, vs := range r.URL.Query() {
+		if k == key || k == "fragment" {
+			continue
+		}
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	if val != "" {
+		q.Set(key, val)
+	}
 	return q.Encode()
 }
 
@@ -739,11 +791,11 @@ func computeCompliance(trades []analyticsTrade) []complianceRow {
 // entry date (YYYY-MM-DD) and kind. The table is small (a few labels per
 // journaled day), so one unfiltered read beats a per-trade subquery.
 func (h *Handlers) dayLabelsByDate(ctx context.Context) (map[string]map[string][]string, error) {
-	rows, err := h.rdb().QueryContext(ctx, `
+	rows, err := h.rdb().QueryContext(ctx, analyticsSourceFilter(ctx).Replace(`
 		SELECT substr(je.entry_date, 1, 10), l.kind, l.label
 		FROM journal_entry_labels l
 		JOIN journal_entries je ON je.id = l.journal_entry_id
-		WHERE je.scope = 'day' AND je.user_id = ?`, userID(ctx))
+		WHERE je.scope = 'day' AND je.user_id = ? /*label*/`), userID(ctx))
 	if err != nil {
 		return nil, fmt.Errorf("day labels: %w", err)
 	}

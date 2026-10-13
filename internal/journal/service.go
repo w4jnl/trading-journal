@@ -257,10 +257,23 @@ func (s *Service) Create(ctx context.Context, userID int64, in CreateInput) (mod
 		return none, nil, err
 	}
 	labelled := func(e models.JournalEntry) (models.JournalEntry, *Conflict, error) {
-		if err := s.writeLabels(ctx, e.ID, KindMistake, mistakes, false); err != nil {
+		// Create serves the REST API and MCP: what it sets was not typed in
+		// an editor.
+		api := SourceAPI
+		if tag != nil {
+			if err := s.Q.SetEntryTagSource(ctx, models.SetEntryTagSourceParams{TagSource: &api, ID: e.ID}); err != nil {
+				return none, nil, err
+			}
+		}
+		if strategyID != nil {
+			if err := s.Q.SetEntryStrategySource(ctx, models.SetEntryStrategySourceParams{StrategySource: &api, ID: e.ID}); err != nil {
+				return none, nil, err
+			}
+		}
+		if err := s.writeLabels(ctx, e.ID, KindMistake, mistakes, false, SourceAPI); err != nil {
 			return none, nil, err
 		}
-		if err := s.writeLabels(ctx, e.ID, KindEmotion, emotions, false); err != nil {
+		if err := s.writeLabels(ctx, e.ID, KindEmotion, emotions, false, SourceAPI); err != nil {
 			return none, nil, err
 		}
 		s.changed(ctx, userID)
@@ -550,7 +563,7 @@ func (s *Service) AssignStrategyIfUnset(ctx context.Context, userID, entryID, st
 		return false, BadInput("strategy %d is archived (retired) and cannot be assigned", strategyID)
 	}
 	res, err := s.DB.ExecContext(ctx,
-		"UPDATE journal_entries SET strategy_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND strategy_id IS NULL",
+		"UPDATE journal_entries SET strategy_id = ?, strategy_source = 'api', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND strategy_id IS NULL",
 		strategyID, entryID, userID)
 	if err != nil {
 		return false, fmt.Errorf("assign strategy: %w", err)
@@ -576,7 +589,7 @@ func (s *Service) AssignTagIfUnset(ctx context.Context, userID, entryID int64, t
 		return false, fmt.Errorf("load entry: %w", err)
 	}
 	res, err := s.DB.ExecContext(ctx,
-		"UPDATE journal_entries SET tag = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND tag IS NULL",
+		"UPDATE journal_entries SET tag = ?, tag_source = 'api', updated_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND tag IS NULL",
 		*t, entryID, userID)
 	if err != nil {
 		return false, fmt.Errorf("assign tag: %w", err)

@@ -824,7 +824,10 @@ share a `setId` (same underlying, same direction, entries within two
 seconds, two or more accounts); group by it instead of guessing from
 timestamps. `unit=sets` on the summary counts each set once with its money
 summed (`unit` and the raw `trades` count are echoed in the response).
-Errors as for `/stats/daily`.
+Errors as for `/stats/daily`. `src=confirmed` counts only the tags,
+strategies and labels the trader set or confirmed in the app: values written
+through the API or MCP (recorded with source `api`) stay out until the trader
+saves the note in its editor.
 
 ### Data version (change detection)
 

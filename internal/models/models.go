@@ -159,18 +159,20 @@ type JournalAttachment struct {
 }
 
 type JournalEntry struct {
-	ID         int64     `json:"id"`
-	TradeID    *int64    `json:"trade_id"`
-	AccountID  *int64    `json:"account_id"`
-	EntryDate  time.Time `json:"entry_date"`
-	Body       string    `json:"body"`
-	Mood       *int64    `json:"mood"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
-	Tag        *string   `json:"tag"`
-	Scope      string    `json:"scope"`
-	UserID     *int64    `json:"user_id"`
-	StrategyID *int64    `json:"strategy_id"`
+	ID             int64     `json:"id"`
+	TradeID        *int64    `json:"trade_id"`
+	AccountID      *int64    `json:"account_id"`
+	EntryDate      time.Time `json:"entry_date"`
+	Body           string    `json:"body"`
+	Mood           *int64    `json:"mood"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
+	Tag            *string   `json:"tag"`
+	Scope          string    `json:"scope"`
+	UserID         *int64    `json:"user_id"`
+	StrategyID     *int64    `json:"strategy_id"`
+	TagSource      *string   `json:"tag_source"`
+	StrategySource *string   `json:"strategy_source"`
 }
 
 type JournalEntryCheck struct {
@@ -182,11 +184,20 @@ type JournalEntryLabel struct {
 	JournalEntryID int64  `json:"journal_entry_id"`
 	Kind           string `json:"kind"`
 	Label          string `json:"label"`
+	Source         string `json:"source"`
 }
 
 type JournalEntryTrade struct {
 	JournalEntryID int64 `json:"journal_entry_id"`
 	TradeID        int64 `json:"trade_id"`
+}
+
+type JournalSuggestion struct {
+	JournalEntryID int64     `json:"journal_entry_id"`
+	Kind           string    `json:"kind"`
+	Value          string    `json:"value"`
+	Status         string    `json:"status"`
+	CreatedAt      time.Time `json:"created_at"`
 }
 
 type JournalTemplate struct {

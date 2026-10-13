@@ -93,11 +93,12 @@
 {{with .AIError}}<div class="flash error" role="alert">AI review failed: {{.}}</div>{{else}}{{if eq .Flash "analyzed"}}<div class="flash saved">✨ AI review added to the group note.</div>{{end}}{{end}}
 {{if .GroupBody}}
 <div class="set-note">
-  {{if or .GroupTag .GroupMistakes .GroupEmotions}}
+  {{if or .GroupTag .GroupMistakes .GroupEmotions .GroupSuggestions}}
   <div class="journal-view__bar">
     {{if .GroupTag}}<span class="pill journal-view__tag tag-{{.GroupTag}}">{{.GroupTag}}</span>{{end}}
     {{range .GroupMistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}
     {{range .GroupEmotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
+    {{template "ai_suggestions" (dict "Items" .GroupSuggestions "EntryID" .GroupID "Then" (printf "set:%d" .SetID) "Target" "#trade-sheet-content")}}
   </div>
   {{end}}
   <div class="markdown-preview">{{markdown .GroupBody}}</div>

@@ -127,15 +127,21 @@
      be empty), ID (int64). The ✨ Analyze button is not here: it sits on the
      page title row or the sheet's Journal header (ai_analyze_button), so it
      is offered on an empty note too. Mistakes / Emotions ([]string label keys,
-     optional) render as pills next to the tag. Render this only when the
-     entry has a non-empty body - a new/empty entry shows the form directly. */}}
+     optional) render as pills next to the tag. TagSrc / LabelSrc ("kind:key" ->
+     source) mark values set through the API or an AI tool (source "api"):
+     dashed until the trader saves the note. Suggestions ([]suggestionView)
+     are the AI review's open proposals, with SuggestThen / SuggestTarget
+     saying how accepting one redraws (see ai_suggestions). Render this only
+     when the entry has a non-empty body - a new/empty entry shows the form
+     directly. */}}
 {{define "journal_view"}}
 <div class="journal-view" data-journal-view>
   <div class="journal-view__bar">
-    {{if .Tag}}<span class="pill journal-view__tag tag-{{.Tag}}">{{.Tag}}</span>{{end}}
-    {{range .Mistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}
-    {{range .Emotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
+    {{if .Tag}}<span class="pill journal-view__tag tag-{{.Tag}}{{if eq .TagSrc "api"}} pill--api" title="Set through the API or an AI tool; saving the note confirms it{{end}}">{{.Tag}}</span>{{end}}
+    {{range .Mistakes}}<span class="pill label-pill label-pill--mistake{{if eq (index $.LabelSrc (printf "mistake:%s" .)) "api"}} pill--api" title="Mistake, set through the API or an AI tool; saving the note confirms it{{else}}" title="Mistake{{end}}">{{labelName "mistake" .}}</span>{{end}}
+    {{range .Emotions}}<span class="pill label-pill label-pill--emotion{{if eq (index $.LabelSrc (printf "emotion:%s" .)) "api"}} pill--api" title="Emotion, set through the API or an AI tool; saving the note confirms it{{else}}" title="Emotion{{end}}">{{labelName "emotion" .}}</span>{{end}}
     {{with .Checklist}}<span class="pill checklist-pill {{if .Complete}}checklist-pill--ok{{else}}checklist-pill--miss{{end}}" title="Playbook rules ticked on this note">Playbook {{.Done}}/{{.Total}}</span>{{end}}
+    {{template "ai_suggestions" (dict "Items" .Suggestions "EntryID" .ID "Then" .SuggestThen "Target" .SuggestTarget)}}
     <button type="button" class="btn btn--secondary btn--sm journal-view__edit" data-journal-edit>Edit</button>
   </div>
   {{with .Checklist}}{{if .Missed}}<div class="checklist-missed"><span class="label">Missed</span> {{range $i, $m := .Missed}}{{if $i}} · {{end}}{{$m}}{{end}}</div>{{end}}{{end}}

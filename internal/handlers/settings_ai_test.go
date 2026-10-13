@@ -443,9 +443,10 @@ func TestNoProviderHidesAndRefusesAI(t *testing.T) {
 }
 
 // A trade review gets the trade brief and the full trade (plan, price path,
-// fills), fills the unset tag, strategy and labels the verdict names, says so
-// at the foot of the note, and on a re-run leaves what is now set alone.
-func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
+// fills), SUGGESTS the tag, strategy and labels the verdict names (nothing is
+// written until the trader accepts), lists them at the foot of the note, and
+// a re-run replaces the open tag suggestion and adds new labels.
+func TestAnalyzeTradeSuggestsWhatFits(t *testing.T) {
 	h, db, q := newAIHandlers(t)
 	for _, stmt := range []string{
 		`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (1, 7, 'apex-1', 'motivewave_csv', 'A-1')`,
@@ -479,7 +480,7 @@ func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
 	}
 	if res.Tag != "bad" || res.StrategyID != 5 ||
 		!reflect.DeepEqual(res.Mistakes, []string{"chased", "late-exit"}) || !reflect.DeepEqual(res.Emotions, []string{"rushed"}) {
-		t.Errorf("filled = %+v", res)
+		t.Errorf("suggested = %+v", res)
 	}
 
 	// The model saw the trade brief and the whole trade.
@@ -506,9 +507,15 @@ func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
 		t.Errorf("trade as sent = %+v (tz %q)", tr, sent.Timezone)
 	}
 
-	labels, _ := h.journalSvc().EntryLabels(ctx, 7, 1)
-	if !reflect.DeepEqual(labels["mistake"], []string{"chased", "late-exit"}) || !reflect.DeepEqual(labels["emotion"], []string{"rushed"}) {
-		t.Errorf("labels = %v", labels)
+	// Nothing written: tag, strategy and labels wait as suggestions.
+	if labels, _ := h.journalSvc().EntryLabels(ctx, 7, 1); len(labels) != 0 {
+		t.Errorf("a review wrote labels: %v", labels)
+	}
+	if e, _ := q.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: 1, UserID: userIDPtr(ctx)}); e.Tag != nil || e.StrategyID != nil {
+		t.Errorf("a review wrote tag/strategy: %v %v", e.Tag, e.StrategyID)
+	}
+	if sg := h.entrySuggestions(ctx, 1); len(sg) != 5 || sg[0].Label != "Tag: bad" || sg[1].Label != "Strategy: ORB Breakout" || sg[2].Label != "Chased the entry" || sg[3].Label != "Exited too late" {
+		t.Errorf("suggestions = %+v", sg)
 	}
 	body := func() string {
 		var b string
@@ -519,11 +526,12 @@ func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
 	}
 	got := body()
 	if !strings.Contains(got, "\n*gpt-x via OpenAI*\n") ||
-		!strings.Contains(got, "*Filled in by this review: tag **bad** · strategy **ORB Breakout** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*") {
+		!strings.Contains(got, "*Suggested by this review: tag **bad** · strategy **ORB Breakout** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*") {
 		t.Errorf("note = %q", got)
 	}
 
-	// A re-run proposing other labels: everything is set now, nothing changes.
+	// A re-run: the newer tag replaces the open one, new labels join, the
+	// strategy is not proposed again (none this time) but stays open.
 	fp.mu.Lock()
 	fp.reply = "- **Verdict:** fine.\n\n<!-- tj-ai:verdict tag=good strategy=none mistakes=fomo emotions=calm -->"
 	fp.mu.Unlock()
@@ -531,14 +539,18 @@ func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.Tag != "" || res.StrategyID != 0 || res.Mistakes != nil || res.Emotions != nil {
-		t.Errorf("re-run filled = %+v", res)
+	if res.Tag != "good" || !reflect.DeepEqual(res.Mistakes, []string{"fomo"}) || !reflect.DeepEqual(res.Emotions, []string{"calm"}) {
+		t.Errorf("re-run suggested = %+v", res)
 	}
-	if got := body(); strings.Count(got, "Filled in by this review") != 1 || strings.Count(got, "### AI review") != 2 {
+	if got := body(); strings.Count(got, "Suggested by this review") != 2 || strings.Count(got, "### AI review") != 2 {
 		t.Errorf("re-run note = %q", got)
 	}
-	if l, _ := h.journalSvc().EntryLabels(ctx, 7, 1); !reflect.DeepEqual(l["mistake"], []string{"chased", "late-exit"}) {
-		t.Errorf("labels changed by a re-run: %v", l)
+	labels := []string{}
+	for _, sg := range h.entrySuggestions(ctx, 1) {
+		labels = append(labels, sg.Label)
+	}
+	if want := []string{"Tag: good", "Strategy: ORB Breakout", "Chased the entry", "FOMO", "Exited too late", "Calm", "Rushed"}; !reflect.DeepEqual(labels, want) {
+		t.Errorf("open suggestions = %v, want %v", labels, want)
 	}
 }
 
@@ -584,13 +596,13 @@ func TestReviewFollowsTheLanguageSetting(t *testing.T) {
 		"_Poznámka přidána ",
 		"### AI hodnocení — ",
 		"*mistral-large-latest přes Mistral*",
-		"*Doplněno tímto hodnocením: štítek **bad** · chyby **Chased the entry**.*",
+		"*Navrženo tímto hodnocením: štítek **bad** · chyby **Chased the entry**.*",
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("czech note lacks %q:\n%s", want, body)
 		}
 	}
-	for _, english := range []string{"Note added", "AI review", " via ", "Filled in"} {
+	for _, english := range []string{"Note added", "AI review", " via ", "Suggested by"} {
 		if strings.Contains(body, english) {
 			t.Errorf("czech note still says %q", english)
 		}

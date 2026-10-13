@@ -743,6 +743,9 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Entry":            entry,
 		"AIPending":        h.AIReviews.EntryPending(entry.ID),
 		"AIError":          h.aiReviewError(r, entry.ID),
+		"Suggestions":      h.entrySuggestions(ctx, entry.ID),
+		"LabelSrc":         h.labelSources(ctx, entry.ID),
+		"TagSrc":           sourceOf(entry.TagSource),
 		"Mood":             mood,
 		"Tag":              tag,
 		"Mistakes":         mistakes,
@@ -880,7 +883,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var journalBody, journalTag string
+	var journalBody, journalTag, journalTagSrc string
 	var hasJournal bool
 	var journalEntryID int64
 	var journalStrategyID *int64
@@ -892,6 +895,7 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		if entry.Tag != nil {
 			journalTag = *entry.Tag
 		}
+		journalTagSrc = sourceOf(entry.TagSource)
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
 		return
@@ -931,6 +935,9 @@ func (h *Handlers) JournalTradePage(w http.ResponseWriter, r *http.Request) {
 		"JournalEntryID":   journalEntryID,
 		"AIPending":        h.AIReviews.EntryPending(journalEntryID),
 		"AIError":          h.aiReviewError(r, journalEntryID),
+		"Suggestions":      h.entrySuggestions(ctx, journalEntryID),
+		"LabelSrc":         h.labelSources(ctx, journalEntryID),
+		"TagSrc":           journalTagSrc,
 		"GexRefresh":       h.GEX != nil && gexRefreshable(journalBody),
 		"Summary":          summary,
 		"Trades":           trades,
@@ -1006,6 +1013,9 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		"Entry":            entry,
 		"AIPending":        h.AIReviews.EntryPending(entry.ID),
 		"AIError":          h.aiReviewError(r, entry.ID),
+		"Suggestions":      h.entrySuggestions(ctx, entry.ID),
+		"LabelSrc":         h.labelSources(ctx, entry.ID),
+		"TagSrc":           sourceOf(entry.TagSource),
 		"Tag":              tag,
 		"Mistakes":         mistakes,
 		"Emotions":         emotions,

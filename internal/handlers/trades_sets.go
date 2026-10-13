@@ -637,6 +637,7 @@ func (h *Handlers) renderSetDetail(w http.ResponseWriter, r *http.Request, flash
 			if e.Tag != nil {
 				data["GroupTag"] = *e.Tag
 			}
+			data["GroupSuggestions"] = h.entrySuggestions(ctx, groupID)
 			if labels, err := h.journalSvc().EntryLabels(ctx, userID(ctx), groupID); err == nil {
 				data["GroupMistakes"], data["GroupEmotions"] = labels[journal.KindMistake], labels[journal.KindEmotion]
 			}
