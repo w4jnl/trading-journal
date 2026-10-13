@@ -101,6 +101,24 @@ func TestTradePlanSave(t *testing.T) {
 	if stop, risk := plan(); *stop != 7246 || *risk != 500 {
 		t.Fatalf("untouched resave moved the plan: stop=%v risk=%v", *stop, *risk)
 	}
+	// A target rides along: stored as typed, reward:risk shown from it.
+	if rec := post("10", url.Values{"stop": {"7246"}, "risk": {"500.00"}, "target": {"7256"}}); rec.Code != http.StatusOK {
+		t.Fatalf("target -> %d", rec.Code)
+	}
+	var target *float64
+	if err := conn.QueryRow(`SELECT planned_target FROM trades WHERE id = 10`).Scan(&target); err != nil || target == nil || *target != 7256 {
+		t.Fatalf("planned_target = %v (%v), want 7256", target, err)
+	}
+	rr := h.funcMap()["rewardRisk"].(func(float64, *float64, *float64) string)
+	if got := rr(7250, ptrF(7246), target); got != "1.5" {
+		t.Errorf("reward:risk = %q, want 1.5 (6 pts over 4)", got)
+	}
+	if got := rr(7250, ptrF(7246), ptrF(7240)); got != "" {
+		t.Errorf("a target on the losing side has no reward:risk, got %q", got)
+	}
+	if rec := post("10", url.Values{"target": {"-5"}}); rec.Code != http.StatusBadRequest {
+		t.Fatalf("negative target -> %d, want 400", rec.Code)
+	}
 	if rec := post("10", url.Values{"stop": {"-1"}}); rec.Code != http.StatusBadRequest {
 		t.Fatalf("negative stop -> %d, want 400", rec.Code)
 	}
@@ -109,6 +127,9 @@ func TestTradePlanSave(t *testing.T) {
 	}
 	if stop, risk := plan(); stop != nil || risk != nil {
 		t.Fatalf("not cleared: %v %v", stop, risk)
+	}
+	if err := conn.QueryRow(`SELECT planned_target FROM trades WHERE id = 10`).Scan(&target); err != nil || target != nil {
+		t.Fatalf("target not cleared: %v (%v)", target, err)
 	}
 	if rec := post("20", url.Values{"stop": {"7248"}}); rec.Code != http.StatusNotFound {
 		t.Fatalf("another user's trade -> %d, want 404", rec.Code)

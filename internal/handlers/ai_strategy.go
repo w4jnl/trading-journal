@@ -712,7 +712,7 @@ func evidenceLine(ev strategyEvidence) string {
 
 // AITaskStatus: GET /ai/tasks/status?k=... (htmx) - the poll of a view
 // showing a background AI task: 204 while it runs. Once it has ended:
-// then=trade:N or then=set:N re-renders that sheet in place (HX-Retarget);
+// then=plan:DATE swaps the day page's plan card in place (HX-Retarget);
 // anything else reloads the page.
 func (h *Handlers) AITaskStatus(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -733,15 +733,6 @@ func (h *Handlers) AITaskStatus(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("HX-Retarget", "#day-plan")
 		w.Header().Set("HX-Reswap", "outerHTML")
 		h.renderPartial(w, "journal.html", "plan_card", h.planCardData(r.Context(), ref, validBackHref(r), outcome))
-	case "trade", "set":
-		r.SetPathValue("id", ref)
-		w.Header().Set("HX-Retarget", "#trade-sheet-content")
-		w.Header().Set("HX-Reswap", "innerHTML")
-		if then == "trade" {
-			h.renderTradeDetail(w, r, "")
-		} else {
-			h.renderSetDetail(w, r, "")
-		}
 	default:
 		w.Header().Set("HX-Refresh", "true")
 		w.WriteHeader(http.StatusOK)

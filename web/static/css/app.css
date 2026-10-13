@@ -1946,15 +1946,6 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .ai-verdict--keep { color: var(--pos); }
 .ai-verdict--fix { color: var(--warn, #b7791f); }
 .ai-verdict--drop { color: var(--neg); }
-/* Proposed stop and target on the trade and set sheets. */
-.ai-levels { margin: 6px 0 12px; }
-.ai-levels__card { padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 8px; }
-.ai-levels__head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
-.ai-levels__nums { display: flex; gap: 18px; flex-wrap: wrap; font-size: var(--fs-13); }
-.ai-levels__why { margin: 6px 0 4px 18px; font-size: var(--fs-13); }
-.ai-levels__after { font-size: var(--fs-13); margin-top: 4px; }
-.ai-levels__cands { margin-top: 6px; font-size: var(--fs-12); }
-.ai-levels__table td { padding: 2px 10px 2px 0; }
 /* The stop/target lab. */
 .lab-filters { display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: flex-end; margin-bottom: 14px; }
 .lab-summary { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-bottom: 12px; font-size: var(--fs-13); }

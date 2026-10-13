@@ -48,7 +48,6 @@
   <span class="trade-plan-hint">one stop price for every leg, each leg's risk from its own size and contract; a total risk alone splits by exposure{{if .Unpriced}} · <span class="warn-text">{{.Unpriced}} leg(s) have a stop but no instrument ticks to price it</span>{{end}}</span>
 </form>
 {{end}}
-{{template "ai_levels" (dict "Ref" (printf "set:%d" $.SetID) "Post" (printf "/trades/sets/%d" $.SetID) "Levels" $.Levels "Pending" $.LevelsPending "Error" $.LevelsError)}}
 
 <div class="row-sm" style="margin: 14px 0 6px; align-items: center;">
   <h3 style="margin: 0; font-size: 14px;">Accounts</h3>

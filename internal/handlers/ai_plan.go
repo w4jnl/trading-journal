@@ -17,7 +17,6 @@ import (
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/coach"
 	"github.com/w4jnl/trading-journal/internal/dayplan"
-	"github.com/w4jnl/trading-journal/internal/levels"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -61,9 +60,9 @@ type planRecentDay struct {
 
 // planGamma is a market's gamma map, in futures prices.
 type planGamma struct {
-	Market string              `json:"market"`
-	AsOf   time.Time           `json:"asOf"`
-	Levels []levels.GammaLevel `json:"levels"`
+	Market string       `json:"market"`
+	AsOf   time.Time    `json:"asOf"`
+	Levels []gammaLevel `json:"levels"`
 }
 
 // planEvidence is the user turn of a plan draft.
@@ -193,6 +192,40 @@ func (h *Handlers) planGamma(ctx context.Context, day time.Time) []planGamma {
 		}
 	}
 	return out
+}
+
+// gammaLevel is a level of the gamma map, in futures prices.
+type gammaLevel struct {
+	Name  string  `json:"name"`
+	Price float64 `json:"price"`
+}
+
+// gammaLevels is the market's gamma map known at a moment, from a snapshot
+// at most maxAge old (nil without one), and the snapshot's time.
+func (h *Handlers) gammaLevels(ctx context.Context, market string, at time.Time, maxAge time.Duration) ([]gammaLevel, time.Time) {
+	if h.GEX == nil {
+		return nil, time.Time{}
+	}
+	snap, _, err := h.GEX.CleanSnapshot(ctx, market, at, gexCleanSteps, maxAge)
+	if err != nil || snap == nil || at.Sub(snap.AsOf) > maxAge {
+		return nil, time.Time{}
+	}
+	var out []gammaLevel
+	add := func(name string, p *float64) {
+		if p != nil && *p > 0 {
+			out = append(out, gammaLevel{Name: name, Price: *p})
+		}
+	}
+	add("gamma flip", snap.Flip.Futures)
+	add("intraday gamma flip", snap.FlipIntraday.Futures)
+	names := map[string]string{"call_wall": "call wall", "put_wall": "put wall", "gamma_1": "gamma magnet 1", "gamma_2": "gamma magnet 2",
+		"gamma_3": "gamma magnet 3", "em_1d_min": "expected-move low", "em_1d_max": "expected-move high"}
+	for _, l := range snap.Levels {
+		if name, ok := names[l.Type]; ok && (l.Bucket == "all" || l.Bucket == "") {
+			add(name, l.Futures)
+		}
+	}
+	return out, snap.AsOf
 }
 
 const aiPlanDraftPrompt = `You draft a futures day trader's pre-market plan for one session. The user message is JSON: the day; the trader's own norms (median decisions per day, the usual last entry time in the trader's timezone - a copy of one decision across accounts counts once); what one account usually loses on a losing day (USD: median, 80th percentile and worst over the last 60 days); the last trading days with their net result, the coach's findings (overtrading, late entries, re-entries after a loss, size-ups, stops run through) and how that day's plan held; the lessons still open from the trader's reviews (count = how often the same mistake came back); the gamma levels known now (futures prices, asOf = when computed); and the plan already written for the day, if any.
