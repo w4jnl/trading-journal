@@ -463,8 +463,10 @@ func run() error {
 		aiSecrets = box
 		slog.Info("AI: users may bring their own provider key (Settings > AI)")
 	}
+	var aiReviews *ai.Reviews
 	if aiClient != nil || aiSecrets != nil {
 		aiJobs = ai.NewJobManager(ctx)
+		aiReviews = ai.NewReviews(ctx, 2)
 	}
 
 	// Gamma-exposure annotations (gex-engine). Nil when disabled; the
@@ -599,6 +601,10 @@ func run() error {
 	// poll it via GET /data/version. Always constructed (no typed-nil hazard;
 	// its methods are nil-safe anyway).
 	liveData := livedata.NewNotifier()
+	if aiReviews != nil {
+		// A review starting or ending redraws the open lists (row spinners).
+		aiReviews.OnChange = liveData.Bump
+	}
 
 	// MAE/MFE off the bar cache: filled after each prefetch pass, on sheet
 	// view, and once over the whole cache at boot (nothing fetches).
@@ -711,6 +717,7 @@ func run() error {
 		OAuth:            oauthSrv,
 		AI:               aiClient,
 		AIJobs:           aiJobs,
+		AIReviews:        aiReviews,
 		AISecrets:        aiSecrets,
 		AIModel:          cfg.AI.Model,
 		GEX:              gexClient,
@@ -858,6 +865,7 @@ func run() error {
 	mux.HandleFunc("POST /ai/set/{id}", h.AIAnalyzeSet)
 	mux.HandleFunc("POST /ai/note/day/{date}", h.AIAnalyzeDayNote)
 	mux.HandleFunc("POST /ai/note/week/{week}", h.AIAnalyzeWeekNote)
+	mux.HandleFunc("GET /ai/review/{id}", h.AIReviewStatus)
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)
@@ -1079,6 +1087,9 @@ func run() error {
 	if aiJobs != nil {
 		if err := aiJobs.Wait(shutdownCtx); err != nil {
 			slog.Warn("ai jobs did not finish before shutdown", "err", err)
+		}
+		if err := aiReviews.Wait(shutdownCtx); err != nil {
+			slog.Warn("ai reviews did not finish before shutdown", "err", err)
 		}
 	}
 	// Let SQLite refresh its planner statistics while nothing is writing;

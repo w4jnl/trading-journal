@@ -4,12 +4,17 @@
     DatePath (the {date} segment for the /ai/day/{date}/... URLs; "last" or YYYY-MM-DD)
   While running the div self-polls every 2s (it replaces itself outerHTML). Idle
   renders empty. "Show results" reloads the page so appended analyses render.
+  A run is one per user: a page of another day shows that run with a link.
 */}}
 {{define "ai_status"}}
 {{- $s := .Status -}}
 <div id="ai-status" class="ai-status ai-status--{{$s.State}}"
      {{- if eq $s.State "running"}} hx-get="/ai/day/{{.DatePath}}/status" hx-trigger="every 2s" hx-target="#ai-status" hx-swap="outerHTML"{{end}}>
-  {{if eq $s.State "running"}}
+  {{if and (eq $s.State "running") (ne $s.Date .DatePath) (ne $s.Date "last")}}
+    {{/* One day run at a time per user: another day's run is going. */}}
+    <span class="ai-spinner" aria-hidden="true"></span>
+    <span>AI is reviewing <a href="/journal/{{$s.Date}}">{{$s.Date}}</a> (<span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>); this day can start when it finishes. Single notes can be analyzed meanwhile.</span>
+  {{else if eq $s.State "running"}}
     <span class="ai-spinner" aria-hidden="true"></span>
     <span>Analyzing… <span class="num">{{$s.Done}}</span>/<span class="num">{{$s.Total}}</span>{{if $s.Current}} · {{$s.Current}}{{end}}{{if $s.Model}} <span class="ai-status__model">· {{$s.Model}}</span>{{end}}</span>
     <button type="button" class="btn btn--danger btn--sm"

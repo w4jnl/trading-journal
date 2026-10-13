@@ -412,7 +412,7 @@
           {{/* The icon opens the sheet with the note editor (trade_sheet.js
                handles [data-journal-open] before the row's own hx-get); the
                rest of the row opens the trade with the note folded. */}}
-          <button type="button" class="j-open" data-journal-open="{{.ID}}" title="{{if .HasJournal}}Edit the note{{if .JournalTag}} ({{.JournalTag}}){{end}}{{else}}Add a note{{end}}" aria-label="{{if .HasJournal}}Edit the note on{{else}}Add a note to{{end}} trade {{.Symbol}}"><span id="trow-jicon-{{.ID}}">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span></button>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
+          <button type="button" class="j-open" data-journal-open="{{.ID}}" title="{{if .HasJournal}}Edit the note{{if .JournalTag}} ({{.JournalTag}}){{end}}{{else}}Add a note{{end}}" aria-label="{{if .HasJournal}}Edit the note on{{else}}Add a note to{{end}} trade {{.Symbol}}"><span id="trow-jicon-{{.ID}}">{{if aiReviewingTrade .ID}}{{template "ai_pending_icon"}}{{else}}{{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{end}}</span></button>{{if .GroupCount}}<span class="group-badge" title="Linked to {{.GroupCount}} group note{{if ne .GroupCount 1}}s{{end}}">+G</span>{{end}}
         </td>
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
         <td class="c-acct" data-label="Account" title="{{.AccountName}}">{{.AccountName}}{{if .AccountRetired}} <span class="pill retired-pill" title="This account is retired — revealed via the toggle above.">retired</span>{{end}}</td>
@@ -492,7 +492,7 @@
           hx-swap="innerHTML"
           hx-indicator="closest tr">
         <td class="c-x">{{if .IsSet}}<button type="button" class="set-toggle" data-set-toggle="{{.SetIDValue}}" data-stop aria-expanded="false" title="Show the accounts in this set" aria-label="Show the accounts in this set">▸</button>{{end}}</td>
-        <td class="c-j">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</td>
+        <td class="c-j">{{$busy := false}}{{range .Members}}{{if aiReviewingTrade .ID}}{{$busy = true}}{{end}}{{end}}{{if $busy}}{{template "ai_pending_icon"}}{{else}}{{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{end}}</td>
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
         <td class="c-set" data-label="Decision">{{.Symbol}}{{if .IsSet}} <span class="set-badge" title="{{.Accounts}} accounts, {{len .Members}} trades">set ×{{len .Members}}</span>{{end}}</td>
         <td class="c-dir">{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
@@ -515,7 +515,7 @@
           hx-swap="innerHTML"
           hx-indicator="closest tr">
         <td class="c-x"></td>
-        <td class="c-j">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</td>
+        <td class="c-j">{{if aiReviewingTrade .ID}}{{template "ai_pending_icon"}}{{else}}{{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{end}}</td>
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "time"}}</td>
         <td class="c-set" data-label="Account" title="{{.AccountName}}">{{.AccountName}} <span class="subtle">· {{.Symbol}}</span></td>
         <td class="c-dir"></td>

@@ -64,7 +64,12 @@ around it.
   digest) and headed by the model that wrote it. It fills what you left
   unset when the evidence fits (the tag, and for a trade or group the
   strategy and the mistake and emotion labels), never overwrites your
-  choice, and says at its foot what it filled. Each user runs it on **their own
+  choice, and says at its foot what it filled. A review runs in the
+  background: it carries on when you close the sheet or leave the page,
+  the note shows a spinner wherever it is listed (trades, sets, the
+  journal feed) and cannot be edited until the review lands. A whole-day
+  run locks only the notes it is writing; the rest of the journal stays
+  open, and single notes can be analyzed alongside it. Each user runs it on **their own
   provider key** (Settings → AI: OpenAI, Anthropic, Google Gemini,
   Mistral, OpenRouter), or on a server-wide default such as a local
   model. See [In-app AI reviews](#in-app-ai-reviews).

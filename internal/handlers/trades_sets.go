@@ -625,6 +625,10 @@ func (h *Handlers) renderSetDetail(w http.ResponseWriter, r *http.Request, flash
 		"Flash":         flash,
 		"GroupBody":     "", // a string for aiAnalyzed even without a note
 	}
+	if hasGroup {
+		data["AIPending"] = h.AIReviews.EntryPending(groupID)
+		data["AIError"] = h.aiReviewError(r, groupID)
+	}
 	// The group note shows in the sheet, so a set review reads where it was
 	// asked for.
 	if hasGroup {
@@ -673,9 +677,6 @@ func (h *Handlers) ensureSetGroup(ctx context.Context, setID int64, body string)
 // TradeSetJournal handles POST /trades/sets/{id}/journal: opens the set's
 // group note, creating it when none covers these trades yet.
 func (h *Handlers) TradeSetJournal(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAI(w, r) {
-		return
-	}
 	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

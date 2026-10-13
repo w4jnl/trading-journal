@@ -1,13 +1,10 @@
 package handlers
 
-import (
-	"context"
-	"net/http"
-)
+import "context"
 
-// aiBusyMessage is the one 409 text every adapter uses while the user's AI
-// day job holds the journal.
-const aiBusyMessage = "AI analysis is running - cancel it or wait before editing the journal."
+// aiDayRunMessage refuses a second full-day review (prepare_day) while the
+// in-app day run is going.
+const aiDayRunMessage = "An AI day review is running - wait for it to finish or cancel it before preparing another day."
 
 // journalChanged bumps the user's live-data version after a journal write
 // has committed, so open dashboard, calendar, feed and journal-day pages
@@ -19,14 +16,4 @@ func (h *Handlers) journalChanged(ctx context.Context) {
 	if h.LiveData != nil {
 		h.LiveData.Bump(userID(ctx))
 	}
-}
-
-// guardJournalingDuringAIJSON is guardJournalingDuringAI for the JSON API:
-// a 409 with the same message, as JSON.
-func (h *Handlers) guardJournalingDuringAIJSON(w http.ResponseWriter, r *http.Request) bool {
-	if h.aiJobRunning(r.Context()) {
-		writeJSONError(w, http.StatusConflict, aiBusyMessage)
-		return true
-	}
-	return false
 }

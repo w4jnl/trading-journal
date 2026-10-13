@@ -6,8 +6,9 @@
 <div class="journal-title-row">
   <h1>Group note <span class="muted" style="font-weight:400; font-size: 14px;">· {{.EntryDateNice}}</span></h1>
   {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
-  {{template "ai_analyze_button" (dict "URL" (printf "/ai/entry/%d" .EntryID) "Analyzed" (aiAnalyzed .Entry.Body) "Spin" "ai-note-spin" "What" "group")}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/entry/%d" .EntryID) "Analyzed" (aiAnalyzed .Entry.Body) "Spin" "ai-note-spin" "What" "group" "Pending" .AIPending "Poll" (printf "/ai/review/%d" .EntryID))}}
 </div>
+{{with .AIError}}<div class="flash error mb-16" role="alert">AI review failed: {{.}}</div>{{end}}
 
 <div class="row-sm mb-16">
   <a href="/journal" class="btn btn--secondary btn--sm">‹ Back to feed</a>
@@ -32,7 +33,8 @@
 
 <!-- Body / tag editor — primary action of the page, sits above the
      linked-trades list so the eye lands on the writing surface first. -->
-<section class="journal-entry" data-journal-entry>
+<section class="journal-entry{{if .AIPending}} journal-entry--locked{{end}}" data-journal-entry>
+{{if .AIPending}}{{template "ai_review_lock"}}{{end}}
 {{if .Entry.Body}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}{{end}}
 <form method="post" action="/journal/group/{{.EntryID}}" class="journal-form"{{if .Entry.Body}} hidden{{end}}>
   {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}

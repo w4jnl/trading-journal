@@ -7,8 +7,9 @@
 <div class="journal-title-row">
   <h1>Journal <span class="muted" style="font-weight:400;">· {{.DateNice}}</span></h1>
   {{if .Entry.ID}}{{template "id_ref" (dict "Label" "Entry" "ID" .Entry.ID)}}{{end}}
-  {{template "ai_analyze_button" (dict "URL" (printf "/ai/note/day/%s" .Date) "Analyzed" (aiAnalyzed .Entry.Body) "Spin" "ai-note-spin" "What" "day")}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/note/day/%s" .Date) "Analyzed" (aiAnalyzed .Entry.Body) "Spin" "ai-note-spin" "What" "day" "Pending" .AIPending "Poll" (printf "/ai/review/%d" .Entry.ID))}}
 </div>
+{{with .AIError}}<div class="flash error mb-16" role="alert">AI review failed: {{.}}</div>{{end}}
 
 <div class="row-sm mb-16">
   <a href="/journal/{{.PrevDay}}{{if .BackHref}}?back={{.BackHref}}{{end}}" class="btn btn--secondary btn--sm">‹ Prev</a>
@@ -38,7 +39,8 @@
 </div>
 {{end}}
 
-<section class="journal-entry" id="journal-entry" data-journal-entry>
+<section class="journal-entry{{if .AIPending}} journal-entry--locked{{end}}" id="journal-entry" data-journal-entry>
+  {{if .AIPending}}{{template "ai_review_lock"}}{{end}}
   {{if .Entry.Body}}{{if .JournalOpen}}<div hidden data-journal-view>{{end}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{if .JournalOpen}}</div>{{end}}{{end}}
   <form method="post" action="/journal/{{.Date}}" class="journal-form"{{if and .Entry.Body (not .JournalOpen)}} hidden{{end}}>
     {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/http"
 
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/auth"
@@ -92,6 +93,15 @@ func (h *Handlers) aiStoredKey(row models.UserAiSetting) (string, error) {
 		return "", errors.New("your stored AI key cannot be decrypted (the server's encryption key changed?); enter it again in Settings > AI")
 	}
 	return key, nil
+}
+
+// aiReviewError takes the failure of the last background review of entryID,
+// to show it once. A live-refresh fragment leaves it for the full render.
+func (h *Handlers) aiReviewError(r *http.Request, entryID int64) string {
+	if entryID == 0 || r.URL.Query().Get("fragment") == "1" {
+		return ""
+	}
+	return h.AIReviews.TakeError(userID(r.Context()), entryID)
 }
 
 // aiPresetFor maps a stored provider id (and, for custom, its URL) to a preset.

@@ -4,7 +4,7 @@
      full-page reload. Ignored (no matching id) on the standalone journal page
      or when the trade isn't on the current /trades view. */}}
 {{if or (eq .Flash "saved") (eq .Flash "deleted") (eq .Flash "analyzed")}}
-<span id="trow-jicon-{{.TradeID}}" hx-swap-oob="true">{{template "journal_icon" (journalState .HasJournal .JournalTag)}}</span>
+<span id="trow-jicon-{{.TradeID}}" hx-swap-oob="true">{{if aiReviewingTrade .TradeID}}{{template "ai_pending_icon"}}{{else}}{{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{end}}</span>
 {{end}}
 {{with .Trade}}
 <div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
@@ -78,17 +78,18 @@
 </form>
 {{end}}
 
-<section data-trade-journal data-journal-entry>
+<section class="{{if $.AIPending}}journal-entry--locked{{end}}" data-trade-journal data-journal-entry>
   <div class="row-sm" style="justify-content: space-between; margin-bottom: 8px;">
     <div class="row-sm" style="gap: 8px; align-items: center;">
       <h3 style="margin: 0;">Journal</h3>
       {{if $.JournalEntryID}}{{template "id_ref" (dict "Label" "Entry" "ID" $.JournalEntryID)}}{{end}}
-      {{template "ai_analyze_button" (dict "URL" (printf "/ai/trade/%d" $.TradeID) "Analyzed" (aiAnalyzed $.JournalBody) "Spin" "ai-trade-spin" "What" "trade" "Target" "#trade-sheet-content")}}
+      {{template "ai_analyze_button" (dict "URL" (printf "/ai/trade/%d" $.TradeID) "Analyzed" (aiAnalyzed $.JournalBody) "Spin" "ai-trade-spin" "What" "trade" "Target" "#trade-sheet-content" "Pending" $.AIPending "Poll" (printf "/ai/review/%d?then=trade&trade=%d" $.JournalEntryID $.TradeID))}}
     </div>
     <span class="muted" style="font-size: 11px;">Empty body deletes the entry.</span>
   </div>
   {{if eq $.Flash "saved"}}<div class="flash saved">Saved.</div>{{end}}
-  {{if eq $.Flash "analyzed"}}<div class="flash saved">✨ AI review added.</div>{{end}}
+  {{with $.AIError}}<div class="flash error" role="alert">AI review failed: {{.}}</div>{{else}}{{if eq $.Flash "analyzed"}}<div class="flash saved">✨ AI review added.</div>{{end}}{{end}}
+  {{if $.AIPending}}{{template "ai_review_lock"}}{{end}}
   {{if eq $.Flash "deleted"}}<div class="flash deleted">Entry deleted (body was empty).</div>{{end}}
   {{if eq $.Flash "empty"}}<div class="flash empty">Nothing to save — body was empty.</div>{{end}}
 

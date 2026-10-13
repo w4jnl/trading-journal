@@ -183,6 +183,10 @@ func labelsOut(m map[string][]string) map[string][]string {
 // unknown label key, a malformed field) is the browser's fault and gets a
 // 400 with the message; anything else is a server error.
 func (h *Handlers) saveFailed(w http.ResponseWriter, what string, err error) {
+	if errors.Is(err, journal.ErrReviewPending) {
+		http.Error(w, err.Error(), http.StatusConflict)
+		return
+	}
 	var ve apiValidationError
 	if errors.As(err, &ve) {
 		http.Error(w, ve.Msg, http.StatusBadRequest)
@@ -200,9 +204,6 @@ func labelFields(r *http.Request) (mistakes, emotions []string) {
 // Adds labels; never removes what the trader set (the page editors do
 // that). Unknown keys are a 400 naming the vocabulary.
 func (h *Handlers) APIJournalAddLabels(w http.ResponseWriter, r *http.Request) {
-	if h.guardJournalingDuringAIJSON(w, r) {
-		return
-	}
 	id, ok := apiPathID(r)
 	if !ok {
 		writeJSONError(w, http.StatusBadRequest, "bad id")

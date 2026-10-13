@@ -31,7 +31,15 @@ type Service struct {
 	// disables itself for the rest of a pass after a fetch failure); nil
 	// skips annotation.
 	NewAnnotator func() Annotator
+	// Locked reports an entry the editors must not change right now: an AI
+	// review of it is running and will append to it. The page saves and
+	// deletes refuse it with ErrReviewPending; appends (the API, MCP and the
+	// review itself) are unaffected. nil = nothing is ever locked.
+	Locked func(entryID int64) bool
 }
+
+// locked reports whether the editors must leave entryID alone for now.
+func (s *Service) locked(entryID int64) bool { return s.Locked != nil && s.Locked(entryID) }
 
 // Annotator adds context to a prepared entry from its representative trade.
 type Annotator interface {
@@ -62,6 +70,9 @@ const (
 var (
 	// ErrNotFound: the entry (or trade) is not the caller's, or does not exist.
 	ErrNotFound = errors.New("journal: not found")
+	// ErrReviewPending: a page save or delete of an entry an AI review is
+	// still writing (Service.Locked).
+	ErrReviewPending = errors.New("an AI review of this note is in progress; it can be edited again when the review finishes")
 	// ErrNoOwnedTrades: none of the given trade ids belong to the caller.
 	ErrNoOwnedTrades = errors.New("journal: none of the trades are yours")
 )
