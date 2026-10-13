@@ -1930,6 +1930,8 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .ai-suggest-pill__btn { border: 0; background: transparent; cursor: pointer; padding: 0 5px; font-size: var(--fs-12);
   color: var(--fg-muted); border-radius: 999px; line-height: 1.6; }
 .ai-suggest-pill__btn:hover { color: var(--fg); background: var(--bg-sunken); }
+/* The same proposal as a plain pill in a list row (the /journal feed). */
+.pill--suggest { border: 1px dashed var(--accent); background: transparent; color: var(--fg-muted); }
 /* A value written through the API or an AI tool, not yet confirmed in an editor. */
 .pill--api { border-style: dashed !important; border-width: 1px; }
 .pill--api::after { content: " · API"; opacity: 0.6; font-size: 0.85em; }

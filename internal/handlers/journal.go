@@ -65,6 +65,29 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("load entry labels: %w", err))
 		return
 	}
+	suggestions, err := loadOpenSuggestions(ctx, h.rdb(), entryIDs)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load suggestions: %w", err))
+		return
+	}
+
+	// The user's strategies: the filter options, the active-chip labels and
+	// the names on suggested-strategy pills.
+	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
+	if err != nil {
+		h.serverError(w, fmt.Errorf("list strategies: %w", err))
+		return
+	}
+	stratName := map[int64]string{}
+	stratOpts := make([]journalStrategyOption, 0, len(strategies))
+	for _, s := range strategies {
+		stratName[s.ID] = s.Name
+		stratOpts = append(stratOpts, journalStrategyOption{ID: s.ID, Name: s.Name, Checked: filters.strategySet[s.ID]})
+	}
+	strategyName := func(id int64) (string, bool) {
+		name, ok := stratName[id]
+		return name, ok
+	}
 
 	type feedItem struct {
 		ID        int64
@@ -77,7 +100,10 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		Body      string
 		Mistakes  []string // review label keys (internal/journal vocabulary)
 		Emotions  []string
-		EditURL   string // where to navigate when the row is clicked
+		// The AI review's open proposals that still apply, shown dashed;
+		// they are accepted or dismissed on the note itself.
+		Suggestions []suggestionView
+		EditURL     string // where to navigate when the row is clicked
 		// Group-only — populated when Scope == "group", zero otherwise.
 		GroupN      int64
 		GroupNet    float64
@@ -103,6 +129,21 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 		}
 		if row.StrategyName != nil {
 			fi.Strategy = *row.StrategyName
+		}
+		if open := suggestions[row.ID]; len(open) > 0 {
+			have := map[string]bool{}
+			for kind, keys := range entryLabels[row.ID] {
+				for _, k := range keys {
+					have[kind+":"+k] = true
+				}
+			}
+			var still []journal.Suggestion
+			for _, sg := range open {
+				if sg.Applies(row.Tag != nil, row.StrategyName != nil, have) {
+					still = append(still, sg)
+				}
+			}
+			fi.Suggestions = suggestionViews(still, strategyName)
 		}
 		switch row.Scope {
 		case "day":
@@ -166,20 +207,6 @@ func (h *Handlers) JournalFeed(w http.ResponseWriter, r *http.Request) {
 	todayStr := now.Format("2006-01-02")
 	y, wk := now.ISOWeek()
 	thisWeekStr := fmt.Sprintf("%d-W%02d", y, wk)
-
-	// Strategy filter options (the user's strategies) + a name lookup for the
-	// active-chip labels.
-	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
-	if err != nil {
-		h.serverError(w, fmt.Errorf("list strategies: %w", err))
-		return
-	}
-	stratName := map[int64]string{}
-	stratOpts := make([]journalStrategyOption, 0, len(strategies))
-	for _, s := range strategies {
-		stratName[s.ID] = s.Name
-		stratOpts = append(stratOpts, journalStrategyOption{ID: s.ID, Name: s.Name, Checked: filters.strategySet[s.ID]})
-	}
 
 	filterCount := len(filters.scopes) + len(filters.tags) + len(filters.strategies) + len(filters.mistakes) + len(filters.emotions)
 	if filters.strategyNone {

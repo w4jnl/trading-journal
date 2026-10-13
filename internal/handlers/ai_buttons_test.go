@@ -413,13 +413,18 @@ func TestDayRunCancelReleasesItsNotes(t *testing.T) {
 // a value written through the API shows marked until the note is saved.
 func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
 	h, ctx, uid := setsFixture(t)
-	useOwnProvider(t, h, uid, "- **Exit:** late.\n\n<!-- tj-ai:verdict tag=bad strategy=none mistakes=chased emotions=rushed -->")
+	useOwnProvider(t, h, uid, "- **Exit:** late.\n\n<!-- tj-ai:verdict tag=bad strategy=none mistakes=chased,no-stop emotions=rushed -->")
 	mux := aiButtonMux(h)
 	mux.HandleFunc("POST /journal/suggestions/{id}", h.JournalSuggestion)
+	mux.HandleFunc("GET /journal", h.JournalFeed)
 	serve(ctx, mux, http.MethodPost, "/ai/trade/12")
 	settle(t, h)
 	var eid int64
 	if err := h.DB.QueryRow(`SELECT id FROM journal_entries WHERE trade_id = 12`).Scan(&eid); err != nil {
+		t.Fatal(err)
+	}
+	// An older review's no-stop: the data cannot show one, so it never shows.
+	if _, err := h.DB.Exec(`INSERT INTO journal_suggestions (journal_entry_id, kind, value) VALUES (?, 'mistake', 'no-stop')`, eid); err != nil {
 		t.Fatal(err)
 	}
 	sheet := serve(ctx, mux, http.MethodGet, "/trades/12").Body.String()
@@ -427,6 +432,19 @@ func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
 		if !strings.Contains(sheet, want) {
 			t.Errorf("sheet lacks %q", want)
 		}
+	}
+	if strings.Contains(sheet, "✨ No stop") {
+		t.Error("the sheet proposes no-stop")
+	}
+	// The feed row shows the same proposals as plain dashed pills.
+	feed := serve(ctx, mux, http.MethodGet, "/journal").Body.String()
+	for _, want := range []string{`pill--suggest" title="Suggested by the AI review: open the note to accept or dismiss">✨ Tag: bad<`, "✨ Chased the entry<", "✨ Rushed<"} {
+		if !strings.Contains(feed, want) {
+			t.Errorf("feed lacks %q", want)
+		}
+	}
+	if strings.Contains(feed, "✨ No stop") {
+		t.Error("the feed proposes no-stop")
 	}
 	act := func(target, kind, value, do string) *httptest.ResponseRecorder {
 		req := httptest.NewRequest(http.MethodPost, target, strings.NewReader(url.Values{"kind": {kind}, "value": {value}, "do": {do}}.Encode())).WithContext(ctx)
@@ -448,6 +466,11 @@ func TestSuggestionPillsAcceptAndDismiss(t *testing.T) {
 	}
 	if rec := act("/journal/suggestions/"+itoa64(eid), "emotion", "rushed", "accept"); rec.Code != http.StatusNotFound {
 		t.Errorf("accepting a dismissed suggestion = %d", rec.Code)
+	}
+	// The feed follows: the accepted label is a plain pill, the dismissed one gone.
+	feed = serve(ctx, mux, http.MethodGet, "/journal").Body.String()
+	if !strings.Contains(feed, `label-pill--mistake" title="Mistake">Chased the entry<`) || strings.Contains(feed, "✨ Chased the entry") || strings.Contains(feed, "✨ Rushed") || !strings.Contains(feed, "✨ Tag: bad") {
+		t.Errorf("feed after accept / dismiss: %q", feed[strings.Index(feed, `<ul class="feed">`):])
 	}
 	if rec := act("/journal/suggestions/"+itoa64(eid), "tag", "bad", "maybe"); rec.Code != http.StatusBadRequest {
 		t.Errorf("bad action = %d", rec.Code)

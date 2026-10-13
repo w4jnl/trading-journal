@@ -158,6 +158,8 @@
           {{range .Mistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}
           {{range .Emotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
           {{if .Strategy}}<span class="pill strategy-chip" title="Strategy: {{.Strategy}}">{{.Strategy}}</span>{{end}}
+          {{/* The AI review's open proposals: accepted or dismissed on the note. */}}
+          {{range .Suggestions}}<span class="pill pill--suggest" title="Suggested by the AI review: open the note to accept or dismiss">✨ {{.Label}}</span>{{end}}
           <span class="tag-slot">{{if .Tag}}<span class="pill tag-chip-{{.Tag}}">{{.Tag}}</span>{{end}}</span>
         </span>
       </a>

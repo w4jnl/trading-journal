@@ -190,7 +190,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 
 	s.AddTool(mcpgo.NewTool("add_labels",
 		mcpgo.WithDestructiveHintAnnotation(false),
-		mcpgo.WithDescription("Add mistake and/or emotion labels to a journal entry from a FIXED vocabulary (unknown keys are rejected). Additive: existing labels stay, duplicates are ignored, nothing is ever removed. Label only what the trades and the trader's own notes clearly show (e.g. an exit before the planned target = early-exit; adding to a loser past the stop = moved-stop); don't guess emotions the notes don't mention. Mistakes: "+strings.Join(journal.LabelKeys(journal.KindMistake), ", ")+". Emotions: "+strings.Join(journal.LabelKeys(journal.KindEmotion), ", ")+"."),
+		mcpgo.WithDescription("Add mistake and/or emotion labels to a journal entry from a FIXED vocabulary (unknown keys are rejected). Additive: existing labels stay, duplicates are ignored, nothing is ever removed. Label only what the trades and the trader's own notes clearly show (e.g. an exit before the planned target = early-exit; adding to a loser past the stop = moved-stop; no-stop only when the trader's notes say so, since the data holds the fills, never the working orders, and a missing planned stop only means no plan was recorded); don't guess emotions the notes don't mention. Mistakes: "+strings.Join(journal.LabelKeys(journal.KindMistake), ", ")+". Emotions: "+strings.Join(journal.LabelKeys(journal.KindEmotion), ", ")+"."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithArray("mistakes", mcpgo.Description("Mistake keys to add."), mcpgo.WithStringItems()),
 		mcpgo.WithArray("emotions", mcpgo.Description("Emotion keys to add."), mcpgo.WithStringItems()),

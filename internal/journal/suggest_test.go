@@ -36,13 +36,13 @@ func TestSuggestAcceptDismiss(t *testing.T) {
 	s, uid := suggestFixture(t)
 	ctx := context.Background()
 
-	open, err := s.Suggest(ctx, uid, 1, "bad", 5, []string{"chased", "fomo", "made-up"}, []string{"rushed"})
+	open, err := s.Suggest(ctx, uid, 1, "bad", 5, []string{"chased", "fomo", "made-up", "no-stop"}, []string{"rushed"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	want := []Suggestion{{SuggestTag, "bad"}, {SuggestStrategy, "5"}, {KindMistake, "chased"}, {KindEmotion, "rushed"}}
 	if !reflect.DeepEqual(open, want) {
-		t.Fatalf("open = %v, want %v (fomo is set already, made-up unknown)", open, want)
+		t.Fatalf("open = %v, want %v (fomo is set already, made-up unknown, no-stop not in the data)", open, want)
 	}
 	e, _ := s.Q.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: 1, UserID: &uid})
 	if e.Tag != nil || e.StrategyID != nil {

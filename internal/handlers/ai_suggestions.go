@@ -30,6 +30,15 @@ func (h *Handlers) entrySuggestions(ctx context.Context, entryID int64) []sugges
 		h.logger().Warn("load suggestions", "entry", entryID, "err", err)
 		return nil
 	}
+	return suggestionViews(list, func(id int64) (string, bool) {
+		st, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: id, UserID: userID(ctx)})
+		return st.Name, err == nil
+	})
+}
+
+// suggestionViews turns open suggestions into pills; strategyName resolves a
+// strategy id to its name, and a strategy it does not know is left out.
+func suggestionViews(list []journal.Suggestion, strategyName func(id int64) (string, bool)) []suggestionView {
 	out := make([]suggestionView, 0, len(list))
 	for _, sg := range list {
 		v := suggestionView{Kind: sg.Kind, Value: sg.Value}
@@ -38,11 +47,11 @@ func (h *Handlers) entrySuggestions(ctx context.Context, entryID int64) []sugges
 			v.Label = "Tag: " + sg.Value
 		case journal.SuggestStrategy:
 			id, _ := strconv.ParseInt(sg.Value, 10, 64)
-			st, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: id, UserID: userID(ctx)})
-			if err != nil {
+			name, ok := strategyName(id)
+			if !ok {
 				continue
 			}
-			v.Label = "Strategy: " + st.Name
+			v.Label = "Strategy: " + name
 		default:
 			v.Label = journal.LabelName(sg.Kind, sg.Value)
 		}

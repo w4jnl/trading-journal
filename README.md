@@ -91,7 +91,10 @@ around it.
   consistency across accounts; a day against its plan; a week from the
   digest) and headed by the model that wrote it. It never writes your tag,
   strategy or labels: what it proposes shows on the note as dashed pills
-  to accept or dismiss (a dismissed one is not proposed again). Values
+  to accept or dismiss (a dismissed one is not proposed again), and the
+  same pills mark the note's row in the journal feed until you do. It
+  proposes only what the data can show: the app holds the fills, never
+  the working orders, so "No stop" is yours to set, never its guess. Values
   written through the API or MCP are marked until you save the note, and
   analytics can count only what you set or confirmed ("Confirmed by me").
   Each review also names **one lesson**, kept in a ledger

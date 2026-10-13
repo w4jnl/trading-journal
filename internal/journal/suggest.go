@@ -32,8 +32,8 @@ type Suggestion struct {
 // the ones open after it - this review's proposals that still apply and were
 // not dismissed before. A tag is proposed only while the entry has none, a
 // strategy only on a trade or group entry without one (and only an active
-// strategy of the user's), labels only from the vocabulary and not already on
-// the entry. Anything else is dropped.
+// strategy of the user's), labels only from the vocabulary, ones the data can
+// show (Observable) and not already on the entry. Anything else is dropped.
 func (s *Service) Suggest(ctx context.Context, userID, entryID int64, tag string, strategyID int64, mistakes, emotions []string) ([]Suggestion, error) {
 	e, err := s.ownEntry(ctx, userID, entryID)
 	if err != nil {
@@ -58,7 +58,7 @@ func (s *Service) Suggest(ctx context.Context, userID, entryID int64, tag string
 	}{{KindMistake, mistakes}, {KindEmotion, emotions}} {
 		for _, k := range kl.keys {
 			k = strings.TrimSpace(strings.ToLower(k))
-			if hasKey(kl.kind, k) && !have[kl.kind+":"+k] {
+			if hasKey(kl.kind, k) && Observable(kl.kind, k) && !have[kl.kind+":"+k] {
 				want = append(want, Suggestion{kl.kind, k})
 			}
 		}
@@ -111,23 +111,27 @@ func (s *Service) Suggestions(ctx context.Context, userID, entryID int64) ([]Sug
 	}
 	var out []Suggestion
 	for _, r := range rows {
-		switch r.Kind {
-		case SuggestTag:
-			if e.Tag != nil {
-				continue
-			}
-		case SuggestStrategy:
-			if e.StrategyID != nil {
-				continue
-			}
-		default:
-			if have[r.Kind+":"+r.Value] {
-				continue
-			}
+		if sg := (Suggestion{r.Kind, r.Value}); sg.Applies(e.Tag != nil, e.StrategyID != nil, have) {
+			out = append(out, sg)
 		}
-		out = append(out, Suggestion{r.Kind, r.Value})
 	}
 	return out, nil
+}
+
+// Applies reports whether an open suggestion still applies to its entry: a
+// tag or strategy only while that field is empty, a label not yet on the
+// entry and one the data can show (an older review may have proposed one it
+// could not). hasTag / hasStrategy say whether the entry holds one; have is
+// its labels as "kind:key".
+func (sg Suggestion) Applies(hasTag, hasStrategy bool, have map[string]bool) bool {
+	switch sg.Kind {
+	case SuggestTag:
+		return !hasTag
+	case SuggestStrategy:
+		return !hasStrategy
+	default:
+		return Observable(sg.Kind, sg.Value) && !have[sg.Kind+":"+sg.Value]
+	}
 }
 
 // AcceptSuggestion makes an open suggestion the trader's own value (source

@@ -61,6 +61,39 @@ func loadEntryLabels(ctx context.Context, db *sql.DB, entryIDs []int64) (map[int
 	return out, rows.Err()
 }
 
+// loadOpenSuggestions fetches the open AI suggestions of many entries in one
+// query (the feed), keyed by entry id, in the note's order: tag, strategy,
+// mistakes, emotions. Whether one still applies is the caller's check
+// (journal.Suggestion.Applies).
+func loadOpenSuggestions(ctx context.Context, db *sql.DB, entryIDs []int64) (map[int64][]journal.Suggestion, error) {
+	out := map[int64][]journal.Suggestion{}
+	if len(entryIDs) == 0 {
+		return out, nil
+	}
+	ph := strings.Repeat("?,", len(entryIDs))
+	ph = ph[:len(ph)-1]
+	args := make([]any, 0, len(entryIDs))
+	for _, id := range entryIDs {
+		args = append(args, id)
+	}
+	rows, err := db.QueryContext(ctx, `SELECT journal_entry_id, kind, value FROM journal_suggestions
+		WHERE status = 'open' AND journal_entry_id IN (`+ph+`)
+		ORDER BY journal_entry_id, CASE kind WHEN 'tag' THEN 0 WHEN 'strategy' THEN 1 WHEN 'mistake' THEN 2 ELSE 3 END, value`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("batch suggestions: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var sg journal.Suggestion
+		if err := rows.Scan(&id, &sg.Kind, &sg.Value); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], sg)
+	}
+	return out, rows.Err()
+}
+
 // feedRowIDs collects the entry ids of a feed page (batch loaders).
 func feedRowIDs(rows []feedRow) []int64 {
 	ids := make([]int64, 0, len(rows))
