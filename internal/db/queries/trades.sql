@@ -185,13 +185,18 @@ WHERE trades.id = ? AND trades.account_id IN (SELECT accounts.id FROM accounts W
 -- name: ListTradePlansForAccountSymbol :many
 -- The plans a rebuild must carry over (positions.Builder): the FIFO replay
 -- deletes and re-creates every trade of the (account, symbol) key.
-SELECT id, entry_time, planned_stop, planned_risk
+SELECT id, entry_time, planned_stop, planned_risk, planned_target
 FROM trades
 WHERE account_id = ? AND symbol = ?
-  AND (planned_stop IS NOT NULL OR planned_risk IS NOT NULL);
+  AND (planned_stop IS NOT NULL OR planned_risk IS NOT NULL OR planned_target IS NOT NULL);
 
 -- name: RestoreTradePlan :exec
-UPDATE trades SET planned_stop = ?, planned_risk = ? WHERE id = ?;
+UPDATE trades SET planned_stop = ?, planned_risk = ?, planned_target = ? WHERE id = ?;
+
+-- name: SetTradeTarget :execrows
+-- The plan's profit target on one of the user's trades (NULL clears it).
+UPDATE trades SET planned_target = ?
+WHERE trades.id = ? AND trades.account_id IN (SELECT accounts.id FROM accounts WHERE accounts.user_id = ?);
 
 -- name: SetTradeExcursion :exec
 -- MAE / MFE read off cached bars (internal/excursion). Points are always

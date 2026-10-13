@@ -393,6 +393,7 @@ type Trade struct {
 	MaePnl        *float64   `json:"mae_pnl"`
 	MfePnl        *float64   `json:"mfe_pnl"`
 	ExcursionTf   *string    `json:"excursion_tf"`
+	PlannedTarget *float64   `json:"planned_target"`
 }
 
 type TradeExecution struct {
