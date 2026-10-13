@@ -838,7 +838,7 @@ func TestRebuild_PreservesTradePlanAcrossRebuild(t *testing.T) {
 	if len(trades) != 1 {
 		t.Fatalf("setup expected 1 trade, got %d", len(trades))
 	}
-	if _, err := conn.Exec(`UPDATE trades SET planned_stop = 7248, planned_risk = 1 WHERE id = ?`, trades[0].ID); err != nil {
+	if _, err := conn.Exec(`UPDATE trades SET planned_stop = 7248, planned_risk = 1, planned_target = 7256 WHERE id = ?`, trades[0].ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := b.Rebuild(context.Background(), []Key{{accID, "ESM6"}}); err != nil {
@@ -850,6 +850,9 @@ func TestRebuild_PreservesTradePlanAcrossRebuild(t *testing.T) {
 	}
 	if trades[0].PlannedRisk == nil || *trades[0].PlannedRisk != 100 {
 		t.Errorf("planned_risk = %v, want 100 (2 pts x 50/pt x 1), recomputed from the stop", trades[0].PlannedRisk)
+	}
+	if trades[0].PlannedTarget == nil || *trades[0].PlannedTarget != 7256 {
+		t.Errorf("planned_target lost across rebuild: %v", trades[0].PlannedTarget)
 	}
 }
 

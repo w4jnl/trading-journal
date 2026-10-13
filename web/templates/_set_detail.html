@@ -43,10 +43,12 @@
   <span class="label">Plan</span>
   <label>Stop <input type="number" step="any" inputmode="decimal" name="stop" value="{{if .Stop}}{{printf "%g" (deref .Stop)}}{{end}}" placeholder="{{if .Mixed}}{{printf "%g" (deref .StopMin)}} to {{printf "%g" (deref .StopMax)}}{{else}}price, every leg{{end}}"></label>
   <label>Risk <input type="number" step="any" inputmode="decimal" name="risk" value="{{if gt .Priced 0}}{{printf "%.2f" .Risk}}{{end}}" placeholder="total, split by size"></label>
+  <label>Target <input type="number" step="any" inputmode="decimal" name="target" value="{{if .Target}}{{printf "%g" (deref .Target)}}{{end}}" placeholder="price, every leg"></label>
   <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
   <span class="trade-plan-hint">one stop price for every leg, each leg's risk from its own size and contract; a total risk alone splits by exposure{{if .Unpriced}} · <span class="warn-text">{{.Unpriced}} leg(s) have a stop but no instrument ticks to price it</span>{{end}}</span>
 </form>
 {{end}}
+{{template "ai_levels" (dict "Ref" (printf "set:%d" $.SetID) "Post" (printf "/trades/sets/%d" $.SetID) "Levels" $.Levels "Pending" $.LevelsPending "Error" $.LevelsError)}}
 
 <div class="row-sm" style="margin: 14px 0 6px; align-items: center;">
   <h3 style="margin: 0; font-size: 14px;">Accounts</h3>

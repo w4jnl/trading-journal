@@ -324,6 +324,18 @@ func (h *Handlers) funcMap() template.FuncMap {
 		// server default gets data-ai="off" on <body> (renderPage), which hides
 		// the .ai-action buttons.
 		"aiEnabled": func() bool { return h.AIJobs != nil },
+		// rewardRisk is the plan's reward over its risk in points ("" without
+		// a stop and a target on their sides of the entry).
+		"rewardRisk": func(entry float64, stop, target *float64) string {
+			if stop == nil || target == nil || *stop == entry {
+				return ""
+			}
+			rr := (*target - entry) / (entry - *stop)
+			if rr <= 0 {
+				return ""
+			}
+			return strconv.FormatFloat(math.Round(rr*10)/10, 'f', 1, 64)
+		},
 		// aiReviewingTrade / aiReviewingEntry: an AI review covering the
 		// trade, or of the entry, is running in the background (ids are
 		// global, so no user is needed). Lists show a spinner for it.

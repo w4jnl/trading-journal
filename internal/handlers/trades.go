@@ -87,6 +87,7 @@ type tradeRow struct {
 	NetPnl         *float64
 	PlannedStop    *float64 // the trade's plan (trade_plan.go); nil when none recorded
 	PlannedRisk    *float64 // money at risk; R = NetPnl / PlannedRisk
+	PlannedTarget  *float64 // the plan's profit target price; nil when none
 	MaePoints      *float64 // excursion off cached bars (internal/excursion); nil until measured
 	MfePoints      *float64
 	MaePnl         *float64
@@ -607,7 +608,11 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 			}
 		}
 	}
+	lv, lvPending, lvErr := h.levelsState(ctx, "trade:"+strconv.FormatInt(id, 10))
 	h.renderPartial(w, "_trade_detail.html", "trade_detail", map[string]any{
+		"Levels":           lv,
+		"LevelsPending":    lvPending,
+		"LevelsError":      lvErr,
 		"Trade":            trade,
 		"TradeID":          id,
 		"JournalOpen":      journalOpen,
@@ -631,6 +636,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"AIPending":        h.AIReviews.EntryPending(journalEntryID),
 		"AIError":          h.aiReviewError(r, journalEntryID),
 		"Suggestions":      h.entrySuggestions(ctx, journalEntryID),
+		"LevelsRef":        "trade:" + strconv.FormatInt(id, 10),
 		"LabelSrc":         h.labelSources(ctx, journalEntryID),
 		"TagSrc":           journalTagSrc,
 		"Strategies":       strategies,
@@ -707,7 +713,7 @@ func (h *Handlers) TradeJournalSave(w http.ResponseWriter, r *http.Request) {
 // membership.
 const tradeRowSelect = `SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
 	             t.entry_price, t.exit_price, t.entry_time, t.exit_time,
-	             t.gross_pnl, t.commission, t.net_pnl, t.planned_stop, t.planned_risk,
+	             t.gross_pnl, t.commission, t.net_pnl, t.planned_stop, t.planned_risk, t.planned_target,
 	             t.mae_points, t.mfe_points, t.mae_pnl, t.mfe_pnl, t.excursion_tf, t.status,
 	             a.name, a.firm, a.active,
 	             je.id, je.tag,
@@ -745,7 +751,7 @@ func scanTradeRows(ctx context.Context, db *sql.DB, q string, args ...any) ([]tr
 		if err := rs.Scan(
 			&r.ID, &r.AccountID, &r.Symbol, &r.SymbolRoot, &r.Direction, &r.Qty,
 			&r.EntryPrice, &r.ExitPrice, &r.EntryTime, &r.ExitTime,
-			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.PlannedStop, &r.PlannedRisk,
+			&r.GrossPnl, &r.Commission, &r.NetPnl, &r.PlannedStop, &r.PlannedRisk, &r.PlannedTarget,
 			&r.MaePoints, &r.MfePoints, &r.MaePnl, &r.MfePnl, &r.ExcursionTf, &r.Status,
 			&r.AccountName, &r.AccountFirm, &accountActive,
 			&journalID, &journalTag,

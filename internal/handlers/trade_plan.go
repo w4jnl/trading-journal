@@ -13,7 +13,8 @@ import (
 )
 
 // TradePlanSave handles POST /trades/{id}/plan: the trade sheet's Plan row.
-// Form fields: stop (price) and risk (money); an empty form clears the plan.
+// Form fields: stop (price), risk (money) and target (price); an empty form
+// clears the plan.
 // The risk follows the stop through the instrument's tick specs unless the
 // trader typed one, so "stop at 7840" is enough on a configured instrument
 // and a stub instrument still records the stop for later. R = net / risk
@@ -42,6 +43,11 @@ func (h *Handlers) TradePlanSave(w http.ResponseWriter, r *http.Request) {
 	risk, ok := parsePositiveFloat(r.FormValue("risk"))
 	if !ok {
 		http.Error(w, "risk must be a positive amount", http.StatusBadRequest)
+		return
+	}
+	target, ok := parsePositiveFloat(r.FormValue("target"))
+	if !ok {
+		http.Error(w, "target must be a positive price", http.StatusBadRequest)
 		return
 	}
 	// Either side derives the other through the instrument's point value:
@@ -75,11 +81,15 @@ func (h *Handlers) TradePlanSave(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if _, err := h.Queries.SetTradeTarget(ctx, models.SetTradeTargetParams{PlannedTarget: target, ID: id, UserID: userID(ctx)}); err != nil {
+		h.serverError(w, fmt.Errorf("set trade target: %w", err))
+		return
+	}
 	h.LiveData.Bump(userID(ctx))
 
 	msg := "Plan saved"
 	switch {
-	case stop == nil && risk == nil:
+	case stop == nil && risk == nil && target == nil:
 		msg = "Plan cleared"
 	case stop != nil && risk == nil:
 		msg = "Stop saved; set the instrument's tick size and value to derive the risk"

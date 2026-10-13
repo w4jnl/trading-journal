@@ -295,10 +295,11 @@ type setPlan struct {
 	StopMin  *float64
 	StopMax  *float64
 	Mixed    bool
-	Risk     float64 // summed planned risk
-	Priced   int     // legs with a risk
-	Unpriced int     // legs with a stop but no risk
-	Exposure float64 // sum of qty x point value over priced legs: money per point for the set
+	Risk     float64  // summed planned risk
+	Priced   int      // legs with a risk
+	Unpriced int      // legs with a stop but no risk
+	Exposure float64  // sum of qty x point value over priced legs: money per point for the set
+	Target   *float64 // uniform profit target, nil when none or mixed
 }
 
 // planOf folds the members' plans into the set's view and flags legs whose
@@ -329,6 +330,15 @@ func planOf(members []setMember, pointValue map[string]float64) setPlan {
 			p.Risk += *m.PlannedRisk
 			p.Priced++
 		}
+	}
+	// A target shows when every leg has the same one.
+	for i, m := range members {
+		if m.PlannedTarget == nil || (i > 0 && (p.Target == nil || *p.Target != *m.PlannedTarget)) {
+			p.Target = nil
+			break
+		}
+		tg := *m.PlannedTarget
+		p.Target = &tg
 	}
 	if p.StopMin != nil {
 		if *p.StopMin == *p.StopMax {
@@ -376,6 +386,11 @@ func (h *Handlers) TradeSetPlanSave(w http.ResponseWriter, r *http.Request) {
 	risk, ok := parsePositiveFloat(r.FormValue("risk"))
 	if !ok {
 		http.Error(w, "risk must be a positive amount", http.StatusBadRequest)
+		return
+	}
+	target, ok := parsePositiveFloat(r.FormValue("target"))
+	if !ok {
+		http.Error(w, "target must be a positive price", http.StatusBadRequest)
 		return
 	}
 	rows, err := h.loadSetRows(ctx, id)
@@ -493,6 +508,13 @@ func (h *Handlers) TradeSetPlanSave(w http.ResponseWriter, r *http.Request) {
 			msg = fmt.Sprintf("Risk %.2f split by exposure: stop %g on every leg (%.2f after tick rounding)", *risk, lo, total)
 		} else {
 			msg = fmt.Sprintf("Risk %.2f split by exposure: stops %g to %g (%.2f after tick rounding)", *risk, lo, hi, total)
+		}
+	}
+	// The target is a price, the same on every leg (empty clears it).
+	for _, m := range rows {
+		if _, err := h.Queries.SetTradeTarget(ctx, models.SetTradeTargetParams{PlannedTarget: target, ID: m.ID, UserID: userID(ctx)}); err != nil {
+			h.serverError(w, fmt.Errorf("set target: %w", err))
+			return
 		}
 	}
 	h.LiveData.Bump(userID(ctx))
@@ -625,6 +647,7 @@ func (h *Handlers) renderSetDetail(w http.ResponseWriter, r *http.Request, flash
 		"Flash":         flash,
 		"GroupBody":     "", // a string for aiAnalyzed even without a note
 	}
+	data["Levels"], data["LevelsPending"], data["LevelsError"] = h.levelsState(ctx, "set:"+strconv.FormatInt(id, 10))
 	if hasGroup {
 		data["AIPending"] = h.AIReviews.EntryPending(groupID)
 		data["AIError"] = h.aiReviewError(r, groupID)

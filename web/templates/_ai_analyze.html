@@ -66,3 +66,53 @@
 </span>
 {{end}}
 {{end}}
+
+{{/* ai_levels - "Suggest stop & target" on a trade or set sheet: the button,
+     the proposal while it is worked out (polling), or the proposal itself -
+     the levels with their reasons, what they would have done after the
+     entry, the candidates they were chosen from, and Use as plan / Discard.
+     Dict: Ref ("trade:N" / "set:N"), Post (the sheet's base URL), Levels
+     (*levelsView), Pending, Error. */}}
+{{define "ai_levels"}}
+{{if aiEnabled}}
+<div class="ai-levels ai-action">
+  {{if .Pending}}
+  <span class="ai-analyze ai-analyze--pending" role="status"><span class="ai-spinner" aria-hidden="true"></span><span>Working out a stop and a target from what was known at the entry…</span>
+    <span hidden hx-get="/ai/tasks/status?k=levels:{{.Ref}}&amp;then={{.Ref}}" hx-trigger="every 2s" hx-swap="none"></span></span>
+  {{else if .Levels}}{{$l := .Levels}}
+  <div class="ai-levels__card">
+    <div class="ai-levels__head"><strong>Proposed levels</strong> <span class="muted">{{$l.Model}}</span></div>
+    <div class="ai-levels__nums">
+      <span>Stop <strong class="num">{{printf "%g" $l.Stop}}</strong> <span class="pnl-neg">−{{printf "%.2f" $l.RiskPts}} pts</span></span>
+      <span>Target <strong class="num">{{printf "%g" $l.Target}}</strong> <span class="pnl-pos">+{{printf "%.2f" $l.RewardPts}} pts</span></span>
+      {{if $l.RewardRisk}}<span>reward:risk <strong class="num">{{printf "%.1f" $l.RewardRisk}}</strong></span>{{end}}
+    </div>
+    {{if $l.Reasons}}<ul class="ai-levels__why">{{range $l.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
+    <div class="ai-levels__after">
+      {{with $l.Outcome}}<span class="label">After the entry</span>
+        {{if eq .Hit "target"}}<span class="pnl-pos">the target was reached at {{$l.OutcomeAt}} (+{{printf "%.2f" .Points}} pts, {{printf "%.0f" .Minutes}} min in)</span>
+        {{else if eq .Hit "stop"}}<span class="pnl-neg">the stop was hit at {{$l.OutcomeAt}} ({{printf "%.2f" .Points}} pts, {{printf "%.0f" .Minutes}} min in)</span>
+        {{else if eq .Hit "both"}}<span class="pnl-neg">the {{$l.OutcomeAt}} bar reached both - which came first is unknown, so read it as the stop ({{printf "%.2f" .Points}} pts)</span>
+        {{else}}<span class="muted">neither within the cached bars ({{printf "%+.2f" .Points}} pts at the last bar, {{printf "%.0f" .Minutes}} min in)</span>{{end}}
+      {{else}}<span class="muted">No cached bars after the entry to check the levels against.</span>{{end}}
+      {{with $l.Actual}}{{$a := deref .}} · <span class="label">Your exit</span> <span class="{{pnlSign $a}}">{{printf "%+.2f" $a}} pts</span>{{end}}
+    </div>
+    <details class="ai-levels__cands"><summary>{{len $l.Candidates}} candidates, from what was known at the entry{{with $l.History}} · your record: {{.Scope}}, {{.N}} earlier decisions{{end}}</summary>
+      <table class="ai-levels__table"><tbody>
+        {{range $l.Stops}}<tr><td class="pnl-neg">stop</td><td class="num">{{printf "%g" .Price}}</td><td class="num muted">{{printf "%.2f" .Points}} pts</td><td class="muted">{{.Source}}</td><td>{{.Note}}</td></tr>{{end}}
+        {{range $l.Targets}}<tr><td class="pnl-pos">target</td><td class="num">{{printf "%g" .Price}}</td><td class="num muted">{{printf "%.2f" .Points}} pts</td><td class="muted">{{.Source}}</td><td>{{.Note}}</td></tr>{{end}}
+      </tbody></table>
+    </details>
+    <div class="row-sm" style="gap: 8px; margin-top: 8px;">
+      <button type="button" class="btn btn--primary btn--sm" hx-post="{{.Post}}/levels/apply" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="Set the stop (each leg's risk from its size) and the target as the plan">Use as plan</button>
+      <button type="button" class="btn btn--ghost btn--sm" hx-post="{{.Post}}/levels/discard" hx-target="#trade-sheet-content" hx-swap="innerHTML">Discard</button>
+    </div>
+  </div>
+  {{else}}
+  <button type="button" class="btn btn--secondary btn--sm" hx-post="{{.Post}}/levels" hx-target="#trade-sheet-content" hx-swap="innerHTML" hx-disabled-elt="this"
+          title="A stop and a target from what was known at the entry: the price structure before it, its volatility, your earlier winners and the gamma levels - then what they would have done">✨ Suggest stop &amp; target</button>
+  {{end}}
+  {{with .Error}}<div class="flash error" role="alert">Proposing levels failed: {{.}}</div>{{end}}
+</div>
+{{end}}
+{{end}}

@@ -147,7 +147,7 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 			entryExecByTrade[link.TradeID] = b.firstEntryExec(ctx, link.TradeID)
 		}
 	}
-	// Planned stops and risks ride along the same way: a trade's plan is
+	// Planned stops, risks and targets ride along the same way: a trade's plan is
 	// the trader's, not the replay's, and the delete below would lose it.
 	plans, err := b.Queries.ListTradePlansForAccountSymbol(ctx, models.ListTradePlansForAccountSymbolParams{
 		AccountID: k.AccountID,
@@ -276,7 +276,7 @@ func (b *Builder) rebuildOne(ctx context.Context, k Key) (int, error) {
 				}
 			}
 			if err := b.Queries.RestoreTradePlan(ctx, models.RestoreTradePlanParams{
-				PlannedStop: p.PlannedStop, PlannedRisk: risk, ID: newID,
+				PlannedStop: p.PlannedStop, PlannedRisk: risk, PlannedTarget: p.PlannedTarget, ID: newID,
 			}); err != nil {
 				return closed, fmt.Errorf("restore trade plan %d: %w", newID, err)
 			}

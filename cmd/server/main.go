@@ -809,6 +809,12 @@ func run() error {
 	mux.HandleFunc("POST /library/strategies/discover/create", h.StrategyDiscoverCreate)
 	mux.HandleFunc("POST /library/strategies/discover/discard", h.StrategyDiscoverDiscard)
 	mux.HandleFunc("GET /ai/tasks/status", h.AITaskStatus)
+	mux.HandleFunc("POST /trades/{id}/levels", h.TradeLevelsStart)
+	mux.HandleFunc("POST /trades/{id}/levels/apply", h.TradeLevelsApply)
+	mux.HandleFunc("POST /trades/{id}/levels/discard", h.TradeLevelsDiscard)
+	mux.HandleFunc("POST /trades/sets/{id}/levels", h.SetLevelsStart)
+	mux.HandleFunc("POST /trades/sets/{id}/levels/apply", h.SetLevelsApply)
+	mux.HandleFunc("POST /trades/sets/{id}/levels/discard", h.SetLevelsDiscard)
 	mux.HandleFunc("POST /library/playbook", h.PlaybookSave)
 	// Settings: per-user API key management (session + CSRF chain).
 	mux.HandleFunc("GET /settings", h.SettingsPage)
