@@ -227,7 +227,7 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 			// banner does not call an outage "session closed".
 			data["EngineNotes"] = h.gexHealthNotes(r.Context())
 		}
-		data["AIEnabled"] = h.AI != nil
+		data["AIEnabled"] = h.aiAvailable(r.Context())
 		if b, err := json.Marshal(view); err == nil {
 			page.View = b
 		}

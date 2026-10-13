@@ -418,6 +418,19 @@ type User struct {
 	AiLanguage   string     `json:"ai_language"`
 }
 
+type UserAiSetting struct {
+	UserID         int64      `json:"user_id"`
+	Provider       string     `json:"provider"`
+	Model          string     `json:"model"`
+	BaseUrl        string     `json:"base_url"`
+	ApiKeyEnc      []byte     `json:"api_key_enc"`
+	ApiKeyNonce    []byte     `json:"api_key_nonce"`
+	KeyHint        string     `json:"key_hint"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+	LastVerifiedAt *time.Time `json:"last_verified_at"`
+}
+
 type UserViewPref struct {
 	UserID    int64  `json:"user_id"`
 	Page      string `json:"page"`

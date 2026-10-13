@@ -10,11 +10,22 @@ import (
 
 // ---- web routes for server-side AI analysis (all under /ai/, session-authed) ----
 //
-// Every route is a no-op (404) when AIJobs is nil, i.e. ai.enabled is false.
+// Every route is a no-op (404) when AIJobs is nil (no server default and no
+// per-user keys). A user without a provider gets 409 with a pointer to Settings.
 
 // aiJobRunning reports whether the calling user has a day-analysis job in progress.
 func (h *Handlers) aiJobRunning(ctx context.Context) bool {
 	return h.AIJobs != nil && h.AIJobs.Running(userID(ctx))
+}
+
+// guardNoAIProvider writes a 409 and returns true when the calling user has no
+// provider (no own key, no server default); the message toasts in the page.
+func (h *Handlers) guardNoAIProvider(w http.ResponseWriter, r *http.Request) bool {
+	if !h.aiAvailable(r.Context()) {
+		http.Error(w, errNoAIProvider.Error(), http.StatusConflict)
+		return true
+	}
+	return false
 }
 
 // guardJournalingDuringAI writes a 409 and returns true when the user's AI day job
@@ -42,6 +53,9 @@ func (h *Handlers) renderAIStatus(w http.ResponseWriter, _ *http.Request, uid in
 func (h *Handlers) AIDayStart(w http.ResponseWriter, r *http.Request) {
 	if h.AIJobs == nil {
 		http.NotFound(w, r)
+		return
+	}
+	if h.guardNoAIProvider(w, r) {
 		return
 	}
 	user := auth.MustUser(r.Context())
@@ -88,7 +102,7 @@ func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if h.guardJournalingDuringAI(w, r) {
+	if h.guardNoAIProvider(w, r) || h.guardJournalingDuringAI(w, r) {
 		return
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -114,7 +128,7 @@ func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	if h.guardJournalingDuringAI(w, r) {
+	if h.guardNoAIProvider(w, r) || h.guardJournalingDuringAI(w, r) {
 		return
 	}
 	tradeID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)

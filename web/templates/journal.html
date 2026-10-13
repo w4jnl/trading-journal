@@ -17,7 +17,7 @@
 </div>
 
 {{if aiEnabled}}
-<div class="ai-panel">
+<div class="ai-panel ai-action">
   <button type="button" class="btn btn--primary btn--sm"
           hx-post="/ai/day/{{.Date}}" hx-target="#ai-status" hx-swap="outerHTML"
           title="Generate AI analysis for this day's entries that don't have one yet">✨ AI: analyze this day</button>

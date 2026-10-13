@@ -137,7 +137,7 @@
     })();
   </script>
 </head>
-<body>
+<body{{if .AIOff}} data-ai="off"{{end}}>
   <div class="app-shell">
     {{/* CSS-only mobile drawer: the hidden checkbox must live INSIDE .app-shell
          so the `:checked ~ .sidebar` / `:checked ~ .nav-backdrop` selectors

@@ -36,6 +36,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/mwmail"
 	"github.com/w4jnl/trading-journal/internal/oauth"
+	"github.com/w4jnl/trading-journal/internal/secretbox"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -424,8 +425,10 @@ func run() error {
 		}
 	}
 
-	// In-app AI analysis (server-side). Both nil when disabled; the handlers gate
-	// every AI route + UI affordance on AIJobs being non-nil.
+	// In-app AI analysis (server-side): a server-wide default client and/or
+	// per-user provider keys (stored under the secrets box). AIJobs is non-nil
+	// when either is possible; the handlers gate every AI route + UI affordance
+	// on it, and resolve each user's client per call.
 	// The app context: cancelled by SIGINT/SIGTERM, parent of every
 	// background job (AI analyses, sync workers, retention loops).
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -448,8 +451,20 @@ func run() error {
 			return fmt.Errorf("ai: %w", err)
 		}
 		aiClient = c
-		aiJobs = ai.NewJobManager(ctx)
 		slog.Info("AI analysis enabled", "provider", cfg.AI.Provider, "base_url", cfg.AI.BaseURL, "model", cfg.AI.Model)
+	}
+	var aiSecrets *secretbox.Box
+	if cfg.AIUserKeys() {
+		keyBytes, _ := cfg.SecretsKeyBytes()
+		box, err := secretbox.New(keyBytes)
+		if err != nil {
+			return fmt.Errorf("ai secret box: %w", err) // key length pre-validated; unexpected
+		}
+		aiSecrets = box
+		slog.Info("AI: users may bring their own provider key (Settings > AI)")
+	}
+	if aiClient != nil || aiSecrets != nil {
+		aiJobs = ai.NewJobManager(ctx)
 	}
 
 	// Gamma-exposure annotations (gex-engine). Nil when disabled; the
@@ -619,7 +634,7 @@ func run() error {
 	// section isn't explicitly disabled. Nil = feature off; the settings card
 	// then shows setup instructions.
 	var topstepxSync *topstepx.SyncService
-	if keyBytes, ok := cfg.TopstepX.EncryptionKeyBytes(); ok &&
+	if keyBytes, ok := cfg.TopstepXKeyBytes(); ok &&
 		(cfg.TopstepX.Enabled == nil || *cfg.TopstepX.Enabled) {
 		box, err := topstepx.NewSecretBox(keyBytes)
 		if err != nil {
@@ -696,6 +711,7 @@ func run() error {
 		OAuth:            oauthSrv,
 		AI:               aiClient,
 		AIJobs:           aiJobs,
+		AISecrets:        aiSecrets,
 		AIModel:          cfg.AI.Model,
 		GEX:              gexClient,
 		TopstepxSync:     topstepxSync,
@@ -795,6 +811,10 @@ func run() error {
 	mux.HandleFunc("POST /oauth/authorize", h.OAuthAuthorizeApprove)
 	mux.HandleFunc("GET /settings/api-docs/openapi.json", h.APIOpenAPI)
 	mux.HandleFunc("POST /settings/language", h.SettingsLanguageSave)
+	mux.HandleFunc("POST /settings/ai", h.SettingsAISave)
+	mux.HandleFunc("POST /settings/ai/test", h.SettingsAITest)
+	mux.HandleFunc("POST /settings/ai/delete", h.SettingsAIDelete)
+	mux.HandleFunc("POST /settings/ai/models", h.SettingsAIModels)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
 	mux.HandleFunc("POST /settings/topstepx/test", h.SettingsTopstepxTest)
