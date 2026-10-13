@@ -3,7 +3,7 @@
      row journal-icon in the /trades table via an out-of-band swap - no
      full-page reload. Ignored (no matching id) on the standalone journal page
      or when the trade isn't on the current /trades view. */}}
-{{if or (eq .Flash "saved") (eq .Flash "deleted") (eq .Flash "analyzed")}}
+{{if or (eq .Flash "saved") (eq .Flash "deleted") (eq .Flash "analyzed") (eq .Flash "accepted")}}
 <span id="trow-jicon-{{.TradeID}}" hx-swap-oob="true">{{if aiReviewingTrade .TradeID}}{{template "ai_pending_icon"}}{{else}}{{template "journal_icon" (journalState .HasJournal .JournalTag)}}{{end}}</span>
 {{end}}
 {{with .Trade}}
@@ -102,7 +102,7 @@
        missing note too, creating it). */}}
   {{if $.JournalBody}}
     {{if $.JournalOpen}}<div hidden data-journal-view>{{end}}
-    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}
+    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist "Suggestions" $.Suggestions "LabelSrc" $.LabelSrc "TagSrc" $.TagSrc "SuggestThen" (printf "trade:%d" $.TradeID) "SuggestTarget" "#trade-sheet-content")}}
     {{if $.JournalOpen}}</div>{{end}}
   {{else}}
     <div class="journal-view journal-view--empty" data-journal-view{{if $.JournalOpen}} hidden{{end}}>

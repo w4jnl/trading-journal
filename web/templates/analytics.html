@@ -21,6 +21,13 @@
     <a href="/analytics?{{.UnitTradesQS}}" class="{{if ne .Unit "sets"}}active{{end}}">Trades</a>
     <a href="/analytics?{{.UnitSetsQS}}" class="{{if eq .Unit "sets"}}active{{end}}" title="A copy set (one decision across accounts) counts once">Decisions</a>
   </span>
+  {{/* Whose tags, strategies and labels: all, or only what the trader set
+       or confirmed (leaves out values written through the API or an AI
+       tool and never saved in an editor). */}}
+  <span class="seg seg--sm" role="group" aria-label="Tags and labels" title="Whose tags, strategies and labels to count">
+    <a href="/analytics?{{.SrcAllQS}}" class="{{if not .SrcConfirmed}}active{{end}}">All labels</a>
+    <a href="/analytics?{{.SrcMineQS}}" class="{{if .SrcConfirmed}}active{{end}}" title="Leave out tags, strategies and labels set through the API or an AI tool that you have not confirmed">Confirmed by me</a>
+  </span>
   <span class="muted ml-auto"><span class="num">{{.TradeCount}}</span> closed trades{{if eq .Unit "sets"}} · <span class="num">{{.UnitCount}}</span> decisions{{end}}</span>
 </form>
 

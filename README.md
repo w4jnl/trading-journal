@@ -61,10 +61,11 @@ around it.
   writes a review into the journal, briefed for what it reviews (a trade's
   entry, risk and exit against its plan and price path; a copy set's
   consistency across accounts; a day against its plan; a week from the
-  digest) and headed by the model that wrote it. It fills what you left
-  unset when the evidence fits (the tag, and for a trade or group the
-  strategy and the mistake and emotion labels), never overwrites your
-  choice, and says at its foot what it filled. A review runs in the
+  digest) and headed by the model that wrote it. It never writes your tag,
+  strategy or labels: what it proposes shows on the note as dashed pills
+  to accept or dismiss (a dismissed one is not proposed again). Values
+  written through the API or MCP are marked until you save the note, and
+  analytics can count only what you set or confirmed ("Confirmed by me"). A review runs in the
   background: it carries on when you close the sheet or leave the page,
   the note shows a spinner wherever it is listed (trades, sets, the
   journal feed) and cannot be edited until the review lands. A whole-day

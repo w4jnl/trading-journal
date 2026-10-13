@@ -41,7 +41,7 @@
 
 <section class="journal-entry{{if .AIPending}} journal-entry--locked{{end}}" id="journal-entry" data-journal-entry>
   {{if .AIPending}}{{template "ai_review_lock"}}{{end}}
-  {{if .Entry.Body}}{{if .JournalOpen}}<div hidden data-journal-view>{{end}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions)}}{{if .JournalOpen}}</div>{{end}}{{end}}
+  {{if .Entry.Body}}{{if .JournalOpen}}<div hidden data-journal-view>{{end}}{{template "journal_view" (dict "Body" .Entry.Body "Tag" $.Tag "ID" .Entry.ID "Mistakes" $.Mistakes "Emotions" $.Emotions "Suggestions" $.Suggestions "LabelSrc" $.LabelSrc "TagSrc" $.TagSrc)}}{{if .JournalOpen}}</div>{{end}}{{end}}
   <form method="post" action="/journal/{{.Date}}" class="journal-form"{{if and .Entry.Body (not .JournalOpen)}} hidden{{end}}>
     {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
     <div class="row-sm" style="margin-bottom: 12px; gap: 24px; align-items: flex-start; flex-wrap: wrap;">

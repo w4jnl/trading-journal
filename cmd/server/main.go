@@ -866,6 +866,7 @@ func run() error {
 	mux.HandleFunc("POST /ai/note/day/{date}", h.AIAnalyzeDayNote)
 	mux.HandleFunc("POST /ai/note/week/{week}", h.AIAnalyzeWeekNote)
 	mux.HandleFunc("GET /ai/review/{id}", h.AIReviewStatus)
+	mux.HandleFunc("POST /journal/suggestions/{id}", h.JournalSuggestion)
 	mux.HandleFunc("GET /calendar", h.CalendarPage)
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	mux.HandleFunc("GET /analytics", h.AnalyticsPage)

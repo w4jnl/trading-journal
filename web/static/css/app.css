@@ -1923,6 +1923,16 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .journal-entry--locked [data-journal-cancel] { display: none !important; }
 .ai-spinner--icon { margin: 2px; }
 .ai-pending-pill { display: inline-flex; align-items: center; gap: 4px; }
+/* AI review suggestions: dashed pills with accept / dismiss. */
+.ai-suggest { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.ai-suggest-pill { display: inline-flex; align-items: center; gap: 2px; margin: 0; padding: 1px 2px 1px 8px;
+  border: 1px dashed var(--accent); border-radius: 999px; font-size: var(--fs-12); color: var(--fg-muted); background: transparent; }
+.ai-suggest-pill__btn { border: 0; background: transparent; cursor: pointer; padding: 0 5px; font-size: var(--fs-12);
+  color: var(--fg-muted); border-radius: 999px; line-height: 1.6; }
+.ai-suggest-pill__btn:hover { color: var(--fg); background: var(--bg-sunken); }
+/* A value written through the API or an AI tool, not yet confirmed in an editor. */
+.pill--api { border-style: dashed !important; border-width: 1px; }
+.pill--api::after { content: " · API"; opacity: 0.6; font-size: 0.85em; }
 .ai-model-line { margin: 8px 0 0; font-size: var(--fs-12); color: var(--fg-muted); font-style: italic; }
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */

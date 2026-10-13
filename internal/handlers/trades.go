@@ -564,7 +564,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 	// Trade-level journal entry, if one exists. JournalEntryID is passed to
 	// the editor so image uploads can be associated with the entry; 0 means
 	// "no entry yet" and the attachment endpoint accepts that.
-	var journalBody, journalTag string
+	var journalBody, journalTag, journalTagSrc string
 	var hasJournal bool
 	var journalEntryID int64
 	var journalStrategyID *int64
@@ -577,6 +577,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		if entry.Tag != nil {
 			journalTag = *entry.Tag
 		}
+		journalTagSrc = sourceOf(entry.TagSource)
 		journalRendered = template.HTML(renderMarkdown(entry.Body))
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		h.serverError(w, fmt.Errorf("get trade journal: %w", err))
@@ -629,6 +630,9 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"Flash":            flash,
 		"AIPending":        h.AIReviews.EntryPending(journalEntryID),
 		"AIError":          h.aiReviewError(r, journalEntryID),
+		"Suggestions":      h.entrySuggestions(ctx, journalEntryID),
+		"LabelSrc":         h.labelSources(ctx, journalEntryID),
+		"TagSrc":           journalTagSrc,
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(journalStrategyID),
 		"AssignedStrategy": h.loadAssignedStrategy(r, journalStrategyID),

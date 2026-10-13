@@ -155,7 +155,11 @@ func (h *Handlers) APIAnalyticsSummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.syncForAPIRead(r.Context(), apiWantsRefresh(r))
-	out, err := h.analyticsSummaryFor(r.Context(), af, rng, analyticsUnit(r))
+	ctx := r.Context()
+	if r.URL.Query().Get("src") == "confirmed" {
+		ctx = withConfirmedOnly(ctx) // only what the trader set or confirmed
+	}
+	out, err := h.analyticsSummaryFor(ctx, af, rng, analyticsUnit(r))
 	if err != nil {
 		h.logger().Warn("api analytics: load failed", "err", err)
 		writeJSONError(w, http.StatusInternalServerError, "could not load analytics")

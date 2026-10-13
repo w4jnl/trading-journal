@@ -23,30 +23,112 @@ func (q *Queries) DeleteEntryLabelsOfKind(ctx context.Context, arg DeleteEntryLa
 	return err
 }
 
+const deleteSuggestion = `-- name: DeleteSuggestion :exec
+DELETE FROM journal_suggestions WHERE journal_entry_id = ? AND kind = ? AND value = ?
+`
+
+type DeleteSuggestionParams struct {
+	JournalEntryID int64  `json:"journal_entry_id"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+}
+
+func (q *Queries) DeleteSuggestion(ctx context.Context, arg DeleteSuggestionParams) error {
+	_, err := q.db.ExecContext(ctx, deleteSuggestion, arg.JournalEntryID, arg.Kind, arg.Value)
+	return err
+}
+
+const dismissSuggestion = `-- name: DismissSuggestion :exec
+UPDATE journal_suggestions SET status = 'dismissed'
+WHERE journal_entry_id = ? AND kind = ? AND value = ?
+`
+
+type DismissSuggestionParams struct {
+	JournalEntryID int64  `json:"journal_entry_id"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+}
+
+func (q *Queries) DismissSuggestion(ctx context.Context, arg DismissSuggestionParams) error {
+	_, err := q.db.ExecContext(ctx, dismissSuggestion, arg.JournalEntryID, arg.Kind, arg.Value)
+	return err
+}
+
+const dropOtherOpenSuggestions = `-- name: DropOtherOpenSuggestions :exec
+DELETE FROM journal_suggestions
+WHERE journal_entry_id = ? AND kind = ? AND status = 'open' AND value != ?
+`
+
+type DropOtherOpenSuggestionsParams struct {
+	JournalEntryID int64  `json:"journal_entry_id"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+}
+
+// A tag or strategy takes one value: a newer review's proposal replaces the
+// open one before it (a dismissed one stays, so it is not proposed again).
+func (q *Queries) DropOtherOpenSuggestions(ctx context.Context, arg DropOtherOpenSuggestionsParams) error {
+	_, err := q.db.ExecContext(ctx, dropOtherOpenSuggestions, arg.JournalEntryID, arg.Kind, arg.Value)
+	return err
+}
+
+const getSuggestion = `-- name: GetSuggestion :one
+SELECT kind, value, status FROM journal_suggestions
+WHERE journal_entry_id = ? AND kind = ? AND value = ?
+`
+
+type GetSuggestionParams struct {
+	JournalEntryID int64  `json:"journal_entry_id"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+}
+
+type GetSuggestionRow struct {
+	Kind   string `json:"kind"`
+	Value  string `json:"value"`
+	Status string `json:"status"`
+}
+
+func (q *Queries) GetSuggestion(ctx context.Context, arg GetSuggestionParams) (GetSuggestionRow, error) {
+	row := q.db.QueryRowContext(ctx, getSuggestion, arg.JournalEntryID, arg.Kind, arg.Value)
+	var i GetSuggestionRow
+	err := row.Scan(&i.Kind, &i.Value, &i.Status)
+	return i, err
+}
+
 const insertEntryLabel = `-- name: InsertEntryLabel :exec
-INSERT OR IGNORE INTO journal_entry_labels (journal_entry_id, kind, label) VALUES (?, ?, ?)
+INSERT OR IGNORE INTO journal_entry_labels (journal_entry_id, kind, label, source) VALUES (?, ?, ?, ?)
 `
 
 type InsertEntryLabelParams struct {
 	JournalEntryID int64  `json:"journal_entry_id"`
 	Kind           string `json:"kind"`
 	Label          string `json:"label"`
+	Source         string `json:"source"`
 }
 
+// source: 'trader' (a page editor or an accepted suggestion) or 'api'. A
+// label already present keeps its row (and source).
 func (q *Queries) InsertEntryLabel(ctx context.Context, arg InsertEntryLabelParams) error {
-	_, err := q.db.ExecContext(ctx, insertEntryLabel, arg.JournalEntryID, arg.Kind, arg.Label)
+	_, err := q.db.ExecContext(ctx, insertEntryLabel,
+		arg.JournalEntryID,
+		arg.Kind,
+		arg.Label,
+		arg.Source,
+	)
 	return err
 }
 
 const listEntryLabels = `-- name: ListEntryLabels :many
-SELECT kind, label FROM journal_entry_labels
+SELECT kind, label, source FROM journal_entry_labels
 WHERE journal_entry_id = ?
 ORDER BY kind, label
 `
 
 type ListEntryLabelsRow struct {
-	Kind  string `json:"kind"`
-	Label string `json:"label"`
+	Kind   string `json:"kind"`
+	Label  string `json:"label"`
+	Source string `json:"source"`
 }
 
 func (q *Queries) ListEntryLabels(ctx context.Context, journalEntryID int64) ([]ListEntryLabelsRow, error) {
@@ -58,7 +140,7 @@ func (q *Queries) ListEntryLabels(ctx context.Context, journalEntryID int64) ([]
 	var items []ListEntryLabelsRow
 	for rows.Next() {
 		var i ListEntryLabelsRow
-		if err := rows.Scan(&i.Kind, &i.Label); err != nil {
+		if err := rows.Scan(&i.Kind, &i.Label, &i.Source); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -70,4 +152,96 @@ func (q *Queries) ListEntryLabels(ctx context.Context, journalEntryID int64) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const listOpenSuggestions = `-- name: ListOpenSuggestions :many
+SELECT kind, value FROM journal_suggestions
+WHERE journal_entry_id = ? AND status = 'open'
+ORDER BY CASE kind WHEN 'tag' THEN 0 WHEN 'strategy' THEN 1 WHEN 'mistake' THEN 2 ELSE 3 END, value
+`
+
+type ListOpenSuggestionsRow struct {
+	Kind  string `json:"kind"`
+	Value string `json:"value"`
+}
+
+func (q *Queries) ListOpenSuggestions(ctx context.Context, journalEntryID int64) ([]ListOpenSuggestionsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenSuggestions, journalEntryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListOpenSuggestionsRow
+	for rows.Next() {
+		var i ListOpenSuggestionsRow
+		if err := rows.Scan(&i.Kind, &i.Value); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const markEntrySourcesTrader = `-- name: MarkEntrySourcesTrader :exec
+UPDATE journal_entries
+SET tag_source = CASE WHEN tag IS NULL THEN NULL ELSE 'trader' END,
+    strategy_source = CASE WHEN strategy_id IS NULL THEN NULL ELSE 'trader' END
+WHERE id = ?
+`
+
+// A page save: whatever tag and strategy the entry now holds are the trader's.
+func (q *Queries) MarkEntrySourcesTrader(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, markEntrySourcesTrader, id)
+	return err
+}
+
+const setEntryStrategySource = `-- name: SetEntryStrategySource :exec
+UPDATE journal_entries SET strategy_source = ? WHERE id = ?
+`
+
+type SetEntryStrategySourceParams struct {
+	StrategySource *string `json:"strategy_source"`
+	ID             int64   `json:"id"`
+}
+
+func (q *Queries) SetEntryStrategySource(ctx context.Context, arg SetEntryStrategySourceParams) error {
+	_, err := q.db.ExecContext(ctx, setEntryStrategySource, arg.StrategySource, arg.ID)
+	return err
+}
+
+const setEntryTagSource = `-- name: SetEntryTagSource :exec
+UPDATE journal_entries SET tag_source = ? WHERE id = ?
+`
+
+type SetEntryTagSourceParams struct {
+	TagSource *string `json:"tag_source"`
+	ID        int64   `json:"id"`
+}
+
+func (q *Queries) SetEntryTagSource(ctx context.Context, arg SetEntryTagSourceParams) error {
+	_, err := q.db.ExecContext(ctx, setEntryTagSource, arg.TagSource, arg.ID)
+	return err
+}
+
+const upsertSuggestion = `-- name: UpsertSuggestion :exec
+INSERT INTO journal_suggestions (journal_entry_id, kind, value) VALUES (?, ?, ?)
+ON CONFLICT (journal_entry_id, kind, value) DO NOTHING
+`
+
+type UpsertSuggestionParams struct {
+	JournalEntryID int64  `json:"journal_entry_id"`
+	Kind           string `json:"kind"`
+	Value          string `json:"value"`
+}
+
+// A dismissed suggestion stays dismissed when a later review proposes it again.
+func (q *Queries) UpsertSuggestion(ctx context.Context, arg UpsertSuggestionParams) error {
+	_, err := q.db.ExecContext(ctx, upsertSuggestion, arg.JournalEntryID, arg.Kind, arg.Value)
+	return err
 }
