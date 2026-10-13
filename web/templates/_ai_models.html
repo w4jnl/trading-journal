@@ -1,0 +1,8 @@
+{{/* Settings > AI model suggestions, swapped into #ai-models by "Load models".
+     Data: Models ([]string), Err (string). */}}
+{{define "ai_models"}}
+<datalist id="ai-model-list">{{range .Models}}<option value="{{.}}"></option>{{end}}</datalist>
+{{if .Err}}<span class="ai-models-msg ai-models-msg--err" role="alert">{{.Err}}</span>
+{{else if .Models}}<span class="ai-models-msg">{{len .Models}} models available - pick one in the Model field.</span>
+{{else}}<span class="ai-models-msg">The provider listed no models; type the model id.</span>{{end}}
+{{end}}

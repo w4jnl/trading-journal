@@ -17,6 +17,9 @@
 {{if eq .Flash "oauth-revoked"}}<div class="flash saved mb-16">Connected app revoked — its tokens no longer work.</div>{{end}}
 {{if eq .Flash "oauth-deleted"}}<div class="flash saved mb-16">Connected app removed.</div>{{end}}
 {{if eq .Flash "language"}}<div class="flash saved mb-16">Language saved.</div>{{end}}
+{{if eq .Flash "ai-saved"}}<div class="flash saved mb-16">AI provider verified and saved — reviews now run on your key.</div>{{end}}
+{{if eq .Flash "ai-test-ok"}}<div class="flash saved mb-16">AI provider answered — your key works.</div>{{end}}
+{{if eq .Flash "ai-removed"}}<div class="flash saved mb-16">Your AI provider and key were removed.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
 {{if eq .Flash "topstepx-test-ok"}}<div class="flash saved mb-16">TopstepX connection OK.</div>{{end}}
@@ -162,8 +165,75 @@
 </script>
 
 {{if .AIEnabled}}
-<div class="card mb-16">
-  <div class="card-title">AI analysis language</div>
+<div class="card mb-16" id="ai">
+  <div class="card-title">AI reviews</div>
+  {{with .AI}}{{$own := .Own}}
+  {{if $own}}
+  <div class="row-sm" style="gap: 16px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px;">
+    <span>Provider: <strong>{{.OwnLabel}}</strong></span>
+    <span>Model: <code>{{$own.Model}}</code></span>
+    {{if $own.BaseUrl}}<span class="muted">{{$own.BaseUrl}}</span>{{end}}
+    <span class="muted">API key: {{if $own.KeyHint}}…{{$own.KeyHint}}{{else if $own.ApiKeyEnc}}••••••••{{else}}none{{end}}{{if $own.ApiKeyEnc}} (stored encrypted){{end}}</span>
+    {{if $own.LastVerifiedAt}}<span class="muted" style="font-size: 12px;">verified {{ltimep $own.LastVerifiedAt "datetime"}}</span>{{end}}
+  </div>
+  <div class="row-sm" style="gap: 8px; margin-bottom: 12px;">
+    <form method="post" action="/settings/ai/test" style="display: inline;" data-busy="Testing…">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn--secondary btn--sm">Test connection</button>
+    </form>
+    <form method="post" action="/settings/ai/delete" style="display: inline;"
+          data-confirm="Remove your AI provider and key?{{if .ServerModel}} Reviews go back to the server's model.{{end}}">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      <button type="submit" class="btn btn--ghost btn--sm">Remove</button>
+    </form>
+  </div>
+  {{else if .ServerModel}}
+  <p class="muted" style="font-size: 12px;">
+    Reviews run on this server's model (<code>{{.ServerModel}}</code>).{{if .UserKeys}} Add your own key
+    below to run them on a hosted provider instead.{{end}}
+  </p>
+  {{else}}
+  <p class="muted" style="font-size: 12px;">No AI provider yet: add your API key below to turn on the ✨ Analyze buttons.</p>
+  {{end}}
+
+  {{if .UserKeys}}
+  <form method="post" action="/settings/ai" id="ai-provider-form" class="row-sm" data-busy="Testing…"
+        style="margin: 10px 0 6px; gap: 8px; flex-wrap: wrap;">
+    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+    <label class="field"><span class="field-label">Provider</span>
+      <select name="provider" required>
+        {{range .Presets}}<option value="{{.ID}}" {{if and $own (eq .ID $own.Provider)}}selected{{end}}>{{.Label}}</option>{{end}}
+        {{if .IsAdmin}}<option value="custom" {{if and $own (eq $own.Provider "custom")}}selected{{end}}>Custom URL (OpenAI-compatible, admin)</option>{{end}}
+      </select></label>
+    <label class="field"><span class="field-label">API key</span>
+      <input type="password" name="api_key" autocomplete="new-password" spellcheck="false" style="width: 240px;"
+             placeholder="{{if $own}}blank = keep the stored key{{else}}paste your key{{end}}"></label>
+    <label class="field"><span class="field-label">Model</span>
+      <input type="text" name="model" list="ai-model-list" required autocomplete="off" spellcheck="false" style="width: 240px;"
+             value="{{with $own}}{{.Model}}{{end}}" placeholder="Load models, or type an id"></label>
+    {{if .IsAdmin}}
+    <label class="field"><span class="field-label">Base URL (custom only)</span>
+      <input type="url" name="base_url" spellcheck="false" style="width: 220px;"
+             value="{{with $own}}{{.BaseUrl}}{{end}}" placeholder="http://host:8080/v1"></label>
+    {{end}}
+    <button type="submit" class="btn btn--primary btn--sm" style="align-self: flex-end;">Test &amp; save</button>
+  </form>
+  <div class="row-sm ai-models-row">
+    <button type="button" class="btn btn--secondary btn--sm" hx-post="/settings/ai/models" hx-include="#ai-provider-form"
+            hx-target="#ai-models" hx-swap="innerHTML" hx-disabled-elt="this">Load models</button>
+    <div id="ai-models" class="ai-models"><datalist id="ai-model-list"></datalist><span class="ai-models-msg">Lists the models your key can use.</span></div>
+  </div>
+  <p class="muted" style="font-size: 12px;">
+    Get a key: {{range $i, $p := .Presets}}{{if $i}} · {{end}}<a href="{{$p.KeyURL}}" target="_blank" rel="noopener noreferrer">{{$p.Label}}</a>{{end}}.
+    A ChatGPT or Claude subscription does not include API access: the provider bills API use separately,
+    typically a few cents per review. Saving checks the key with a one-word test call, then stores it encrypted.
+    The reviewed trades, P&amp;L and notes go to the provider you choose; on free tiers some providers
+    (Gemini, Mistral) may train on what you send, so prefer a key with billing enabled.
+  </p>
+  {{end}}
+  {{end}}
+
+  <div class="field-label" style="margin-top: 14px;">Review language</div>
   <p class="muted" style="font-size: 12px;">
     The in-app AI writes journal reviews in this language. This does not change the app
     interface or the external (Claude/ChatGPT) analyzers.

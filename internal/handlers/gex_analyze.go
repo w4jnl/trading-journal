@@ -350,7 +350,7 @@ func (h *Handlers) gexAttachAnalysis(ctx context.Context, v *gexview.View, marke
 // scrub position. ?force=1 regenerates and replaces the stored text.
 func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
-	if h.GEX == nil || h.AI == nil {
+	if h.GEX == nil || !h.aiPossible() {
 		http.NotFound(w, r)
 		return
 	}
@@ -388,12 +388,21 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		body = h.gexAnalysisFor(ctx, market, s.AsOf)
 	}
 	if body == "" {
+		client, model, err := h.aiFor(ctx)
+		if err != nil {
+			status := http.StatusBadGateway
+			if errors.Is(err, errNoAIProvider) {
+				status = http.StatusConflict
+			}
+			http.Error(w, err.Error(), status)
+			return
+		}
 		lang := h.userAILanguage(ctx)
 		user := gexAnalysisFacts(s, market)
 		if lang != "" {
 			user = "Reply in " + lang + ".\n\n" + user
 		}
-		out, err := h.AI.Generate(ctx, gexAnalysisPromptFor(lang), user)
+		out, err := client.Generate(ctx, gexAnalysisPromptFor(lang), user)
 		if err != nil {
 			h.logger().Warn("gex analyze: generate failed", "market", market, "err", err)
 			http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
@@ -406,7 +415,7 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		}
 		if err := h.Queries.UpsertGexAnalysis(ctx, models.UpsertGexAnalysisParams{
 			UserID: userID(ctx), Market: market, AsOf: gexAnalysisKey(s.AsOf),
-			Model: h.gexAnalysisModel(), Body: body,
+			Model: model, Body: body,
 		}); err != nil {
 			// The read is still worth showing; only its retention failed.
 			h.logger().Error("gex analysis not retained", "market", market, "err", err)
@@ -417,7 +426,3 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		"Analysis": body,
 	})
 }
-
-// gexAnalysisModel records which model produced a stored read, so a retained
-// analysis can be told apart after the configured model changes.
-func (h *Handlers) gexAnalysisModel() string { return h.AIModel }

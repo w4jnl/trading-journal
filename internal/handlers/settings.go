@@ -41,7 +41,8 @@ func allowedAILanguage(v string) bool {
 	return false
 }
 
-// SettingsPage: GET /settings - the user's API keys + AI-review language.
+// SettingsPage: GET /settings - the user's API keys, AI provider and review
+// language, account visibility and sync connections.
 func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
 	h.renderSettings(w, r, "")
 }
@@ -155,6 +156,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"AILanguage":      h.userAILanguage(ctx),
 		"AILanguages":     aiLanguageOptions,
 		"AIEnabled":       h.AIJobs != nil,
+		"AI":              h.aiSettings(ctx),
 		"VisGroups":       visGroups,
 		"VisTotal":        len(visAccounts),
 		"TopstepxEnabled": h.TopstepxSync != nil,

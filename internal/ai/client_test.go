@@ -52,6 +52,14 @@ func TestOpenAIClientGenerate(t *testing.T) {
 	if gotBody["model"] != "test-model" {
 		t.Errorf("model = %v", gotBody["model"])
 	}
+	// The server-wide default keeps its configured sampling and the classic
+	// max_tokens name.
+	if gotBody["temperature"] != 0.3 || gotBody["max_tokens"] != float64(256) {
+		t.Errorf("temperature/max_tokens = %v/%v, want 0.3/256", gotBody["temperature"], gotBody["max_tokens"])
+	}
+	if _, ok := gotBody["max_completion_tokens"]; ok {
+		t.Error("max_completion_tokens sent without CompletionTokens")
+	}
 	msgs, _ := gotBody["messages"].([]any)
 	if len(msgs) != 2 {
 		t.Fatalf("messages = %v (want system+user)", gotBody["messages"])
@@ -70,8 +78,11 @@ func TestNewValidation(t *testing.T) {
 	if _, err := New(Options{Provider: "openai", BaseURL: "http://x/v1"}); err == nil {
 		t.Error("want error for missing model")
 	}
-	if _, err := New(Options{Provider: "anthropic", BaseURL: "http://x", Model: "m"}); err == nil {
+	if _, err := New(Options{Provider: "bogus", BaseURL: "http://x", Model: "m"}); err == nil {
 		t.Error("want error for unknown provider")
+	}
+	if _, err := New(Options{Provider: "anthropic", BaseURL: "http://x", Model: "m"}); err != nil {
+		t.Errorf("anthropic provider rejected: %v", err)
 	}
 }
 

@@ -138,11 +138,11 @@
     {{range .Emotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
     {{with .Checklist}}<span class="pill checklist-pill {{if .Complete}}checklist-pill--ok{{else}}checklist-pill--miss{{end}}" title="Playbook rules ticked on this note">Playbook {{.Done}}/{{.Total}}</span>{{end}}
     {{if and aiEnabled .ID (not .HideAnalyze) (not (aiAnalyzed .Body))}}
-    <button type="button" class="btn btn--secondary btn--sm"
+    <button type="button" class="btn btn--secondary btn--sm ai-action"
             hx-post="/ai/entry/{{.ID}}" hx-swap="none"
             hx-disabled-elt="this" hx-indicator="#ai-entry-spin"
             title="Append an AI review of these trades to this entry, and fill in an unset tag/strategy that fits">✨ Analyze</button>
-    <span id="ai-entry-spin" class="htmx-indicator ai-spinner" aria-hidden="true"></span>
+    <span id="ai-entry-spin" class="htmx-indicator ai-spinner ai-action" aria-hidden="true"></span>
     {{end}}
     <button type="button" class="btn btn--secondary btn--sm journal-view__edit" data-journal-edit>Edit</button>
   </div>

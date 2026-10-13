@@ -55,6 +55,13 @@ around it.
   them, the best and worst decision, the coach's findings tallied across
   the days and how the day plans held; downloadable as markdown, served
   to the API and MCP, and the basis of the AI's week review.
+- **AI reviews** in the app: ✨ Analyze on a trade, a note or a whole day
+  writes a review into the journal (grounded in the trades, the coach's
+  checks, the day plan and your playbooks) and fills an unset tag or
+  strategy when one clearly fits. Each user runs it on **their own
+  provider key** (Settings → AI: OpenAI, Anthropic, Google Gemini,
+  Mistral, OpenRouter), or on a server-wide default such as a local
+  model. See [In-app AI reviews](#in-app-ai-reviews).
 - **Calendar** is the at-a-glance month view with per-day P&L heat and
   weekly summaries — clicking a day pivots to the trades on it.
 - **Exports** to Markdown and PDF, filterable by the same controls as
@@ -131,7 +138,11 @@ tokens, session-id binding, and the act-as cookie -- set it to any
 For deployments where the config file is checked in, the secret can
 also be supplied at runtime via the `TJ_SESSION_SECRET` environment
 variable (Docker secrets, systemd `EnvironmentFile`, etc.); the
-env value overrides whatever is in the YAML.
+env value overrides whatever is in the YAML. Likewise
+`secrets.encryption_key` (`TJ_ENCRYPTION_KEY`), the key users' stored
+AI provider keys and TopstepX credentials are encrypted under: generate
+it with `openssl rand -hex 32` and back it up with the config, since
+losing it means every user re-enters their keys.
 
 ### Managing users
 
@@ -285,6 +296,30 @@ analysis workflow ships as the **`trading-journal-analyst`** skill
 groups copytrader fan-out, writes the per-trade/group analysis once, and
 synthesizes the daily journal. See **[API.md](API.md)** for the MCP tool
 list and setup.
+
+### In-app AI reviews
+
+The ✨ Analyze buttons call an AI provider from the server. Two sources,
+usable together:
+
+- **Each user's own key** (Settings → AI). Pick OpenAI, Anthropic
+  (Claude), Google Gemini, Mistral or OpenRouter, paste an API key and a
+  model (**Load models** lists the ones the key can use). Saving makes
+  a one-word test call first and stores the key AES-256-GCM encrypted;
+  a user's own provider wins over the server default. Admins can also
+  enter any OpenAI-compatible URL (a local model server, Groq, ...);
+  regular users get the fixed hosted endpoints only, so nobody can point
+  the server at an internal host. This needs `secrets.encryption_key`
+  (or an existing `topstepx.encryption_key`, which serves both) and is on
+  by default once one is set; `ai.user_keys: false` turns it off.
+- **A server-wide default** (`ai.enabled` with an OpenAI-compatible
+  `ai.base_url`, e.g. a local MLX server) for every user without a key.
+
+With neither, a user sees no AI buttons. A ChatGPT or Claude
+subscription does not include API access: the providers bill API keys
+per use, separately from the subscription (a review is a few thousand
+tokens). Those subscriptions instead reach the journal the other way
+round, through the MCP connector above.
 
 ## Quick start (Docker)
 

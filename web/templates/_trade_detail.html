@@ -84,11 +84,11 @@
       <h3 style="margin: 0;">Journal</h3>
       {{if $.JournalEntryID}}{{template "id_ref" (dict "Label" "Entry" "ID" $.JournalEntryID)}}{{end}}
       {{if and aiEnabled (not (aiAnalyzed $.JournalBody))}}
-      <button type="button" class="btn btn--secondary btn--sm"
+      <button type="button" class="btn btn--secondary btn--sm ai-action"
               hx-post="/ai/trade/{{$.TradeID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
               hx-disabled-elt="this" hx-indicator="#ai-trade-spin"
               title="Analyze this trade with AI (creates or appends to its journal entry)">✨ Analyze</button>
-      <span id="ai-trade-spin" class="htmx-indicator ai-spinner" aria-hidden="true"></span>
+      <span id="ai-trade-spin" class="htmx-indicator ai-spinner ai-action" aria-hidden="true"></span>
       {{end}}
     </div>
     <span class="muted" style="font-size: 11px;">Empty body deletes the entry.</span>

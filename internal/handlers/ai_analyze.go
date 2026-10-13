@@ -243,8 +243,9 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 // you set is never overwritten. force re-analyzes even if already marked.
 func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) (aiAnalyzeResult, error) {
 	res := aiAnalyzeResult{EntryID: entryID}
-	if h.AI == nil {
-		return res, fmt.Errorf("ai analysis is disabled")
+	client, _, err := h.aiFor(ctx)
+	if err != nil {
+		return res, err
 	}
 	if !force && h.entryHasMarker(ctx, entryID, aiMarkerLocal) {
 		res.Skipped = true
@@ -265,7 +266,7 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	if lang != "" {
 		userPrompt = "Reply in " + lang + " (write the whole review in " + lang + "; keep only the verdict line in English).\n\n" + userPrompt
 	}
-	out, err := h.AI.Generate(ctx, aiSystemPrompt(lang), userPrompt)
+	out, err := client.Generate(ctx, aiSystemPrompt(lang), userPrompt)
 	if err != nil {
 		return res, fmt.Errorf("ai generate: %w", err)
 	}
@@ -312,8 +313,9 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 // otherwise marked entries are skipped (which also makes a re-run resume where a cancelled
 // run left off).
 func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force bool, progress func(done, total int, current string)) error {
-	if h.AI == nil {
-		return fmt.Errorf("ai analysis is disabled")
+	// Fail before preparing any entry when the user has no usable provider.
+	if _, _, err := h.aiFor(ctx); err != nil {
+		return err
 	}
 	prep, err := h.prepareDayEntries(ctx, dateStr)
 	if err != nil {
