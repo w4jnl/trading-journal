@@ -235,8 +235,9 @@
 
   <div class="field-label" style="margin-top: 14px;">Review language</div>
   <p class="muted" style="font-size: 12px;">
-    The in-app AI writes journal reviews in this language. This does not change the app
-    interface or the external (Claude/ChatGPT) analyzers.
+    The in-app AI writes its journal reviews and gamma reads in this language, including
+    the lines the app adds around a review (its heading, the model line, what it filled in).
+    This does not change the app interface or the external (Claude/ChatGPT) analyzers.
   </p>
   <form method="post" action="/settings/language" class="row-sm" style="margin: 10px 0; gap: 8px; flex-wrap: wrap;">
     <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">

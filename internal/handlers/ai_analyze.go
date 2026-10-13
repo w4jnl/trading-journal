@@ -120,7 +120,7 @@ func aiSystemPrompt(scope, language string) string {
 	// Local models tend to default to English when the language directive is buried at the
 	// end of a long English prompt, so LEAD and CLOSE with it. The verdict line is parsed,
 	// so it is the explicit exception that stays in English.
-	lead := "WRITE YOUR ENTIRE REVIEW IN " + language + ". Every sentence, every bold section label, and every bullet must be in " + language + " - even though these instructions are written in English. The ONLY part that stays in English is the final machine-readable verdict line (the literal <!-- tj-ai:verdict ... --> comment and its keywords).\n\n"
+	lead := "WRITE YOUR ENTIRE REVIEW IN " + language + ". Every sentence, every bold section label, and every bullet must be in " + language + " - even though these instructions are written in English. The section labels in the brief below (Setup & entry, Risk, Exit, ...) are English placeholders: write each of them in " + language + " too. The ONLY part that stays in English is the final machine-readable verdict line (the literal <!-- tj-ai:verdict ... --> comment, its keywords and the label keys).\n\n"
 	tail := "\n\nReminder: everything above the verdict line - all prose and labels - must be written in " + language + ", not English."
 	return lead + body + tail
 }
@@ -528,29 +528,31 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 		"strategyToken", v.Strategy, "strategyResolved", resolvedSID, "strategyAssigned", res.StrategyID,
 		"mistakes", v.Mistakes, "mistakesAssigned", res.Mistakes,
 		"emotions", v.Emotions, "emotionsAssigned", res.Emotions)
-	note := "### AI review — " + time.Now().In(tz).Format("2006-01-02") + "\n" +
-		"*" + mdEscapeInline(model) + "*\n\n" +
+	words := aiWordsFor(lang)
+	note := "### " + words.Review + " — " + time.Now().In(tz).Format("2006-01-02") + "\n" +
+		"*" + mdEscapeInline(model.Label(words)) + "*\n\n" +
 		strings.TrimSpace(body) + "\n\n"
-	if filled := aiFilledLine(res, strategyName); filled != "" {
+	if filled := aiFilledLine(res, strategyName, words); filled != "" {
 		note += filled + "\n\n"
 	}
 	note += "<!-- " + aiMarkerLocal + " -->"
-	if err := h.appendOrSeedJournalNote(ctx, e, note); err != nil {
+	if err := h.journalSvc().AppendNoteAs(ctx, userID(ctx), e, note, words.NoteAdded); err != nil {
 		return res, fmt.Errorf("append analysis: %w", err)
 	}
 	return res, nil
 }
 
-// aiFilledLine says, at the foot of a review, which unset fields the review
-// filled in, so a tag or label the trader did not choose is never a mystery.
-// "" when it filled nothing.
-func aiFilledLine(res aiAnalyzeResult, strategyName string) string {
+// aiFilledLine says, at the foot of a review and in its language, which unset
+// fields the review filled in, so a tag or label the trader did not choose is
+// never a mystery. Tag values and label names read as on the app's pills. ""
+// when it filled nothing.
+func aiFilledLine(res aiAnalyzeResult, strategyName string, w aiWords) string {
 	var parts []string
 	if res.Tag != "" {
-		parts = append(parts, "tag **"+res.Tag+"**")
+		parts = append(parts, w.Tag+" **"+res.Tag+"**")
 	}
 	if res.StrategyID > 0 && strategyName != "" {
-		parts = append(parts, "strategy **"+mdEscapeInline(strategyName)+"**")
+		parts = append(parts, w.Strategy+" **"+mdEscapeInline(strategyName)+"**")
 	}
 	names := func(kind string, keys []string) string {
 		out := make([]string, 0, len(keys))
@@ -560,15 +562,15 @@ func aiFilledLine(res aiAnalyzeResult, strategyName string) string {
 		return strings.Join(out, ", ")
 	}
 	if len(res.Mistakes) > 0 {
-		parts = append(parts, "mistakes **"+names(journal.KindMistake, res.Mistakes)+"**")
+		parts = append(parts, w.Mistakes+" **"+names(journal.KindMistake, res.Mistakes)+"**")
 	}
 	if len(res.Emotions) > 0 {
-		parts = append(parts, "emotions **"+names(journal.KindEmotion, res.Emotions)+"**")
+		parts = append(parts, w.Emotions+" **"+names(journal.KindEmotion, res.Emotions)+"**")
 	}
 	if len(parts) == 0 {
 		return ""
 	}
-	return "*Filled in by this review: " + strings.Join(parts, " · ") + ".*"
+	return "*" + w.Filled + ": " + strings.Join(parts, " · ") + ".*"
 }
 
 // mdEscapeInline backslash-escapes the Markdown punctuation that could

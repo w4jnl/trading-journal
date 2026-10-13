@@ -398,7 +398,7 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		body, model = h.gexAnalysisFor(ctx, market, s.AsOf)
 	}
 	if body == "" {
-		client, label, err := h.aiFor(ctx)
+		client, ref, err := h.aiFor(ctx)
 		if err != nil {
 			status := http.StatusBadGateway
 			if errors.Is(err, errNoAIProvider) {
@@ -408,6 +408,7 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		lang := h.userAILanguage(ctx)
+		label := ref.Label(aiWordsFor(lang))
 		user := gexAnalysisFacts(s, market)
 		if lang != "" {
 			user = "Reply in " + lang + ".\n\n" + user

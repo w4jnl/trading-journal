@@ -316,7 +316,7 @@ func TestAIForResolution(t *testing.T) {
 	def := &stubAI{out: "default"}
 	h.AI, h.AIModel = def, "server-model"
 	c, model, err := h.aiFor(ctx)
-	if err != nil || c != def || model != "server-model via this server" || !h.aiAvailable(ctx) {
+	if err != nil || c != def || model.Label(aiWordsFor("")) != "server-model via this server" || !h.aiAvailable(ctx) {
 		t.Errorf("default: c=%v model=%q err=%v", c, model, err)
 	}
 
@@ -327,7 +327,7 @@ func TestAIForResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, model, err = h.aiFor(ctx)
-	if err != nil || c == def || model != "claude-sonnet-5-5 via Anthropic (Claude)" {
+	if err != nil || c == def || model.Label(aiWordsFor("")) != "claude-sonnet-5-5 via Anthropic (Claude)" {
 		t.Errorf("own provider: c=%v model=%q err=%v", c, model, err)
 	}
 
@@ -526,5 +526,60 @@ func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
 	}
 	if l, _ := h.journalSvc().EntryLabels(ctx, 7, 1); !reflect.DeepEqual(l["mistake"], []string{"chased", "late-exit"}) {
 		t.Errorf("labels changed by a re-run: %v", l)
+	}
+}
+
+// With a review language set, the model is told so in both turns and the
+// app's own framing (heading, model line, filled-in line, the appended-note
+// stamp) is written in that language too; only pill names stay as the app
+// shows them.
+func TestReviewFollowsTheLanguageSetting(t *testing.T) {
+	h, db, q := newAIHandlers(t)
+	const key = "sk-czech-key-0001"
+	fp := newFakeProvider(t, key, "- **Vstup:** pozdě.\n\n<!-- tj-ai:verdict tag=bad strategy=none mistakes=chased emotions=none -->")
+	withPresetURL(t, "mistral", fp.URL)
+	for _, stmt := range []string{
+		`UPDATE users SET ai_language = 'Czech' WHERE id = 7`,
+		`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (1, 7, 'apex-1', 'motivewave_csv', 'A-1')`,
+		`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status, net_pnl)
+			VALUES (10, 1, 'ESZ6', 'ES', 'long', 1, 6800, 6801, '2026-10-09 14:00:00 +0000 UTC', '2026-10-09 14:05:00 +0000 UTC', 'closed', 45)`,
+		`INSERT INTO journal_entries (id, user_id, trade_id, entry_date, body, scope) VALUES (1, 7, 10, '2026-10-09', 'Moje poznámka.', 'trade')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx := auth.WithUser(context.Background(), aiUser)
+	enc, nonce, _ := h.AISecrets.Seal(key)
+	if err := q.UpsertUserAISettings(ctx, models.UpsertUserAISettingsParams{
+		UserID: 7, Provider: "mistral", Model: "mistral-large-latest", ApiKeyEnc: enc, ApiKeyNonce: nonce,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.analyzeEntry(ctx, 1, false); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(fp.system, "WRITE YOUR ENTIRE REVIEW IN Czech") || !strings.Contains(fp.system, "write each of them in Czech") ||
+		!strings.HasPrefix(fp.user, "Reply in Czech") {
+		t.Errorf("language not asked for: system %.80q user %.40q", fp.system, fp.user)
+	}
+	var body string
+	if err := db.QueryRow(`SELECT body FROM journal_entries WHERE id = 1`).Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"_Poznámka přidána ",
+		"### AI hodnocení — ",
+		"*mistral-large-latest přes Mistral*",
+		"*Doplněno tímto hodnocením: štítek **bad** · chyby **Chased the entry**.*",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("czech note lacks %q:\n%s", want, body)
+		}
+	}
+	for _, english := range []string{"Note added", "AI review", " via ", "Filled in"} {
+		if strings.Contains(body, english) {
+			t.Errorf("czech note still says %q", english)
+		}
 	}
 }

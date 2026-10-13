@@ -80,13 +80,20 @@ func TestAISystemPromptPerScope(t *testing.T) {
 }
 
 func TestAIFilledLineAndEscape(t *testing.T) {
-	if got := aiFilledLine(aiAnalyzeResult{}, ""); got != "" {
+	en := aiWordsFor("")
+	if got := aiFilledLine(aiAnalyzeResult{}, "", en); got != "" {
 		t.Errorf("nothing filled = %q", got)
 	}
-	got := aiFilledLine(aiAnalyzeResult{Tag: "bad", StrategyID: 5, Mistakes: []string{"chased", "late-exit"}, Emotions: []string{"rushed"}}, "ORB_v2")
+	res := aiAnalyzeResult{Tag: "bad", StrategyID: 5, Mistakes: []string{"chased", "late-exit"}, Emotions: []string{"rushed"}}
+	got := aiFilledLine(res, "ORB_v2", en)
 	want := "*Filled in by this review: tag **bad** · strategy **ORB\\_v2** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*"
 	if got != want {
 		t.Errorf("filled line =\n%s\nwant\n%s", got, want)
+	}
+	// In the review language: the framing translated, the pill names kept.
+	cs := aiFilledLine(res, "ORB", aiWordsFor("Czech"))
+	if cs != "*Doplněno tímto hodnocením: štítek **bad** · strategie **ORB** · chyby **Chased the entry, Exited too late** · emoce **Rushed**.*" {
+		t.Errorf("czech filled line = %s", cs)
 	}
 	if got := mdEscapeInline("mlx-community/Qwen3_VL*4bit [x]"); got != "mlx-community/Qwen3\\_VL\\*4bit \\[x\\]" {
 		t.Errorf("escape = %q", got)
@@ -121,5 +128,42 @@ func TestStripAIVerdict(t *testing.T) {
 	}
 	if got := stripAIVerdict("no verdict"); got != "no verdict" {
 		t.Errorf("stripAIVerdict left text unchanged = %q", got)
+	}
+}
+
+// Every language offered in Settings frames its reviews in that language.
+func TestAIWordsCoverEveryLanguage(t *testing.T) {
+	for _, o := range aiLanguageOptions {
+		w, ok := aiWordsByLanguage[o.Value]
+		if !ok {
+			t.Errorf("no review words for %q", o.Value)
+			continue
+		}
+		for name, v := range map[string]string{"Review": w.Review, "NoteAdded": w.NoteAdded, "Via": w.Via, "ThisServer": w.ThisServer,
+			"Filled": w.Filled, "Tag": w.Tag, "Strategy": w.Strategy, "Mistakes": w.Mistakes, "Emotions": w.Emotions} {
+			if strings.TrimSpace(v) == "" {
+				t.Errorf("%q: %s is empty", o.Value, name)
+			}
+		}
+	}
+	if aiWordsFor("Klingon") != aiWordsFor("") {
+		t.Error("an unknown language should fall back to English")
+	}
+	for _, c := range []struct {
+		ref  aiModelRef
+		lang string
+		want string
+	}{
+		{aiModelRef{Model: "claude-sonnet-5-5", Provider: "Anthropic (Claude)"}, "", "claude-sonnet-5-5 via Anthropic (Claude)"},
+		{aiModelRef{Model: "claude-sonnet-5-5", Provider: "Anthropic (Claude)"}, "Czech", "claude-sonnet-5-5 přes Anthropic (Claude)"},
+		{aiModelRef{Model: "qwen3"}, "German", "qwen3 über diesen Server"},
+		{aiModelRef{}, "", "this server"},
+	} {
+		if got := c.ref.Label(aiWordsFor(c.lang)); got != c.want {
+			t.Errorf("Label(%+v, %q) = %q, want %q", c.ref, c.lang, got, c.want)
+		}
+	}
+	if got := customHost("http://127.0.0.1:18790/v1"); got != "127.0.0.1:18790" {
+		t.Errorf("customHost = %q", got)
 	}
 }

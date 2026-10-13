@@ -74,7 +74,8 @@ func (h *Handlers) AIDayStart(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return
 	}
-	h.AIJobs.Start(user.ID, datePath, model, func(ctx context.Context, progress func(done, total int, current string)) error {
+	// The status line is app chrome, so English like the rest of the UI.
+	h.AIJobs.Start(user.ID, datePath, model.Label(aiWordsFor("")), func(ctx context.Context, progress func(done, total int, current string)) error {
 		return h.runDayAnalysis(auth.WithUser(ctx, user), date, force, progress)
 	})
 	h.renderAIStatus(w, r, user.ID, datePath)

@@ -164,8 +164,14 @@ func (s *Service) ValidateStrategyID(ctx context.Context, userID int64, id *int6
 // body: a thematic break, an italic dated heading in the trading timezone,
 // then the note. Never overwrites existing content.
 func FormatAppendedNote(now time.Time, loc *time.Location, note string) string {
+	return formatAppendedNoteAs(now, loc, "Note added", note)
+}
+
+// formatAppendedNoteAs is FormatAppendedNote with the stamp's words given
+// (the AI review writes them in the review language).
+func formatAppendedNoteAs(now time.Time, loc *time.Location, added, note string) string {
 	stamp := now.In(loc).Format("2006-01-02 15:04 MST")
-	return "\n\n---\n\n_Note added " + stamp + "_\n\n" + strings.TrimRight(note, " \t\n") + "\n"
+	return "\n\n---\n\n_" + added + " " + stamp + "_\n\n" + strings.TrimRight(note, " \t\n") + "\n"
 }
 
 // AppendNote adds note to an entry the user owns. While the entry is still
@@ -175,6 +181,12 @@ func FormatAppendedNote(now time.Time, loc *time.Location, note string) string {
 // real review. Otherwise the note is appended as a dated, divider-separated
 // block. The REST, MCP, AI-review and GEX-annotation paths all funnel here.
 func (s *Service) AppendNote(ctx context.Context, userID int64, entry models.JournalEntry, note string) error {
+	return s.AppendNoteAs(ctx, userID, entry, note, "Note added")
+}
+
+// AppendNoteAs is AppendNote with the appended block's stamp words given
+// ("Note added" in English), for a note written in another language.
+func (s *Service) AppendNoteAs(ctx context.Context, userID int64, entry models.JournalEntry, note, added string) error {
 	note = strings.TrimSpace(note)
 	if strings.TrimSpace(entry.Body) == strings.TrimSpace(PlaceholderBody) {
 		seeded := "---\n\n" + strings.TrimRight(note, " \t\n") + "\n"
@@ -190,7 +202,7 @@ func (s *Service) AppendNote(ctx context.Context, userID int64, entry models.Jou
 		s.changed(ctx, userID)
 		return nil
 	}
-	block := FormatAppendedNote(time.Now(), s.tz(), note)
+	block := formatAppendedNoteAs(time.Now(), s.tz(), added, note)
 	if err := s.Q.AppendJournalEntryBody(ctx, models.AppendJournalEntryBodyParams{
 		Body: block, ID: entry.ID, UserID: &userID,
 	}); err != nil {
