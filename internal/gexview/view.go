@@ -324,11 +324,13 @@ type View struct {
 	//
 	// The retained read is carried twice on purpose: Analysis is the markdown
 	// the page template renders through the shared partial, AnalysisHTML the
-	// sanitized HTML the scrub path swaps in (no markdown pass in JS). Only
-	// the latter is serialized, so the JSON never ships both.
-	AsOfParam    string        `json:"asOfParam"`
-	Analysis     string        `json:"-"`
-	AnalysisHTML template.HTML `json:"analysisHTML"`
+	// sanitized HTML the scrub path swaps in (no markdown pass in JS), with the
+	// model line already appended. Only the latter is serialized, so the JSON
+	// never ships both.
+	AsOfParam     string        `json:"asOfParam"`
+	Analysis      string        `json:"-"`
+	AnalysisModel string        `json:"-"` // the model that wrote the read
+	AnalysisHTML  template.HTML `json:"analysisHTML"`
 }
 
 // PageData is the Overview tab's JSON data island (#gex-page-data), read

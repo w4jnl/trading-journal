@@ -56,9 +56,13 @@ around it.
   the days and how the day plans held; downloadable as markdown, served
   to the API and MCP, and the basis of the AI's week review.
 - **AI reviews** in the app: ✨ Analyze on a trade, a note or a whole day
-  writes a review into the journal (grounded in the trades, the coach's
-  checks, the day plan and your playbooks) and fills an unset tag or
-  strategy when one clearly fits. Each user runs it on **their own
+  writes a review into the journal, briefed for what it reviews (a trade's
+  entry, risk and exit against its plan and price path; a copy set's
+  consistency across accounts; a day against its plan; a week from the
+  digest) and headed by the model that wrote it. It fills what you left
+  unset when the evidence fits (the tag, and for a trade or group the
+  strategy and the mistake and emotion labels), never overwrites your
+  choice, and says at its foot what it filled. Each user runs it on **their own
   provider key** (Settings → AI: OpenAI, Anthropic, Google Gemini,
   Mistral, OpenRouter), or on a server-wide default such as a local
   model. See [In-app AI reviews](#in-app-ai-reviews).

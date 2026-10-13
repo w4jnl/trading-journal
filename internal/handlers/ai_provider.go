@@ -28,9 +28,10 @@ func (h *Handlers) aiUserKeys() bool { return h.AISecrets != nil }
 // client, or per-user keys. main.go creates AIJobs exactly when it is true.
 func (h *Handlers) aiPossible() bool { return h.AI != nil || h.aiUserKeys() }
 
-// aiFor returns the client the calling user's AI work runs on, and the model
-// label recorded with stored output: their own provider when they set one,
-// else the server default, else errNoAIProvider.
+// aiFor returns the client the calling user's AI work runs on, and the label
+// naming its model ("claude-sonnet-5-5 via Anthropic (Claude)"), shown with
+// every review and stored with the gamma reads: their own provider when they
+// set one, else the server default, else errNoAIProvider.
 func (h *Handlers) aiFor(ctx context.Context) (ai.Client, string, error) {
 	if h.aiUserKeys() {
 		row, err := h.Queries.GetUserAISettings(ctx, userID(ctx))
@@ -44,15 +45,24 @@ func (h *Handlers) aiFor(ctx context.Context) (ai.Client, string, error) {
 			if err != nil {
 				return nil, "", err
 			}
-			return c, row.Provider + ":" + row.Model, nil
+			p, _ := aiPresetFor(row.Provider, row.BaseUrl)
+			return c, row.Model + " via " + p.Label, nil
 		case !errors.Is(err, sql.ErrNoRows):
 			return nil, "", fmt.Errorf("load AI settings: %w", err)
 		}
 	}
 	if h.AI != nil {
-		return h.AI, h.AIModel, nil
+		return h.AI, h.serverModelLabel(), nil
 	}
 	return nil, "", errNoAIProvider
+}
+
+// serverModelLabel names the server-wide default model.
+func (h *Handlers) serverModelLabel() string {
+	if h.AIModel == "" {
+		return "the server's model"
+	}
+	return h.AIModel + " via this server"
 }
 
 // aiUserOptions builds the client options for a stored provider row,

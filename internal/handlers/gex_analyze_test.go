@@ -72,14 +72,17 @@ func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 	if body := rec.Body.String(); !strings.Contains(body, "The read.") || !strings.Contains(body, "<strong>Above the flip:</strong>") {
 		t.Errorf("fragment did not render the read as markdown: %s", body)
 	}
+	if body := rec.Body.String(); !strings.Contains(body, `<p class="ai-model-line">test-model via this server</p>`) {
+		t.Errorf("fragment does not name the model: %s", body)
+	}
 
 	// A different requested moment resolving to the same snapshot: retained.
 	rec = gexAnalyzePost(t, h, "/gex/analyze/ES?at=2026-07-31T19:53:00Z")
 	if ai.calls.Load() != 1 {
 		t.Errorf("retained read re-called the model (%d calls)", ai.calls.Load())
 	}
-	if !strings.Contains(rec.Body.String(), "The read.") {
-		t.Errorf("retained read not returned: %s", rec.Body.String())
+	if !strings.Contains(rec.Body.String(), "The read.") || !strings.Contains(rec.Body.String(), "test-model via this server") {
+		t.Errorf("retained read (with its model) not returned: %s", rec.Body.String())
 	}
 	// Stored exactly once, keyed by the snapshot's own as_of.
 	var n int
@@ -87,7 +90,7 @@ func TestGEXAnalyzeRetainsPerSnapshot(t *testing.T) {
 	if err := db.QueryRow(`SELECT count(*), max(as_of), max(model) FROM gex_analyses`).Scan(&n, &storedKey, &storedModel); err != nil {
 		t.Fatal(err)
 	}
-	if n != 1 || storedKey != "2026-07-31T19:50:02Z" || storedModel != "test-model" {
+	if n != 1 || storedKey != "2026-07-31T19:50:02Z" || storedModel != "test-model via this server" {
 		t.Errorf("stored rows=%d key=%q model=%q", n, storedKey, storedModel)
 	}
 

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -28,12 +29,14 @@ import (
 // models it was called with.
 type fakeProvider struct {
 	*httptest.Server
-	key   string
-	reply string
-	mu    sync.Mutex
-	auths []string
-	model string
-	calls int
+	key    string
+	reply  string
+	mu     sync.Mutex
+	auths  []string
+	model  string
+	system string // the last completion's system and user messages
+	user   string
+	calls  int
 }
 
 func newFakeProvider(t *testing.T, key, reply string) *fakeProvider {
@@ -55,11 +58,23 @@ func newFakeProvider(t *testing.T, key, reply string) *fakeProvider {
 			return
 		}
 		var body struct {
-			Model string `json:"model"`
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
 		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &body)
 		f.model = body.Model
+		for _, m := range body.Messages {
+			switch m.Role {
+			case "system":
+				f.system = m.Content
+			case "user":
+				f.user = m.Content
+			}
+		}
 		f.calls++
 		out, _ := json.Marshal(f.reply)
 		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":` + string(out) + `},"finish_reason":"stop"}]}`))
@@ -301,7 +316,7 @@ func TestAIForResolution(t *testing.T) {
 	def := &stubAI{out: "default"}
 	h.AI, h.AIModel = def, "server-model"
 	c, model, err := h.aiFor(ctx)
-	if err != nil || c != def || model != "server-model" || !h.aiAvailable(ctx) {
+	if err != nil || c != def || model != "server-model via this server" || !h.aiAvailable(ctx) {
 		t.Errorf("default: c=%v model=%q err=%v", c, model, err)
 	}
 
@@ -312,7 +327,7 @@ func TestAIForResolution(t *testing.T) {
 		t.Fatal(err)
 	}
 	c, model, err = h.aiFor(ctx)
-	if err != nil || c == def || model != "anthropic:claude-sonnet-5-5" {
+	if err != nil || c == def || model != "claude-sonnet-5-5 via Anthropic (Claude)" {
 		t.Errorf("own provider: c=%v model=%q err=%v", c, model, err)
 	}
 
@@ -358,6 +373,12 @@ func TestAnalyzeEntryUsesOwnProvider(t *testing.T) {
 	}
 	if !strings.Contains(body, "disciplined day") || strings.Contains(body, "tj-ai:verdict") || res.Tag != "good" {
 		t.Errorf("body=%q tag=%q", body, res.Tag)
+	}
+	if !strings.Contains(body, "### AI review — ") || !strings.Contains(body, "\n*gemini-pro via Google Gemini*\n") {
+		t.Errorf("review does not name its model: %q", body)
+	}
+	if !strings.Contains(fp.system, "WHOLE TRADING DAY") || strings.Contains(fp.system, "mistakes=") {
+		t.Errorf("day review got the wrong prompt: %.200q", fp.system)
 	}
 }
 
@@ -405,5 +426,105 @@ func TestNoProviderHidesAndRefusesAI(t *testing.T) {
 	}
 	if !strings.Contains(body, "…0001") || !strings.Contains(body, "/settings/ai/test") {
 		t.Error("stored provider not shown")
+	}
+}
+
+// A trade review gets the trade brief and the full trade (plan, price path,
+// fills), fills the unset tag, strategy and labels the verdict names, says so
+// at the foot of the note, and on a re-run leaves what is now set alone.
+func TestAnalyzeTradeFillsWhatFits(t *testing.T) {
+	h, db, q := newAIHandlers(t)
+	for _, stmt := range []string{
+		`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (1, 7, 'apex-1', 'motivewave_csv', 'A-1')`,
+		`INSERT INTO strategies (id, user_id, name, body) VALUES (5, 7, 'ORB Breakout', 'opening range')`,
+		`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status, net_pnl, gross_pnl, commission, planned_stop, planned_risk, mae_pnl, mfe_pnl, mae_points, mfe_points, excursion_tf)
+			VALUES (10, 1, 'ESZ6', 'ES', 'long', 2, 6800, 6802, '2026-10-09 14:00:00 +0000 UTC', '2026-10-09 14:12:00 +0000 UTC', 'closed', 190, 200, 10, 6796, 400, 150, 600, 1.5, 6, '1m')`,
+		`INSERT INTO executions (id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time) VALUES
+			(1, 1, 'e1', 'ESZ6', 'ES', 'buy', 2, 6800, '2026-10-09 14:00:00 +0000 UTC'),
+			(2, 1, 'e2', 'ESZ6', 'ES', 'sell', 2, 6802, '2026-10-09 14:12:00 +0000 UTC')`,
+		`INSERT INTO trade_executions (trade_id, execution_id, role, qty_used) VALUES (10, 1, 'entry', 2), (10, 2, 'exit', 2)`,
+		`INSERT INTO journal_entries (id, user_id, trade_id, entry_date, body, scope) VALUES (1, 7, 10, '2026-10-09', 'Felt rushed, jumped in late.', 'trade')`,
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	const key = "sk-trade-key-0001"
+	fp := newFakeProvider(t, key, "- **Setup & entry:** late.\n\n<!-- tj-ai:verdict tag=bad strategy=ORB Breakout mistakes=chased, late-exit, made-up emotions=rushed -->")
+	withPresetURL(t, "openai", fp.URL)
+	ctx := auth.WithUser(context.Background(), aiUser)
+	enc, nonce, _ := h.AISecrets.Seal(key)
+	if err := q.UpsertUserAISettings(ctx, models.UpsertUserAISettingsParams{
+		UserID: 7, Provider: "openai", Model: "gpt-x", ApiKeyEnc: enc, ApiKeyNonce: nonce,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := h.analyzeEntry(ctx, 1, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Tag != "bad" || res.StrategyID != 5 ||
+		!reflect.DeepEqual(res.Mistakes, []string{"chased", "late-exit"}) || !reflect.DeepEqual(res.Emotions, []string{"rushed"}) {
+		t.Errorf("filled = %+v", res)
+	}
+
+	// The model saw the trade brief and the whole trade.
+	if !strings.Contains(fp.system, "ONE TRADE") || !strings.Contains(fp.system, "mistakes=<keys|none>") {
+		t.Errorf("trade review got the wrong prompt: %.200q", fp.system)
+	}
+	var sent struct {
+		Timezone string `json:"timezone"`
+		Entry    struct {
+			Trades []aiTrade `json:"trades"`
+		} `json:"entry"`
+		Vocabulary map[string][]map[string]string `json:"labelVocabulary"`
+	}
+	if err := json.Unmarshal([]byte(fp.user), &sent); err != nil {
+		t.Fatalf("context is not JSON: %v", err)
+	}
+	if len(sent.Entry.Trades) != 1 {
+		t.Fatalf("trades = %+v", sent.Entry.Trades)
+	}
+	tr := sent.Entry.Trades[0]
+	if tr.PlannedStop == nil || *tr.PlannedStop != 6796 || tr.R == nil || *tr.R != 0.475 ||
+		tr.HoldMinutes == nil || *tr.HoldMinutes != 12 || tr.ExitEfficiency == nil || len(tr.Fills) != 2 ||
+		tr.EntryTime != "2026-10-09 14:00:00" || sent.Timezone != "UTC" || len(sent.Vocabulary["mistakes"]) == 0 {
+		t.Errorf("trade as sent = %+v (tz %q)", tr, sent.Timezone)
+	}
+
+	labels, _ := h.journalSvc().EntryLabels(ctx, 7, 1)
+	if !reflect.DeepEqual(labels["mistake"], []string{"chased", "late-exit"}) || !reflect.DeepEqual(labels["emotion"], []string{"rushed"}) {
+		t.Errorf("labels = %v", labels)
+	}
+	body := func() string {
+		var b string
+		if err := db.QueryRow(`SELECT body FROM journal_entries WHERE id = 1`).Scan(&b); err != nil {
+			t.Fatal(err)
+		}
+		return b
+	}
+	got := body()
+	if !strings.Contains(got, "\n*gpt-x via OpenAI*\n") ||
+		!strings.Contains(got, "*Filled in by this review: tag **bad** · strategy **ORB Breakout** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*") {
+		t.Errorf("note = %q", got)
+	}
+
+	// A re-run proposing other labels: everything is set now, nothing changes.
+	fp.mu.Lock()
+	fp.reply = "- **Verdict:** fine.\n\n<!-- tj-ai:verdict tag=good strategy=none mistakes=fomo emotions=calm -->"
+	fp.mu.Unlock()
+	res, err = h.analyzeEntry(ctx, 1, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Tag != "" || res.StrategyID != 0 || res.Mistakes != nil || res.Emotions != nil {
+		t.Errorf("re-run filled = %+v", res)
+	}
+	if got := body(); strings.Count(got, "Filled in by this review") != 1 || strings.Count(got, "### AI review") != 2 {
+		t.Errorf("re-run note = %q", got)
+	}
+	if l, _ := h.journalSvc().EntryLabels(ctx, 7, 1); !reflect.DeepEqual(l["mistake"], []string{"chased", "late-exit"}) {
+		t.Errorf("labels changed by a re-run: %v", l)
 	}
 }

@@ -242,7 +242,7 @@
     <button type="button" class="btn btn--sm" id="gx-analysis-btn">Analyze with AI</button>
   </div>
   <div id="gx-analysis-body" class="mt-8">
-    {{template "gex_analysis_body" (dict "Analysis" .View.Analysis)}}
+    {{template "gex_analysis_body" (dict "Analysis" .View.Analysis "Model" .View.AnalysisModel)}}
   </div>
   <div id="gx-analysis-spin" class="muted mt-8" style="font-size: 12px;">
     Reading the snapshot — a local model can take a minute…

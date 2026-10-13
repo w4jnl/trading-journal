@@ -65,7 +65,14 @@ func (h *Handlers) AIDayStart(w http.ResponseWriter, r *http.Request) {
 		date = "" // runDayAnalysis -> prepareDayEntries defaults to the last trading day
 	}
 	force := r.URL.Query().Get("mode") == "all"
-	h.AIJobs.Start(user.ID, datePath, func(ctx context.Context, progress func(done, total int, current string)) error {
+	// Resolved here for the status line; every entry resolves its own client
+	// again, so a key changed mid-run applies to the entries after it.
+	_, model, err := h.aiFor(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	h.AIJobs.Start(user.ID, datePath, model, func(ctx context.Context, progress func(done, total int, current string)) error {
 		return h.runDayAnalysis(auth.WithUser(ctx, user), date, force, progress)
 	})
 	h.renderAIStatus(w, r, user.ID, datePath)

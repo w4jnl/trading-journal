@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -19,13 +21,75 @@ func TestParseAIVerdict(t *testing.T) {
 		{"<!-- tj-ai:verdict tag=good strategy=ORB VWAP -->", "good", "ORB VWAP"},     // NAME with a space
 		{"<!-- tj-ai:verdict strategy=VWAP Bounce tag=bad -->", "bad", "VWAP Bounce"}, // name first
 		{"no verdict line here", "", ""},
-		{"<!-- tj-ai:verdict tag=weird strategy=abc -->", "", "abc"}, // bad tag dropped; raw strategy kept
+		{"<!-- tj-ai:verdict tag=weird strategy=abc -->", "", "abc"},                                          // bad tag dropped; raw strategy kept
+		{"<!-- tj-ai:verdict tag=bad strategy=ORB VWAP mistakes=chased emotions=none -->", "bad", "ORB VWAP"}, // name stops at the next field
 	}
 	for _, c := range cases {
 		v := parseAIVerdict(c.in)
 		if v.Tag != c.tag || v.Strategy != c.strat {
 			t.Errorf("parseAIVerdict(%q) = {tag:%q strategy:%q}, want {tag:%q strategy:%q}", c.in, v.Tag, v.Strategy, c.tag, c.strat)
 		}
+	}
+}
+
+// The label fields take comma- or space-separated keys in any order; "none"
+// and empty mean nothing.
+func TestParseAIVerdictLabels(t *testing.T) {
+	cases := []struct {
+		in                 string
+		mistakes, emotions []string
+	}{
+		{"<!-- tj-ai:verdict tag=bad strategy=none mistakes=chased,late-exit emotions=rushed -->", []string{"chased", "late-exit"}, []string{"rushed"}},
+		{"<!-- tj-ai:verdict emotions=Tilted, frustrated mistakes=revenge tag=bad strategy=3 -->", []string{"revenge"}, []string{"tilted", "frustrated"}},
+		{"<!-- tj-ai:verdict tag=good strategy=1 mistakes=none emotions=none -->", nil, nil},
+		{`<!-- tj-ai:verdict tag=good strategy=1 mistakes="chased" -->`, []string{"chased"}, nil},
+		{"<!-- tj-ai:verdict tag=good strategy=1 -->", nil, nil},
+	}
+	for _, c := range cases {
+		v := parseAIVerdict(c.in)
+		if !reflect.DeepEqual(v.Mistakes, c.mistakes) || !reflect.DeepEqual(v.Emotions, c.emotions) {
+			t.Errorf("parseAIVerdict(%q) = mistakes %q emotions %q, want %q / %q", c.in, v.Mistakes, v.Emotions, c.mistakes, c.emotions)
+		}
+	}
+}
+
+// Each scope gets its own brief and verdict line; an unknown scope reads as a
+// trade; a language wraps the prompt but leaves the verdict keywords alone.
+func TestAISystemPromptPerScope(t *testing.T) {
+	for _, c := range []struct {
+		scope, has string
+		labels     bool
+	}{
+		{"trade", "ONE TRADE", true},
+		{"group", "Copy consistency", true},
+		{"day", "WHOLE TRADING DAY", false},
+		{"week", "weeklyDigest", false},
+		{"", "ONE TRADE", true},
+	} {
+		p := aiSystemPrompt(c.scope, "")
+		if !strings.Contains(p, c.has) || !strings.Contains(p, "tj-ai:verdict tag=") {
+			t.Errorf("%q prompt lacks %q or the verdict line", c.scope, c.has)
+		}
+		if got := strings.Contains(p, "mistakes=<keys|none>"); got != c.labels {
+			t.Errorf("%q prompt asks for labels = %v, want %v", c.scope, got, c.labels)
+		}
+	}
+	if p := aiSystemPrompt("day", "Czech"); !strings.HasPrefix(p, "WRITE YOUR ENTIRE REVIEW IN Czech") || !strings.Contains(p, "WHOLE TRADING DAY") {
+		t.Errorf("language wrapper lost the scope part")
+	}
+}
+
+func TestAIFilledLineAndEscape(t *testing.T) {
+	if got := aiFilledLine(aiAnalyzeResult{}, ""); got != "" {
+		t.Errorf("nothing filled = %q", got)
+	}
+	got := aiFilledLine(aiAnalyzeResult{Tag: "bad", StrategyID: 5, Mistakes: []string{"chased", "late-exit"}, Emotions: []string{"rushed"}}, "ORB_v2")
+	want := "*Filled in by this review: tag **bad** · strategy **ORB\\_v2** · mistakes **Chased the entry, Exited too late** · emotions **Rushed**.*"
+	if got != want {
+		t.Errorf("filled line =\n%s\nwant\n%s", got, want)
+	}
+	if got := mdEscapeInline("mlx-community/Qwen3_VL*4bit [x]"); got != "mlx-community/Qwen3\\_VL\\*4bit \\[x\\]" {
+		t.Errorf("escape = %q", got)
 	}
 }
 
