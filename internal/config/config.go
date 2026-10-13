@@ -30,6 +30,7 @@ type Config struct {
 	TopstepX     TopstepX     `yaml:"topstepx"`
 	IBKR         IBKR         `yaml:"ibkr"`
 	MWEmail      MWEmail      `yaml:"mw_email"`
+	Secrets      Secrets      `yaml:"secrets"`
 	Timezone     string       `yaml:"timezone"`
 	// SyncLogRetentionDays bounds the API polling history in sync_log: rows
 	// from topstepx_api / ibkr_api runs that added nothing and did not error
@@ -165,11 +166,52 @@ func parseHMWindow(window string) (startMin, endMin int, ok bool) {
 }
 
 // EncryptionKeyBytes decodes the hex key; ok=false when unset or malformed.
-func (t TopstepX) EncryptionKeyBytes() ([]byte, bool) {
-	if t.EncryptionKey == "" {
+func (t TopstepX) EncryptionKeyBytes() ([]byte, bool) { return hexKey(t.EncryptionKey) }
+
+// Secrets holds the key the per-user secrets (AI provider keys, and TopstepX
+// credentials when topstepx.encryption_key is unset) are stored encrypted
+// under. It is never auto-generated: losing it means every user re-enters
+// their keys, so it must live in the backed-up config.yaml or the
+// TJ_ENCRYPTION_KEY env var. Generate one with: openssl rand -hex 32
+type Secrets struct {
+	EncryptionKey string `yaml:"encryption_key"` // 64 hex chars (32 bytes)
+}
+
+// SecretsKeyBytes is the key for stored per-user secrets: secrets.encryption_key,
+// else the older topstepx.encryption_key (so an install that already set one for
+// TopstepX needs nothing new). ok=false when neither is set.
+func (c Config) SecretsKeyBytes() ([]byte, bool) {
+	if b, ok := hexKey(c.Secrets.EncryptionKey); ok {
+		return b, true
+	}
+	return c.TopstepX.EncryptionKeyBytes()
+}
+
+// TopstepXKeyBytes is the key the TopstepX credentials are stored under: its
+// own encryption_key, else secrets.encryption_key.
+func (c Config) TopstepXKeyBytes() ([]byte, bool) {
+	if b, ok := c.TopstepX.EncryptionKeyBytes(); ok {
+		return b, true
+	}
+	return hexKey(c.Secrets.EncryptionKey)
+}
+
+// AIUserKeys reports whether users may bring their own AI provider key: not
+// switched off, and a secrets key to store them under.
+func (c Config) AIUserKeys() bool {
+	if c.AI.UserKeys != nil && !*c.AI.UserKeys {
+		return false
+	}
+	_, ok := c.SecretsKeyBytes()
+	return ok
+}
+
+// hexKey decodes a 64-hex-char key; ok=false when unset or malformed.
+func hexKey(s string) ([]byte, bool) {
+	if s == "" {
 		return nil, false
 	}
-	b, err := hex.DecodeString(strings.TrimSpace(t.EncryptionKey))
+	b, err := hex.DecodeString(strings.TrimSpace(s))
 	if err != nil || len(b) != 32 {
 		return nil, false
 	}
@@ -242,12 +284,19 @@ func isLoopbackHost(host string) bool {
 	return false
 }
 
-// AI configures the in-app analysis engine (server-side journal analysis). It calls
-// an OpenAI-compatible chat-completions endpoint: v1 targets a local MLX server but
-// the same client speaks to OpenAI, OpenRouter and other aggregators, LM Studio,
-// vLLM - anything exposing /chat/completions. Disabled by default; the whole feature
-// is gated on Enabled. APIKey can be injected via the TJ_AI_API_KEY env var.
+// AI configures the in-app analysis engine (server-side journal analysis). The
+// fields below are the server-wide default every user gets: an OpenAI-compatible
+// chat-completions endpoint (a local MLX server, OpenAI, OpenRouter, LM Studio,
+// vLLM - anything exposing /chat/completions), gated on Enabled. APIKey can be
+// injected via the TJ_AI_API_KEY env var.
+//
+// UserKeys (nil = true) additionally lets each user run the reviews on their own
+// provider key (Settings > AI): OpenAI, Anthropic, Gemini, Mistral, OpenRouter,
+// or, for admins, any OpenAI-compatible URL. It needs the secrets encryption key,
+// since the keys are stored encrypted. A user's own provider wins over the
+// default; with no default, users without a key see no AI buttons.
 type AI struct {
+	UserKeys    *bool             `yaml:"user_keys"`
 	Enabled     bool              `yaml:"enabled"`
 	Provider    string            `yaml:"provider"`
 	BaseURL     string            `yaml:"base_url"`
@@ -487,6 +536,11 @@ func (c Config) Validate() error {
 			return fmt.Errorf("gex.timeout_sec must be >= 0, got %d", c.GEX.TimeoutSec)
 		}
 	}
+	if c.Secrets.EncryptionKey != "" {
+		if _, ok := hexKey(c.Secrets.EncryptionKey); !ok {
+			return fmt.Errorf("secrets.encryption_key must be 64 hex characters (generate with: openssl rand -hex 32)")
+		}
+	}
 	if c.TopstepX.EncryptionKey != "" {
 		if _, ok := c.TopstepX.EncryptionKeyBytes(); !ok {
 			return fmt.Errorf("topstepx.encryption_key must be 64 hex characters (generate with: openssl rand -hex 32)")
@@ -598,7 +652,7 @@ func (c Config) Validate() error {
 // A missing file is not an error: defaults are sensible for first boot.
 // Environment variables override the YAML for a small allowlist of
 // secret-like fields (TJ_SESSION_SECRET, TJ_AI_API_KEY, TJ_GEX_API_KEY,
-// TJ_TOPSTEPX_ENC_KEY). Env wins over file so you can ship a checked-in
+// TJ_TOPSTEPX_ENC_KEY, TJ_ENCRYPTION_KEY). Env wins over file so you can ship a checked-in
 // config.yaml and inject the secret at run time (Docker secrets, systemd
 // EnvironmentFile, etc.).
 func Load(cfgPath string) (Config, error) {
@@ -635,6 +689,9 @@ func Load(cfgPath string) (Config, error) {
 	}
 	if v := os.Getenv("TJ_TOPSTEPX_ENC_KEY"); v != "" {
 		cfg.TopstepX.EncryptionKey = v
+	}
+	if v := os.Getenv("TJ_ENCRYPTION_KEY"); v != "" {
+		cfg.Secrets.EncryptionKey = v
 	}
 
 	return cfg, nil

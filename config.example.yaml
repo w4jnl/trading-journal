@@ -93,12 +93,19 @@ mcp:
     # targets. Loopback http (Claude Code) is always allowed. Empty = any https.
     allowed_redirect_hosts: []
 
-# In-app AI analysis (server-side). When enabled, the app calls an AI endpoint to
-# generate journal analyses itself -- the inward counterpart to the MCP server (which
-# lets EXTERNAL AIs do it). It speaks the OpenAI chat-completions format, so it works
-# with a local MLX server, OpenAI, OpenRouter and other aggregators, LM Studio, vLLM,
-# etc. Disabled by default.
+# In-app AI analysis (server-side). The app calls an AI endpoint to generate
+# journal analyses itself -- the inward counterpart to the MCP server (which lets
+# EXTERNAL AIs do it). Two ways to run it, usable together:
+#  - Each user brings their own provider key in Settings > AI (OpenAI, Anthropic,
+#    Google Gemini, Mistral, OpenRouter; admins may also enter any
+#    OpenAI-compatible URL). On by default whenever secrets.encryption_key (or
+#    topstepx.encryption_key) is set, since the keys are stored encrypted.
+#    Note: a ChatGPT or Claude subscription does not include API access; the
+#    providers bill API keys per use.
+#  - A server-wide default below (enabled: true), e.g. a local MLX server, used by
+#    every user who has not set their own key.
 ai:
+  # user_keys: false         # uncomment to stop users bringing their own key
   enabled: false
   # Only "openai" (OpenAI-compatible) for now.
   provider: "openai"
@@ -138,12 +145,22 @@ gex:
   # prepare-day path and must not stall reviews when the engine is down.
   timeout_sec: 5
 
+# Key the per-user secrets are stored AES-256-GCM encrypted under: AI provider
+# keys, and TopstepX credentials when topstepx.encryption_key is unset (an
+# install that already has that key can leave this blank; it is used for both).
+# Generate one with `openssl rand -hex 32` and BACK IT UP with this file:
+# losing it means every user must re-enter their keys. Env override:
+# TJ_ENCRYPTION_KEY.
+secrets:
+  encryption_key: ""
+
 # TopstepX (ProjectX Gateway) API sync. Users connect their own TopstepX
 # username + API key in Settings; trades then sync automatically on page
 # visits (throttled) and hourly during CME Globex hours. The feature turns on
-# only when encryption_key is set -- per-user API keys are stored AES-256-GCM
-# encrypted under it. Generate one with `openssl rand -hex 32` and BACK IT UP
-# with this file: losing it means every user must re-enter their credentials.
+# only when encryption_key (or secrets.encryption_key) is set -- per-user API
+# keys are stored AES-256-GCM encrypted under it. Generate one with
+# `openssl rand -hex 32` and BACK IT UP with this file: losing it means every
+# user must re-enter their credentials.
 topstepx:
   # enabled: false           # uncomment to force-disable with the key still set
   base_url: "https://api.topstepx.com"
