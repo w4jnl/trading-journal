@@ -182,8 +182,11 @@
      day has trades, each rule against the day (internal/coach). The form
      is a <details>: open by default on today or a future day without a
      plan; data-keep-open lets live refresh know a form the user opened
-     must not be swapped closed under them. Data: DayPlan, PlanOutcome,
-     PlanOpen, Date, BackHref. */}}
+     must not be swapped closed under them. On today or a later day it
+     also shows the open lessons and the AI draft, which prefills the form
+     (PlanForm = the plan with the draft laid over it). Data: planCardData
+     (DayPlan, PlanOutcome, PlanOpen, PlanAhead, PlanForm, PlanLessons,
+     PlanDraft, PlanDraftPending, PlanDraftError, PlanPoll), Date, BackHref. */}}
 {{define "plan_card"}}
 <div class="card mt-16 plan-card" id="day-plan">
   <div class="card-title">Plan
@@ -207,6 +210,39 @@
   </ul>
   {{else}}<p class="muted plan-wait">No trades yet; each rule is checked as the day's trades close.</p>{{end}}{{end}}
   {{if not .DayPlan}}{{if not .PlanOpen}}<p class="muted plan-wait">No plan for this day.</p>{{end}}{{end}}
+  {{if .PlanLessons}}
+  <div class="plan-lessons">
+    <span class="label">Open lessons</span>
+    <ul class="lesson-list lesson-list--compact">
+      {{range .PlanLessons}}<li class="lesson-item">{{if .Name}}<span class="lesson-key">{{.Name}}{{if gt .Count 1}} <span class="num">×{{.Count}}</span>{{end}}</span>{{end}}<span class="lesson-text">{{.Text}}</span></li>{{end}}
+    </ul>
+    <a class="lessons-link" href="/journal/lessons?back=/journal/{{.Date}}">All lessons →</a>
+  </div>
+  {{end}}
+  {{if and .PlanAhead aiEnabled}}
+  <div class="plan-ai ai-action">
+    {{if .PlanDraftPending}}
+    <p class="ai-lock-note" role="status"><span class="ai-spinner" aria-hidden="true"></span> Drafting the plan from your norms, your last days, your open lessons and the gamma map…
+      <span hidden hx-get="{{.PlanPoll}}" hx-trigger="every 3s" hx-swap="none"></span></p>
+    {{else if .PlanDraft}}
+    <div class="plan-draft">
+      <div class="plan-draft__head"><strong>✨ Drafted plan</strong> <span class="muted">· {{.PlanDraft.Model}}</span></div>
+      <p class="muted plan-draft__hint">Prefilled in the form below: change what you like and save it. The bias stays your call.</p>
+      {{if .PlanDraft.Reasons}}<ul class="plan-draft__reasons">{{range .PlanDraft.Reasons}}<li>{{.}}</li>{{end}}</ul>{{end}}
+      <form method="post" action="/journal/plan/{{.Date}}/draft/discard">
+        {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
+        <button type="submit" class="btn btn--ghost btn--sm">Discard the draft</button>
+      </form>
+    </div>
+    {{else}}
+    <form method="post" action="/journal/plan/{{.Date}}/draft">
+      {{if .BackHref}}<input type="hidden" name="back" value="{{.BackHref}}">{{end}}
+      <button type="submit" class="btn btn--secondary btn--sm" title="Draft the decision cap, stop time, max loss, levels and focus from your norms, your last days, your open lessons and the gamma map; you review and save it">✨ Draft the plan</button>
+    </form>
+    {{end}}
+    {{with .PlanDraftError}}<div class="flash error" role="alert">Drafting the plan failed: {{.}}</div>{{end}}
+  </div>
+  {{end}}
   <details class="plan-edit" data-keep-open{{if .PlanOpen}} open data-rendered-open{{end}}>
     <summary class="btn btn--secondary btn--sm">{{if .DayPlan}}Edit the plan{{else}}+ Write the plan{{end}}</summary>
     <form method="post" action="/journal/plan/{{.Date}}" class="plan-form">
@@ -215,19 +251,19 @@
         <label class="field"><span class="field-label">Bias</span>
           <select name="bias">
             <option value="">— none —</option>
-            {{range biasOptions}}<option value="{{.Key}}"{{if and $.DayPlan (eq $.DayPlan.Bias .Key)}} selected{{end}}>{{.Name}}</option>{{end}}
+            {{range biasOptions}}<option value="{{.Key}}"{{if eq $.PlanForm.Bias .Key}} selected{{end}}>{{.Name}}</option>{{end}}
           </select></label>
         <label class="field"><span class="field-label" title="A copy set counts once">Max decisions</span>
-          <input type="number" name="max_trades" min="1" step="1" inputmode="numeric" value="{{with .DayPlan}}{{with .MaxTrades}}{{derefInt .}}{{end}}{{end}}"></label>
+          <input type="number" name="max_trades" min="1" step="1" inputmode="numeric" value="{{.PlanForm.MaxTrades}}"></label>
         <label class="field"><span class="field-label" title="No new entries after this time">Done by</span>
-          <input type="time" name="stop_time" value="{{with .DayPlan}}{{.StopTime}}{{end}}"></label>
+          <input type="time" name="stop_time" value="{{.PlanForm.StopTime}}"></label>
         <label class="field"><span class="field-label" title="Stop trading once any account is this much down on the day">Max loss per account</span>
-          <input type="number" name="max_loss" min="0" step="any" inputmode="decimal" value="{{with .DayPlan}}{{with .MaxLoss}}{{printf "%g" (deref .)}}{{end}}{{end}}"></label>
+          <input type="number" name="max_loss" min="0" step="any" inputmode="decimal" value="{{.PlanForm.MaxLoss}}"></label>
       </div>
       <label class="field"><span class="field-label">Levels <span class="muted" style="font-weight:400;">· one per line</span></span>
-        <textarea name="levels" rows="3" placeholder="ES 7860 HVL&#10;7900 call wall&#10;Overnight low 7832">{{with .DayPlan}}{{.Levels}}{{end}}</textarea></label>
+        <textarea name="levels" rows="3" placeholder="ES 7860 HVL&#10;7900 call wall&#10;Overnight low 7832">{{.PlanForm.Levels}}</textarea></label>
       <label class="field"><span class="field-label">Notes</span>
-        <textarea name="notes" rows="3" placeholder="What has to happen before I take a trade; what I stay away from today.">{{with .DayPlan}}{{.Notes}}{{end}}</textarea></label>
+        <textarea name="notes" rows="3" placeholder="What has to happen before I take a trade; what I stay away from today.">{{.PlanForm.Notes}}</textarea></label>
       <div class="row-sm">
         <button type="submit" class="btn btn--primary btn--sm">Save the plan</button>
         {{if .DayPlan}}<button type="submit" name="_action" value="delete" class="btn btn--ghost btn--sm" data-confirm="Delete the plan for this day?">Delete</button>{{end}}

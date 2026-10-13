@@ -66,6 +66,7 @@ func (h *Handlers) DayPlanSave(w http.ResponseWriter, r *http.Request) {
 		h.planFailed(w, err)
 		return
 	}
+	h.dropPlanDraft(ctx, day) // saved or deleted: the draft has served
 	h.LiveData.Bump(userID(ctx))
 	http.Redirect(w, r, target, http.StatusSeeOther)
 }

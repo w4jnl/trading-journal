@@ -70,6 +70,15 @@
   </section>
 </div>
 
+{{if .Lessons}}
+<section class="card digest-card mt-16">
+  <div class="card-title">Lessons from the reviews <a class="muted lessons-link" href="/journal/lessons?back={{$.Self}}">all lessons →</a></div>
+  <ul class="lesson-list">
+    {{range .Lessons}}<li class="lesson-item{{if not .Open}} lesson-item--learned{{end}}">{{if .Name}}<span class="lesson-key">{{.Name}}{{if gt .Count 1}} <span class="num">×{{.Count}}</span>{{end}}</span>{{end}}<span class="lesson-text">{{.Text}}</span>{{if not .Open}} <span class="pill">learned</span>{{end}}</li>{{end}}
+  </ul>
+</section>
+{{end}}
+
 <div class="digest-grid">
   <section class="digest-card"><h3 class="digest-h3">By strategy</h3>{{template "digest_buckets" (index .This.Breakdowns "byStrategy")}}</section>
   <section class="digest-card"><h3 class="digest-h3">By mistake</h3>{{template "digest_buckets" (index .This.Breakdowns "byMistake")}}</section>

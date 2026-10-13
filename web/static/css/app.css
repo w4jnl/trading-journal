@@ -2236,6 +2236,32 @@ tfoot td {
 .dash-plan { display: block; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); font-size: var(--fs-12); color: var(--fg-muted); text-decoration: none; }
 .dash-plan:hover { color: var(--fg); }
 .dash-plan .label { margin-right: 4px; }
+/* The plan card's open lessons and AI draft. */
+.plan-lessons { margin: 10px 0 4px; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--fs-12); }
+.plan-ai { margin-top: 10px; }
+.plan-draft { border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: var(--r-md); padding: 8px 12px; background: var(--bg-elev); }
+.plan-draft__head { font-size: var(--fs-13); }
+.plan-draft__hint { font-size: var(--fs-12); margin: 2px 0 6px; }
+.plan-draft__reasons { margin: 0 0 8px; padding-left: 18px; font-size: var(--fs-12); display: flex; flex-direction: column; gap: 2px; }
+
+/* Lessons: the ledger page, the plan card and the digest. */
+.lesson-list { list-style: none; margin: 4px 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.lesson-list--compact { gap: 3px; margin: 4px 0 6px; }
+.lesson-item { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; font-size: var(--fs-13); }
+.lesson-item--row { justify-content: space-between; flex-wrap: nowrap; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.lesson-item--row:last-child { border-bottom: 0; }
+.lesson-item--learned .lesson-text { color: var(--fg-muted); }
+.lesson-body { min-width: 0; }
+.lesson-key { font-weight: var(--fw-semibold); margin-right: 6px; white-space: nowrap; }
+.lesson-day { font-size: 11px; margin-left: 4px; }
+.lesson-more { margin-top: 2px; font-size: var(--fs-12); }
+.lesson-more summary { cursor: pointer; }
+.lesson-more ul { margin: 4px 0 0; padding-left: 18px; }
+.lessons-link { font-size: var(--fs-12); font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 8px; }
+.lessons-table { width: 100%; font-size: var(--fs-13); }
+.lessons-table td { vertical-align: top; }
+.lesson-row--learned td { color: var(--fg-muted); }
+@media (max-width: 760px) { .lesson-item--row { flex-wrap: wrap; } }
 
 /* Coach card on the day page: one line per finding, a dot for severity,
    the label the finding suggests as a button into the editor. */

@@ -221,6 +221,18 @@ type JournalTemplate struct {
 	UpdatedAt *time.Time `json:"updated_at"`
 }
 
+type Lesson struct {
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	EntryID    *int64     `json:"entry_id"`
+	Day        string     `json:"day"`
+	Scope      string     `json:"scope"`
+	MistakeKey *string    `json:"mistake_key"`
+	Text       string     `json:"text"`
+	LearnedAt  *time.Time `json:"learned_at"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
 type OauthAccessToken struct {
 	ID          int64      `json:"id"`
 	TokenSha256 string     `json:"token_sha256"`

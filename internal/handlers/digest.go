@@ -13,6 +13,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/coach"
 	"github.com/w4jnl/trading-journal/internal/journal"
+	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // The weekly edge digest: one ISO week read the way a Sunday review reads
@@ -80,6 +81,7 @@ type weeklyDigest struct {
 	Plan        digestPlan       `json:"plan"`
 	Keep        []string         `json:"keep"`
 	Fix         []string         `json:"fix"`
+	Lessons     []lessonGroup    `json:"lessons"` // the week's review lessons, by mistake
 }
 
 var digestRuleNames = map[string]string{"bias": "bias", "max-trades": "decision cap", "stop-time": "stop time", "max-loss": "max loss"}
@@ -212,6 +214,13 @@ func (h *Handlers) buildDigest(ctx context.Context, monday time.Time, weekID str
 	})
 	for _, k := range ruleOrder {
 		d.Plan.Rules = append(d.Plan.Rules, *rules[k])
+	}
+
+	d.Lessons = []lessonGroup{}
+	if rows, err := h.Queries.ListLessonsBetween(ctx, models.ListLessonsBetweenParams{UserID: userID(ctx), Day: d.From, Day_2: d.To}); err == nil {
+		d.Lessons = groupLessons(rows)
+	} else {
+		h.logger().Warn("digest lessons", "err", err)
 	}
 
 	d.KPIs = digestKPIs(this, prev)
@@ -472,6 +481,24 @@ func digestMarkdown(d *weeklyDigest) string {
 	for _, r := range d.Plan.Rules {
 		fmt.Fprintf(&b, "- %s held on %d of %d days\n", r.Name, r.Held, r.Total)
 	}
+	if len(d.Lessons) > 0 {
+		b.WriteString("\n## Lessons from the reviews\n\n")
+		for _, l := range d.Lessons {
+			b.WriteString("- ")
+			if l.Name != "" {
+				fmt.Fprintf(&b, "**%s**", l.Name)
+				if l.Count > 1 {
+					fmt.Fprintf(&b, " (%d times)", l.Count)
+				}
+				b.WriteString(": ")
+			}
+			b.WriteString(l.Text)
+			if l.Open == 0 {
+				b.WriteString(" _(learned)_")
+			}
+			b.WriteString("\n")
+		}
+	}
 	return b.String()
 }
 
@@ -512,7 +539,7 @@ func digestForAI(d *weeklyDigest) map[string]any {
 	}
 	return map[string]any{
 		"week": d.Week, "tradingDays": d.TradingDays, "kpis": kpis,
-		"keep": d.Keep, "fix": d.Fix, "coach": d.Coach, "plan": d.Plan,
+		"keep": d.Keep, "fix": d.Fix, "coach": d.Coach, "plan": d.Plan, "lessons": d.Lessons,
 		"bestDecision": d.Best, "worstDecision": d.Worst,
 		"byStrategy": d.This.Breakdowns["byStrategy"], "byMistake": d.This.Breakdowns["byMistake"],
 	}

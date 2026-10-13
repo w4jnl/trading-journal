@@ -1,0 +1,56 @@
+{{define "title"}}Lessons — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+<div class="journal-title-row">
+  <h1>Lessons</h1>
+  <a href="/journal" class="btn btn--ghost btn--sm ml-auto">‹ Journal</a>
+</div>
+<p class="muted mb-16" style="font-size: 13px; max-width: 900px;">
+  Every AI review ends with one lesson. Lessons about the same mistake are counted while they stay open; the open ones
+  show on the day plan and the weekly digest, go into the plan draft and are handed to the next reviews, which say
+  whether a trade repeated one or applied it. Mark a lesson learned once it stops coming back.
+</p>
+{{if eq .Flash "learned"}}<div class="flash success mb-16" role="status">Marked learned.</div>{{end}}
+
+<section class="card">
+  <div class="card-title">Open · last 30 days</div>
+  {{if .Open}}
+  <ul class="lesson-list">
+    {{range .Open}}
+    <li class="lesson-item lesson-item--row">
+      <div class="lesson-body">
+        {{if .Name}}<span class="lesson-key">{{.Name}}{{if gt .Count 1}} <span class="num">×{{.Count}}</span>{{end}}</span>{{end}}
+        <span class="lesson-text">{{.Text}}</span> <span class="muted lesson-day num">{{.Day}}</span>
+        {{if gt (len .Texts) 1}}<details class="lesson-more"><summary class="muted">the {{len .Texts}} newest</summary><ul>{{range .Texts}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+      </div>
+      <form method="post" action="/journal/lessons/learned">
+        {{if .Key}}<input type="hidden" name="key" value="{{.Key}}">{{else}}<input type="hidden" name="id" value="{{.LessonID}}">{{end}}
+        <button class="btn btn--secondary btn--sm" type="submit" title="{{if .Key}}Mark every open lesson about this mistake learned{{else}}Mark this lesson learned{{end}}">Learned</button>
+      </form>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}<p class="muted" style="font-size: 13px; margin: 0;">No open lessons. A lesson is added each time the AI reviews a note.</p>{{end}}
+</section>
+
+<section class="card mt-16">
+  <div class="card-title">Last 90 days</div>
+  {{if .Recent}}
+  <div class="table-scroll"><table class="lessons-table">
+    <thead><tr><th>Day</th><th>Note</th><th>Mistake</th><th>Lesson</th><th></th></tr></thead>
+    <tbody>
+    {{range .Recent}}
+    <tr{{if .LearnedAt}} class="lesson-row--learned"{{end}}>
+      <td class="num">{{.Day}}</td>
+      <td>{{if .Href}}<a href="{{.Href}}">{{.Scope}}</a>{{else}}<span class="muted">{{.Scope}}</span>{{end}}</td>
+      <td>{{if .Mistake}}{{.Mistake}}{{else}}<span class="muted">—</span>{{end}}</td>
+      <td>{{.Text}}</td>
+      <td>{{if .LearnedAt}}<span class="pill">learned</span>{{else}}<form method="post" action="/journal/lessons/learned"><input type="hidden" name="id" value="{{.ID}}"><button class="btn btn--ghost btn--sm" type="submit">Learned</button></form>{{end}}</td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  {{else}}<p class="muted" style="font-size: 13px; margin: 0;">No lessons yet.</p>{{end}}
+</section>
+{{end}}

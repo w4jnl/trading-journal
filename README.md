@@ -32,7 +32,12 @@ around it.
   (bias, levels, a cap on decisions, a stop time, a max loss per account,
   notes) written before the session and read rule by rule against the
   day's trades, flagged when it was written after the first trade; the
-  dashboard nudges when today has none. Then the **coach**: rule-based checks
+  dashboard nudges when today has none. For today or a later day the card
+  lists your open lessons and **✨ Draft the plan** has the AI draft the cap,
+  stop time, max loss, levels and focus from your norms, the last trading
+  days' coach findings and plan checks, what an account usually loses on a
+  losing day, your open lessons and the gamma map; the draft prefills the
+  form for you to change and save (the bias stays yours). Then the **coach**: rule-based checks
   over the day's trades (re-entry after a loss, size-up after a loss, a
   stop run through, a winner cut short, a loser held, overtrading,
   late entries) with the numbers and a one-click label; the same checks
@@ -67,7 +72,7 @@ around it.
 - **Digest** reads one ISO week per decision against the week before:
   the headline numbers, one-sentence keep and fix lists derived from
   them, the best and worst decision, the coach's findings tallied across
-  the days and how the day plans held; downloadable as markdown, served
+  the days, how the day plans held and the week's review lessons; downloadable as markdown, served
   to the API and MCP, and the basis of the AI's week review.
 - **AI reviews** in the app: ✨ Analyze on any note (a trade, a copy set,
   a group, a day or a week, also one not written yet; once reviewed it
@@ -81,6 +86,11 @@ around it.
   to accept or dismiss (a dismissed one is not proposed again). Values
   written through the API or MCP are marked until you save the note, and
   analytics can count only what you set or confirmed ("Confirmed by me").
+  Each review also names **one lesson**, kept in a ledger
+  (`/journal/lessons`): lessons about the same mistake are counted while
+  open, the next reviews are told your recent ones and say whether a trade
+  repeated or applied them, and you mark a lesson learned once it stops
+  coming back.
   **Suggest stop & target** on a trade or set proposes the levels from what
   was known at the entry only - the structure and volatility in the bars
   before it, how much heat your earlier winners took and how far they ran,

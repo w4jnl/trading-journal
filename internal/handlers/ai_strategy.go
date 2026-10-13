@@ -723,6 +723,16 @@ func (h *Handlers) AITaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	then, ref, _ := strings.Cut(q.Get("then"), ":")
 	switch then {
+	case "plan": // the day page's plan card, in place
+		var outcome any
+		if d, err := time.ParseInLocation("2006-01-02", ref, h.localTZ()); err == nil {
+			if rep := h.coachReport(r.Context(), d); rep != nil && rep.Plan != nil {
+				outcome = rep.Plan
+			}
+		}
+		w.Header().Set("HX-Retarget", "#day-plan")
+		w.Header().Set("HX-Reswap", "outerHTML")
+		h.renderPartial(w, "journal.html", "plan_card", h.planCardData(r.Context(), ref, validBackHref(r), outcome))
 	case "trade", "set":
 		r.SetPathValue("id", ref)
 		w.Header().Set("HX-Retarget", "#trade-sheet-content")

@@ -37,7 +37,7 @@ import (
 
 const aiPromptCommon = `You are a trading-journal analyst reviewing the user's own futures trades. The user message is JSON context for ONE journal entry; the part below says what kind of item it is and what to write.
 
-Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. entry.chart.panels[].bars, when present, is the price action around the trade: rows of [time, open, high, low, close] in bars of the given tf, with the entry and exit times - read the move into the entry, the path while open and what came after the exit from them. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery.
+Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. entry.chart.panels[].bars, when present, is the price action around the trade: rows of [time, open, high, low, close] in bars of the given tf, with the entry and exit times - read the move into the entry, the path while open and what came after the exit from them. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery. recentLessons, when present, are the lessons of the trader's latest reviews (newest first): say plainly when this item repeated one or applied it, and when the lesson you would give is already there, say it recurs rather than rewording it.
 
 Format: Markdown, a short bullet list with one bullet per section, each led by a bold label (nested bullets allowed). No headings (the review is inserted under an existing one), no preamble such as "Here is the analysis", no closing pleasantries. Omit a section only when there is genuinely nothing to say. Be specific and brief: one concrete, actionable lesson beats a list of generic advice. Use the SAME structure every time, whether or not a strategy is tagged.`
 
@@ -118,15 +118,15 @@ func aiSystemPrompt(scope, language string) string {
 	case scope == "day" || scope == "week":
 		verdict = aiVerdictTagOnly
 	}
-	body := aiPromptCommon + "\n\n" + part + "\n\n" + verdict
+	body := aiPromptCommon + "\n\n" + part + "\n\n" + aiLessonInstruction() + "\n\n" + verdict
 	if language == "" {
 		return body
 	}
 	// Local models tend to default to English when the language directive is buried at the
 	// end of a long English prompt, so LEAD and CLOSE with it. The verdict line is parsed,
 	// so it is the explicit exception that stays in English.
-	lead := "WRITE YOUR ENTIRE REVIEW IN " + language + ". Every sentence, every bold section label, and every bullet must be in " + language + " - even though these instructions are written in English. The section labels in the brief below (Setup & entry, Risk, Exit, ...) are English placeholders: write each of them in " + language + " too. The ONLY part that stays in English is the final machine-readable verdict line (the literal <!-- tj-ai:verdict ... --> comment, its keywords and the label keys).\n\n"
-	tail := "\n\nReminder: everything above the verdict line - all prose and labels - must be written in " + language + ", not English."
+	lead := "WRITE YOUR ENTIRE REVIEW IN " + language + ". Every sentence, every bold section label, and every bullet must be in " + language + " - even though these instructions are written in English. The section labels in the brief below (Setup & entry, Risk, Exit, ...) are English placeholders: write each of them in " + language + " too. The ONLY parts that stay in English are the two machine-readable lines' keywords and label keys (the literal <!-- tj-ai:lesson ... --> and <!-- tj-ai:verdict ... --> comments); the lesson sentence inside the lesson line is written in " + language + ".\n\n"
+	tail := "\n\nReminder: all prose, the section labels and the lesson sentence must be written in " + language + ", not English."
 	return lead + body + tail
 }
 
@@ -526,6 +526,10 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 		}
 	}
 
+	if lessons := h.aiRecentLessons(ctx, e.ID); len(lessons) > 0 {
+		out["recentLessons"] = lessons
+	}
+
 	if e.StrategyID != nil {
 		if s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *e.StrategyID, UserID: userID(ctx)}); err == nil {
 			out["assignedStrategy"] = map[string]any{"id": s.ID, "name": s.Name, "playbook": s.Body}
@@ -590,7 +594,7 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	// follow the user message more closely than the system prompt for output language.
 	lang := h.userAILanguage(ctx)
 	if lang != "" {
-		userPrompt = "Reply in " + lang + " (write the whole review in " + lang + "; keep only the verdict line in English).\n\n" + userPrompt
+		userPrompt = "Reply in " + lang + " (write the whole review and the lesson in " + lang + "; keep only the keywords of the machine-readable lines in English).\n\n" + userPrompt
 	}
 	out, err := aiGenerate(ctx, client, aiSystemPrompt(e.Scope, lang), userPrompt, png)
 	if err != nil {
@@ -608,7 +612,8 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	// set, a label already there, a strategy on a day). The strategy token is
 	// resolved by id OR name (resolveStrategyID) - models often echo the name.
 	v := parseAIVerdict(out)
-	body := stripAIVerdict(out)
+	lesson := parseAILesson(out)
+	body := stripAILesson(stripAIVerdict(out))
 	var resolvedSID int64
 	var strategyName string
 	if v.Strategy != "" {
@@ -660,6 +665,7 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	if err := h.journalSvc().AppendNoteAs(ctx, userID(ctx), e, note, words.NoteAdded); err != nil {
 		return res, fmt.Errorf("append analysis: %w", err)
 	}
+	h.recordLesson(ctx, e, lesson)
 	return res, nil
 }
 

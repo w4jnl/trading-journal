@@ -167,12 +167,23 @@ func (h *Handlers) levelsHistory(ctx context.Context, s *levelsSubject) *levels.
 // prices (none for a market the engine does not cover, or a stale row).
 func (h *Handlers) levelsGamma(ctx context.Context, s *levelsSubject) []levels.GammaLevel {
 	market, ok := gexMarket(s.root)
-	if h.GEX == nil || !ok {
+	if !ok {
 		return nil
 	}
-	snap, _, err := h.GEX.CleanSnapshot(ctx, market, s.entryTime, gexCleanSteps, gexview.StaleAfter)
-	if err != nil || snap == nil || s.entryTime.Sub(snap.AsOf) > gexview.StaleAfter {
-		return nil
+	out, _ := h.gammaLevels(ctx, market, s.entryTime, gexview.StaleAfter)
+	return out
+}
+
+// gammaLevels is the market's gamma map known at a moment, in futures
+// prices, from a snapshot at most maxAge old (nil without one), and the
+// snapshot's time.
+func (h *Handlers) gammaLevels(ctx context.Context, market string, at time.Time, maxAge time.Duration) ([]levels.GammaLevel, time.Time) {
+	if h.GEX == nil {
+		return nil, time.Time{}
+	}
+	snap, _, err := h.GEX.CleanSnapshot(ctx, market, at, gexCleanSteps, maxAge)
+	if err != nil || snap == nil || at.Sub(snap.AsOf) > maxAge {
+		return nil, time.Time{}
 	}
 	var out []levels.GammaLevel
 	add := func(name string, p *float64) {
@@ -189,7 +200,7 @@ func (h *Handlers) levelsGamma(ctx context.Context, s *levelsSubject) []levels.G
 			add(name, l.Futures)
 		}
 	}
-	return out
+	return out, snap.AsOf
 }
 
 const aiLevelsPrompt = `You set the stop and the target of a futures trade at the moment of its entry, as a disciplined trader would. The user message is JSON: the direction, the entry price and time (the trader's timezone), the tick, and candidate levels the app computed from what was known at that moment only - price structure in the bars before the entry, their volatility, the trader's own record before this trade (how much heat their winners took, how far they ran) and the gamma levels then - each with its distance in points and what it is; plus the strategy's playbook when the trade has one.

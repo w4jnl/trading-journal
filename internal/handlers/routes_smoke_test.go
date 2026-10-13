@@ -160,6 +160,7 @@ func (f *smokeFixture) routes() []smokeRoute {
 		{"/journal/templates", hf(h.JournalTemplatesList), true, "?scope=day"},
 		{"/journal/recent", hf(h.JournalRecentList), true, "?scope=day"},
 		{"/journal/attachments/{id}", hf(h.JournalAttachmentServe), true, ""},
+		{"/journal/lessons", hf(h.LessonsPage), true, ""},
 		{"/journal/week/{week}", hf(h.WeekJournalPage), true, ""},
 		{"/journal/trade/{id}", hf(h.JournalTradePage), true, ""},
 		{"/journal/group/{id}", hf(h.GroupJournalPage), true, ""},
