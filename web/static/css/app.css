@@ -2265,6 +2265,9 @@ tfoot td {
 .coach-trades { font-size: var(--fs-11); font-weight: 400; color: var(--fg-muted); }
 .coach-detail { font-size: var(--fs-12); color: var(--fg-muted); margin-top: 2px; }
 .coach-label { flex-shrink: 0; white-space: nowrap; }
+.coach-nudges { margin-top: 10px; padding-top: 8px; border-top: 1px solid var(--border); font-size: var(--fs-12); }
+.coach-nudges__list { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.coach-nudges__lesson { color: var(--fg); font-style: italic; }
 @media (max-width: 600px) { .coach-item { flex-wrap: wrap; } .coach-label { margin-left: 18px; } }
 
 /* Sets view of /trades: one row per decision. The chevron folds the

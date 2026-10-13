@@ -233,6 +233,21 @@ type Lesson struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+type Nudge struct {
+	ID          int64      `json:"id"`
+	UserID      int64      `json:"user_id"`
+	Day         string     `json:"day"`
+	Key         string     `json:"key"`
+	Ref         string     `json:"ref"`
+	Severity    string     `json:"severity"`
+	Title       string     `json:"title"`
+	Detail      string     `json:"detail"`
+	Lesson      *string    `json:"lesson"`
+	Href        string     `json:"href"`
+	CreatedAt   time.Time  `json:"created_at"`
+	DeliveredAt *time.Time `json:"delivered_at"`
+}
+
 type OauthAccessToken struct {
 	ID          int64      `json:"id"`
 	TokenSha256 string     `json:"token_sha256"`
@@ -451,6 +466,7 @@ type User struct {
 	LastLoginAt  *time.Time `json:"last_login_at"`
 	AiLanguage   string     `json:"ai_language"`
 	AiSendChart  int64      `json:"ai_send_chart"`
+	Guardrail    int64      `json:"guardrail"`
 }
 
 type UserAiSetting struct {

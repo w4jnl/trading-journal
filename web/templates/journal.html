@@ -145,7 +145,8 @@
 {{end}}
 
 
-{{/* coach_card: the day's rule-based checks (internal/coach). Each finding
+{{/* coach_card: the day's rule-based checks (internal/coach), and the
+     intraday guardrail's nudges of the day (internal/guardrail). Each finding
      names its trades and, when a review label fits, links to the editor
      with that chip pre-checked (?edit=1&mistake=key); nothing is saved
      until Save. Data: Coach (*coach.Report, nil when the checks could not
@@ -173,6 +174,12 @@
   </ul>
   {{else}}
   <p class="muted" style="font-size: 12px; margin: 0;">No re-entries after a loss, size-ups, stops run through, winners cut short, losers held, overtrading or late entries today.</p>
+  {{end}}
+  {{with $.Nudges}}
+  <div class="coach-nudges">
+    <span class="label">Guardrail nudges</span>
+    <ul class="coach-nudges__list">{{range .}}<li><span class="num muted">{{ltime .CreatedAt "time"}}</span> <b>{{.Title}}</b> <span class="muted">{{.Detail}}</span>{{with .Lesson}} <span class="coach-nudges__lesson">Your lesson: {{.}}</span>{{end}}</li>{{end}}</ul>
+  </div>
   {{end}}
 </div>
 {{end}}

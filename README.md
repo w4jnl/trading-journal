@@ -37,7 +37,15 @@ around it.
   stop time, max loss, levels and focus from your norms, the last trading
   days' coach findings and plan checks, what an account usually loses on a
   losing day, your open lessons and the gamma map; the draft prefills the
-  form for you to change and save (the bias stays yours). Then the **coach**: rule-based checks
+  form for you to change and save (the bias stays yours). With the
+  **guardrail** on (Settings), the server re-reads the day as fills arrive
+  and nudges you once - a toast, and a browser notification while the tab
+  is in the background - when the coach flags a trade that just closed
+  (a re-entry right after a loss, a size-up after a loss, a stop run
+  through, trading against the plan), when the plan's decision cap is
+  reached, when an account nears or hits its max loss and at the plan's
+  stop time; each nudge quotes your own open lesson about it, no AI model
+  involved, and the day page lists them. Then the **coach**: rule-based checks
   over the day's trades (re-entry after a loss, size-up after a loss, a
   stop run through, a winner cut short, a loser held, overtrading,
   late entries) with the numbers and a one-click label; the same checks

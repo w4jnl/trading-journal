@@ -25,6 +25,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/dayplan"
 	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/guardrail"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/journal"
@@ -127,6 +128,10 @@ type Handlers struct {
 	// with AIJobs; nil-safe for the views.
 	AITasks *ai.Tasks
 
+	// Guardrail is the intraday nudge worker; set when it runs (pages then
+	// poll for nudges for the users who turned it on).
+	Guardrail *guardrail.Service
+
 	// AISecrets opens the per-user AI provider keys (user_ai_settings). Nil
 	// when users may not bring their own key (ai.user_keys false, or no
 	// secrets encryption key configured).
@@ -228,6 +233,10 @@ func (h *Handlers) renderPage(w http.ResponseWriter, r *http.Request, page strin
 			// (no own key, no server default) - base.html hides .ai-action.
 			if _, exists := m["AIOff"]; !exists && h.AIJobs != nil {
 				m["AIOff"] = !h.aiAvailable(r.Context())
+			}
+			// The guardrail's page poll runs for a user who turned it on.
+			if _, exists := m["Guardrail"]; !exists && h.Guardrail != nil {
+				m["Guardrail"] = h.guardrailOn(r.Context())
 			}
 			// Current data version for the live-refresh marker, keyed on the
 			// EFFECTIVE user so an admin acting-as follows the target user's

@@ -28,6 +28,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/db"
 	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/guardrail"
 	"github.com/w4jnl/trading-journal/internal/handlers"
 	"github.com/w4jnl/trading-journal/internal/ibkr"
 	"github.com/w4jnl/trading-journal/internal/importer"
@@ -696,8 +697,13 @@ func run() error {
 		oauthSrv = &oauth.Server{Queries: queries, Cfg: oauthConfig(cfg.MCP.OAuth)}
 	}
 
+	// The intraday guardrail: re-reads the day of each user who turned it on
+	// as their fills arrive and records nudges the pages pick up.
+	guard := &guardrail.Service{DB: conn, RDB: rconn, Live: liveData, TZ: tz}
+
 	h := &handlers.Handlers{
 		LiveData:         liveData,
+		Guardrail:        guard,
 		Templates:        web.TemplatesFS,
 		DB:               conn,
 		ImportSvc:        importSvc,
@@ -834,6 +840,7 @@ func run() error {
 	mux.HandleFunc("POST /settings/ai/delete", h.SettingsAIDelete)
 	mux.HandleFunc("POST /settings/ai/models", h.SettingsAIModels)
 	mux.HandleFunc("POST /settings/ai/chart", h.SettingsAIChartSave)
+	mux.HandleFunc("POST /settings/guardrail", h.SettingsGuardrailSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
 	mux.HandleFunc("POST /settings/topstepx/test", h.SettingsTopstepxTest)
@@ -856,6 +863,7 @@ func run() error {
 	mux.HandleFunc("POST /journal/plan/{date}/draft", h.DayPlanDraft)
 	mux.HandleFunc("POST /journal/plan/{date}/draft/discard", h.DayPlanDraftDiscard)
 	mux.HandleFunc("GET /journal/lessons", h.LessonsPage)
+	mux.HandleFunc("POST /nudges/take", h.NudgesTake)
 	mux.HandleFunc("POST /journal/lessons/learned", h.LessonsLearned)
 	mux.HandleFunc("GET /journal/week/{week}", h.WeekJournalPage)
 	mux.HandleFunc("POST /journal/week/{week}", h.WeekJournalSave)
@@ -1028,6 +1036,7 @@ func run() error {
 	if excursions != nil {
 		go excursions.FillAll(ctx)
 	}
+	go guard.Run(ctx)
 	// Copy sets for databases from before the feature: one pass, fast.
 	copyset.Backfill(ctx, queries, slog.Default())
 
