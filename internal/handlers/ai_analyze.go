@@ -3,15 +3,20 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math"
+	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/journal"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
 )
@@ -32,7 +37,7 @@ import (
 
 const aiPromptCommon = `You are a trading-journal analyst reviewing the user's own futures trades. The user message is JSON context for ONE journal entry; the part below says what kind of item it is and what to write.
 
-Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery.
+Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. entry.chart.panels[].bars, when present, is the price action around the trade: rows of [time, open, high, low, close] in bars of the given tf, with the entry and exit times - read the move into the entry, the path while open and what came after the exit from them. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery.
 
 Format: Markdown, a short bullet list with one bullet per section, each led by a bold label (nested bullets allowed). No headings (the review is inserted under an existing one), no preamble such as "Here is the analysis", no closing pleasantries. Omit a section only when there is genuinely nothing to say. Be specific and brief: one concrete, actionable lesson beats a list of generic advice. Use the SAME structure every time, whether or not a strategy is tagged.`
 
@@ -246,22 +251,117 @@ func aiTruncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// compactChartForAI strips the heavy per-bar arrays (token budget) but keeps the
-// entry/exit averages + markers + bar count so the model still gets price context.
-func compactChartForAI(ce chartEnvelope) map[string]any {
+// compactChartForAI turns the chart into what the reviewer reads: per panel
+// the contract, the entry and exit averages and markers, and a window of
+// price bars around the trade (aiBarWindow) instead of every cached bar.
+func compactChartForAI(ce chartEnvelope, tz *time.Location) map[string]any {
 	panels := make([]map[string]any, 0, len(ce.Panels))
-	for _, p := range ce.Panels {
-		panels = append(panels, map[string]any{
-			"contract":     p.Contract,
-			"direction":    p.Direction,
-			"entryAvg":     p.EntryAvg,
-			"exitAvg":      p.ExitAvg,
-			"barTimeframe": p.BarTimeframe,
-			"bars":         len(p.Bars),
-			"markers":      p.Markers,
-		})
+	for i, p := range ce.Panels {
+		if i == aiMaxChartPanels {
+			break
+		}
+		panel := map[string]any{
+			"contract":  p.Contract,
+			"direction": p.Direction,
+			"entryAvg":  p.EntryAvg,
+			"exitAvg":   p.ExitAvg,
+			"markers":   p.Markers,
+		}
+		if w := aiBarWindow(p, tz); w != nil {
+			panel["bars"] = w
+		}
+		panels = append(panels, panel)
 	}
 	return map[string]any{"status": ce.Status, "panels": panels}
+}
+
+// The bar window: aiBarsBefore bars before the entry and aiBarsAfter after the
+// exit, merged into wider bars when that is more than aiMaxBars; a chart
+// beyond aiMaxChartPanels contracts (a busy day) is cut.
+const (
+	aiBarsBefore     = 30
+	aiBarsAfter      = 15
+	aiMaxBars        = 90
+	aiMaxChartPanels = 3
+)
+
+// aiBarWindow is the stretch of a panel's bars around its trade, as
+// {tf, entry, exit, rows: [[time, open, high, low, close], ...]} with times
+// in the trader's timezone: what the model needs to judge the entry against
+// the move and the exit against what followed. nil without bars.
+func aiBarWindow(p chartPanel, tz *time.Location) map[string]any {
+	if len(p.Bars) == 0 {
+		return nil
+	}
+	var entryT, exitT int64
+	for _, m := range p.Markers {
+		if m.Role == "entry" && (entryT == 0 || m.T < entryT) {
+			entryT = m.T
+		}
+		if m.Role == "exit" && m.T > exitT {
+			exitT = m.T
+		}
+	}
+	// barAt: the last bar opening at or before t.
+	barAt := func(t int64) int {
+		i := sort.Search(len(p.Bars), func(i int) bool { return p.Bars[i].Time > t }) - 1
+		if i < 0 {
+			return 0
+		}
+		return i
+	}
+	start, end := len(p.Bars)-aiMaxBars, len(p.Bars)
+	if entryT > 0 {
+		in, out := barAt(entryT), barAt(entryT)
+		if exitT > 0 {
+			out = barAt(exitT)
+		}
+		start, end = in-aiBarsBefore, out+aiBarsAfter+1
+	}
+	start, end = max(start, 0), min(end, len(p.Bars))
+	bars := p.Bars[start:end]
+	// Merge k consecutive bars when the window is too long.
+	k := (len(bars) + aiMaxBars - 1) / aiMaxBars
+	tf := p.BarTimeframe
+	if k > 1 {
+		merged := make([]marketdata.Bar, 0, aiMaxBars)
+		for i := 0; i < len(bars); i += k {
+			j := min(i+k, len(bars))
+			b := marketdata.Bar{Time: bars[i].Time, Open: bars[i].Open, High: bars[i].High, Low: bars[i].Low, Close: bars[j-1].Close}
+			for _, x := range bars[i:j] {
+				b.High, b.Low = math.Max(b.High, x.High), math.Min(b.Low, x.Low)
+			}
+			merged = append(merged, b)
+		}
+		bars = merged
+		tf = scaleTimeframe(p.BarTimeframe, k)
+	}
+	clock := func(t int64) string { return time.Unix(t, 0).In(tz).Format("15:04") }
+	rows := make([][]any, 0, len(bars))
+	for _, b := range bars {
+		rows = append(rows, []any{clock(b.Time), b.Open, b.High, b.Low, b.Close})
+	}
+	w := map[string]any{"tf": tf, "rows": rows}
+	if entryT > 0 {
+		w["entry"] = clock(entryT)
+	}
+	if exitT > 0 {
+		w["exit"] = clock(exitT)
+	}
+	return w
+}
+
+// scaleTimeframe names k merged bars of tf ("1m" x5 = "5m"); tf itself when it
+// does not parse.
+func scaleTimeframe(tf string, k int) string {
+	if len(tf) < 2 {
+		return tf
+	}
+	n, err := strconv.Atoi(tf[:len(tf)-1])
+	if err != nil {
+		return tf
+	}
+	return strconv.Itoa(n*k) + tf[len(tf)-1:]
 }
 
 // aiTrade is one trade as the reviewer sees it: prices and times in the
@@ -361,29 +461,33 @@ func aiLabelVocabulary() map[string]any {
 // week, which reads the digest instead), the coach checks, the day plan or
 // the weekly digest, the assigned playbook, the strategies the model may pick
 // from and, for a trade or group, the label vocabulary.
-func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz *time.Location) (string, error) {
+func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz *time.Location) (string, *chartEnvelope, error) {
 	detail, err := h.journalDetailJSON(ctx, e, tz)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	delete(detail, "attachments")
 	delete(detail, "chartPng")
 	delete(detail, "createdAt")
 	delete(detail, "updatedAt")
-	if ce, ok := detail["chart"].(chartEnvelope); ok {
-		detail["chart"] = compactChartForAI(ce)
+	var chart *chartEnvelope
+	if ce, ok := detail["chart"].(chartEnvelope); ok && e.Scope != "week" {
+		chart = &ce
+		detail["chart"] = compactChartForAI(ce, tz)
+	} else {
+		delete(detail, "chart") // a week reads the digest, not a week of bars
 	}
 	decision := e.Scope == "trade" || e.Scope == "group"
 	linked, err := h.apiTradesForEntry(ctx, e, tz)
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
 	if e.Scope == "week" {
 		delete(detail, "trades") // the digest carries the week, per decision
 	} else {
 		rich, err := h.aiTrades(ctx, linked, tz, decision)
 		if err != nil {
-			return "", err
+			return "", nil, err
 		}
 		detail["trades"] = rich
 	}
@@ -436,9 +540,9 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	}
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		return "", err
+		return "", nil, err
 	}
-	return string(b), nil
+	return string(b), chart, nil
 }
 
 // aiMaxMistakes / aiMaxEmotions cap the labels one review may fill: a few
@@ -469,9 +573,18 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 		return res, fmt.Errorf("load entry %d: %w", entryID, err)
 	}
 	tz := h.localTZ()
-	userPrompt, err := h.aiEntryContext(ctx, e, tz)
+	userPrompt, chart, err := h.aiEntryContext(ctx, e, tz)
 	if err != nil {
 		return res, err
+	}
+	// The chart image, for a trade or group when the user sends it (vision
+	// models; Settings > AI).
+	var png []byte
+	if chart != nil && (e.Scope == "trade" || e.Scope == "group") && h.userSendsChart(ctx) {
+		if b, err := h.chartEnvelopePNG(*chart, "", tz); err == nil {
+			png = b
+			userPrompt = "The attached image is this trade's chart (candles with the entry and exit marked).\n\n" + userPrompt
+		}
 	}
 	// Restate the language directive at the top of the USER turn too - some local models
 	// follow the user message more closely than the system prompt for output language.
@@ -479,7 +592,7 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	if lang != "" {
 		userPrompt = "Reply in " + lang + " (write the whole review in " + lang + "; keep only the verdict line in English).\n\n" + userPrompt
 	}
-	out, err := client.Generate(ctx, aiSystemPrompt(e.Scope, lang), userPrompt)
+	out, err := aiGenerate(ctx, client, aiSystemPrompt(e.Scope, lang), userPrompt, png)
 	if err != nil {
 		return res, fmt.Errorf("ai generate: %w", err)
 	}
@@ -679,4 +792,29 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 		progress(done, total, "")
 	}
 	return nil
+}
+
+// aiGenerate makes one review call, with the chart image attached when there
+// is one and the client takes images. A model that refuses the image (a 4xx
+// other than a key or rate problem: a text-only model) gets the call again
+// without it.
+func aiGenerate(ctx context.Context, client ai.Client, system, user string, png []byte) (string, error) {
+	if ig, ok := client.(ai.ImageGenerator); ok && len(png) > 0 {
+		out, err := ig.GenerateImages(ctx, system, user, [][]byte{png})
+		var se *ai.StatusError
+		if err == nil || !errors.As(err, &se) || se.Code < 400 || se.Code >= 500 ||
+			se.Code == http.StatusUnauthorized || se.Code == http.StatusForbidden || se.Code == http.StatusTooManyRequests {
+			return out, err
+		}
+		slog.Warn("ai: the model refused the chart image; reviewing without it", "status", se.Code, "msg", se.Msg)
+		user = strings.TrimPrefix(user, "The attached image is this trade's chart (candles with the entry and exit marked).\n\n")
+	}
+	return client.Generate(ctx, system, user)
+}
+
+// userSendsChart reports whether the calling user sends the chart image with
+// trade reviews (Settings > AI).
+func (h *Handlers) userSendsChart(ctx context.Context) bool {
+	u, err := h.Queries.GetUserByID(ctx, userID(ctx))
+	return err == nil && u.AiSendChart != 0
 }

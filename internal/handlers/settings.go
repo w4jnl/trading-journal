@@ -154,6 +154,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"OAuthGrants":     h.oauthGrantRows(ctx),
 		"NewKey":          newKey,
 		"AILanguage":      h.userAILanguage(ctx),
+		"AISendChart":     h.userSendsChart(ctx),
 		"AILanguages":     aiLanguageOptions,
 		"AIEnabled":       h.AIJobs != nil,
 		"AI":              h.aiSettings(ctx),

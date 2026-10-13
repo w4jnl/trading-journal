@@ -233,6 +233,25 @@ func (h *Handlers) SettingsAIDelete(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings?flash=ai-removed#ai", http.StatusSeeOther)
 }
 
+// SettingsAIChartSave: POST /settings/ai/chart - whether trade and group
+// reviews send the trade's chart image to the model (vision models).
+func (h *Handlers) SettingsAIChartSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	var on int64
+	if r.PostFormValue("send_chart") == "1" {
+		on = 1
+	}
+	if err := h.Queries.SetUserAISendChart(ctx, models.SetUserAISendChartParams{AiSendChart: on, ID: userID(ctx)}); err != nil {
+		h.serverError(w, fmt.Errorf("set ai send chart: %w", err))
+		return
+	}
+	http.Redirect(w, r, "/settings?flash=ai-chart#ai", http.StatusSeeOther)
+}
+
 // SettingsAIModels: POST /settings/ai/models (htmx) - list the models the
 // form's provider and key can use, as the model field's suggestions. Errors
 // render inline next to the field.

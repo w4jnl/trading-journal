@@ -427,6 +427,7 @@ type User struct {
 	CreatedAt    time.Time  `json:"created_at"`
 	LastLoginAt  *time.Time `json:"last_login_at"`
 	AiLanguage   string     `json:"ai_language"`
+	AiSendChart  int64      `json:"ai_send_chart"`
 }
 
 type UserAiSetting struct {

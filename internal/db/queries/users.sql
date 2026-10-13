@@ -30,6 +30,10 @@ UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?;
 -- Language the in-app AI analyzer writes reviews in. Empty = model default.
 UPDATE users SET ai_language = ? WHERE id = ?;
 
+-- name: SetUserAISendChart :exec
+-- Whether the in-app reviews send the trade's chart image (vision models).
+UPDATE users SET ai_send_chart = ? WHERE id = ?;
+
 -- name: UpdateUserProfileFromProxy :exec
 -- Proxy mode refreshes email / display_name / is_admin from headers on every
 -- request. is_admin is recomputed by the caller from the groups header.

@@ -19,6 +19,7 @@
 {{if eq .Flash "language"}}<div class="flash saved mb-16">Language saved.</div>{{end}}
 {{if eq .Flash "ai-saved"}}<div class="flash saved mb-16">AI provider verified and saved — reviews now run on your key.</div>{{end}}
 {{if eq .Flash "ai-test-ok"}}<div class="flash saved mb-16">AI provider answered — your key works.</div>{{end}}
+{{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
 {{if eq .Flash "ai-removed"}}<div class="flash saved mb-16">Your AI provider and key were removed.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
@@ -232,6 +233,15 @@
   </p>
   {{end}}
   {{end}}
+
+  <form method="post" action="/settings/ai/chart" style="margin: 12px 0 0;">
+    <label class="row-sm" style="gap: 8px; align-items: flex-start; font-size: 13px;">
+      <input type="checkbox" name="send_chart" value="1" {{if .AISendChart}}checked{{end}} data-autosubmit style="margin-top: 3px;">
+      <span>Send the trade's chart image with trade and group reviews
+        <span class="muted" style="font-size: 12px;">(vision models: Claude, GPT-4o or later, Gemini, Qwen-VL, ...). The price bars around the
+        trade always go along as numbers; a model that cannot read images gets the review without the picture.</span></span>
+    </label>
+  </form>
 
   <div class="field-label" style="margin-top: 14px;">Review language</div>
   <p class="muted" style="font-size: 12px;">

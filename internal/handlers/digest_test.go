@@ -168,7 +168,7 @@ func TestWeeklyDigest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	aiCtx, err := h.aiEntryContext(ctx, e, time.UTC)
+	aiCtx, _, err := h.aiEntryContext(ctx, e, time.UTC)
 	if err != nil || !strings.Contains(aiCtx, `"weeklyDigest"`) || !strings.Contains(aiCtx, "ORB carried the week") {
 		t.Errorf("week AI context lacks the digest: %v", err)
 	}
