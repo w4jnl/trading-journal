@@ -2,6 +2,8 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"strconv"
 
@@ -65,7 +67,15 @@ func (h *Handlers) AIDayStart(w http.ResponseWriter, r *http.Request) {
 		date = "" // runDayAnalysis -> prepareDayEntries defaults to the last trading day
 	}
 	force := r.URL.Query().Get("mode") == "all"
-	h.AIJobs.Start(user.ID, datePath, func(ctx context.Context, progress func(done, total int, current string)) error {
+	// Resolved here for the status line; every entry resolves its own client
+	// again, so a key changed mid-run applies to the entries after it.
+	_, model, err := h.aiFor(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadGateway)
+		return
+	}
+	// The status line is app chrome, so English like the rest of the UI.
+	h.AIJobs.Start(user.ID, datePath, model.Label(aiWordsFor("")), func(ctx context.Context, progress func(done, total int, current string)) error {
 		return h.runDayAnalysis(auth.WithUser(ctx, user), date, force, progress)
 	})
 	h.renderAIStatus(w, r, user.ID, datePath)
@@ -91,26 +101,44 @@ func (h *Handlers) AIDayCancel(w http.ResponseWriter, r *http.Request) {
 	h.renderAIStatus(w, r, user.ID, r.PathValue("date"))
 }
 
-// AIAnalyzeEntry: POST /ai/entry/{id} - analyze one entry (appends the review and fills an
-// unset tag/strategy that fits), then reload the page. A reload (not an in-place swap) is
-// deliberate: the newly-assigned strategy renders in the strategy card, which lives OUTSIDE
-// the entry view, so swapping only the view would hide it - and the Analyze button then
-// hides itself (the entry is now marked). Matches how Save already behaves on these pages.
-func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
+// The per-note Analyze buttons. Each is always offered (given a provider): on
+// a note with no entry yet it creates one first, and on a note already
+// reviewed it writes a fresh review below the earlier one (force) - an explicit
+// click is never a no-op. Only the day job skips reviewed entries, so a
+// cancelled run resumes where it stopped.
+
+// aiButtonGuard is the common preamble of the button routes: 404 when AI is off
+// on this server, 409 without a provider or while the day job writes, and the
+// write deadline lifted for the wait on the model. False = stop.
+func (h *Handlers) aiButtonGuard(w http.ResponseWriter, r *http.Request) bool {
 	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
 	if h.AIJobs == nil {
 		http.NotFound(w, r)
-		return
+		return false
 	}
-	if h.guardNoAIProvider(w, r) || h.guardJournalingDuringAI(w, r) {
-		return
+	return !h.guardNoAIProvider(w, r) && !h.guardJournalingDuringAI(w, r)
+}
+
+// aiEnsureEntry returns the id of the entry in, creating it with the review
+// placeholder (which the first review replaces) when it does not exist yet.
+func (h *Handlers) aiEnsureEntry(ctx context.Context, in apiCreateInput) (int64, error) {
+	in.Body = aiPlaceholderBody
+	e, conflict, err := h.createJournalEntry(ctx, in)
+	switch {
+	case conflict != nil:
+		return conflict.EntryID, nil
+	case err != nil:
+		return 0, err
 	}
-	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
-	if err != nil {
-		http.Error(w, "bad id", http.StatusBadRequest)
-		return
-	}
-	if _, err := h.analyzeEntry(r.Context(), id, false); err != nil {
+	return e.ID, nil
+}
+
+// aiReviewAndReload analyzes entryID and has htmx reload the page. A reload
+// (not an in-place swap) is deliberate: a newly-assigned strategy renders in
+// the strategy card and the labels in the editor, both outside the note view.
+// Matches how Save already behaves on these pages.
+func (h *Handlers) aiReviewAndReload(w http.ResponseWriter, r *http.Request, entryID int64) {
+	if _, err := h.analyzeEntry(r.Context(), entryID, true); err != nil {
 		http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
@@ -118,17 +146,68 @@ func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
-// AIAnalyzeTrade: POST /ai/trade/{id} - ensure the trade's journal entry exists, then
-// analyze it. analyzeEntry fills an unset tag/strategy from the verdict when one clearly
-// fits (never overwriting yours). Re-renders the trade sheet in place (like Save) so the
-// analysis appears inline and the sheet stays open.
-func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
-	clearWriteDeadline(w) // waits on the AI model, possibly longer than the server WriteTimeout
-	if h.AIJobs == nil {
-		http.NotFound(w, r)
+// aiEnsureError answers a failed aiEnsureEntry: the service's validation
+// errors (a bad date or week, a trade that is not the caller's) are the
+// caller's fault.
+func (h *Handlers) aiEnsureError(w http.ResponseWriter, err error) {
+	var ve apiValidationError
+	if errors.As(err, &ve) {
+		http.Error(w, ve.Msg, http.StatusBadRequest)
 		return
 	}
-	if h.guardNoAIProvider(w, r) || h.guardJournalingDuringAI(w, r) {
+	http.Error(w, "could not prepare entry: "+err.Error(), http.StatusInternalServerError)
+}
+
+// AIAnalyzeEntry: POST /ai/entry/{id} - review an existing entry (any scope;
+// the group note page uses it), then reload the page.
+func (h *Handlers) AIAnalyzeEntry(w http.ResponseWriter, r *http.Request) {
+	if !h.aiButtonGuard(w, r) {
+		return
+	}
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	h.aiReviewAndReload(w, r, id)
+}
+
+// AIAnalyzeDayNote: POST /ai/note/day/{date} - review the day's note (the day
+// synthesis; "AI: analyze this day" also reviews every trade), creating the
+// note when the day has none yet.
+func (h *Handlers) AIAnalyzeDayNote(w http.ResponseWriter, r *http.Request) {
+	if !h.aiButtonGuard(w, r) {
+		return
+	}
+	id, err := h.aiEnsureEntry(r.Context(), apiCreateInput{Scope: "day", Date: r.PathValue("date")})
+	if err != nil {
+		h.aiEnsureError(w, err)
+		return
+	}
+	h.aiReviewAndReload(w, r, id)
+}
+
+// AIAnalyzeWeekNote: POST /ai/note/week/{week} - review the week's note
+// (YYYY-Www), creating it when the week has none yet.
+func (h *Handlers) AIAnalyzeWeekNote(w http.ResponseWriter, r *http.Request) {
+	if !h.aiButtonGuard(w, r) {
+		return
+	}
+	id, err := h.aiEnsureEntry(r.Context(), apiCreateInput{Scope: "week", Week: r.PathValue("week")})
+	if err != nil {
+		h.aiEnsureError(w, err)
+		return
+	}
+	h.aiReviewAndReload(w, r, id)
+}
+
+// AIAnalyzeTrade: POST /ai/trade/{id} - review the trade's note, creating it
+// when the trade has none. analyzeEntry fills an unset tag, strategy and labels
+// from the verdict when they clearly fit (never overwriting yours). From the
+// trade sheet it re-renders the sheet in place (like Save) so the review
+// appears inline; ?page=1 (the trade journal page) reloads the page instead.
+func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
+	if !h.aiButtonGuard(w, r) {
 		return
 	}
 	tradeID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
@@ -136,20 +215,46 @@ func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	entry, conflict, err := h.createJournalEntry(r.Context(), apiCreateInput{Scope: "trade", TradeID: &tradeID, Body: aiPlaceholderBody})
-	var entryID int64
-	switch {
-	case conflict != nil:
-		entryID = conflict.EntryID
-	case err == nil:
-		entryID = entry.ID
-	default:
-		http.Error(w, "could not prepare entry: "+err.Error(), http.StatusInternalServerError)
+	entryID, err := h.aiEnsureEntry(r.Context(), apiCreateInput{Scope: "trade", TradeID: &tradeID})
+	if err != nil {
+		h.aiEnsureError(w, err)
 		return
 	}
-	if _, err := h.analyzeEntry(r.Context(), entryID, false); err != nil {
+	if r.URL.Query().Get("page") == "1" {
+		h.aiReviewAndReload(w, r, entryID)
+		return
+	}
+	if _, err := h.analyzeEntry(r.Context(), entryID, true); err != nil {
 		http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
 		return
 	}
 	h.renderTradeDetail(w, r, "analyzed")
+}
+
+// AIAnalyzeSet: POST /ai/set/{id} - review a copy set as one decision: its
+// group note (created when no note covers the set's trades yet) gets the group
+// review, and the set sheet re-renders in place showing it.
+func (h *Handlers) AIAnalyzeSet(w http.ResponseWriter, r *http.Request) {
+	if !h.aiButtonGuard(w, r) {
+		return
+	}
+	setID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad id", http.StatusBadRequest)
+		return
+	}
+	entryID, err := h.ensureSetGroup(r.Context(), setID, aiPlaceholderBody)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		http.Error(w, "set not found", http.StatusNotFound)
+		return
+	case err != nil:
+		h.aiEnsureError(w, err)
+		return
+	}
+	if _, err := h.analyzeEntry(r.Context(), entryID, true); err != nil {
+		http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)
+		return
+	}
+	h.renderSetDetail(w, r, "analyzed")
 }

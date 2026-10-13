@@ -28,31 +28,38 @@ func (h *Handlers) aiUserKeys() bool { return h.AISecrets != nil }
 // client, or per-user keys. main.go creates AIJobs exactly when it is true.
 func (h *Handlers) aiPossible() bool { return h.AI != nil || h.aiUserKeys() }
 
-// aiFor returns the client the calling user's AI work runs on, and the model
-// label recorded with stored output: their own provider when they set one,
-// else the server default, else errNoAIProvider.
-func (h *Handlers) aiFor(ctx context.Context) (ai.Client, string, error) {
+// aiFor returns the client the calling user's AI work runs on, and the
+// reference naming its model (shown with every review, stored with the gamma
+// reads): their own provider when they set one, else the server default,
+// else errNoAIProvider.
+func (h *Handlers) aiFor(ctx context.Context) (ai.Client, aiModelRef, error) {
 	if h.aiUserKeys() {
 		row, err := h.Queries.GetUserAISettings(ctx, userID(ctx))
 		switch {
 		case err == nil:
 			opts, err := h.aiUserOptions(ctx, row)
 			if err != nil {
-				return nil, "", err
+				return nil, aiModelRef{}, err
 			}
 			c, err := ai.New(opts)
 			if err != nil {
-				return nil, "", err
+				return nil, aiModelRef{}, err
 			}
-			return c, row.Provider + ":" + row.Model, nil
+			ref := aiModelRef{Model: row.Model}
+			if row.Provider == ai.ProviderCustom {
+				ref.Provider = customHost(row.BaseUrl)
+			} else if p, ok := ai.PresetByID(row.Provider); ok {
+				ref.Provider = p.Label
+			}
+			return c, ref, nil
 		case !errors.Is(err, sql.ErrNoRows):
-			return nil, "", fmt.Errorf("load AI settings: %w", err)
+			return nil, aiModelRef{}, fmt.Errorf("load AI settings: %w", err)
 		}
 	}
 	if h.AI != nil {
-		return h.AI, h.AIModel, nil
+		return h.AI, aiModelRef{Model: h.AIModel}, nil
 	}
-	return nil, "", errNoAIProvider
+	return nil, aiModelRef{}, errNoAIProvider
 }
 
 // aiUserOptions builds the client options for a stored provider row,

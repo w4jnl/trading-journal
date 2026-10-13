@@ -1901,6 +1901,7 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
             padding: 10px 12px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-md); }
 .ai-status { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); color: var(--fg-muted); }
 .ai-status__err { color: var(--neg); }
+.ai-status__model { font-style: italic; }
 /* The server can run AI but this user has no provider (no own key, no server
    default): renderPage sets data-ai="off" on <body> and the buttons go. */
 body[data-ai="off"] .ai-action { display: none !important; }
@@ -1908,6 +1909,12 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .ai-models { display: inline-flex; align-items: center; gap: 8px; }
 .ai-models-msg { font-size: var(--fs-12); color: var(--fg-muted); }
 .ai-models-msg--err { color: var(--neg); }
+.ai-analyze { display: inline-flex; align-items: center; gap: 6px; }
+.journal-title-row .ai-analyze { margin-left: auto; }
+.journal-title-row .id-ref + .ai-analyze { margin-left: 0; }
+.set-note { max-height: 420px; overflow-y: auto; margin-bottom: 12px; padding: 10px 12px;
+  border: 1px solid var(--border); border-radius: 8px; }
+.ai-model-line { margin: 8px 0 0; font-size: var(--fs-12); color: var(--fg-muted); font-style: italic; }
 /* Archived (retired) strategies: dimmed Library row, an action row, and a muted
    "retired" badge reused on the entry's strategy card + (as text) the picker. */
 .lib-item--archived { opacity: 0.6; }

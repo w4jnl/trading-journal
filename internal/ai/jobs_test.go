@@ -12,7 +12,7 @@ func TestJobManagerParentCancel(t *testing.T) {
 	parent, cancel := context.WithCancel(context.Background())
 	m := NewJobManager(parent)
 	started := make(chan struct{})
-	ok := m.Start(7, "2026-10-09", func(ctx context.Context, progress func(int, int, string)) error {
+	ok := m.Start(7, "2026-10-09", "test-model", func(ctx context.Context, progress func(int, int, string)) error {
 		close(started)
 		<-ctx.Done()
 		return ctx.Err()
@@ -20,8 +20,11 @@ func TestJobManagerParentCancel(t *testing.T) {
 	if !ok {
 		t.Fatal("Start refused an idle user")
 	}
-	if m.Start(7, "2026-10-09", nil) {
+	if m.Start(7, "2026-10-09", "test-model", nil) {
 		t.Fatal("second Start for a running user was accepted")
+	}
+	if got := m.Status(7).Model; got != "test-model" {
+		t.Errorf("status model = %q", got)
 	}
 	<-started
 	cancel()
@@ -42,7 +45,7 @@ func TestJobManagerParentCancel(t *testing.T) {
 func TestJobManagerWaitDeadline(t *testing.T) {
 	m := NewJobManager(nil)
 	release := make(chan struct{})
-	m.Start(1, "d", func(ctx context.Context, _ func(int, int, string)) error { <-release; return nil })
+	m.Start(1, "d", "", func(ctx context.Context, _ func(int, int, string)) error { <-release; return nil })
 	wctx, wcancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer wcancel()
 	if err := m.Wait(wctx); err == nil {

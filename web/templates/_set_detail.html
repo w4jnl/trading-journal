@@ -1,7 +1,9 @@
 {{/* set_detail: the sheet for a copy set (one decision across accounts).
      Rendered into #trade-sheet-content like trade_detail. Data: Set
      (setRow), SetID, Members ([]setMember with EntryDelta / ExitDelta in
-     ticks, favourable positive), TickSize, HasGroup / GroupID, chart keys. */}}
+     ticks, favourable positive), TickSize, HasGroup / GroupID, the group
+     note (GroupBody / GroupTag / GroupMistakes / GroupEmotions), Flash
+     ("analyzed" after a set review), chart keys. */}}
 {{define "set_detail"}}
 {{with .Set}}
 <div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
@@ -75,7 +77,7 @@
   </table>
 </div>
 
-<div class="row-sm" style="margin: 16px 0 6px; align-items: center; gap: 10px;">
+<div class="row-sm" style="margin: 16px 0 6px; align-items: center; gap: 10px; flex-wrap: wrap;">
   <h3 style="margin: 0; font-size: 14px;">Journal</h3>
   {{if .HasGroup}}
     <a class="btn btn--secondary btn--sm" href="/journal/group/{{.GroupID}}?back={{.Back}}">Open the group note</a>
@@ -86,7 +88,21 @@
     </form>
     <span class="muted" style="font-size: 12px;">creates one group note covering every account's trade</span>
   {{end}}
+  {{template "ai_analyze_button" (dict "URL" (printf "/ai/set/%d" .SetID) "Analyzed" (aiAnalyzed .GroupBody) "Spin" "ai-set-spin" "What" "set" "Target" "#trade-sheet-content")}}
 </div>
+{{if eq .Flash "analyzed"}}<div class="flash saved">✨ AI review added to the group note.</div>{{end}}
+{{if .GroupBody}}
+<div class="set-note">
+  {{if or .GroupTag .GroupMistakes .GroupEmotions}}
+  <div class="journal-view__bar">
+    {{if .GroupTag}}<span class="pill journal-view__tag tag-{{.GroupTag}}">{{.GroupTag}}</span>{{end}}
+    {{range .GroupMistakes}}<span class="pill label-pill label-pill--mistake" title="Mistake">{{labelName "mistake" .}}</span>{{end}}
+    {{range .GroupEmotions}}<span class="pill label-pill label-pill--emotion" title="Emotion">{{labelName "emotion" .}}</span>{{end}}
+  </div>
+  {{end}}
+  <div class="markdown-preview">{{markdown .GroupBody}}</div>
+</div>
+{{end}}
 
 {{if .ChartEnabled}}
 <div class="trade-chart" data-chart-endpoint="{{.ChartEndpoint}}" data-chart-cached="{{.ChartCached}}"></div>

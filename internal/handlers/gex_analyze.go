@@ -315,11 +315,11 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 // canonical form (see the migration).
 func gexAnalysisKey(asOf time.Time) string { return asOf.UTC().Format(time.RFC3339Nano) }
 
-// gexAnalysisFor returns the retained read for a snapshot, or "" when none is
-// stored yet.
-func (h *Handlers) gexAnalysisFor(ctx context.Context, market string, asOf time.Time) string {
+// gexAnalysisFor returns the retained read for a snapshot and the model that
+// wrote it, or "" when none is stored yet.
+func (h *Handlers) gexAnalysisFor(ctx context.Context, market string, asOf time.Time) (body, model string) {
 	if h.Queries == nil {
-		return ""
+		return "", ""
 	}
 	row, err := h.Queries.GetGexAnalysis(ctx, models.GetGexAnalysisParams{
 		UserID: userID(ctx), Market: market, AsOf: gexAnalysisKey(asOf),
@@ -328,9 +328,19 @@ func (h *Handlers) gexAnalysisFor(ctx context.Context, market string, asOf time.
 		if !errors.Is(err, sql.ErrNoRows) {
 			h.logger().Warn("gex analysis lookup", "market", market, "err", err)
 		}
-		return ""
+		return "", ""
 	}
-	return row.Body
+	return row.Body, row.Model
+}
+
+// gexReadHTML is the read as the scrub path swaps it in: the rendered
+// markdown with the model line the partial shows under it.
+func gexReadHTML(body, model string) template.HTML {
+	out := renderMarkdown(body)
+	if model != "" {
+		out += `<p class="ai-model-line">` + template.HTMLEscapeString(model) + `</p>`
+	}
+	return template.HTML(out)
 }
 
 // gexAttachAnalysis fills the view's snapshot identity and any retained read.
@@ -338,9 +348,9 @@ func (h *Handlers) gexAnalysisFor(ctx context.Context, market string, asOf time.
 // this part needs the request's user.
 func (h *Handlers) gexAttachAnalysis(ctx context.Context, v *gexview.View, market string, asOf time.Time) {
 	v.AsOfParam = asOf.UTC().Format(time.RFC3339Nano)
-	if body := h.gexAnalysisFor(ctx, market, asOf); body != "" {
-		v.Analysis = body
-		v.AnalysisHTML = template.HTML(renderMarkdown(body))
+	if body, model := h.gexAnalysisFor(ctx, market, asOf); body != "" {
+		v.Analysis, v.AnalysisModel = body, model
+		v.AnalysisHTML = gexReadHTML(body, model)
 	}
 }
 
@@ -383,12 +393,12 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body := ""
+	body, model := "", ""
 	if r.URL.Query().Get("force") != "1" {
-		body = h.gexAnalysisFor(ctx, market, s.AsOf)
+		body, model = h.gexAnalysisFor(ctx, market, s.AsOf)
 	}
 	if body == "" {
-		client, model, err := h.aiFor(ctx)
+		client, ref, err := h.aiFor(ctx)
 		if err != nil {
 			status := http.StatusBadGateway
 			if errors.Is(err, errNoAIProvider) {
@@ -398,10 +408,12 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		lang := h.userAILanguage(ctx)
+		label := ref.Label(aiWordsFor(lang))
 		user := gexAnalysisFacts(s, market)
 		if lang != "" {
 			user = "Reply in " + lang + ".\n\n" + user
 		}
+		model = label
 		out, err := client.Generate(ctx, gexAnalysisPromptFor(lang), user)
 		if err != nil {
 			h.logger().Warn("gex analyze: generate failed", "market", market, "err", err)
@@ -423,6 +435,6 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.renderPartial(w, "_gex_analysis.html", "gex_analysis_body", map[string]any{
-		"Analysis": body,
+		"Analysis": body, "Model": model,
 	})
 }

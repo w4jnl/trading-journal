@@ -23,6 +23,7 @@ type JobStatus struct {
 	Total     int       `json:"total"`
 	Current   string    `json:"current"`
 	Err       string    `json:"err,omitempty"`
+	Model     string    `json:"model,omitempty"` // the model the job runs on, for display
 	StartedAt time.Time `json:"startedAt,omitempty"`
 }
 
@@ -56,16 +57,17 @@ func NewJobManager(parent context.Context) *JobManager {
 }
 
 // Start launches run in a goroutine for userID unless one is already running for
-// that user (then it returns false). run receives a cancellable context and a
-// progress callback it should call as it advances and check ctx for cancellation.
-func (m *JobManager) Start(userID int64, date string, run func(ctx context.Context, progress func(done, total int, current string)) error) bool {
+// that user (then it returns false). model names the model it runs on, for the
+// status line. run receives a cancellable context and a progress callback it
+// should call as it advances and check ctx for cancellation.
+func (m *JobManager) Start(userID int64, date, model string, run func(ctx context.Context, progress func(done, total int, current string)) error) bool {
 	m.mu.Lock()
 	if j, ok := m.jobs[userID]; ok && j.status.State == JobRunning {
 		m.mu.Unlock()
 		return false
 	}
 	ctx, cancel := context.WithCancel(m.parent)
-	j := &job{status: JobStatus{State: JobRunning, Date: date, StartedAt: time.Now()}, cancel: cancel}
+	j := &job{status: JobStatus{State: JobRunning, Date: date, Model: model, StartedAt: time.Now()}, cancel: cancel}
 	m.jobs[userID] = j
 	m.wg.Add(1)
 	m.mu.Unlock()

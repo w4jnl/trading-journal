@@ -212,3 +212,53 @@ func (s *Service) EntryLabels(ctx context.Context, userID, entryID int64) (map[s
 	}
 	return out, nil
 }
+
+// AssignLabelsIfUnset adds keys of one kind to a trade or group entry only
+// when the entry carries no label of that kind yet: the AI reviewer fills an
+// empty field, never second-guesses one the trader set. Keys outside the
+// vocabulary are dropped rather than refused (they come from a model).
+// Returns the keys written, in vocabulary order; none when the kind was
+// already set, nothing valid was offered, or the scope takes no labels.
+func (s *Service) AssignLabelsIfUnset(ctx context.Context, userID, entryID int64, kind string, keys []string) ([]string, error) {
+	vocab, ok := labelVocabulary[kind]
+	if !ok {
+		return nil, BadInput("unknown label kind %q", kind)
+	}
+	want := map[string]bool{}
+	for _, k := range keys {
+		want[strings.TrimSpace(strings.ToLower(k))] = true
+	}
+	var add []string
+	for _, l := range vocab {
+		if want[l.Key] {
+			add = append(add, l.Key)
+		}
+	}
+	if len(add) == 0 {
+		return nil, nil
+	}
+	e, err := s.Q.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: &userID})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrNotFound
+		}
+		return nil, fmt.Errorf("load entry: %w", err)
+	}
+	if e.Scope != "trade" && e.Scope != "group" {
+		return nil, nil
+	}
+	rows, err := s.Q.ListEntryLabels(ctx, entryID)
+	if err != nil {
+		return nil, fmt.Errorf("list labels: %w", err)
+	}
+	for _, r := range rows {
+		if r.Kind == kind {
+			return nil, nil
+		}
+	}
+	if err := s.writeLabels(ctx, entryID, kind, add, false); err != nil {
+		return nil, err
+	}
+	s.changed(ctx, userID)
+	return add, nil
+}

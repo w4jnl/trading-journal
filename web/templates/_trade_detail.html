@@ -83,13 +83,7 @@
     <div class="row-sm" style="gap: 8px; align-items: center;">
       <h3 style="margin: 0;">Journal</h3>
       {{if $.JournalEntryID}}{{template "id_ref" (dict "Label" "Entry" "ID" $.JournalEntryID)}}{{end}}
-      {{if and aiEnabled (not (aiAnalyzed $.JournalBody))}}
-      <button type="button" class="btn btn--secondary btn--sm ai-action"
-              hx-post="/ai/trade/{{$.TradeID}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
-              hx-disabled-elt="this" hx-indicator="#ai-trade-spin"
-              title="Analyze this trade with AI (creates or appends to its journal entry)">✨ Analyze</button>
-      <span id="ai-trade-spin" class="htmx-indicator ai-spinner ai-action" aria-hidden="true"></span>
-      {{end}}
+      {{template "ai_analyze_button" (dict "URL" (printf "/ai/trade/%d" $.TradeID) "Analyzed" (aiAnalyzed $.JournalBody) "Spin" "ai-trade-spin" "What" "trade" "Target" "#trade-sheet-content")}}
     </div>
     <span class="muted" style="font-size: 11px;">Empty body deletes the entry.</span>
   </div>
@@ -103,11 +97,11 @@
        the editor stays folded until Edit / Add note (journal_view.js toggles
        view<->form within [data-journal-entry]) or until the row's journal
        icon asked for it (JournalOpen: form shown, trade_sheet.js focuses it).
-       The sheet's header Analyze button drives AI, so journal_view's built-in
-       one is suppressed (HideAnalyze). */}}
+       The Journal header's Analyze button drives AI (it is offered on a
+       missing note too, creating it). */}}
   {{if $.JournalBody}}
     {{if $.JournalOpen}}<div hidden data-journal-view>{{end}}
-    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "HideAnalyze" true "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}
+    {{template "journal_view" (dict "Body" $.JournalBody "Tag" $.JournalTag "ID" $.JournalEntryID "Mistakes" $.Mistakes "Emotions" $.Emotions "Checklist" $.Checklist)}}
     {{if $.JournalOpen}}</div>{{end}}
   {{else}}
     <div class="journal-view journal-view--empty" data-journal-view{{if $.JournalOpen}} hidden{{end}}>

@@ -4,11 +4,11 @@
     prompt to generate one. The POST handler renders this same template, so
     the button's response and the page's initial render cannot drift.
 
-    Data: Analysis (markdown, "" when none). */}}
+    Data: Analysis (markdown, "" when none), Model (the model that wrote it). */}}
 
 {{define "gex_analysis_body"}}
 {{if .Analysis}}
-<div class="gex-read">{{markdown .Analysis}}</div>
+<div class="gex-read">{{markdown .Analysis}}{{if .Model}}<p class="ai-model-line">{{.Model}}</p>{{end}}</div>
 {{else}}
 <p class="muted" style="margin: 0;">No AI read for this snapshot yet.</p>
 {{end}}

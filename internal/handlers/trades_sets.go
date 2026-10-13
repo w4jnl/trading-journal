@@ -511,6 +511,12 @@ func (h *Handlers) loadSetRows(ctx context.Context, setID int64) ([]tradeRow, er
 
 // TradeSetDetail renders GET /trades/sets/{id} into the sheet.
 func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
+	h.renderSetDetail(w, r, "")
+}
+
+// renderSetDetail renders the set sheet for the {id} path value; flash
+// ("analyzed") confirms an action that re-rendered it in place.
+func (h *Handlers) renderSetDetail(w http.ResponseWriter, r *http.Request, flash string) {
 	ctx := r.Context()
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
@@ -602,7 +608,7 @@ func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
 		best, worst = nil, nil // every account got the same fill
 	}
 	plan := planOf(members, pointValue)
-	h.renderPartial(w, "_set_detail.html", "set_detail", map[string]any{
+	data := map[string]any{
 		"Set":           unit,
 		"SetID":         id,
 		"Members":       members,
@@ -616,7 +622,52 @@ func (h *Handlers) TradeSetDetail(w http.ResponseWriter, r *http.Request) {
 		"ChartEndpoint": fmt.Sprintf("/charts/set/%d", id),
 		"ChartCached":   h.chartCached(ctx, linked),
 		"Back":          hxPageURL(r, "/trades?view=sets"),
-	})
+		"Flash":         flash,
+		"GroupBody":     "", // a string for aiAnalyzed even without a note
+	}
+	// The group note shows in the sheet, so a set review reads where it was
+	// asked for.
+	if hasGroup {
+		if e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: groupID, UserID: userIDPtr(ctx)}); err == nil {
+			data["GroupBody"] = e.Body
+			if e.Tag != nil {
+				data["GroupTag"] = *e.Tag
+			}
+			if labels, err := h.journalSvc().EntryLabels(ctx, userID(ctx), groupID); err == nil {
+				data["GroupMistakes"], data["GroupEmotions"] = labels[journal.KindMistake], labels[journal.KindEmotion]
+			}
+		}
+	}
+	h.renderPartial(w, "_set_detail.html", "set_detail", data)
+}
+
+// ensureSetGroup returns the group note covering the set's trades, creating
+// one with body when none does. sql.ErrNoRows when the set is not the
+// caller's.
+func (h *Handlers) ensureSetGroup(ctx context.Context, setID int64, body string) (int64, error) {
+	if _, err := h.Queries.GetTradeSet(ctx, models.GetTradeSetParams{ID: setID, UserID: userID(ctx)}); err != nil {
+		return 0, err
+	}
+	rows, err := h.loadSetRows(ctx, setID)
+	if err != nil {
+		return 0, fmt.Errorf("load set members: %w", err)
+	}
+	ids := make([]int64, 0, len(rows))
+	for _, m := range rows {
+		ids = append(ids, m.ID)
+	}
+	eid, ok, err := h.journalSvc().FindGroupForTrades(ctx, userID(ctx), ids)
+	if err != nil {
+		return 0, fmt.Errorf("find group: %w", err)
+	}
+	if ok {
+		return eid, nil
+	}
+	e, _, err := h.journalSvc().Create(ctx, userID(ctx), journal.CreateInput{Scope: "group", TradeIDs: ids, Body: body})
+	if err != nil {
+		return 0, err
+	}
+	return e.ID, nil
 }
 
 // TradeSetJournal handles POST /trades/sets/{id}/journal: opens the set's
@@ -631,36 +682,18 @@ func (h *Handlers) TradeSetJournal(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad id", http.StatusBadRequest)
 		return
 	}
-	if _, err := h.Queries.GetTradeSet(ctx, models.GetTradeSetParams{ID: id, UserID: userID(ctx)}); err != nil {
-		http.Error(w, "set not found", http.StatusNotFound)
-		return
-	}
-	rows, err := h.loadSetRows(ctx, id)
+	eid, err := h.ensureSetGroup(ctx, id, "")
 	if err != nil {
-		h.serverError(w, fmt.Errorf("load set members: %w", err))
-		return
-	}
-	ids := make([]int64, 0, len(rows))
-	for _, m := range rows {
-		ids = append(ids, m.ID)
-	}
-	eid, ok, err := h.journalSvc().FindGroupForTrades(ctx, userID(ctx), ids)
-	if err != nil {
-		h.serverError(w, fmt.Errorf("find group: %w", err))
-		return
-	}
-	if !ok {
-		e, _, err := h.journalSvc().Create(ctx, userID(ctx), journal.CreateInput{Scope: "group", TradeIDs: ids})
-		if err != nil {
-			var ve apiValidationError
-			if errors.As(err, &ve) {
-				http.Error(w, ve.Msg, http.StatusBadRequest)
-				return
-			}
-			h.serverError(w, fmt.Errorf("create group: %w", err))
-			return
+		var ve apiValidationError
+		switch {
+		case errors.Is(err, sql.ErrNoRows):
+			http.Error(w, "set not found", http.StatusNotFound)
+		case errors.As(err, &ve):
+			http.Error(w, ve.Msg, http.StatusBadRequest)
+		default:
+			h.serverError(w, fmt.Errorf("set group: %w", err))
 		}
-		eid = e.ID
+		return
 	}
 	target := fmt.Sprintf("/journal/group/%d?back=%s", eid, url.QueryEscape(hxPageURL(r, "/trades?view=sets")))
 	if r.Header.Get("HX-Request") == "true" {
