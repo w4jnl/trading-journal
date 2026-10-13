@@ -939,6 +939,9 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("static sub-fs: %w", err)
 	}
+	if handlers.AssetVersion(h.Version) == "" {
+		h.DevAssetHash = handlers.StaticHash(staticSub)
+	}
 	// Embedded assets: long-lived cache keyed to the build (templates append
 	// ?v=<build> so a new release is fetched at once); every asset request
 	// otherwise pays the reverse proxy's forward-auth round trip.

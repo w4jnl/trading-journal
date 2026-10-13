@@ -1930,6 +1930,22 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .ai-suggest-pill__btn { border: 0; background: transparent; cursor: pointer; padding: 0 5px; font-size: var(--fs-12);
   color: var(--fg-muted); border-radius: 999px; line-height: 1.6; }
 .ai-suggest-pill__btn:hover { color: var(--fg); background: var(--bg-sunken); }
+/* The same proposal as a plain pill in a list row (the /journal feed):
+   tinted like the value it would set, dashed until the trader takes it. */
+.pill--suggest { border: 1px dashed var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent-text); }
+.pill--suggest-strategy { border-color: var(--brand-teal, var(--accent)); color: var(--brand-teal, var(--accent));
+  background: color-mix(in srgb, var(--brand-teal, var(--accent)) 10%, transparent); }
+.pill--suggest-mistake { border-color: var(--warn); color: var(--warn-text); background: color-mix(in srgb, var(--warn-soft) 70%, transparent); }
+.pill--suggest-emotion { border-color: var(--info); color: var(--info-text); background: color-mix(in srgb, var(--info-soft) 70%, transparent); }
+.pill--suggest-tag-good { border-color: var(--pos); color: var(--pos-text); background: color-mix(in srgb, var(--pos-soft) 70%, transparent); }
+.pill--suggest-tag-bad { border-color: var(--neg); color: var(--neg-text); background: color-mix(in srgb, var(--neg-soft) 70%, transparent); }
+.pill--suggest-tag-neutral { border-color: var(--fg-muted); color: var(--fg); background: var(--bg-sunken); }
+/* In an editor the pickers mark the suggested choice instead: dashed with a
+   sparkle until the trader picks it; saving then makes it theirs. */
+.ai-suggest-hint { margin: 6px 0 0; font-size: var(--fs-12); color: var(--fg-muted); }
+/* The suggested strategy as a chip that picks it ("btn" in the class keeps
+   the raw-button default off it). */
+.je-suggest-btn { align-self: flex-end; background: transparent; font: inherit; font-size: var(--fs-12); }
 /* A value written through the API or an AI tool, not yet confirmed in an editor. */
 .pill--api { border-style: dashed !important; border-width: 1px; }
 .pill--api::after { content: " · API"; opacity: 0.6; font-size: 0.85em; }
@@ -2468,6 +2484,9 @@ tr.fanout-member td:first-child { padding-left: 28px; }
 .label-chip:has(:checked)::before { content: "\2713 "; font-weight: 800; }
 .label-chip--mistake:has(:checked) { background: var(--warn); border-color: var(--warn); }
 .label-chip--emotion:has(:checked) { background: var(--info); border-color: var(--info); }
+/* An AI review's open suggestion in a picker (see .ai-suggest-hint). */
+.chip.chip--suggested:not(:has(:checked)) { border-style: dashed; border-color: var(--accent); color: var(--accent-text); opacity: 1; }
+.chip.chip--suggested:not(:has(:checked))::after { content: "\2728"; font-size: 0.9em; }
 .label-pill { text-transform: none; }
 .label-pill--mistake { background: var(--warn-soft); color: var(--warn-text); border: 1px solid var(--warn-border); }
 .label-pill--emotion { background: var(--info-soft); color: var(--info-text); border: 1px solid var(--info-border, var(--border)); }

@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -18,6 +19,7 @@ func TestParseAILesson(t *testing.T) {
 		{"x\n<!-- tj-ai:lesson key=chased | Wait for the retest instead of buying the break. -->\n<!-- tj-ai:verdict tag=bad -->", "chased", "Wait for the retest instead of buying the break."},
 		{"<!-- tj-ai:lesson key=none | Size down after two losers. -->", "", "Size down after two losers."},
 		{"<!-- tj-ai:lesson key=bogus | Keep it. -->", "", "Keep it."},
+		{"<!-- tj-ai:lesson key=no-stop | Always place a stop. -->", "", "Always place a stop."},
 		{"<!-- TJ-AI:LESSON KEY=Late-Exit|Take the target. -->", "late-exit", "Take the target."},
 		{"<!-- tj-ai:lesson Just a sentence. -->", "", "Just a sentence."},
 		{"no line here", "", ""},
@@ -39,6 +41,17 @@ func TestParseAILesson(t *testing.T) {
 	}
 	if p := aiSystemPrompt("trade", "Czech"); !strings.Contains(p, "the lesson sentence inside the lesson line is written in Czech") {
 		t.Errorf("a non-English review must write the lesson in its language")
+	}
+	// The data holds no working orders: a missing stop is never the review's call.
+	if strings.Contains(aiLessonInstruction(), "no-stop") {
+		t.Error("the lesson line offers no-stop")
+	}
+	vocab, _ := json.Marshal(aiLabelVocabulary())
+	if strings.Contains(string(vocab), "no-stop") || !strings.Contains(string(vocab), "moved-stop") {
+		t.Errorf("label vocabulary offered to the review = %s", vocab)
+	}
+	if p := aiSystemPrompt("trade", ""); strings.Contains(p, "say plainly when there was none") || !strings.Contains(p, "never the working orders") {
+		t.Error("the trade prompt still reads a missing plan as a missing stop")
 	}
 }
 

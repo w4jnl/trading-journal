@@ -37,7 +37,7 @@ import (
 
 const aiPromptCommon = `You are a trading-journal analyst reviewing the user's own futures trades. The user message is JSON context for ONE journal entry; the part below says what kind of item it is and what to write.
 
-Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. entry.chart.panels[].bars, when present, is the price action around the trade: rows of [time, open, high, low, close] in bars of the given tf, with the entry and exit times - read the move into the entry, the path while open and what came after the exit from them. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery. recentLessons, when present, are the lessons of the trader's latest reviews (newest first): say plainly when this item repeated one or applied it, and when the lesson you would give is already there, say it recurs rather than rewording it.
+Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. The data holds the fills, never the working orders: a stop or target that was never hit leaves no trace, and a null plannedStop only means no plan was recorded - never say or imply the trader had no stop unless their own notes say so. entry.chart.panels[].bars, when present, is the price action around the trade: rows of [time, open, high, low, close] in bars of the given tf, with the entry and exit times - read the move into the entry, the path while open and what came after the exit from them. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery. recentLessons, when present, are the lessons of the trader's latest reviews (newest first): say plainly when this item repeated one or applied it, and when the lesson you would give is already there, say it recurs rather than rewording it.
 
 Format: Markdown, a short bullet list with one bullet per section, each led by a bold label (nested bullets allowed). No headings (the review is inserted under an existing one), no preamble such as "Here is the analysis", no closing pleasantries. Omit a section only when there is genuinely nothing to say. Be specific and brief: one concrete, actionable lesson beats a list of generic advice. Use the SAME structure every time, whether or not a strategy is tagged.`
 
@@ -49,7 +49,7 @@ Each entry.trades item carries the prices and times, holdMinutes, the fills (sca
 
 Sections:
 - **Setup & entry:** what the trade was and the entry against the move (early, late, chasing?).
-- **Risk:** the planned stop and risk (say plainly when there was none), the heat taken against it (mae against plannedRisk), the size (coachChecks flag a size-up).
+- **Risk:** the planned stop and risk the trader recorded (with none recorded, say only that), the heat taken against it (mae against plannedRisk), the size (coachChecks flag a size-up).
 - **Exit:** what the exit kept of the best move (exitEfficiency, mfe): a runner left, a winner cut short, a loser held.
 - **Strategy:** the assigned playbook's rules followed or broken (entry.checklist shows the ticked and missed rules); with no strategy tagged, name the closest one from availableStrategies or say that none fits.
 - **Mindset:** only from the trader's notes, labels or coachChecks; leave it out when there is no evidence.
@@ -61,7 +61,7 @@ Each entry.trades item carries the prices and times, holdMinutes, the fills, the
 
 Sections:
 - **Setup & entry:** what the decision was and the entry against the move.
-- **Risk:** the planned stop and risk per leg and in total (say plainly when there was none), the heat taken against it.
+- **Risk:** the planned stop and risk per leg and in total (with none recorded, say only that), the heat taken against it.
 - **Exit:** what the exits kept of the best move, a runner left, a winner cut, a loser held.
 - **Copy consistency:** fills, sizes and exits across accounts - slippage, or a leg managed differently; leave it out for a single account.
 - **Strategy:** the playbook's rules followed or broken (entry.checklist); with none tagged, the closest one from availableStrategies or that none fits.
@@ -447,7 +447,7 @@ func (h *Handlers) aiTrades(ctx context.Context, trades []linkedTrade, tz *time.
 func aiLabelVocabulary() map[string]any {
 	kind := func(k string) []map[string]string {
 		var out []map[string]string
-		for _, l := range journal.LabelOptions(k) {
+		for _, l := range journal.ObservableOptions(k) {
 			out = append(out, map[string]string{"key": l.Key, "name": l.Name})
 		}
 		return out

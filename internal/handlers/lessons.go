@@ -37,7 +37,8 @@ type aiLesson struct {
 }
 
 // parseAILesson reads the lesson line ("" text when there is none). The key
-// must be in the mistake vocabulary; anything else reads as no key.
+// must be a mistake the review may name (journal.ObservableOptions); anything
+// else reads as no key.
 func parseAILesson(s string) aiLesson {
 	m := aiLessonRe.FindStringSubmatch(s)
 	if m == nil {
@@ -51,7 +52,7 @@ func parseAILesson(s string) aiLesson {
 		if cut < 0 {
 			cut = len(rest)
 		}
-		if k := strings.ToLower(strings.TrimSpace(rest[:cut])); journal.ValidLabel(journal.KindMistake, k) && k != "none" {
+		if k := strings.ToLower(strings.TrimSpace(rest[:cut])); journal.ValidLabel(journal.KindMistake, k) && journal.Observable(journal.KindMistake, k) && k != "none" {
 			l.Key = k
 		}
 		inner = rest[cut:]
@@ -70,8 +71,17 @@ func stripAILesson(s string) string {
 // aiLessonInstruction asks every review for the lesson line.
 func aiLessonInstruction() string {
 	return `Just before the verdict line, add EXACTLY one line naming the single most useful lesson (it is removed before saving and kept in the trader's lessons ledger):
-<!-- tj-ai:lesson key=<` + strings.Join(journal.LabelKeys(journal.KindMistake), "|") + `|none> | <the lesson: one sentence, an instruction the trader can follow next time> -->
+<!-- tj-ai:lesson key=<` + strings.Join(observableMistakeKeys(), "|") + `|none> | <the lesson: one sentence, an instruction the trader can follow next time> -->
 - key: the mistake the lesson is about, from that list, or none.`
+}
+
+// observableMistakeKeys lists the mistake keys a review may name.
+func observableMistakeKeys() []string {
+	var keys []string
+	for _, l := range journal.ObservableOptions(journal.KindMistake) {
+		keys = append(keys, l.Key)
+	}
+	return keys
 }
 
 // recordLesson replaces the entry's lesson with the review's.

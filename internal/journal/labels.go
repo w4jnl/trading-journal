@@ -55,6 +55,28 @@ var labelVocabulary = map[string][]Label{
 	},
 }
 
+// unobservable are the labels the trade data cannot show. The app holds the
+// fills, never the working orders, so a stop that was never hit leaves no
+// trace (and no recorded plan only means no plan was written down). The
+// trader sets these; the AI review is neither offered nor allowed them.
+var unobservable = map[string]bool{KindMistake + ":no-stop": true}
+
+// Observable reports whether the trade data can show a label, i.e. whether
+// the AI review may propose it.
+func Observable(kind, key string) bool { return !unobservable[kind+":"+key] }
+
+// ObservableOptions is a kind's vocabulary without the labels the data cannot
+// show: what the AI review is offered.
+func ObservableOptions(kind string) []Label {
+	var out []Label
+	for _, l := range labelVocabulary[kind] {
+		if Observable(kind, l.Key) {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
 // LabelKinds lists the kinds in display order.
 var LabelKinds = []string{KindMistake, KindEmotion}
 

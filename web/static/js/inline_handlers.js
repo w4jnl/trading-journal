@@ -10,6 +10,8 @@
 //   data-busy="Label"          submit -> disable the form's button and relabel it
 //   data-stop                  click  -> stop propagation (a cell inside a clickable row)
 //   data-prevent               click  -> preventDefault (an anchor whose click htmx handles)
+//   data-set-field="name" data-set-value="v"
+//                              click  -> set the owning form's field to v (fires change)
 //
 // data-stop and data-prevent must act before the row's or htmx's own
 // listeners, so they are bound on the elements themselves (at load and
@@ -40,6 +42,12 @@
       return;
     }
     if (t.closest("[data-reload]")) window.location.reload();
+    var set = t.closest("button[data-set-field]");
+    var field = set && set.form && set.form.elements.namedItem(set.getAttribute("data-set-field"));
+    if (field && "value" in field) {
+      field.value = set.getAttribute("data-set-value") || "";
+      field.dispatchEvent(new Event("change", { bubbles: true }));
+    }
   });
 
   document.addEventListener("submit", function (e) {
