@@ -13,6 +13,10 @@
   {{else if eq .Flash "deleted"}}Deleted.
   {{else if eq .Flash "archived"}}Strategy archived (retired) — moved to the bottom and no longer assignable.
   {{else if eq .Flash "unarchived"}}Strategy restored — assignable again.
+  {{else if eq .Flash "drafting"}}The AI is drafting the playbook from your trades - it carries on if you leave.
+  {{else if eq .Flash "draft-applied"}}Draft applied: the playbook and checklist are updated.
+  {{else if eq .Flash "discovering"}}The AI is looking for strategies in your untagged trades - it carries on if you leave.
+  {{else if eq .Flash "strategy-found"}}Strategy created from the group - refine it below.
   {{else}}{{.Flash}}{{end}}
 </div>
 {{end}}
@@ -132,6 +136,47 @@
     </div>
   </div>
 
+  {{if aiEnabled}}{{with .StrategyAI}}
+  <div class="lib-ai ai-action">
+    {{if .DiscoveryPending}}
+    <p class="ai-lock-note" role="status"><span class="ai-spinner" aria-hidden="true"></span> Finding strategies in your untagged trades…
+      <span hidden hx-get="/ai/tasks/status?k=discovery" hx-trigger="every 3s" hx-swap="none"></span></p>
+    {{else}}
+    <form method="post" action="/library/strategies/discover" class="row-sm" style="gap: 8px; align-items: center; flex-wrap: wrap;">
+      <button type="submit" class="btn btn--secondary btn--sm">✨ Find strategies in my untagged trades</button>
+      <span class="muted" style="font-size: 12px;">groups the last 180 days' untagged decisions by instrument, time of day and holding time; the AI names and judges each group</span>
+    </form>
+    {{end}}
+    {{with .DiscoveryError}}<div class="flash error" role="alert">Finding strategies failed: {{.}}</div>{{end}}
+    {{if .Discovery}}
+    <div class="ai-found">
+      <div class="ai-found__head"><strong>Found in your untagged trades</strong> <span class="muted">{{.DiscoveryModel}} · {{ltime .DiscoveryAt "datetime"}}</span>
+        <form method="post" action="/library/strategies/discover/discard" class="ml-auto"><button type="submit" class="btn btn--ghost btn--sm">Discard</button></form></div>
+      {{range .Discovery}}
+      <div class="ai-found__group">
+        <div class="row-sm" style="gap: 8px; align-items: center; flex-wrap: wrap;">
+          <strong>{{if .Name}}{{.Name}}{{else}}{{.Symbol}} · {{.Session}}{{end}}</strong>
+          {{if .Verdict}}<span class="pill ai-verdict ai-verdict--{{.Verdict}}">{{.Verdict}}</span>{{end}}
+          <span class="muted" style="font-size: 12px;">{{.Symbol}} · {{.Session}} · {{.Hold}}</span>
+          {{if .Created}}<span class="muted ml-auto" style="font-size: 12px;">strategy created ✓</span>
+          {{else if .Name}}
+          <form method="post" action="/library/strategies/discover/create" class="ml-auto">
+            <input type="hidden" name="id" value="{{.ID}}">
+            <button type="submit" class="btn btn--secondary btn--sm">Create strategy</button>
+          </form>
+          {{end}}
+        </div>
+        <div class="muted ai-evidence">{{.Line}}</div>
+        {{with .Summary}}<p>{{.}}</p>{{end}}
+        {{with .Reason}}<p class="muted" style="font-size: 12px;">{{.}}</p>{{end}}
+        {{if .Rules}}<ol class="ai-found__rules">{{range .Rules}}<li>{{.}}</li>{{end}}</ol>{{end}}
+      </div>
+      {{end}}
+    </div>
+    {{end}}
+  </div>
+  {{end}}{{end}}
+
   <details class="lib-new">
     <summary><span class="btn btn--primary btn--sm">+ New strategy</span></summary>
     <form method="post" action="/library/strategies" class="lib-form">
@@ -150,17 +195,43 @@
     </form>
   </details>
 
-  {{range .Strategies}}
-  <div class="lib-item lib-item--strat{{if .ArchivedAt}} lib-item--archived{{end}}">
-    <details class="lib-row">
+  {{range .Strategies}}{{$sid := .ID}}{{$draft := index $.StrategyAI.Drafts .ID}}{{$drafting := index $.StrategyAI.Pending .ID}}{{$draftErr := index $.StrategyAI.Errors .ID}}
+  <div class="lib-item lib-item--strat{{if .ArchivedAt}} lib-item--archived{{end}}" id="strategy-{{.ID}}">
+    <details class="lib-row"{{if or $draft.Body $drafting $draftErr}} open{{end}}>
       <summary class="lib-row-head">
         <span class="lib-row-title"><strong>{{.Name}}</strong>{{if .ArchivedAt}} <span class="pill pill--retired">retired</span>{{end}} <span class="muted num" style="font-size:11px;">updated {{ltime .UpdatedAt "date"}}</span></span>
         <span class="lib-row-edit">▾</span>
       </summary>
       <div class="lib-preview">
-        <div class="row" style="justify-content: flex-end; margin-bottom: 8px;">
+        <div class="row" style="justify-content: flex-end; margin-bottom: 8px; gap: 8px;">
+          {{if aiEnabled}}
+          {{if $drafting}}
+          <span class="ai-analyze ai-analyze--pending" role="status"><span class="ai-spinner" aria-hidden="true"></span><span>Drafting from your trades…</span>
+            <span hidden hx-get="/ai/tasks/status?k=strategy:{{.ID}}" hx-trigger="every 3s" hx-swap="none"></span></span>
+          {{else}}
+          <form method="post" action="/library/strategies/{{.ID}}/draft" class="ai-action">
+            <button type="submit" class="btn btn--secondary btn--sm" title="Write the playbook and a checkable checklist from the trades tagged with this strategy and your notes on them">✨ Draft from my trades</button>
+          </form>
+          {{end}}
+          {{end}}
           <button type="button" class="btn btn--secondary btn--sm" data-lib-edit>Edit</button>
         </div>
+        {{with $draftErr}}<div class="flash error" role="alert">Drafting failed: {{.}}</div>{{end}}
+        {{with $draft}}{{if .Body}}
+        <div class="ai-draft">
+          <div class="ai-draft__head"><strong>AI draft</strong> <span class="muted">{{.Model}} · {{ltime .CreatedAt "datetime"}}</span></div>
+          <div class="muted ai-evidence">{{.Evidence}}</div>
+          <div class="markdown-preview">{{.Body}}</div>
+          {{if .Checklist}}<div class="checklist-preview"><span class="label">Proposed checklist</span><ol>{{range .Checklist}}<li>{{.}}</li>{{end}}</ol></div>{{end}}
+          {{if .StatedVsActual}}<div class="ai-draft__diff"><span class="label">Stated vs actual</span><div class="markdown-preview">{{.StatedVsActual}}</div></div>{{end}}
+          <div class="row-sm" style="gap: 8px; margin-top: 10px;">
+            <form method="post" action="/library/strategies/{{$sid}}/draft/apply" data-confirm="Replace this strategy's playbook{{if .Checklist}} and checklist{{end}} with the draft?">
+              <button type="submit" class="btn btn--primary btn--sm">Use this draft</button>
+            </form>
+            <form method="post" action="/library/strategies/{{$sid}}/draft/discard"><button type="submit" class="btn btn--ghost btn--sm">Discard</button></form>
+          </div>
+        </div>
+        {{end}}{{end}}
         <div class="markdown-preview">{{markdown .Body}}</div>
         {{with index $.ChecklistText .ID}}<div class="checklist-preview"><span class="label">Checklist</span><ol>{{range (splitLines .)}}<li>{{.}}</li>{{end}}</ol></div>{{end}}
       </div>

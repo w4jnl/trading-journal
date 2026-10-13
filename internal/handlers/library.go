@@ -82,6 +82,7 @@ func (h *Handlers) LibraryPage(w http.ResponseWriter, r *http.Request) {
 		"PlaybookRendered": template.HTML(renderMarkdown(playbookBody)),
 		"Flash":            r.URL.Query().Get("flash"),
 		"FlashErr":         r.URL.Query().Get("err"),
+		"StrategyAI":       h.strategyAI(ctx, strategies),
 	})
 }
 

@@ -27,6 +27,16 @@ type Account struct {
 	EmailRef          *string    `json:"email_ref"`
 }
 
+type AiOutput struct {
+	UserID    int64     `json:"user_id"`
+	Kind      string    `json:"kind"`
+	Ref       string    `json:"ref"`
+	Body      string    `json:"body"`
+	Data      string    `json:"data"`
+	Model     string    `json:"model"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 type ApiKey struct {
 	ID         int64      `json:"id"`
 	UserID     int64      `json:"user_id"`

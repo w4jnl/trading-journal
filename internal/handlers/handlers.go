@@ -122,6 +122,11 @@ type Handlers struct {
 	// nil-safe for the views.
 	AIReviews *ai.Reviews
 
+	// AITasks runs the AI work that is not a note review (strategy drafts,
+	// finding strategies, proposed levels, ...) in the background. Created
+	// with AIJobs; nil-safe for the views.
+	AITasks *ai.Tasks
+
 	// AISecrets opens the per-user AI provider keys (user_ai_settings). Nil
 	// when users may not bring their own key (ai.user_keys false, or no
 	// secrets encryption key configured).
