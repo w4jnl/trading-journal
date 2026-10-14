@@ -663,6 +663,12 @@ func run() error {
 			RTHStartMin:  rthStart,
 			RTHEndMin:    rthEnd,
 		}, slog.Default())
+		if marketCache != nil {
+			// The exchange feed behind the shared bar cache: the exact
+			// contract for the recent days of the traded roots, and the
+			// one-second bars around short trades.
+			marketCache.Exchange = &topstepx.BarFeed{Sync: topstepxSync, DB: conn}
+		}
 		slog.Info("topstepx api sync enabled",
 			"base_url", cfg.TopstepX.BaseURL, "throttle_min", cfg.TopstepX.SyncThrottleMin,
 			"api_sync_throttle_sec", cfg.TopstepX.APISyncThrottleSec,
@@ -1046,7 +1052,21 @@ func run() error {
 		go marketdata.Retention{Cache: marketCache, Days: cfg.MarketData.BarRetentionDays}.Start(ctx)
 		// The traded roots' recent sessions, kept complete and fresh for
 		// what reads the session live (positions, guardrail, AI levels).
-		go (&marketdata.Warmer{Cache: marketCache, DB: conn, Every: cfg.MarketData.SessionWarmup()}).Start(ctx)
+		warmer := &marketdata.Warmer{Cache: marketCache, DB: conn, Every: cfg.MarketData.SessionWarmup()}
+		if marketCache.Exchange != nil {
+			// One-second bars around the recent short trades, then the
+			// excursions measured again from them.
+			warmer.Fine = &marketdata.FineFetcher{Cache: marketCache, DB: conn}
+			if excursions != nil {
+				warmer.Fine.AfterTrade = func(ctx context.Context, t marketdata.FineTrade) {
+					if _, _, err := excursions.Fill(ctx, excursion.Trade{ID: t.ID, SymbolRoot: t.SymbolRoot, Direction: t.Direction, Qty: t.Qty,
+						EntryPrice: t.EntryPrice, EntryTime: t.EntryTime, ExitTime: t.ExitTime}); err != nil {
+						slog.Warn("excursion from fine bars", "trade", t.ID, "err", err)
+					}
+				}
+			}
+		}
+		go warmer.Start(ctx)
 	}
 	if cfg.MWEmail.Enabled {
 		go mwmail.RunArchiveRetention(ctx, cfg.MWEmail.ArchiveDir, cfg.MWEmail.ArchiveRetentionDays, nil)

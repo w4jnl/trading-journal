@@ -20,6 +20,9 @@ import (
 type Timeframe string
 
 const (
+	TF1s  Timeframe = "1s"
+	TF5s  Timeframe = "5s"
+	TF15s Timeframe = "15s"
 	TF1m  Timeframe = "1m"
 	TF5m  Timeframe = "5m"
 	TF15m Timeframe = "15m"
@@ -63,6 +66,9 @@ type tfMeta struct {
 // tfTable holds per-timeframe metadata. Lookbacks sit a touch under Yahoo's
 // observed limits (1m ~30d, 5m/15m/30m ~60d, 60m ~730d) to avoid boundary gaps.
 var tfTable = map[Timeframe]tfMeta{
+	TF1s:  {"", 0, time.Second}, // exchange only, fetched on demand around short trades
+	TF5s:  {"", 0, 5 * time.Second},
+	TF15s: {"", 0, 15 * time.Second},
 	TF1m:  {"1m", 25 * 24 * time.Hour, time.Minute},
 	TF5m:  {"5m", 55 * 24 * time.Hour, 5 * time.Minute},
 	TF15m: {"15m", 55 * 24 * time.Hour, 15 * time.Minute},
@@ -72,6 +78,8 @@ var tfTable = map[Timeframe]tfMeta{
 }
 
 // tfLadder is finest -> coarsest. Used by selection (display tf) and coarsening.
+// One-second bars sit outside it: a layer fetched on demand around short
+// trades (FineBars), never a day's storage size.
 var tfLadder = []Timeframe{TF1m, TF5m, TF15m, TF30m, TF1h, TF1d}
 
 // Duration returns the nominal bar width.

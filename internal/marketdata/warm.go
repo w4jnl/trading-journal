@@ -33,6 +33,9 @@ type Warmer struct {
 	RecentDays int
 	// Roots overrides the query when set (tests, or a fixed list).
 	Roots func(ctx context.Context) ([]string, error)
+	// Fine, when set, runs after each round: one-second bars around the
+	// recent short trades (needs the cache's exchange feed).
+	Fine *FineFetcher
 }
 
 func (w *Warmer) logger() *slog.Logger {
@@ -96,6 +99,13 @@ func (w *Warmer) Tick(ctx context.Context) {
 			if err == ErrRateLimited {
 				return
 			}
+		}
+	}
+	if w.Fine != nil {
+		if n, err := w.Fine.Run(ctx); err != nil {
+			w.logger().Warn("session warm-up: fine bars", "err", err)
+		} else if n > 0 {
+			w.logger().Info("session warm-up: one-second bars fetched", "trades", n)
 		}
 	}
 }

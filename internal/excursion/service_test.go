@@ -72,3 +72,46 @@ func TestServiceFillAccount(t *testing.T) {
 }
 
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+// One-second bars around a short trade, when a window covers it, measure
+// the excursion instead of the minute bars: the minute candle hides the
+// path inside it.
+func TestFillPrefersFineBars(t *testing.T) {
+	conn := dbtest.Open(t, "boot")
+	uid := dbtest.BootstrapUserID(t, conn, "boot")
+	if _, err := conn.Exec(`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (1, ?, 'a', 'motivewave_csv', 'A')`, uid); err != nil {
+		t.Fatal(err)
+	}
+	entry := time.Now().UTC().Add(-2 * time.Hour).Truncate(time.Minute)
+	exit := entry.Add(45 * time.Second)
+	// The minute bar: low 6990 (ten points of heat). The seconds inside the
+	// trade never go below 6998 (two points).
+	minute := entry.Unix()
+	if _, err := conn.Exec(`INSERT INTO price_bars (yahoo_symbol, timeframe, bar_time, open, high, low, close, volume, fetched_at) VALUES ('ES=F', '1m', ?, 7000, 7004, 6990, 7001, 10, 0)`, minute); err != nil {
+		t.Fatal(err)
+	}
+	for s := int64(0); s < 60; s++ {
+		low := 7000.0
+		if s == 20 {
+			low = 6998
+		}
+		if _, err := conn.Exec(`INSERT INTO price_bars (yahoo_symbol, timeframe, bar_time, open, high, low, close, volume, fetched_at) VALUES ('ES=F', '1s', ?, 7000, 7001, ?, 7000.5, 1, 0)`, minute+s, low); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := conn.Exec(`INSERT INTO price_bar_windows (yahoo_symbol, timeframe, from_time, to_time, source, fetched_at) VALUES ('ES=F', '1s', ?, ?, 'topstepx', 0)`, minute-120, minute+180); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status)
+		VALUES (5, 1, 'ESZ6', 'ES', 'long', 1, 7000, 7000.5, ?, ?, 'closed')`, entry, exit); err != nil {
+		t.Fatal(err)
+	}
+	s := &Service{DB: conn, Q: models.New(conn), Bars: &marketdata.CachingSource{DB: conn, Loc: time.UTC}}
+	ex, ok, err := s.Fill(context.Background(), Trade{ID: 5, SymbolRoot: "ES", Direction: "long", Qty: 1, EntryPrice: 7000, EntryTime: entry, ExitTime: exit})
+	if err != nil || !ok {
+		t.Fatalf("fill: ok=%v err=%v", ok, err)
+	}
+	if ex.Timeframe != marketdata.TF1s || ex.MAEPoints != 2 {
+		t.Errorf("excursion = %+v, want 2 points of heat from the one-second bars", ex)
+	}
+}

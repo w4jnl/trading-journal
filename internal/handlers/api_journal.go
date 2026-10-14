@@ -306,6 +306,12 @@ func focusPanel(p chartPanel) chartPanel {
 	if len(bars) > 0 {
 		p.Bars = bars
 	}
+	// A short trade with one-second bars: the image at five seconds, so the
+	// path inside the minute is visible and the candles still readable.
+	if len(p.FineBars) > 0 {
+		p.Bars = marketdata.AggregateTo(p.FineBars, marketdata.Timeframe("5s"))
+		p.Timeframe = "5s"
+	}
 	return p
 }
 

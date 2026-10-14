@@ -294,9 +294,14 @@ Not part of this proposal; the model above leaves room for it.
   of a moment; the levels prompt and the trade review (as of entry) use
   it; `marketdata.Warmer` keeps the traded roots' today and two previous
   days complete and fresh; the guardrail's `past-stop-live` reads the
-  newest cached bar. Not built: TopstepX exchange bars as the primary
-  source for today (Yahoo's continuous series is used), the lab's
-  structure-relative stop axis.
+  newest cached bar. The chart loads the whole trading day and opens on
+  the trade. Not built: the lab's structure-relative stop axis.
+- Phase 6: the exchange feed. `marketdata.ExchangeSource` behind the shared
+  cache (`topstepx.BarFeed`): the recent days of the traded roots at one
+  minute from the exact contract (source recorded per day), and one-second
+  bars around trades under ten minutes (`price_bar_windows`, a layer of
+  their own), read by the excursion filler, the chart's second sizes and
+  the chart image. Not built: the lab replaying scalps at one second.
 
 ## Delivery
 

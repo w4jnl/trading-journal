@@ -44,13 +44,22 @@ type chartPanel struct {
 	To           int64    `json:"to"`
 	// FocusFrom / FocusTo is the stretch around the trade the chart opens on
 	// (and the PNG renders): the rest of the day is a scroll away.
-	FocusFrom int64            `json:"focusFrom,omitempty"`
-	FocusTo   int64            `json:"focusTo,omitempty"`
-	EntryAvg  float64          `json:"entryAvg,omitempty"`
-	ExitAvg   float64          `json:"exitAvg,omitempty"`
-	Bars      []marketdata.Bar `json:"bars"`
-	Markers   []chartMarker    `json:"markers"`
-	Note      string           `json:"note,omitempty"`
+	FocusFrom int64 `json:"focusFrom,omitempty"`
+	FocusTo   int64 `json:"focusTo,omitempty"`
+	// FineBars are one-second bars around a short trade from the exchange
+	// feed, when a cached window covers it; the chart offers second sizes
+	// over them (Trade view only). FineFrom / FineTo is the stretch.
+	FineBars []marketdata.Bar `json:"fineBars,omitempty"`
+	FineFrom int64            `json:"fineFrom,omitempty"`
+	FineTo   int64            `json:"fineTo,omitempty"`
+	// Source names the feed that filled the trade's day ("topstepx" for
+	// the exact contract's exchange data, "yahoo" for the continuous series).
+	Source   string           `json:"source,omitempty"`
+	EntryAvg float64          `json:"entryAvg,omitempty"`
+	ExitAvg  float64          `json:"exitAvg,omitempty"`
+	Bars     []marketdata.Bar `json:"bars"`
+	Markers  []chartMarker    `json:"markers"`
+	Note     string           `json:"note,omitempty"`
 }
 
 type chartEnvelope struct {
@@ -338,12 +347,26 @@ func (h *Handlers) buildChartPanel(ctx context.Context, g chartGroup, load bool,
 	panel.BarTimeframe = string(baseTf)
 	panel.Timeframe = string(marketdata.Coarser(displayTf, baseTf))
 	panel.Timeframes = marketdata.TimeframesFrom(baseTf)
+	// One-second bars around a short trade (the fine layer), and which feed
+	// filled the day: exchange data needs no basis note.
+	if exit := g.effectiveExit(now); exit.Sub(g.firstEntry) < marketdata.ShortTrade {
+		if fine, ok, err := h.MarketData.FineBars(ctx, g.yahooSym, g.firstEntry.Add(-marketdata.FinePad), exit.Add(marketdata.FinePad)); err == nil && ok {
+			panel.FineBars, panel.FineFrom, panel.FineTo = fine, fine[0].Time, fine[len(fine)-1].Time+1
+		}
+	}
+	panel.Source = h.MarketData.DaySource(ctx, g.yahooSym, g.firstEntry)
 	var notes []string
 	if g.multiRoot {
 		notes = append(notes, "Micro and full-size contracts are combined on one chart - they share the same underlying price.")
 	}
-	if g.contract != "" && !strings.EqualFold(g.contract, g.root) {
+	if g.contract != "" && !strings.EqualFold(g.contract, g.root) && panel.Source != marketdata.SourceExchange {
 		notes = append(notes, "Continuous front-month series; candle basis may differ slightly from "+g.contract+".")
+	}
+	if panel.Source == marketdata.SourceExchange {
+		notes = append(notes, "Exchange data for the traded contract (TopstepX).")
+	}
+	if len(panel.FineBars) > 0 {
+		notes = append(notes, "One-second bars around the trade: pick a second size in the Trade view.")
 	}
 	panel.Note = strings.Join(notes, " ")
 	return panel, "ok"

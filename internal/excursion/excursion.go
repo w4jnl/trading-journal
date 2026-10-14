@@ -35,7 +35,7 @@ func Compute(direction string, entryPrice float64, entryTime, exitTime time.Time
 	if width <= 0 || entryPrice <= 0 || !exitTime.After(entryTime) {
 		return Excursion{}, false
 	}
-	if tf != marketdata.TF1m && exitTime.Sub(entryTime) < width {
+	if tf != marketdata.TF1m && tf != marketdata.TF1s && exitTime.Sub(entryTime) < width {
 		return Excursion{}, false
 	}
 	entry, exit := entryTime.Unix(), exitTime.Unix()

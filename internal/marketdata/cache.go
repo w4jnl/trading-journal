@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"time"
 )
 
@@ -15,13 +16,24 @@ import (
 // Loc is the exchange timezone used to bucket fills into trade days (CME =
 // America/Chicago, which is also the app's default trading tz).
 type CachingSource struct {
-	DB     *sql.DB
-	Source BarSource
-	Loc    *time.Location
+	// Exchange, when set, is tried first for the recent days of a symbol and
+	// is the only feed of one-second bars (the vendor serves none).
+	Exchange ExchangeSource
+	DB       *sql.DB
+	Source   BarSource
+	Loc      *time.Location
 	// IntradayTTL bounds how long the current day ("today") is served from cache
 	// before it is re-fetched, so an in-progress session stays current without
 	// re-fetching on every view. <=0 falls back to 15m.
 	IntradayTTL time.Duration
+	Logger      *slog.Logger
+}
+
+func (c *CachingSource) logger() *slog.Logger {
+	if c.Logger != nil {
+		return c.Logger
+	}
+	return slog.Default()
 }
 
 func (c *CachingSource) loc() *time.Location {
@@ -133,11 +145,29 @@ func (c *CachingSource) FetchDay(ctx context.Context, yahooSymbol string, day ti
 	dayEnd := dayStart.AddDate(0, 0, 1)
 	tf := StorageTimeframe(dayEnd, now)
 
+	// The exchange feed first for the recent days at one minute (the exact
+	// contract, no delay, true volume); the vendor's continuous series when
+	// there is no feed, no session, or it answers nothing.
+	if c.Exchange != nil && tf == TF1m && now.Sub(dayStart) <= time.Duration(WarmDays+1)*24*time.Hour {
+		if bars, err := c.Exchange.FetchExchangeBars(ctx, yahooSymbol, 60, dayStart, dayEnd); err == nil && len(bars) > 0 {
+			return c.replaceDayFrom(ctx, yahooSymbol, tf, dayStart, dayEnd, bars, !dayStart.After(today), SourceExchange)
+		} else if err != nil && err != ErrNoData && err != ErrUnsupported {
+			c.logger().Debug("marketdata: exchange bars unavailable, using the vendor", "symbol", yahooSymbol, "err", err)
+		}
+	}
 	bars, err := c.Source.FetchBars(ctx, yahooSymbol, tf, dayStart, dayEnd)
 	if err != nil && err != ErrNoData {
 		return err
 	}
 	return c.replaceDay(ctx, yahooSymbol, tf, dayStart, dayEnd, bars, !dayStart.After(today))
+}
+
+// DaySource reports which feed filled a cached day ("" when not cached).
+func (c *CachingSource) DaySource(ctx context.Context, yahooSymbol string, day time.Time) string {
+	var src string
+	_ = c.DB.QueryRowContext(ctx, `SELECT source FROM price_bar_days WHERE yahoo_symbol = ? AND day = ? ORDER BY fetched_at DESC LIMIT 1`,
+		yahooSymbol, dayKey(startOfDay(day, c.loc()))).Scan(&src)
+	return src
 }
 
 // EnsureWindow fetches any day in the window that is missing, upgradable, or (for
@@ -178,7 +208,7 @@ func (c *CachingSource) BarsForWindow(ctx context.Context, yahooSymbol string, f
 	rows, err := c.DB.QueryContext(ctx,
 		`SELECT timeframe, bar_time, open, high, low, close, volume
 		   FROM price_bars
-		  WHERE yahoo_symbol = ? AND bar_time >= ? AND bar_time < ?
+		  WHERE yahoo_symbol = ? AND bar_time >= ? AND bar_time < ? AND timeframe <> '1s'
 		  ORDER BY bar_time`,
 		yahooSymbol, from.Unix(), to.Unix())
 	if err != nil {
@@ -218,6 +248,11 @@ func (c *CachingSource) BarsForWindow(ctx context.Context, yahooSymbol string, f
 // false only for the future. Network already happened before this call, so the
 // single WAL connection is only held for the quick write.
 func (c *CachingSource) replaceDay(ctx context.Context, yahooSymbol string, tf Timeframe, dayStart, dayEnd time.Time, bars []Bar, markCovered bool) error {
+	return c.replaceDayFrom(ctx, yahooSymbol, tf, dayStart, dayEnd, bars, markCovered, SourceVendor)
+}
+
+// replaceDayFrom is replaceDay with the feed that supplied the bars.
+func (c *CachingSource) replaceDayFrom(ctx context.Context, yahooSymbol string, tf Timeframe, dayStart, dayEnd time.Time, bars []Bar, markCovered bool, source string) error {
 	tx, err := c.DB.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("marketdata: begin: %w", err)
@@ -227,7 +262,7 @@ func (c *CachingSource) replaceDay(ctx context.Context, yahooSymbol string, tf T
 
 	if len(bars) > 0 {
 		if _, err := tx.ExecContext(ctx,
-			`DELETE FROM price_bars WHERE yahoo_symbol = ? AND bar_time >= ? AND bar_time < ?`,
+			`DELETE FROM price_bars WHERE yahoo_symbol = ? AND bar_time >= ? AND bar_time < ? AND timeframe <> '1s'`,
 			yahooSymbol, dayStart.Unix(), dayEnd.Unix()); err != nil {
 			return fmt.Errorf("marketdata: clear bars: %w", err)
 		}
@@ -253,9 +288,9 @@ func (c *CachingSource) replaceDay(ctx context.Context, yahooSymbol string, tf T
 	}
 	if markCovered {
 		if _, err := tx.ExecContext(ctx,
-			`INSERT OR REPLACE INTO price_bar_days (yahoo_symbol, timeframe, day, fetched_at)
-			 VALUES (?, ?, ?, ?)`,
-			yahooSymbol, string(tf), dayKey(dayStart), now); err != nil {
+			`INSERT OR REPLACE INTO price_bar_days (yahoo_symbol, timeframe, day, fetched_at, source)
+			 VALUES (?, ?, ?, ?, ?)`,
+			yahooSymbol, string(tf), dayKey(dayStart), now, source); err != nil {
 			return fmt.Errorf("marketdata: mark day: %w", err)
 		}
 	}
