@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/chartpng"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -286,7 +287,26 @@ func (h *Handlers) chartEnvelopePNG(env chartEnvelope, contract string, tz *time
 	if chosen == nil {
 		return nil, errNoChartData
 	}
-	return chartpng.Render(panelToPNG(*chosen, tz), chartpng.Options{})
+	return chartpng.Render(panelToPNG(focusPanel(*chosen), tz), chartpng.Options{})
+}
+
+// focusPanel narrows a panel's bars to its focus window (the stretch around
+// the trade) for the image: a whole day of one-minute candles would make
+// the trade unreadable.
+func focusPanel(p chartPanel) chartPanel {
+	if p.FocusFrom == 0 || p.FocusTo == 0 {
+		return p
+	}
+	var bars []marketdata.Bar
+	for _, b := range p.Bars {
+		if b.Time >= p.FocusFrom && b.Time < p.FocusTo {
+			bars = append(bars, b)
+		}
+	}
+	if len(bars) > 0 {
+		p.Bars = bars
+	}
+	return p
 }
 
 // writeChartPNG renders one panel of a chart envelope and writes it as a PNG (or

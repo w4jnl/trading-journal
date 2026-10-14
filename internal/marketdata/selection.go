@@ -95,3 +95,21 @@ func coarser(tf Timeframe) Timeframe {
 	}
 	return tf
 }
+
+// DayWindow is the whole trading day (or days) a trade spans, in the
+// cache's day bucketing: from the start of firstEntry's day to the end of
+// lastExit's day, clipped at now. The chart loads this much (the finest
+// bars the cache holds, rolled up client-side) and focuses on the trade
+// inside it, so the session around the trade is a scroll away instead of
+// another fetch.
+func DayWindow(firstEntry, lastExit, now time.Time, loc *time.Location) (time.Time, time.Time) {
+	if lastExit.Before(firstEntry) {
+		lastExit = firstEntry
+	}
+	from := startOfDay(firstEntry, loc)
+	to := startOfDay(lastExit, loc).AddDate(0, 0, 1)
+	if to.After(now) {
+		to = now
+	}
+	return from, to
+}

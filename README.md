@@ -68,7 +68,12 @@ around it.
   fresh for every root with a fill in the last days (every two minutes
   while Globex trades, `session_warmup_min`) and the two previous days
   complete, which is also what makes the sheet's distance to the stop and
-  the guardrail's "price is through your stop" current.
+  the guardrail's "price is through your stop" current. Trade charts load
+  the trade's whole trading day at the finest cached size (one minute is
+  the finest the cache holds) and open on the stretch around the trade
+  at the bar size the trade reads best at; **Day** and **Trade** switch
+  the view, the bar-size selector rolls the same bars up, and the chart
+  image sent to the API and the AI keeps the stretch around the trade.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from

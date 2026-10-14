@@ -2028,6 +2028,9 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .open-row--beyond td.c-sym .pill--live { border-color: var(--neg); color: var(--neg); }
 .position-plan { align-items: flex-end; }
 .position-ai { margin: 10px 0 12px; border-left: 3px dashed var(--accent); }
+.trade-chart__range { display: inline-flex; gap: 2px; margin-right: 10px; }
+.trade-chart__range-btn { font: inherit; font-size: var(--fs-11); padding: 1px 7px; border-radius: 10px; border: 1px solid var(--border); background: transparent; color: var(--fg-muted); cursor: pointer; }
+.trade-chart__range-btn.active { background: var(--bg-elev); color: var(--fg); border-color: var(--border-strong); }
 .position-ai__levels { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; margin-top: 8px; }
 .position-ai__summary { margin: 8px 0 0; font-size: var(--fs-13); }
 .position-ai__frozen { font-size: var(--fs-12); margin: 0 0 12px; }

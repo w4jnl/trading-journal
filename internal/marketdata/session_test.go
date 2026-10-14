@@ -97,3 +97,24 @@ func TestComputeSession(t *testing.T) {
 		t.Errorf("empty input must yield an empty context")
 	}
 }
+
+// The day window covers the trade's whole trading day(s), clipped at now.
+func TestDayWindow(t *testing.T) {
+	loc, _ := time.LoadLocation("America/Chicago")
+	entry := time.Date(2026, 10, 13, 9, 15, 0, 0, loc)
+	exit := entry.Add(12 * time.Minute)
+	now := time.Date(2026, 10, 14, 12, 0, 0, 0, loc)
+	from, to := DayWindow(entry, exit, now, loc)
+	if !from.Equal(time.Date(2026, 10, 13, 0, 0, 0, 0, loc)) || !to.Equal(time.Date(2026, 10, 14, 0, 0, 0, 0, loc)) {
+		t.Errorf("window = %v .. %v", from, to)
+	}
+	// An open trade today ends at now; a swing over two days covers both.
+	from, to = DayWindow(time.Date(2026, 10, 14, 9, 0, 0, 0, loc), now, now, loc)
+	if !from.Equal(time.Date(2026, 10, 14, 0, 0, 0, 0, loc)) || !to.Equal(now) {
+		t.Errorf("today window = %v .. %v", from, to)
+	}
+	from, to = DayWindow(time.Date(2026, 10, 12, 9, 0, 0, 0, loc), time.Date(2026, 10, 13, 14, 0, 0, 0, loc), now, loc)
+	if from.Day() != 12 || to.Day() != 14 {
+		t.Errorf("two-day window = %v .. %v", from, to)
+	}
+}
