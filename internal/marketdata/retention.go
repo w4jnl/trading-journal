@@ -34,6 +34,10 @@ func (c *CachingSource) PurgeIntraday(ctx context.Context, cutoff time.Time) (in
 		`DELETE FROM price_bar_days WHERE timeframe <> '1d' AND day < ?`, cutoff.In(c.loc()).Format("2006-01-02")); err != nil {
 		return 0, fmt.Errorf("marketdata: purge days: %w", err)
 	}
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM price_bar_windows WHERE to_time < ?`, cutoff.Unix()); err != nil {
+		return 0, fmt.Errorf("marketdata: purge windows: %w", err)
+	}
 	return n, tx.Commit()
 }
 

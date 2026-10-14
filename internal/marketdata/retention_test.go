@@ -20,6 +20,7 @@ func TestPurgeIntradayKeepsDailyAndRecent(t *testing.T) {
 	for _, stmt := range []string{
 		`CREATE TABLE price_bars (yahoo_symbol TEXT, timeframe TEXT, bar_time INTEGER, open REAL, high REAL, low REAL, close REAL, volume REAL, fetched_at INTEGER, PRIMARY KEY (yahoo_symbol, timeframe, bar_time))`,
 		`CREATE TABLE price_bar_days (yahoo_symbol TEXT, timeframe TEXT, day TEXT, fetched_at INTEGER, PRIMARY KEY (yahoo_symbol, timeframe, day))`,
+		`CREATE TABLE price_bar_windows (yahoo_symbol TEXT, timeframe TEXT, from_time INTEGER, to_time INTEGER, source TEXT, fetched_at INTEGER, PRIMARY KEY (yahoo_symbol, timeframe, from_time))`,
 	} {
 		if _, err := conn.Exec(stmt); err != nil {
 			t.Fatal(err)

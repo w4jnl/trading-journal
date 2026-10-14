@@ -79,9 +79,15 @@ func (s *Service) fill(ctx context.Context, t Trade, inst models.Instrument) (Ex
 	if t.ExitTime.Sub(t.EntryTime) >= 24*time.Hour {
 		pad = 24 * time.Hour
 	}
+	// One-second bars around a short trade, when the exchange feed fetched
+	// them (marketdata.FineFetcher): a trade that lasted a minute is one
+	// candle at one minute and its heat is a guess there.
 	bars, tf, _, err := s.Bars.BarsForWindow(ctx, sym, t.EntryTime.Add(-pad), t.ExitTime.Add(time.Second))
 	if err != nil {
 		return Excursion{}, false, fmt.Errorf("bars for %s: %w", sym, err)
+	}
+	if fine, ok, err := s.Bars.FineBars(ctx, sym, t.EntryTime.Add(-time.Second), t.ExitTime.Add(time.Second)); err == nil && ok {
+		bars, tf = fine, marketdata.TF1s
 	}
 	ex, ok := Compute(t.Direction, t.EntryPrice, t.EntryTime, t.ExitTime, bars, tf)
 	if !ok {

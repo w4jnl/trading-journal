@@ -210,7 +210,10 @@
         right.appendChild(document.createTextNode("Bar size: "));
         sel = document.createElement("select");
         sel.className = "trade-chart__tf";
-        panel.timeframes.forEach(function (tf) {
+        // Second sizes over the one-second bars around a short trade (the
+        // Trade view; the Day view has minutes only).
+        var sizes = panel.fineBars && panel.fineBars.length ? ["1s", "5s", "15s"].concat(panel.timeframes) : panel.timeframes;
+        sizes.forEach(function (tf) {
           var o = document.createElement("option");
           o.value = tf;
           o.textContent = humanTimeframe(tf);
@@ -262,7 +265,7 @@
       el.appendChild(card);
 
       if (panel.bars && panel.bars.length) {
-        var handle = drawPanel(holder, panel, fmts, rangeBtns);
+        var handle = drawPanel(holder, panel, fmts, rangeBtns, sel);
         if (handle) {
           el.__tcCharts.push(handle.chart);
           if (sel) sel.addEventListener("change", function () { handle.applyTf(sel.value); });
@@ -275,7 +278,7 @@
 
   // ---------- rendering ----------
 
-  function drawPanel(holder, panel, fmts, rangeBtns) {
+  function drawPanel(holder, panel, fmts, rangeBtns, sel) {
     var LWC = window.LightweightCharts;
     if (!LWC) return null;
     var c = themeColors();
@@ -325,7 +328,9 @@
     // applyTf rolls the finest bars up to the chosen bar size and repaints the
     // candles, volume, and entry/exit markers (re-snapped to the new bars).
     function applyTf(tf) {
-      var bars = aggregateBars(panel.bars, tfSeconds(tf));
+      var fine = isSeconds(tf) && panel.fineBars && panel.fineBars.length;
+      var bars = aggregateBars(fine ? panel.fineBars : panel.bars, tfSeconds(tf));
+      currentTf = tf;
       candle.setData(bars.map(function (b) {
         return { time: b.t, open: b.o, high: b.h, low: b.l, close: b.c };
       }));
@@ -360,10 +365,20 @@
 
     // showRange opens the chart on the trade (its focus window, padded to a
     // few bars at the current size) or fits the whole loaded day.
-    var currentRange = "trade";
+    var currentRange = "trade", currentTf = null;
     function showRange(which) {
       currentRange = which;
-      if (which === "trade" && panel.focusFrom && panel.focusTo) {
+      // A second size only ever shows the fine stretch; Day switches back
+      // to the minutes the whole day is loaded at.
+      if (which === "day" && isSeconds(currentTf)) {
+        currentTf = panel.timeframe && !isSeconds(panel.timeframe) ? panel.timeframe : panel.barTimeframe;
+        if (sel) sel.value = currentTf;
+        applyTf(currentTf);
+        return;
+      }
+      if (isSeconds(currentTf) && panel.fineFrom && panel.fineTo) {
+        chart.timeScale().setVisibleRange({ from: panel.fineFrom, to: panel.fineTo });
+      } else if (which === "trade" && panel.focusFrom && panel.focusTo) {
         chart.timeScale().setVisibleRange({ from: panel.focusFrom, to: panel.focusTo });
       } else {
         chart.timeScale().fitContent();
@@ -420,8 +435,11 @@
   }
 
   function tfSeconds(tf) {
-    return { "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "1d": 86400 }[tf] || 60;
+    return { "1s": 1, "5s": 5, "15s": 15, "1m": 60, "5m": 300, "15m": 900, "30m": 1800, "1h": 3600, "1d": 86400 }[tf] || 60;
   }
+
+  // isSeconds reports a second-based bar size ("1s", "5s", "15s").
+  function isSeconds(tf) { return typeof tf === "string" && /^\d+s$/.test(tf); }
 
   function markerPosition(direction, role) {
     // A long is entered low (arrow below the bar) and exited high (above);
@@ -433,6 +451,9 @@
 
   function humanTimeframe(tf) {
     switch (tf) {
+      case "1s": return "1 sec";
+      case "5s": return "5 sec";
+      case "15s": return "15 sec";
       case "1m": return "1 min";
       case "5m": return "5 min";
       case "15m": return "15 min";

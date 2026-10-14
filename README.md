@@ -74,6 +74,16 @@ around it.
   at the bar size the trade reads best at; **Day** and **Trade** switch
   the view, the bar-size selector rolls the same bars up, and the chart
   image sent to the API and the AI keeps the stretch around the trade.
+  With a TopstepX connection the shared cache takes the **exchange feed**
+  first for the recent days of the roots you trade: the exact contract,
+  no delay, true volume (the day's source is noted under the chart, and
+  the basis note goes away). The same feed fetches **one-second bars**
+  around every trade shorter than ten minutes, once, padded two minutes
+  each side: the chart offers 1, 5 and 15 second sizes over them in the
+  Trade view, the excursions (heat, best seen, exit kept) are measured
+  from them, and the chart image of such a trade is drawn at five
+  seconds. The cache is one for all users; the feed borrows the session
+  of any user with credentials.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from
