@@ -77,6 +77,9 @@
   <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
   <span class="trade-plan-hint">{{with rewardRisk .EntryPrice .PlannedStop .PlannedTarget}}reward:risk <strong class="num">{{.}}</strong> · {{end}}{{if eq $.PlanOrigin "position"}}planned while the position was open · {{else if eq $.PlanOrigin "set"}}inherited from the copied decision's plan · {{else if eq $.PlanOrigin "ai"}}taken from an AI suggestion while open · {{end}}a stop sets the risk and a risk sets the stop, through the instrument's tick value</span>
 </form>
+{{with $.AISuggested}}
+<p class="position-ai__frozen muted" title="Made while the position was open, before the outcome existed: a fair comparison with the plan and the exit">✨ AI suggested stop <span class="num">{{printf "%g" .Levels.Stop}}</span> · target <span class="num">{{printf "%g" .Levels.Target}}</span>{{if .Levels.R1}} ({{printf "%.1f" (deref .Levels.R1)}}R){{end}} at {{ltime .At "time"}}{{with $.Trade.PlannedStop}} · you set stop <span class="num">{{printf "%g" (deref .)}}</span>{{end}}{{with $.Trade.PlannedTarget}} · target <span class="num">{{printf "%g" (deref .)}}</span>{{end}}</p>
+{{end}}
 {{end}}
 
 <section class="{{if $.AIPending}}journal-entry--locked{{end}}" data-trade-journal data-journal-entry>

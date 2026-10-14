@@ -47,7 +47,17 @@ around it.
   stop recorded and when the stops on what is open risk more than the day
   plan's max loss still allows; the API and MCP list positions and record
   plans (`GET /api/v1/positions`, `set_position_plan`), marked as set
-  through the API until the trader saves them.
+  through the API until the trader saves them. On the sheet, **AI stop &
+  target** asks the trader's own model where the levels belong, from the
+  bars ending now (the chart image too, when the user sends charts), the
+  day plan and what its max loss still allows, the lab's best distances
+  for the instrument, the strategies and recent lessons: it answers with
+  a stop, a target (a second one optional), the reasons and a trail rule,
+  which the app checks (right side of the entry, within the bars, snapped
+  to tick) and prices itself. It is shown dashed; "Use as plan" writes it
+  with source `ai`, nothing else touches the plan, and after the close the
+  suggestion stays on the trade sheet next to what the trader chose, made
+  before the outcome existed.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from

@@ -1,0 +1,178 @@
+package handlers
+
+import (
+	"bytes"
+	"context"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/w4jnl/trading-journal/internal/ai"
+	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/secretbox"
+)
+
+// The model's answer is checked against the position: wrong-side levels
+// and levels outside the bars are refused, prices snap to the tick, and
+// risk and reward:risk are the app's own numbers.
+func TestParseAILevels(t *testing.T) {
+	tick, val := 0.25, 12.5
+	es := models.Instrument{SymbolRoot: "ES", TickSize: &tick, TickValue: &val}
+	good := "```json\n{\"stop\": 7240.1, \"target\": 7271, \"target2\": 7290, \"scaleOut\": 0.5, \"trail\": \"breakeven-at-1r\", \"reasons\": {\"stop\": \"below the swing\", \"target\": \"prior high\"}, \"summary\": \"ok\"}\n```"
+	lv, err := parseAILevels(good, "long", 7251, 3, es, 7230, 7300)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if lv.Stop != 7240 || lv.Target != 7271 || lv.Target2 == nil || *lv.Target2 != 7290 || lv.Trail != "breakeven-at-1r" || lv.ScaleOut == nil {
+		t.Errorf("parsed = %+v", lv)
+	}
+	// |7251 - 7240| * 50 * 3 = 1650; (7271 - 7251) / 11 = 1.818
+	if lv.Risk == nil || *lv.Risk != 1650 || lv.R1 == nil || *lv.R1 < 1.81 || *lv.R1 > 1.82 || lv.R2 == nil {
+		t.Errorf("risk = %v r1 = %v r2 = %v", lv.Risk, lv.R1, lv.R2)
+	}
+	cases := []struct{ name, text, dir string }{
+		{"stop above a long's entry", `{"stop": 7260, "target": 7271, "summary": ""}`, "long"},
+		{"target below a long's entry", `{"stop": 7240, "target": 7245, "summary": ""}`, "long"},
+		{"stop below a short's entry", `{"stop": 7240, "target": 7230, "summary": ""}`, "short"},
+		{"outside the bars", `{"stop": 7000, "target": 7271, "summary": ""}`, "long"},
+		{"no stop", `{"target": 7271, "summary": ""}`, "long"},
+		{"prose", `I would put the stop at 7240.`, "long"},
+	}
+	for _, c := range cases {
+		if _, err := parseAILevels(c.text, c.dir, 7251, 3, es, 7230, 7300); err == nil {
+			t.Errorf("%s: accepted", c.name)
+		}
+	}
+	// A second target on the wrong side is dropped, not fatal; an unknown
+	// trail reads as none; without bars the range check is skipped.
+	lv, err = parseAILevels(`{"stop": 7240, "target": 7271, "target2": 7260, "trail": "x", "summary": "s"}`, "long", 7251, 3, es, 0, 0)
+	if err != nil || lv.Target2 != nil || lv.Trail != "none" {
+		t.Errorf("lenient parse = %+v (%v)", lv, err)
+	}
+}
+
+// aiPositionFixture is the position fixture with a fake provider.
+func aiPositionFixture(t *testing.T, reply string) (*positionFixture, *fakeProvider) {
+	t.Helper()
+	fx := newPositionFixture(t)
+	box, _ := secretbox.New(bytes.Repeat([]byte{0x45}, 32))
+	fx.h.AISecrets, fx.h.AIJobs, fx.h.AIReviews, fx.h.AITasks = box, ai.NewJobManager(nil), ai.NewReviews(nil, 2), ai.NewTasks(nil, 1)
+	fp := newFakeProvider(t, "sk-levels-key-01", reply)
+	withPresetURL(t, "openai", fp.URL)
+	enc, nonce, _ := box.Seal("sk-levels-key-01")
+	if err := fx.q.UpsertUserAISettings(fx.ctx, models.UpsertUserAISettingsParams{UserID: fx.uid, Provider: "openai", Model: "gpt-x", ApiKeyEnc: enc, ApiKeyNonce: nonce}); err != nil {
+		t.Fatal(err)
+	}
+	return fx, fp
+}
+
+func (fx *positionFixture) post(t *testing.T, fn http.HandlerFunc, path string) *httptest.ResponseRecorder {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, path, nil).WithContext(fx.ctx)
+	req.Header.Set("HX-Request", "true")
+	req.SetPathValue("account", strconv.FormatInt(fx.acct.ID, 10))
+	req.SetPathValue("symbol", "ESM6")
+	rec := httptest.NewRecorder()
+	fn(rec, req)
+	return rec
+}
+
+// The suggestion runs in the background, lands on the sheet as dashed
+// levels with the app's risk and R, is written into the plan with source
+// 'ai' on "Use as plan", and stays on the trade sheet after the close.
+func TestPositionSuggestion(t *testing.T) {
+	fx, fp := aiPositionFixture(t, `{"stop": 7241, "target": 7271, "target2": null, "scaleOut": null, "trail": "none", "reasons": {"stop": "below the opening swing low", "target": "yesterday's high"}, "summary": "Stop under the swing, target at the prior high."}`)
+	ctx := fx.ctx
+
+	if body := fx.sheet(t); !strings.Contains(body, "Suggest stop &amp; target") || strings.Contains(body, "Use as plan") {
+		t.Fatalf("fresh sheet should offer the suggestion and nothing to apply")
+	}
+	rec := fx.post(t, fx.h.PositionSuggestStart, "/positions/x/y/suggest")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), "Reading the position") {
+		t.Fatalf("start = %d: %s", rec.Code, rec.Body.String())
+	}
+	waitTasks(t, fx.h)
+	fp.mu.Lock()
+	user, system := fp.user, fp.system
+	fp.mu.Unlock()
+	if !strings.Contains(system, "OPEN RIGHT NOW") || !strings.Contains(user, `"avgEntry": 7251`) || !strings.Contains(user, `"direction": "long"`) {
+		t.Errorf("prompt did not carry the position: %s", user)
+	}
+	if strings.Contains(user, "recordedPlan") {
+		t.Errorf("no plan was recorded, none should be claimed")
+	}
+
+	body := fx.sheet(t)
+	for _, want := range []string{"stop 7241", "target 7271", "2.0R", "risk 1500.00", "Stop under the swing", "Use as plan", "no bars were available"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("sheet lacks %q", want)
+		}
+	}
+	// Nothing written yet.
+	if plans, _ := fx.q.ListOpenPositionPlansForUser(context.Background(), fx.uid); len(plans) != 0 {
+		t.Fatalf("the suggestion wrote a plan: %+v", plans)
+	}
+
+	rec = fx.post(t, fx.h.PositionSuggestApply, "/positions/x/y/suggest/apply")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("apply = %d: %s", rec.Code, rec.Body.String())
+	}
+	plans, _ := fx.q.ListOpenPositionPlansForUser(context.Background(), fx.uid)
+	if len(plans) != 1 || plans[0].Source != "ai" || plans[0].Stop == nil || *plans[0].Stop != 7241 || plans[0].Target == nil || *plans[0].Target != 7271 || plans[0].Risk == nil || *plans[0].Risk != 1500 || !strings.Contains(plans[0].Thesis, "Stop under the swing") {
+		t.Fatalf("applied plan = %+v", plans)
+	}
+	if out := rec.Body.String(); !strings.Contains(out, "✨ ai") || !strings.Contains(out, "Suggest again") {
+		t.Errorf("sheet after apply should mark the plan as from the AI")
+	}
+
+	// The position closes: the trade carries the plan and the frozen
+	// suggestion next to it.
+	oid := "O-9"
+	if _, err := fx.q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: fx.acct.ID, BrokerExecID: "P9", OrderID: &oid, ImportMethod: "motivewave_csv",
+		Symbol: "ESM6", SymbolRoot: "ES", Side: "sell", Qty: 3, Price: 7268, ExecTime: fx.t0.Add(40 * time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.svc.RebuildTradesForAccountSymbol(ctx, fx.uid, fx.acct.ID, "ESM6"); err != nil {
+		t.Fatal(err)
+	}
+	trades, _ := fx.q.ListTradesForAccount(ctx, fx.acct.ID)
+	req := httptest.NewRequest(http.MethodGet, "/trades/x", nil).WithContext(ctx)
+	req.SetPathValue("id", strconv.FormatInt(trades[0].ID, 10))
+	rec = httptest.NewRecorder()
+	fx.h.TradeDetail(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("trade sheet = %d", rec.Code)
+	}
+	if out := rec.Body.String(); !strings.Contains(out, "AI suggested stop") || !strings.Contains(out, "taken from an AI suggestion while open") {
+		t.Errorf("trade sheet lacks the frozen suggestion or the plan origin")
+	}
+}
+
+// A refused answer (levels on the wrong side) is reported, not stored, and
+// Dismiss drops a stored one.
+func TestPositionSuggestion_RefusedAndDismiss(t *testing.T) {
+	fx, _ := aiPositionFixture(t, `{"stop": 7290, "target": 7271, "summary": "wrong side"}`)
+	fx.post(t, fx.h.PositionSuggestStart, "/positions/x/y/suggest")
+	waitTasks(t, fx.h)
+	body := fx.sheet(t)
+	if !strings.Contains(body, "Suggestion failed") || !strings.Contains(body, "wrong side of the entry") || strings.Contains(body, "Use as plan") {
+		t.Errorf("refused answer not reported: %s", body)
+	}
+	if _, err := fx.q.GetAIOutput(context.Background(), models.GetAIOutputParams{UserID: fx.uid, Kind: aiKindPositionLevels, Ref: aiLevelsRef(fx.acct.ID, "ESM6", 0)}); err == nil {
+		t.Errorf("a refused answer must not be stored")
+	}
+
+	fx2, _ := aiPositionFixture(t, `{"stop": 7241, "target": 7271, "summary": "fine"}`)
+	fx2.post(t, fx2.h.PositionSuggestStart, "/positions/x/y/suggest")
+	waitTasks(t, fx2.h)
+	if !strings.Contains(fx2.sheet(t), "Use as plan") {
+		t.Fatalf("suggestion missing")
+	}
+	rec := fx2.post(t, fx2.h.PositionSuggestDismiss, "/positions/x/y/suggest/dismiss")
+	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "Use as plan") {
+		t.Errorf("dismiss = %d, suggestion still shown", rec.Code)
+	}
+}

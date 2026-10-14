@@ -772,6 +772,11 @@ func run() error {
 	// An open position (no trade row yet) as a sheet, with its plan.
 	mux.HandleFunc("GET /positions/{account}/{symbol}", h.PositionSheet)
 	mux.HandleFunc("POST /positions/{account}/{symbol}/plan", h.PositionPlanSave)
+	// The AI's stop and target on the open position: a background task the
+	// sheet polls; nothing is written until the trader applies it.
+	mux.HandleFunc("POST /positions/{account}/{symbol}/suggest", h.PositionSuggestStart)
+	mux.HandleFunc("POST /positions/{account}/{symbol}/suggest/apply", h.PositionSuggestApply)
+	mux.HandleFunc("POST /positions/{account}/{symbol}/suggest/dismiss", h.PositionSuggestDismiss)
 	// Trade-replay charts (JSON) for the trade-detail + journal views.
 	mux.HandleFunc("GET /charts/trade/{id}", h.ChartTrade)
 	mux.HandleFunc("GET /charts/group/{id}", h.ChartGroup)

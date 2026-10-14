@@ -56,6 +56,8 @@
   <span class="trade-plan-hint">{{if .RewardRisk}}reward:risk <strong class="num">{{.RewardRisk}}</strong> · {{end}}{{if not .HasPlan}}no plan recorded yet · {{end}}the plan follows the position into its trade when it closes{{if eq .PointValue 0.0}} · set the instrument's tick size and value to derive risk from the stop{{end}}</span>
 </form>
 
+{{template "position_ai_card" (dict "Pos" . "AI" $.AI)}}
+
 {{if .InSet}}
 <h3 style="margin: 12px 0 6px; font-size: 13px;">Legs of this decision{{if .SetRisk}} <span class="muted" style="font-weight: 400;">· risk {{printf "%.2f" (deref .SetRisk)}} in total</span>{{end}}</h3>
 <div class="table-scroll">
@@ -105,4 +107,51 @@
 </p>
 {{end}}
 {{end}}
+{{end}}
+
+{{/* position_ai_card: the AI's stop and target on the open position. Dict:
+     Pos (positionView), AI (positionAIView). Shown only when the server can
+     run AI; a user without a provider has the card hidden by body[data-ai]
+     (.ai-action). The suggestion is dashed: "Use as plan" writes it with
+     source 'ai', "Dismiss" drops it, nothing else touches the plan. */}}
+{{define "position_ai_card"}}
+{{if aiEnabled}}{{with .Pos}}
+<div class="card card--compact ai-action position-ai">
+  <div class="row-sm" style="justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 6px;">
+    <span class="card-title">✨ AI stop &amp; target</span>
+    {{if $.AI.Pending}}
+    <span class="ai-lock-note" role="status"><span class="ai-spinner" aria-hidden="true"></span> Reading the position…
+      <span hidden hx-get="/ai/tasks/status?k=levels:{{.AccountID}}:{{.Symbol}}&then=position:{{.AccountID}}:{{.Symbol}}" hx-trigger="every 3s" hx-swap="none"></span></span>
+    {{else}}
+    <form hx-post="{{.SheetURL}}/suggest" hx-target="#trade-sheet-content" hx-swap="innerHTML" style="margin: 0;">
+      <button type="submit" class="btn btn--secondary btn--sm" title="Ask the model where the stop and the target belong, from the bars ending now, your day plan, the lab's evidence and your rules. It proposes; you decide.">{{if $.AI.Has}}Suggest again{{else}}Suggest stop &amp; target{{end}}</button>
+    </form>
+    {{end}}
+  </div>
+  {{with $.AI.Error}}<div class="flash error" role="alert" style="margin-top: 6px;">Suggestion failed: {{.}}</div>{{end}}
+  {{if $.AI.Has}}{{with $.AI.Levels}}
+  <div class="position-ai__levels">
+    <span class="pill pill--suggest" title="{{index .Reasons "stop"}}">stop {{printf "%g" .Stop}}</span>
+    <span class="pill pill--suggest" title="{{index .Reasons "target"}}">target {{printf "%g" .Target}}{{if .R1}} · {{printf "%.1f" (deref .R1)}}R{{end}}</span>
+    {{if .Target2}}<span class="pill pill--suggest" title="Second target{{if .ScaleOut}}: take {{printf "%.0f%%" (mul (deref .ScaleOut) 100.0)}} off at the first{{end}}">T2 {{printf "%g" (deref .Target2)}}{{if .R2}} · {{printf "%.1f" (deref .R2)}}R{{end}}</span>{{end}}
+    {{if .Risk}}<span class="muted" style="font-size: 12px;">risk {{printf "%.2f" (deref .Risk)}} at {{printf "%g" .Qty}} from {{printf "%.2f" .Entry}}</span>{{end}}
+    {{if ne .Trail "none"}}<span class="pill pill--suggest" title="How the model would move the stop">{{if eq .Trail "breakeven-at-1r"}}breakeven at 1R{{else}}trail behind the last swing{{end}}</span>{{end}}
+  </div>
+  {{if .Summary}}<p class="position-ai__summary">{{.Summary}}</p>{{end}}
+  {{range .Warnings}}<p class="muted" style="font-size: 11px; margin: 2px 0;">{{.}}</p>{{end}}
+  {{end}}
+  <div class="row-sm" style="gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 6px;">
+    <form hx-post="{{.SheetURL}}/suggest/apply" hx-target="#trade-sheet-content" hx-swap="innerHTML" style="margin: 0;">
+      <button type="submit" class="btn btn--primary btn--sm" title="Write the suggested stop and first target into the plan{{if .InSet}} on every leg{{end}}; the plan then reads as taken from the AI until you edit it">Use as plan</button>
+    </form>
+    <form hx-post="{{.SheetURL}}/suggest/dismiss" hx-target="#trade-sheet-content" hx-swap="innerHTML" style="margin: 0;">
+      <button type="submit" class="btn btn--ghost btn--sm">Dismiss</button>
+    </form>
+    <span class="ai-model-line" style="margin: 0;">{{$.AI.Model}} · {{ltime $.AI.At "datetime"}}{{if $.AI.Levels.Last}} · last {{printf "%.2f" (deref $.AI.Levels.Last)}}{{end}}{{if $.AI.Outdated}} · <span class="pnl-neg">the position changed since</span>{{end}}</span>
+  </div>
+  {{else if not $.AI.Pending}}
+  <p class="muted" style="font-size: 12px; margin: 6px 0 0;">The model sees the bars ending now, your day plan and what it still allows, the lab's best distances for {{.SymbolRoot}}, your strategies and recent lessons. It proposes levels; you place the orders.</p>
+  {{end}}
+</div>
+{{end}}{{end}}
 {{end}}

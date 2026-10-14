@@ -276,9 +276,18 @@ Not part of this proposal; the model above leaves room for it.
 
 - Phase 1 (PR #109): `position_plans`, hand-off, position sheet, /trades
   strip, dashboard columns.
-- Phase 2: open sets (fan-out, inheritance on every rebuild, declared copy
-  groups with a 30 s window). The manual "join a leg" anchor is not built
-  yet; the copy group covers the cases seen so far.
+- Phase 2 (PR #110): open sets (fan-out, inheritance on every rebuild,
+  declared copy groups with a 30 s window). The manual "join a leg" anchor
+  is not built yet; the copy group covers the cases seen so far.
+- Phase 3 (PR #111): guardrail rules `unplanned-open` and `open-risk`;
+  `GET /api/v1/positions`, `POST .../plan`; MCP `list_positions`,
+  `set_position_plan`. `past-stop-live` needs a quote in the worker: not
+  built.
+- Phase 4: the AI suggestion at entry (stop, target, optional T2 and trail,
+  checked and priced by the app; "Use as plan" with source 'ai'; frozen on
+  the trade sheet after the close). Not built: watch mode (needs the
+  second "fast model" setting), the plan history timeline, the lab's "AI
+  advice" axis, the MCP suggest tool.
 
 ## Delivery
 
