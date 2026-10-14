@@ -37,6 +37,8 @@ var apiIndexEndpoints = []map[string]string{
 	{"method": "GET", "path": "/api/v1/trades", "summary": "List trades (filtered, paged)"},
 	{"method": "GET", "path": "/api/v1/trades/{id}", "summary": "Trade detail (fills + chart)"},
 	{"method": "GET", "path": "/api/v1/trades/{id}/chart.png", "summary": "Rendered trade chart PNG"},
+	{"method": "GET", "path": "/api/v1/positions", "summary": "Open positions with their plans"},
+	{"method": "POST", "path": "/api/v1/positions/{account}/{symbol}/plan", "summary": "Record the plan on an open position"},
 	{"method": "GET", "path": "/api/v1/attachments/{id}", "summary": "Fetch an embedded image"},
 }
 

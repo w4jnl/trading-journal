@@ -42,7 +42,12 @@ around it.
   flat) inherits the set's plan, marked "from set" until the trader
   saves it. Accounts a copier drives together can be given the same
   **copy group** on `/accounts`, which lets their legs count as one
-  decision up to thirty seconds apart instead of two.
+  decision up to thirty seconds apart instead of two. The guardrail, when
+  on, says once when a position has been open for a few minutes with no
+  stop recorded and when the stops on what is open risk more than the day
+  plan's max loss still allows; the API and MCP list positions and record
+  plans (`GET /api/v1/positions`, `set_position_plan`), marked as set
+  through the API until the trader saves them.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from

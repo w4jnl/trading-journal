@@ -107,6 +107,24 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithBoolean("includeRetired", mcpgo.Description("Include trades on retired accounts.")),
 	), h.mcpListTrades)
 
+	s.AddTool(mcpgo.NewTool("list_positions",
+		mcpgo.WithReadOnlyHintAnnotation(true),
+		mcpgo.WithDescription("The caller's OPEN positions right now (an account's fills on a contract that do not net flat): direction, size, average entry, last price and unrealized P&L, and the plan recorded on each (stop, risk, target, thesis; planSource says who set it, 'set' means inherited from the copied decision). setLegs lists the other accounts of the same copied decision. A position is not a trade yet: it becomes one, carrying its plan, when it closes."),
+		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s).")),
+	), h.mcpListPositions)
+
+	s.AddTool(mcpgo.NewTool("set_position_plan",
+		mcpgo.WithDestructiveHintAnnotation(false),
+		mcpgo.WithDescription("Record the plan on an OPEN position (from list_positions): stop price, money at risk, target price and a one-line thesis. The whole plan is replaced: pass every field you want kept. A stop alone derives the risk at the position's size; a risk alone derives the stop (snapped to tick). On a leg of a copied decision the plan goes on every leg unless allLegs=false. Write only what the trader stated: the plan shows as set through the API until they save it, and it follows the position into its trade. Never invent a stop the trader did not give."),
+		mcpgo.WithNumber("accountId", mcpgo.Required(), mcpgo.Description("Account id of the position.")),
+		mcpgo.WithString("symbol", mcpgo.Required(), mcpgo.Description("Contract symbol of the position, e.g. MESZ6.")),
+		mcpgo.WithNumber("stop", mcpgo.Description("Stop price.")),
+		mcpgo.WithNumber("risk", mcpgo.Description("Money at risk at the current size.")),
+		mcpgo.WithNumber("target", mcpgo.Description("Profit target price.")),
+		mcpgo.WithString("thesis", mcpgo.Description("Why the trade, and what would prove it wrong.")),
+		mcpgo.WithBoolean("allLegs", mcpgo.Description("On a copied decision, write the plan on every leg (default true).")),
+	), h.mcpSetPositionPlan)
+
 	s.AddTool(mcpgo.NewTool("get_trade",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Get one trade in detail: fills (executions), linked trade-scope journal entry id, group count, and cached chart data."),

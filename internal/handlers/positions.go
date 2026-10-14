@@ -416,6 +416,38 @@ func (h *Handlers) PositionPlanSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	msg, err := h.savePositionPlan(ctx, pos, positionPlanInput{Stop: stop, Risk: risk, Target: target, Thesis: thesis,
+		AllLegs: r.FormValue("all_legs") != "" && r.FormValue("all_legs") != "0", Source: "trader"})
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	if r.Header.Get("HX-Request") == "true" {
+		w.Header().Set("HX-Trigger", `{"toast":{"message":`+strconv.Quote(msg)+`,"kind":"success"}}`)
+		if pos, ok := h.loadPosition(w, r); ok {
+			h.renderPositionSheet(w, r, pos, "plan")
+		}
+		return
+	}
+	http.Redirect(w, r, positionHref(pos.AccountID, pos.Symbol), http.StatusSeeOther)
+}
+
+// positionPlanInput is one plan save, from the sheet, the API or MCP.
+type positionPlanInput struct {
+	Stop, Risk, Target *float64
+	Thesis             string
+	AllLegs            bool   // write it on every leg of the copied decision
+	Source             string // 'trader' | 'api' | 'ai'
+}
+
+// savePositionPlan writes a plan on an open position and, for a leg of a
+// copied decision saved with AllLegs, on its siblings. Stop and risk
+// derive each other through the instrument's point value at the
+// position's current size: the field that changed is the one edited (the
+// trade plan's rule). An input with nothing in it deletes the plan. The
+// message is what the trader sees.
+func (h *Handlers) savePositionPlan(ctx context.Context, pos positionView, in positionPlanInput) (string, error) {
+	stop, risk, target, thesis := in.Stop, in.Risk, in.Target, in.Thesis
 	derivedStop := false
 	if inst, err := h.Queries.GetInstrument(ctx, pos.SymbolRoot); err == nil {
 		stopEdited := !sameFloat(stop, pos.Stop)
@@ -438,11 +470,10 @@ func (h *Handlers) PositionPlanSave(w http.ResponseWriter, r *http.Request) {
 	// mirrors), each leg's risk follows from its own entry and size; a risk
 	// typed without a stop splits by exposure into one point distance per
 	// leg (the set plan's rule); target and thesis are the same everywhere.
-	allLegs := pos.InSet() && r.FormValue("all_legs") != "" && r.FormValue("all_legs") != "0"
+	allLegs := pos.InSet() && in.AllLegs
 	empty := stop == nil && risk == nil && target == nil && thesis == ""
-	if err := h.writePositionPlan(ctx, pos, stop, risk, target, thesis, allLegs, empty); err != nil {
-		h.serverError(w, err)
-		return
+	if err := h.writePositionPlan(ctx, pos, stop, risk, target, thesis, allLegs, empty, in.Source); err != nil {
+		return "", err
 	}
 	legsDone := 0
 	if allLegs {
@@ -463,9 +494,8 @@ func (h *Handlers) PositionPlanSave(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
-			if err := h.writePositionPlan(ctx, leg, lstop, lrisk, target, thesis, true, empty); err != nil {
-				h.serverError(w, err)
-				return
+			if err := h.writePositionPlan(ctx, leg, lstop, lrisk, target, thesis, true, empty, in.Source); err != nil {
+				return "", err
 			}
 			legsDone++
 		}
@@ -489,19 +519,13 @@ func (h *Handlers) PositionPlanSave(w http.ResponseWriter, r *http.Request) {
 	case derivedStop:
 		msg = fmt.Sprintf("Plan saved; stop set to %g from the risk", *stop)
 	}
-	if r.Header.Get("HX-Request") == "true" {
-		w.Header().Set("HX-Trigger", `{"toast":{"message":`+strconv.Quote(msg)+`,"kind":"success"}}`)
-		if pos, ok := h.loadPosition(w, r); ok {
-			h.renderPositionSheet(w, r, pos, "plan")
-		}
-		return
-	}
-	http.Redirect(w, r, positionHref(pos.AccountID, pos.Symbol), http.StatusSeeOther)
+	return msg, nil
 }
 
 // writePositionPlan creates, updates or deletes the plan row of one open
-// leg. setPlan marks a plan saved for the whole decision.
-func (h *Handlers) writePositionPlan(ctx context.Context, pos positionView, stop, risk, target *float64, thesis string, setPlan, empty bool) error {
+// leg. setPlan marks a plan saved for the whole decision; source says who
+// wrote it.
+func (h *Handlers) writePositionPlan(ctx context.Context, pos positionView, stop, risk, target *float64, thesis string, setPlan, empty bool, source string) error {
 	flag := int64(0)
 	if setPlan {
 		flag = 1
@@ -512,13 +536,13 @@ func (h *Handlers) writePositionPlan(ctx context.Context, pos positionView, stop
 			return fmt.Errorf("delete position plan: %w", err)
 		}
 	case pos.Plan != nil:
-		if err := h.Queries.UpdatePositionPlan(ctx, models.UpdatePositionPlanParams{Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: "trader", SetPlan: flag, ID: pos.Plan.ID}); err != nil {
+		if err := h.Queries.UpdatePositionPlan(ctx, models.UpdatePositionPlanParams{Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: source, SetPlan: flag, ID: pos.Plan.ID}); err != nil {
 			return fmt.Errorf("update position plan: %w", err)
 		}
 	case !empty:
 		if _, err := h.Queries.CreatePositionPlan(ctx, models.CreatePositionPlanParams{
 			AccountID: pos.AccountID, Symbol: pos.Symbol, OpenExecID: pos.Opened.ID, OpenOrderID: pos.Opened.OrderID, OpenedAt: pos.Opened.ExecTime,
-			Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: "trader", SetPlan: flag,
+			Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: source, SetPlan: flag,
 		}); err != nil {
 			return fmt.Errorf("create position plan: %w", err)
 		}
