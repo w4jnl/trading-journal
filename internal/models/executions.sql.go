@@ -102,6 +102,37 @@ func (q *Queries) GetExecutionByBrokerID(ctx context.Context, arg GetExecutionBy
 	return i, err
 }
 
+const getExecutionByID = `-- name: GetExecutionByID :one
+SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group FROM executions WHERE id = ?
+`
+
+// One fill by id, any state (soft-deleted rows included): callers that hold
+// an id from before a supersede check whether it is still live.
+func (q *Queries) GetExecutionByID(ctx context.Context, id int64) (Execution, error) {
+	row := q.db.QueryRowContext(ctx, getExecutionByID, id)
+	var i Execution
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.BrokerExecID,
+		&i.Symbol,
+		&i.SymbolRoot,
+		&i.Side,
+		&i.Qty,
+		&i.Price,
+		&i.Commission,
+		&i.ExecTime,
+		&i.RawData,
+		&i.DeletedAt,
+		&i.Manual,
+		&i.EditedAt,
+		&i.OrderID,
+		&i.ImportMethod,
+		&i.DeletedGroup,
+	)
+	return i, err
+}
+
 const getExecutionByOrderID = `-- name: GetExecutionByOrderID :one
 SELECT id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, commission, exec_time, raw_data, deleted_at, manual, edited_at, order_id, import_method, deleted_group FROM executions
 WHERE account_id = ? AND order_id = ?

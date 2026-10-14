@@ -169,3 +169,8 @@ SELECT e.id, e.account_id, e.symbol
 FROM executions e
 JOIN accounts a ON a.id = e.account_id
 WHERE e.deleted_group = ? AND a.user_id = ?;
+
+-- name: GetExecutionByID :one
+-- One fill by id, any state (soft-deleted rows included): callers that hold
+-- an id from before a supersede check whether it is still live.
+SELECT * FROM executions WHERE id = ?;

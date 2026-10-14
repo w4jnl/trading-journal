@@ -2013,6 +2013,26 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .open-pos__avg .num { color: var(--fg); font-weight: var(--fw-semibold); }
 .open-pos__asof { font-size: var(--fs-11); opacity: 0.8; }
 .open-pos__pnl { font-weight: var(--fw-semibold); margin-left: auto; }
+.open-pos__plan { font-size: var(--fs-12); white-space: nowrap; }
+.open-pos__plan .num { color: var(--fg); font-weight: var(--fw-semibold); }
+
+/* Open positions: the "open" pill, the "set plan" chip and the /trades strip
+   (positions.go). The strip is a trades-table so the sheet row key, the
+   keyboard focus and the live refresh row swap all apply as they do below. */
+.pill--live { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent-text); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.pill--stale { background: transparent; color: var(--warn-text, var(--fg-muted)); border: 1px dashed var(--warn, var(--border-strong)); }
+.pill--plan-missing { background: transparent; color: var(--warn-text, var(--fg-muted)); border: 1px dashed var(--warn, var(--border-strong)); font-weight: var(--fw-semibold); }
+.open-strip { margin-bottom: 12px; border-left: 3px solid var(--accent); }
+.open-strip--flat { color: var(--pos); font-weight: var(--fw-semibold); font-size: var(--fs-13); }
+.open-strip__table th, .open-strip__table td { white-space: nowrap; }
+.open-row--beyond td.c-sym .pill--live { border-color: var(--neg); color: var(--neg); }
+.position-plan { align-items: flex-end; }
+.position-plan__thesis { display: flex; flex-basis: 100%; }
+.position-plan__thesis input { flex: 1 1 auto; width: auto; max-width: 560px; }
+.position-warn { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; font-size: var(--fs-12); color: var(--neg); border: 1px solid color-mix(in srgb, var(--neg) 50%, transparent); background: color-mix(in srgb, var(--neg) 8%, transparent); }
+.position-fills { width: 100%; border-collapse: collapse; font-size: var(--fs-12); }
+.position-fills th, .position-fills td { padding: 4px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+.position-fills th.tabular, .position-fills td.num { text-align: right; }
 
 /* Reconcile editor: filter bar, create/edit form grid, transaction rows. */
 .txn-filter { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin-bottom: 14px; }

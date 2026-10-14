@@ -353,6 +353,9 @@ type tradeAccum struct {
 	entries   []fillUse
 	exits     []fillUse
 	maxQty    float64
+	// opened is the fill that started the cycle (the first entry; on a flip,
+	// the flip fill): the anchor of the position's plan (HandOffPlan).
+	opened models.Execution
 }
 
 func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, account models.Account, inst models.Instrument) (int, error) {
@@ -375,7 +378,7 @@ func (b *Builder) replay(ctx context.Context, k Key, fills []models.Execution, a
 	}
 
 	openTrade := func(fill models.Execution, dir string, qty float64) {
-		trade = &tradeAccum{direction: dir, maxQty: qty}
+		trade = &tradeAccum{direction: dir, maxQty: qty, opened: fill}
 		openLots = []lot{{qtyRemaining: qty, price: fill.Price, time: fill.ExecTime, execID: fill.ID}}
 		openQty = qty
 		trade.entries = append(trade.entries, fillUse{
@@ -613,6 +616,11 @@ func (b *Builder) emitTrade(ctx context.Context, k Key, ta *tradeAccum, inst mod
 		}); err != nil {
 			return fmt.Errorf("link exit: %w", err)
 		}
+	}
+	// The plan the trader set while the position was open follows it into
+	// the trade (first close), or is re-linked to the rebuilt row.
+	if err := HandOffPlan(ctx, b.Queries, ta.opened, row, inst); err != nil {
+		return err
 	}
 	return nil
 }

@@ -46,6 +46,8 @@ type smokeFixture struct {
 	setID   int64 // a copy set from the sample (the sample's accounts copy each other)
 	dayID   int64
 	attID   int64
+	acctID  int64  // the account of tradeID, for the position sheet route
+	symbol  string // its contract
 }
 
 func newSmokeFixture(t *testing.T) *smokeFixture {
@@ -82,9 +84,10 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 	if _, err := svc.ImportFile(ctx, in); err != nil {
 		t.Fatalf("import sample: %v", err)
 	}
-	var tradeID int64
+	var tradeID, acctID int64
+	var symbol string
 	var exit time.Time
-	if err := conn.QueryRow(`SELECT id, exit_time FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT 1`).Scan(&tradeID, &exit); err != nil {
+	if err := conn.QueryRow(`SELECT id, account_id, symbol, exit_time FROM trades WHERE status = 'closed' ORDER BY exit_time DESC LIMIT 1`).Scan(&tradeID, &acctID, &symbol, &exit); err != nil {
 		t.Fatalf("no closed trades after import: %v", err)
 	}
 	// Copy sets: the import's rebuild builds them; take one for the set routes.
@@ -128,6 +131,7 @@ func newSmokeFixture(t *testing.T) *smokeFixture {
 		day:     day,
 		week:    fmt.Sprintf("%d-W%02d", y, w),
 		tradeID: tradeID, groupID: groupEntry.ID, setID: setID, dayID: dayEntry.ID, attID: attID,
+		acctID: acctID, symbol: symbol,
 	}
 }
 
@@ -142,6 +146,7 @@ func (f *smokeFixture) routes() []smokeRoute {
 		{"/trades", hf(h.TradesPage), true, ""},
 		{"/trades/{id}", hf(h.TradeDetail), true, ""},
 		{"/trades/sets/{id}", hf(h.TradeSetDetail), true, ""},
+		{"/positions/{account}/{symbol}", hf(h.PositionSheet), true, ""},
 		{"/charts/trade/{id}", hf(h.ChartTrade), false, ""},
 		{"/charts/set/{id}", hf(h.ChartSet), false, ""},
 		{"/charts/group/{id}", hf(h.ChartGroup), false, ""},
@@ -197,6 +202,7 @@ var smokeSkip = map[string]bool{"/healthz": true, "/static/": true, "/oauth/auth
 func (f *smokeFixture) fill(pattern string) string {
 	p := strings.NewReplacer(
 		"{date}", f.day, "{week}", f.week, "{market}", "ES", "{name}", "dashboard-2026-01-01.html",
+		"{account}", fmt.Sprint(f.acctID), "{symbol}", f.symbol,
 	).Replace(pattern)
 	switch {
 	case strings.HasPrefix(pattern, "/journal/group/"), strings.HasPrefix(pattern, "/charts/group/"):

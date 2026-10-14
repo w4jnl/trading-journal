@@ -22,6 +22,19 @@ around it.
   seconds, two or more accounts) form a **copy set**: `/trades` can list
   by set with the accounts folded underneath, the set's sheet compares
   the fills, and analytics can count per decision.
+- **Open positions** are not trades yet (a trade is written when the
+  cycle closes), but they are where the plan belongs: `/trades` opens
+  with an "Open now" strip above the table (a `Status` filter shows open,
+  closed or both) and the dashboard card lists them; a click opens the
+  position's sheet with its fills, average entry, last price and
+  unrealised P&L, and a plan row - stop, risk, target and a one-line
+  thesis - that works like the trade sheet's (a stop sets the risk at the
+  current size, a risk sets the stop). The plan is anchored on the fill
+  that opened the position, so it survives rebuilds and the CSV replacing
+  an e-mail fill, follows a scale-in (risk recomputed, stop kept) and
+  moves onto the trade the moment the position closes. A position with no
+  plan shows a dashed "set plan" chip; one held for days is marked
+  "carried?", since that usually means missing fills.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from
