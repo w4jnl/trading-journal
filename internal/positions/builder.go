@@ -93,6 +93,11 @@ func (b *Builder) Rebuild(ctx context.Context, keys []Key) (Result, error) {
 		if _, err := copyset.Rebuild(ctx, b.Queries, b.UserID); err != nil {
 			return res, err
 		}
+		// Legs that joined a copied decision after it was planned inherit
+		// the set's plan (open sets and the closed sets just rebuilt).
+		if err := InheritSetPlans(ctx, b.Queries, b.UserID, nil); err != nil {
+			return res, fmt.Errorf("inherit set plans: %w", err)
+		}
 	}
 	return res, nil
 }

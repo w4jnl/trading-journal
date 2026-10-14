@@ -29,7 +29,7 @@ SELECT * FROM accounts WHERE id = ? AND user_id = ?;
 
 -- name: UpdateAccount :one
 UPDATE accounts
-SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?, email_ref = ?
+SET name = ?, firm = ?, type = ?, currency = ?, active = ?, needs_setup = ?, email_ref = ?, copy_group = ?
 WHERE id = ? AND user_id = ?
 RETURNING *;
 

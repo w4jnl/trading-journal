@@ -76,7 +76,26 @@ type positionView struct {
 	CycleFills []models.Execution
 	// Admin link to the reconcile editor for this account and contract.
 	ReconcileHref string
+
+	// The copied decision this leg belongs to (positions.ClusterOpen over
+	// the user's open positions): the other legs, and whether this leg's
+	// plan was saved for the whole decision. Nil / false for a position on
+	// its own.
+	Legs    []positionView
+	SetPlan bool
+	// SetRisk sums the risk of every leg (this one included) when all are
+	// priced; nil otherwise.
+	SetRisk *float64
+	// CopyGroup is the account's declared copy group, "" for none.
+	CopyGroup string
 }
+
+// InSet reports a leg of a copied decision.
+func (p positionView) InSet() bool { return len(p.Legs) > 0 }
+
+// PlanInherited reports a plan the leg got from its set rather than from
+// the trader (source 'set'), shown dashed until the trader saves it.
+func (p positionView) PlanInherited() bool { return p.PlanSource == "set" }
 
 // HasPlan reports whether any level is recorded.
 func (p positionView) HasPlan() bool { return p.Stop != nil || p.Risk != nil || p.Target != nil }
@@ -128,7 +147,71 @@ func (h *Handlers) openPositionRows(ctx context.Context, rows []models.ListOpenP
 		}
 		out = append(out, row)
 	}
+	if h != nil && h.Queries != nil {
+		h.linkOpenSets(ctx, out)
+	}
 	return out
+}
+
+// linkOpenSets clusters the views into copied decisions (same rule as the
+// closed sets, with the accounts' copy groups widening the window) and
+// gives every leg its siblings. The caller passes the user's open
+// positions together; a single row has nothing to cluster with.
+func (h *Handlers) linkOpenSets(ctx context.Context, views []positionView) {
+	if len(views) < 2 {
+		return
+	}
+	groups := map[int64]string{}
+	legs := make([]positions.OpenLeg, len(views))
+	for i, v := range views {
+		g, ok := groups[v.AccountID]
+		if !ok {
+			if acct, err := h.rq().GetAccountByID(ctx, models.GetAccountByIDParams{ID: v.AccountID, UserID: userID(ctx)}); err == nil && acct.CopyGroup != nil {
+				g = strings.TrimSpace(*acct.CopyGroup)
+			}
+			groups[v.AccountID] = g
+		}
+		views[i].CopyGroup = g
+		legs[i] = positions.OpenLeg{AccountID: v.AccountID, Symbol: v.Symbol, SymbolRoot: v.SymbolRoot, CopyGroup: g,
+			Position: positions.OpenPosition{NetQty: v.NetQty, AvgPrice: derefOr(v.AvgEntry, 0), Opened: v.Opened}}
+		if v.AvgEntry == nil {
+			legs[i].Position.NetQty = 0 // not replayed: never a leg
+		}
+	}
+	for _, set := range positions.ClusterOpen(legs) {
+		var risk float64
+		priced := true
+		for _, k := range set {
+			if views[k].Risk == nil {
+				priced = false
+			} else {
+				risk += *views[k].Risk
+			}
+		}
+		for _, k := range set {
+			var others []positionView
+			for _, j := range set {
+				if j != k {
+					leaf := views[j]
+					leaf.Legs = nil // one level: a leg's siblings carry no siblings
+					others = append(others, leaf)
+				}
+			}
+			views[k].Legs = others
+			if priced {
+				r := risk
+				views[k].SetRisk = &r
+			}
+		}
+	}
+}
+
+// derefOr reads an optional number with a default.
+func derefOr(p *float64, def float64) float64 {
+	if p == nil {
+		return def
+	}
+	return *p
 }
 
 // fillPositionView replays the fills of row's account and contract and
@@ -175,6 +258,7 @@ func (h *Handlers) fillPositionView(ctx context.Context, row *positionView, inst
 	case err == nil && plan.HandedOffAt == nil:
 		row.Plan = &plan
 		row.Stop, row.Risk, row.Target, row.Thesis, row.PlanSource = plan.Stop, plan.Risk, plan.Target, plan.Thesis, plan.Source
+		row.SetPlan = plan.SetPlan != 0
 		// The money at risk follows the stop at the position's current size.
 		if plan.Stop != nil && inst != nil {
 			if r := positions.PlannedRisk(avg, *plan.Stop, row.Qty, *inst); r != nil && !sameFloat(r, plan.Risk) {
@@ -243,10 +327,9 @@ func (h *Handlers) loadPosition(w http.ResponseWriter, r *http.Request) (positio
 		h.serverError(w, fmt.Errorf("list open positions: %w", err))
 		return positionView{}, false
 	}
-	for _, row := range open {
-		if row.AccountID == accountID && row.Symbol == symbol {
-			views := h.openPositionRows(ctx, []models.ListOpenPositionsRow{row})
-			return views[0], true
+	for _, v := range h.openPositionRows(ctx, open) {
+		if v.AccountID == accountID && v.Symbol == symbol {
+			return v, true
 		}
 	}
 	// Flat: the sheet reports it and points at the trade the cycle became.
@@ -350,33 +433,55 @@ func (h *Handlers) PositionPlanSave(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// A leg of a copied decision plans the whole decision unless the trader
+	// unticks "all legs": the stop price goes on every leg (what the copier
+	// mirrors), each leg's risk follows from its own entry and size; a risk
+	// typed without a stop splits by exposure into one point distance per
+	// leg (the set plan's rule); target and thesis are the same everywhere.
+	allLegs := pos.InSet() && r.FormValue("all_legs") != "" && r.FormValue("all_legs") != "0"
 	empty := stop == nil && risk == nil && target == nil && thesis == ""
-	switch {
-	case pos.Plan != nil && empty:
-		if err := h.Queries.DeletePositionPlan(ctx, pos.Plan.ID); err != nil {
-			h.serverError(w, fmt.Errorf("delete position plan: %w", err))
-			return
-		}
-	case pos.Plan != nil:
-		if err := h.Queries.UpdatePositionPlan(ctx, models.UpdatePositionPlanParams{Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: "trader", ID: pos.Plan.ID}); err != nil {
-			h.serverError(w, fmt.Errorf("update position plan: %w", err))
-			return
-		}
-	case !empty:
-		if _, err := h.Queries.CreatePositionPlan(ctx, models.CreatePositionPlanParams{
-			AccountID: pos.AccountID, Symbol: pos.Symbol, OpenExecID: pos.Opened.ID, OpenOrderID: pos.Opened.OrderID, OpenedAt: pos.Opened.ExecTime,
-			Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: "trader",
-		}); err != nil {
-			h.serverError(w, fmt.Errorf("create position plan: %w", err))
-			return
+	if err := h.writePositionPlan(ctx, pos, stop, risk, target, thesis, allLegs, empty); err != nil {
+		h.serverError(w, err)
+		return
+	}
+	legsDone := 0
+	if allLegs {
+		for _, leg := range pos.Legs {
+			lstop, lrisk := stop, risk
+			if inst, err := h.Queries.GetInstrument(ctx, leg.SymbolRoot); err == nil && leg.AvgEntry != nil {
+				switch {
+				case stop != nil:
+					lrisk = positions.PlannedRisk(*leg.AvgEntry, *stop, leg.Qty, inst)
+				case risk != nil && pos.PointValue > 0:
+					// Same point distance as this leg's own derived stop.
+					share := *risk / (pos.PointValue * pos.Qty) * derefOr(ptrPointValue(inst), 0) * leg.Qty
+					if share > 0 {
+						lstop = positions.PlannedStop(*leg.AvgEntry, share, leg.Qty, leg.Direction, inst)
+						if lstop != nil {
+							lrisk = positions.PlannedRisk(*leg.AvgEntry, *lstop, leg.Qty, inst)
+						}
+					}
+				}
+			}
+			if err := h.writePositionPlan(ctx, leg, lstop, lrisk, target, thesis, true, empty); err != nil {
+				h.serverError(w, err)
+				return
+			}
+			legsDone++
 		}
 	}
 	h.LiveData.Bump(userID(ctx))
 
 	msg := "Plan saved"
 	switch {
+	case empty && legsDone > 0:
+		msg = fmt.Sprintf("Plan cleared on %d legs", legsDone+1)
 	case empty:
 		msg = "Plan cleared"
+	case legsDone > 0 && stop != nil:
+		msg = fmt.Sprintf("Plan saved on %d legs: stop %g on every leg", legsDone+1, *stop)
+	case legsDone > 0:
+		msg = fmt.Sprintf("Plan saved on %d legs", legsDone+1)
 	case stop != nil && risk == nil:
 		msg = "Stop saved; set the instrument's tick size and value to derive the risk"
 	case stop == nil && risk != nil:
@@ -392,4 +497,39 @@ func (h *Handlers) PositionPlanSave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, positionHref(pos.AccountID, pos.Symbol), http.StatusSeeOther)
+}
+
+// writePositionPlan creates, updates or deletes the plan row of one open
+// leg. setPlan marks a plan saved for the whole decision.
+func (h *Handlers) writePositionPlan(ctx context.Context, pos positionView, stop, risk, target *float64, thesis string, setPlan, empty bool) error {
+	flag := int64(0)
+	if setPlan {
+		flag = 1
+	}
+	switch {
+	case pos.Plan != nil && empty:
+		if err := h.Queries.DeletePositionPlan(ctx, pos.Plan.ID); err != nil {
+			return fmt.Errorf("delete position plan: %w", err)
+		}
+	case pos.Plan != nil:
+		if err := h.Queries.UpdatePositionPlan(ctx, models.UpdatePositionPlanParams{Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: "trader", SetPlan: flag, ID: pos.Plan.ID}); err != nil {
+			return fmt.Errorf("update position plan: %w", err)
+		}
+	case !empty:
+		if _, err := h.Queries.CreatePositionPlan(ctx, models.CreatePositionPlanParams{
+			AccountID: pos.AccountID, Symbol: pos.Symbol, OpenExecID: pos.Opened.ID, OpenOrderID: pos.Opened.OrderID, OpenedAt: pos.Opened.ExecTime,
+			Stop: stop, Risk: risk, Target: target, Thesis: thesis, Source: "trader", SetPlan: flag,
+		}); err != nil {
+			return fmt.Errorf("create position plan: %w", err)
+		}
+	}
+	return nil
+}
+
+// ptrPointValue is the instrument's point value as an optional number.
+func ptrPointValue(inst models.Instrument) *float64 {
+	if pv, ok := positions.PointValue(inst); ok {
+		return &pv
+	}
+	return nil
 }

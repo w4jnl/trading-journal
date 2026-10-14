@@ -331,6 +331,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 		Type     string
 		Currency string
 		EmailRef string
+		CopyGrp  string
 		Active   bool
 	}
 	byID := map[int64]*rowInput{}
@@ -370,6 +371,8 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			ri.Currency = v
 		case "email_ref":
 			ri.EmailRef = v
+		case "copy_group":
+			ri.CopyGrp = v
 		case "active":
 			ri.Active = v == "on" || v == "1"
 		}
@@ -423,6 +426,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			Active:     boolToInt(ri.Active),
 			NeedsSetup: needsSetup,
 			EmailRef:   strPtrOrNil(ri.EmailRef),
+			CopyGroup:  strPtrOrNil(ri.CopyGrp),
 			ID:         acc.ID,
 			UserID:     auth.MustUser(ctx).ID,
 		}); err != nil {
@@ -882,6 +886,13 @@ func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 		needsSetup = 1
 	}
 
+	// This form carries no e-mail alias or copy group: keep what the
+	// account has rather than clearing them.
+	prev, err := h.Queries.GetAccountByID(ctx, models.GetAccountByIDParams{ID: id, UserID: auth.MustUser(ctx).ID})
+	if err != nil {
+		http.Error(w, "account not found", http.StatusNotFound)
+		return
+	}
 	updated, err := h.Queries.UpdateAccount(ctx, models.UpdateAccountParams{
 		Name:       name,
 		Firm:       strPtrOrNil(firm),
@@ -889,6 +900,8 @@ func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 		Currency:   currency,
 		Active:     boolToInt(active),
 		NeedsSetup: needsSetup,
+		EmailRef:   prev.EmailRef,
+		CopyGroup:  prev.CopyGroup,
 		ID:         id,
 		UserID:     auth.MustUser(ctx).ID,
 	})

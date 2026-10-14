@@ -159,7 +159,7 @@ const listClosedTradesForSets = `-- name: ListClosedTradesForSets :many
 
 SELECT t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty,
        t.entry_price, t.exit_price, t.entry_time, t.exit_time,
-       t.gross_pnl, t.commission, t.net_pnl
+       t.gross_pnl, t.commission, t.net_pnl, a.copy_group
 FROM trades t
 JOIN accounts a ON a.id = t.account_id
 WHERE a.user_id = ? AND t.status = 'closed' AND t.exit_time IS NOT NULL
@@ -180,6 +180,7 @@ type ListClosedTradesForSetsRow struct {
 	GrossPnl   *float64   `json:"gross_pnl"`
 	Commission *float64   `json:"commission"`
 	NetPnl     *float64   `json:"net_pnl"`
+	CopyGroup  *string    `json:"copy_group"`
 }
 
 // Copy sets (internal/copyset): derived from closed trades, rebuilt whole
@@ -207,6 +208,80 @@ func (q *Queries) ListClosedTradesForSets(ctx context.Context, userID int64) ([]
 			&i.GrossPnl,
 			&i.Commission,
 			&i.NetPnl,
+			&i.CopyGroup,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listTradeSetMembersWithPlans = `-- name: ListTradeSetMembersWithPlans :many
+SELECT tsm.set_id, t.id, t.account_id, t.symbol, t.symbol_root, t.direction, t.qty, t.entry_price,
+       t.planned_stop, t.planned_risk, t.planned_target,
+       pp.id AS plan_id, pp.set_plan, pp.thesis, pp.source
+FROM trade_set_members tsm
+JOIN trade_sets ts ON ts.id = tsm.set_id
+JOIN trades t ON t.id = tsm.trade_id
+LEFT JOIN position_plans pp ON pp.trade_id = t.id
+WHERE ts.user_id = ?
+ORDER BY tsm.set_id, t.entry_time, t.id
+`
+
+type ListTradeSetMembersWithPlansRow struct {
+	SetID         int64    `json:"set_id"`
+	ID            int64    `json:"id"`
+	AccountID     int64    `json:"account_id"`
+	Symbol        string   `json:"symbol"`
+	SymbolRoot    string   `json:"symbol_root"`
+	Direction     string   `json:"direction"`
+	Qty           float64  `json:"qty"`
+	EntryPrice    float64  `json:"entry_price"`
+	PlannedStop   *float64 `json:"planned_stop"`
+	PlannedRisk   *float64 `json:"planned_risk"`
+	PlannedTarget *float64 `json:"planned_target"`
+	PlanID        *int64   `json:"plan_id"`
+	SetPlan       *int64   `json:"set_plan"`
+	Thesis        *string  `json:"thesis"`
+	Source        *string  `json:"source"`
+}
+
+// Every member of the user's sets with its plan and, when the plan came
+// from an open position, whether it was set for the whole decision
+// (position_plans.set_plan). The inherit step (positions.InheritSetPlans)
+// gives unplanned legs the set's plan.
+func (q *Queries) ListTradeSetMembersWithPlans(ctx context.Context, userID int64) ([]ListTradeSetMembersWithPlansRow, error) {
+	rows, err := q.db.QueryContext(ctx, listTradeSetMembersWithPlans, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTradeSetMembersWithPlansRow
+	for rows.Next() {
+		var i ListTradeSetMembersWithPlansRow
+		if err := rows.Scan(
+			&i.SetID,
+			&i.ID,
+			&i.AccountID,
+			&i.Symbol,
+			&i.SymbolRoot,
+			&i.Direction,
+			&i.Qty,
+			&i.EntryPrice,
+			&i.PlannedStop,
+			&i.PlannedRisk,
+			&i.PlannedTarget,
+			&i.PlanID,
+			&i.SetPlan,
+			&i.Thesis,
+			&i.Source,
 		); err != nil {
 			return nil, err
 		}

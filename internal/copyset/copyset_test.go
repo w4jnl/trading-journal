@@ -14,15 +14,15 @@ func at(s int) time.Time { return time.Date(2026, 10, 9, 14, 0, s, 0, time.UTC) 
 
 func TestCluster(t *testing.T) {
 	trs := []Trade{
-		{1, 1, "MES", "short", at(0)}, // set A: three accounts within 2s, micro + mini
-		{2, 2, "MES", "short", at(1)},
-		{3, 3, "ES", "short", at(2)},
-		{4, 1, "MES", "short", at(5)}, // set B: 5s later is a new decision
-		{5, 2, "MES", "short", at(6)},
-		{6, 1, "MES", "long", at(5)}, // other direction: alone
-		{7, 1, "NQ", "short", at(0)}, // other underlying, one account: alone
-		{8, 1, "CL", "long", at(0)},  // same account twice is not a set
-		{9, 1, "CL", "long", at(1)},
+		{1, 1, "MES", "short", at(0), ""}, // set A: three accounts within 2s, micro + mini
+		{2, 2, "MES", "short", at(1), ""},
+		{3, 3, "ES", "short", at(2), ""},
+		{4, 1, "MES", "short", at(5), ""}, // set B: 5s later is a new decision
+		{5, 2, "MES", "short", at(6), ""},
+		{6, 1, "MES", "long", at(5), ""}, // other direction: alone
+		{7, 1, "NQ", "short", at(0), ""}, // other underlying, one account: alone
+		{8, 1, "CL", "long", at(0), ""},  // same account twice is not a set
+		{9, 1, "CL", "long", at(1), ""},
 	}
 	sets, solos := Cluster(trs)
 	if len(sets) != 2 || len(solos) != 4 {
@@ -43,6 +43,33 @@ func TestCluster(t *testing.T) {
 	}
 	if Key("MES") != Key("ES") || Key("ES") != "ES=F" || Key("xyz") != "XYZ" {
 		t.Errorf("keys: MES %q ES %q xyz %q", Key("MES"), Key("ES"), Key("xyz"))
+	}
+}
+
+// Accounts in one declared copy group cluster within GroupWindow; the
+// usual two seconds still rule between accounts outside a group or in
+// different groups.
+func TestCluster_CopyGroupWindow(t *testing.T) {
+	trs := []Trade{
+		{ID: 1, AccountID: 1, SymbolRoot: "ES", Direction: "long", EntryTime: at(0), CopyGroup: "main"},
+		{ID: 2, AccountID: 2, SymbolRoot: "MES", Direction: "long", EntryTime: at(12), CopyGroup: "main"},  // IBKR leg, 12s late: same decision
+		{ID: 3, AccountID: 3, SymbolRoot: "MES", Direction: "long", EntryTime: at(14)},                     // no group: 14s is a new decision
+		{ID: 4, AccountID: 4, SymbolRoot: "MES", Direction: "long", EntryTime: at(13), CopyGroup: "other"}, // another group: not this decision
+		{ID: 5, AccountID: 5, SymbolRoot: "ES", Direction: "long", EntryTime: at(45), CopyGroup: "main"},   // beyond GroupWindow: new
+	}
+	sets, solos := Cluster(trs)
+	if len(sets) != 2 || len(solos) != 1 {
+		t.Fatalf("sets=%v solos=%v", sets, solos)
+	}
+	if a := sets[0]; len(a) != 2 || trs[a[0]].ID != 1 || trs[a[1]].ID != 2 {
+		t.Errorf("group set = %v", a)
+	}
+	// 3 and 4 open within 1s of each other: a plain two-second set.
+	if b := sets[1]; len(b) != 2 || trs[b[0]].ID != 4 || trs[b[1]].ID != 3 {
+		t.Errorf("plain set = %v", b)
+	}
+	if trs[solos[0]].ID != 5 {
+		t.Errorf("solo = %v", solos)
 	}
 }
 

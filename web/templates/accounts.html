@@ -66,6 +66,7 @@
   so they're not subject to any browser/parser quirks around forms in tables.
 -->
 <form id="accounts-form" method="post" action="/accounts/save" data-dirty-form></form>
+<datalist id="copy-groups">{{range .Accounts}}{{if .CopyGroup}}<option value="{{derefStr .CopyGroup}}">{{end}}{{end}}</datalist>
 
 {{if .EmailAlerts}}
 {{/* Admin-only: MW email fills captured for account ids nothing matches.
@@ -145,6 +146,9 @@
               <input form="accounts-form" type="text" name="accounts.{{$a.ID}}.email_ref" value="{{if $a.EmailRef}}{{derefStr $a.EmailRef}}{{end}}" placeholder="—" style="width: 110px;">
             </div>
             {{end}}
+            <div class="te subtle" style="font-size: 11px;" title="Accounts a copier drives together: give them the same group name and their legs count as one decision even when a follower's fill lands up to 30 seconds later (IBKR reports to the second, the copier adds latency). Leave empty for an account that copies nothing.">copy group
+              <input form="accounts-form" type="text" name="accounts.{{$a.ID}}.copy_group" value="{{if $a.CopyGroup}}{{derefStr $a.CopyGroup}}{{end}}" placeholder="—" style="width: 110px;" list="copy-groups">
+            </div>
             <details class="reassign">
               <summary>Manage…</summary>
               <div class="mt-8">

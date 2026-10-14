@@ -16,6 +16,7 @@
   {{else}}
   {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
   <span class="pill pill--live" title="The account's fills on this contract do not net flat">open</span>
+  {{if .InSet}}<span class="pill set-badge" title="One decision copied across accounts: the other legs are listed below{{if .CopyGroup}} (copy group {{.CopyGroup}}){{end}}">set · {{len .Legs}} more leg{{if ne (len .Legs) 1}}s{{end}}</span>{{end}}
   {{if .Stale}}<span class="pill pill--stale" title="Opened more than three days ago: a carried position, or fills are missing (reconcile the account)">carried?</span>{{end}}
   {{end}}
   <span class="ml-auto muted" style="font-size: 12px;">{{.AccountName}}{{if .Firm}} · <code>{{derefStr .Firm}}</code>{{end}}</span>
@@ -45,14 +46,39 @@
      the trade sheet, so the live mirror in trade_sheet.js applies. */}}
 <form class="trade-plan position-plan" hx-post="{{.PlanURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
       data-plan-entry="{{if .AvgEntry}}{{deref .AvgEntry}}{{end}}" data-plan-qty="{{.Qty}}" data-plan-direction="{{.Direction}}" data-plan-point-value="{{.PointValue}}" data-plan-tick="{{.TickSize}}">
-  <span class="label">Plan{{if eq .PlanSource "api"}} <span class="pill pill--api" title="Set through the API or an AI tool; saving confirms it">api</span>{{else if eq .PlanSource "ai"}} <span class="pill pill--suggest" title="Taken from an AI suggestion">✨ ai</span>{{end}}</span>
+  <span class="label">Plan{{if eq .PlanSource "api"}} <span class="pill pill--api" title="Set through the API or an AI tool; saving confirms it">api</span>{{else if eq .PlanSource "ai"}} <span class="pill pill--suggest" title="Taken from an AI suggestion">✨ ai</span>{{else if .PlanInherited}} <span class="pill pill--inherited" title="Inherited from the set's plan when this leg joined; saving makes it yours">from set</span>{{end}}</span>
   <label>Stop <input type="number" step="any" inputmode="decimal" name="stop" value="{{if .Stop}}{{printf "%g" (deref .Stop)}}{{end}}" placeholder="price"></label>
   <label>Risk <input type="number" step="any" inputmode="decimal" name="risk" value="{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{end}}" placeholder="from stop"></label>
   <label>Target <input type="number" step="any" inputmode="decimal" name="target" value="{{if .Target}}{{printf "%g" (deref .Target)}}{{end}}" placeholder="price"></label>
   <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
+  {{if .InSet}}<label class="position-plan__legs" title="Write this plan on every leg of the decision: the stop price on each, risk from each leg's own entry and size, the same target and thesis. Untick to plan this leg only."><input type="checkbox" name="all_legs" value="1"{{if or .SetPlan (not .HasPlan)}} checked{{end}}> all {{add (len .Legs) 1}} legs</label>{{end}}
   <label class="position-plan__thesis">Thesis <input type="text" name="thesis" maxlength="2000" value="{{.Thesis}}" placeholder="why this trade, and what would prove it wrong"></label>
   <span class="trade-plan-hint">{{if .RewardRisk}}reward:risk <strong class="num">{{.RewardRisk}}</strong> · {{end}}{{if not .HasPlan}}no plan recorded yet · {{end}}the plan follows the position into its trade when it closes{{if eq .PointValue 0.0}} · set the instrument's tick size and value to derive risk from the stop{{end}}</span>
 </form>
+
+{{if .InSet}}
+<h3 style="margin: 12px 0 6px; font-size: 13px;">Legs of this decision{{if .SetRisk}} <span class="muted" style="font-weight: 400;">· risk {{printf "%.2f" (deref .SetRisk)}} in total</span>{{end}}</h3>
+<div class="table-scroll">
+  <table class="position-fills position-legs">
+    <thead><tr><th>Account</th><th>Symbol</th><th class="tabular">Qty</th><th class="tabular">Avg entry</th><th class="tabular">Stop</th><th class="tabular">Risk</th><th class="tabular">Target</th><th></th></tr></thead>
+    <tbody>
+      <tr class="position-legs__self"><td>{{.AccountName}}</td><td class="num">{{.Symbol}}</td><td class="num">{{.Qty}}</td><td class="num">{{if .AvgEntry}}{{printf "%.2f" (deref .AvgEntry)}}{{else}}—{{end}}</td><td class="num">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else}}—{{end}}</td><td class="num">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}—{{end}}</td><td class="num">{{if .Target}}{{printf "%g" (deref .Target)}}{{else}}—{{end}}</td><td class="muted">this leg</td></tr>
+    {{range .Legs}}
+      <tr>
+        <td>{{.AccountName}}</td>
+        <td class="num">{{.Symbol}}</td>
+        <td class="num">{{.Qty}}</td>
+        <td class="num">{{if .AvgEntry}}{{printf "%.2f" (deref .AvgEntry)}}{{else}}—{{end}}</td>
+        <td class="num{{if .BeyondStop}} pnl-neg{{end}}">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else}}—{{end}}{{if .PlanInherited}} <span class="pill pill--inherited">from set</span>{{end}}</td>
+        <td class="num">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}—{{end}}</td>
+        <td class="num">{{if .Target}}{{printf "%g" (deref .Target)}}{{else}}—{{end}}</td>
+        <td><a href="{{.Href}}" data-trade-id="{{.Key}}" hx-get="{{.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="{{.Title}}">open leg ›</a></td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
 
 {{if .CycleFills}}
 <h3 style="margin: 12px 0 6px; font-size: 13px;">Fills of this position</h3>

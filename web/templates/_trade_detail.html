@@ -75,7 +75,7 @@
   <label>Risk <input type="number" step="any" inputmode="decimal" name="risk" value="{{if .PlannedRisk}}{{printf "%.2f" (deref .PlannedRisk)}}{{end}}" placeholder="from stop"></label>
   <label>Target <input type="number" step="any" inputmode="decimal" name="target" value="{{if .PlannedTarget}}{{printf "%g" (deref .PlannedTarget)}}{{end}}" placeholder="price"></label>
   <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
-  <span class="trade-plan-hint">{{with rewardRisk .EntryPrice .PlannedStop .PlannedTarget}}reward:risk <strong class="num">{{.}}</strong> · {{end}}a stop sets the risk and a risk sets the stop, through the instrument's tick value</span>
+  <span class="trade-plan-hint">{{with rewardRisk .EntryPrice .PlannedStop .PlannedTarget}}reward:risk <strong class="num">{{.}}</strong> · {{end}}{{if eq $.PlanOrigin "position"}}planned while the position was open · {{else if eq $.PlanOrigin "set"}}inherited from the copied decision's plan · {{else if eq $.PlanOrigin "ai"}}taken from an AI suggestion while open · {{end}}a stop sets the risk and a risk sets the stop, through the instrument's tick value</span>
 </form>
 {{end}}
 

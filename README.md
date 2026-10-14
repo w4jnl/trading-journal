@@ -34,7 +34,15 @@ around it.
   an e-mail fill, follows a scale-in (risk recomputed, stop kept) and
   moves onto the trade the moment the position closes. A position with no
   plan shows a dashed "set plan" chip; one held for days is marked
-  "carried?", since that usually means missing fills.
+  "carried?", since that usually means missing fills. Open legs of one
+  copied decision cluster like closed sets: the sheet lists the other
+  legs, and a plan saved with "all legs" puts the stop price on every leg
+  with each leg's risk from its own entry and size. A leg that lands
+  later (an IBKR fill on the next poll, a TopstepX trade that arrives
+  flat) inherits the set's plan, marked "from set" until the trader
+  saves it. Accounts a copier drives together can be given the same
+  **copy group** on `/accounts`, which lets their legs count as one
+  decision up to thirty seconds apart instead of two.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from

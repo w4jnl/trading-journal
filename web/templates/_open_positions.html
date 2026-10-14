@@ -16,7 +16,7 @@
       <a href="{{.Href}}" title="{{.Title}}">
         <span class="open-pos__acct">{{.AccountName}}{{if .Firm}} · <code>{{derefStr .Firm}}</code>{{end}}</span>
         <span class="open-pos__sym">{{.Symbol}}</span>
-        <span class="pill {{if gt .NetQty 0.0}}dir-long{{else}}dir-short{{end}}">{{posLabel .NetQty}}</span>
+        <span class="pill {{if gt .NetQty 0.0}}dir-long{{else}}dir-short{{end}}">{{posLabel .NetQty}}</span>{{if .InSet}} <span class="pill set-badge" title="One decision copied across {{add (len .Legs) 1}} accounts">set</span>{{end}}
         {{if .AvgEntry}}<span class="open-pos__avg muted" title="Volume-weighted average entry of the contracts still open (FIFO)">avg <span class="num">{{printf "%.2f" (deref .AvgEntry)}}</span></span>{{end}}
         {{if .LastPrice}}<span class="open-pos__avg muted" title="Last price via {{.PriceSource}}; the time is the quote's own timestamp">last <span class="num">{{printf "%.2f" (deref .LastPrice)}}</span> <span class="open-pos__asof">{{ltimep .LastAt "datetime"}} · {{.PriceSource}}</span></span>{{end}}
         {{template "position_plan_cells" .}}
@@ -82,14 +82,14 @@
           hx-get="{{.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="{{.Title}}">
         <td class="c-time">{{if not .OpenedAt.IsZero}}{{ltime .OpenedAt "datetime"}}{{else}}{{ltimep .LastExecTime "datetime"}}{{end}}{{if .Stale}} <span class="pill pill--stale" title="Opened more than three days ago: carried, or fills are missing">carried?</span>{{end}}</td>
         <td class="c-acct">{{.AccountName}}</td>
-        <td class="c-sym"><span class="num">{{.Symbol}}</span> <span class="pill pill--live">open</span></td>
+        <td class="c-sym"><span class="num">{{.Symbol}}</span> <span class="pill pill--live">open</span>{{if .InSet}} <span class="pill set-badge" title="One decision copied across {{add (len .Legs) 1}} accounts">set</span>{{end}}</td>
         <td class="c-dir">{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
         <td class="num c-qty">{{.Qty}}</td>
         <td class="num c-entry">{{if .AvgEntry}}{{printf "%.2f" (deref .AvgEntry)}}{{else}}—{{end}}</td>
         <td class="num" title="{{if .LastPrice}}via {{.PriceSource}}{{end}}">{{if .LastPrice}}{{printf "%.2f" (deref .LastPrice)}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="num">{{if .Unrealized}}<span class="{{pnlSign (deref .Unrealized)}}">{{if ge (deref .Unrealized) 0.0}}+{{end}}{{printf "%.2f" (deref .Unrealized)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
         {{if .HasPlan}}
-        <td class="num {{if .BeyondStop}}pnl-neg{{end}}">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num {{if .BeyondStop}}pnl-neg{{end}}">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else}}<span class="muted">—</span>{{end}}{{if .PlanInherited}} <span class="pill pill--inherited" title="Inherited from the set's plan; open the leg and save to make it yours">from set</span>{{end}}</td>
         <td class="num">{{if .Target}}{{printf "%g" (deref .Target)}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="num">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}<span class="muted">—</span>{{end}}</td>
         <td class="num">{{if .TicksToStop}}<span class="{{if .BeyondStop}}pnl-neg{{end}}">{{printf "%g" (deref .TicksToStop)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>

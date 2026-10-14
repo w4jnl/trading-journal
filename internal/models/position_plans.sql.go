@@ -10,13 +10,13 @@ import (
 	"time"
 )
 
-const createPositionPlan = `-- name: CreatePositionPlan :one
-INSERT INTO position_plans (account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at
+const createHandedOffPositionPlan = `-- name: CreateHandedOffPositionPlan :one
+INSERT INTO position_plans (account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, set_plan, trade_id, handed_off_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+RETURNING id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at, set_plan
 `
 
-type CreatePositionPlanParams struct {
+type CreateHandedOffPositionPlanParams struct {
 	AccountID   int64     `json:"account_id"`
 	Symbol      string    `json:"symbol"`
 	OpenExecID  int64     `json:"open_exec_id"`
@@ -27,10 +27,15 @@ type CreatePositionPlanParams struct {
 	Target      *float64  `json:"target"`
 	Thesis      string    `json:"thesis"`
 	Source      string    `json:"source"`
+	SetPlan     int64     `json:"set_plan"`
+	TradeID     *int64    `json:"trade_id"`
 }
 
-func (q *Queries) CreatePositionPlan(ctx context.Context, arg CreatePositionPlanParams) (PositionPlan, error) {
-	row := q.db.QueryRowContext(ctx, createPositionPlan,
+// A plan written straight onto a closed trade (a leg that joined its set
+// after the set was planned): anchored on the trade's opening fill like
+// any other, already linked and handed off.
+func (q *Queries) CreateHandedOffPositionPlan(ctx context.Context, arg CreateHandedOffPositionPlanParams) (PositionPlan, error) {
+	row := q.db.QueryRowContext(ctx, createHandedOffPositionPlan,
 		arg.AccountID,
 		arg.Symbol,
 		arg.OpenExecID,
@@ -41,6 +46,8 @@ func (q *Queries) CreatePositionPlan(ctx context.Context, arg CreatePositionPlan
 		arg.Target,
 		arg.Thesis,
 		arg.Source,
+		arg.SetPlan,
+		arg.TradeID,
 	)
 	var i PositionPlan
 	err := row.Scan(
@@ -59,6 +66,63 @@ func (q *Queries) CreatePositionPlan(ctx context.Context, arg CreatePositionPlan
 		&i.HandedOffAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SetPlan,
+	)
+	return i, err
+}
+
+const createPositionPlan = `-- name: CreatePositionPlan :one
+INSERT INTO position_plans (account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, set_plan)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at, set_plan
+`
+
+type CreatePositionPlanParams struct {
+	AccountID   int64     `json:"account_id"`
+	Symbol      string    `json:"symbol"`
+	OpenExecID  int64     `json:"open_exec_id"`
+	OpenOrderID *string   `json:"open_order_id"`
+	OpenedAt    time.Time `json:"opened_at"`
+	Stop        *float64  `json:"stop"`
+	Risk        *float64  `json:"risk"`
+	Target      *float64  `json:"target"`
+	Thesis      string    `json:"thesis"`
+	Source      string    `json:"source"`
+	SetPlan     int64     `json:"set_plan"`
+}
+
+func (q *Queries) CreatePositionPlan(ctx context.Context, arg CreatePositionPlanParams) (PositionPlan, error) {
+	row := q.db.QueryRowContext(ctx, createPositionPlan,
+		arg.AccountID,
+		arg.Symbol,
+		arg.OpenExecID,
+		arg.OpenOrderID,
+		arg.OpenedAt,
+		arg.Stop,
+		arg.Risk,
+		arg.Target,
+		arg.Thesis,
+		arg.Source,
+		arg.SetPlan,
+	)
+	var i PositionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Symbol,
+		&i.OpenExecID,
+		&i.OpenOrderID,
+		&i.OpenedAt,
+		&i.Stop,
+		&i.Risk,
+		&i.Target,
+		&i.Thesis,
+		&i.Source,
+		&i.TradeID,
+		&i.HandedOffAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SetPlan,
 	)
 	return i, err
 }
@@ -73,7 +137,7 @@ func (q *Queries) DeletePositionPlan(ctx context.Context, id int64) error {
 }
 
 const getPositionPlanByExec = `-- name: GetPositionPlanByExec :one
-SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at FROM position_plans WHERE account_id = ? AND open_exec_id = ?
+SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at, set_plan FROM position_plans WHERE account_id = ? AND open_exec_id = ?
 `
 
 type GetPositionPlanByExecParams struct {
@@ -101,12 +165,13 @@ func (q *Queries) GetPositionPlanByExec(ctx context.Context, arg GetPositionPlan
 		&i.HandedOffAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SetPlan,
 	)
 	return i, err
 }
 
 const getPositionPlanByID = `-- name: GetPositionPlanByID :one
-SELECT pp.id, pp.account_id, pp.symbol, pp.open_exec_id, pp.open_order_id, pp.opened_at, pp.stop, pp.risk, pp.target, pp.thesis, pp.source, pp.trade_id, pp.handed_off_at, pp.created_at, pp.updated_at FROM position_plans pp
+SELECT pp.id, pp.account_id, pp.symbol, pp.open_exec_id, pp.open_order_id, pp.opened_at, pp.stop, pp.risk, pp.target, pp.thesis, pp.source, pp.trade_id, pp.handed_off_at, pp.created_at, pp.updated_at, pp.set_plan FROM position_plans pp
 JOIN accounts a ON a.id = pp.account_id
 WHERE pp.id = ? AND a.user_id = ?
 `
@@ -136,12 +201,13 @@ func (q *Queries) GetPositionPlanByID(ctx context.Context, arg GetPositionPlanBy
 		&i.HandedOffAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SetPlan,
 	)
 	return i, err
 }
 
 const getPositionPlanByOrder = `-- name: GetPositionPlanByOrder :one
-SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at FROM position_plans
+SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at, set_plan FROM position_plans
 WHERE account_id = ? AND open_order_id = ?
 ORDER BY id DESC LIMIT 1
 `
@@ -173,12 +239,13 @@ func (q *Queries) GetPositionPlanByOrder(ctx context.Context, arg GetPositionPla
 		&i.HandedOffAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SetPlan,
 	)
 	return i, err
 }
 
 const getPositionPlanBySignal = `-- name: GetPositionPlanBySignal :one
-SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at FROM position_plans
+SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at, set_plan FROM position_plans
 WHERE account_id = ? AND symbol = ? AND opened_at >= ? AND opened_at <= ?
 ORDER BY id DESC LIMIT 1
 `
@@ -216,6 +283,37 @@ func (q *Queries) GetPositionPlanBySignal(ctx context.Context, arg GetPositionPl
 		&i.HandedOffAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.SetPlan,
+	)
+	return i, err
+}
+
+const getPositionPlanByTrade = `-- name: GetPositionPlanByTrade :one
+SELECT id, account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, trade_id, handed_off_at, created_at, updated_at, set_plan FROM position_plans WHERE trade_id = ? ORDER BY id DESC LIMIT 1
+`
+
+// The plan a closed trade came from, if its cycle was planned while open
+// (or inherited from its set): the trade sheet shows where the plan came from.
+func (q *Queries) GetPositionPlanByTrade(ctx context.Context, tradeID *int64) (PositionPlan, error) {
+	row := q.db.QueryRowContext(ctx, getPositionPlanByTrade, tradeID)
+	var i PositionPlan
+	err := row.Scan(
+		&i.ID,
+		&i.AccountID,
+		&i.Symbol,
+		&i.OpenExecID,
+		&i.OpenOrderID,
+		&i.OpenedAt,
+		&i.Stop,
+		&i.Risk,
+		&i.Target,
+		&i.Thesis,
+		&i.Source,
+		&i.TradeID,
+		&i.HandedOffAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.SetPlan,
 	)
 	return i, err
 }
@@ -239,7 +337,7 @@ func (q *Queries) HandOffPositionPlan(ctx context.Context, arg HandOffPositionPl
 }
 
 const listOpenPositionPlansForUser = `-- name: ListOpenPositionPlansForUser :many
-SELECT pp.id, pp.account_id, pp.symbol, pp.open_exec_id, pp.open_order_id, pp.opened_at, pp.stop, pp.risk, pp.target, pp.thesis, pp.source, pp.trade_id, pp.handed_off_at, pp.created_at, pp.updated_at FROM position_plans pp
+SELECT pp.id, pp.account_id, pp.symbol, pp.open_exec_id, pp.open_order_id, pp.opened_at, pp.stop, pp.risk, pp.target, pp.thesis, pp.source, pp.trade_id, pp.handed_off_at, pp.created_at, pp.updated_at, pp.set_plan FROM position_plans pp
 JOIN accounts a ON a.id = pp.account_id
 WHERE a.user_id = ? AND pp.handed_off_at IS NULL
 ORDER BY pp.account_id, pp.symbol
@@ -272,6 +370,7 @@ func (q *Queries) ListOpenPositionPlansForUser(ctx context.Context, userID int64
 			&i.HandedOffAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.SetPlan,
 		); err != nil {
 			return nil, err
 		}
@@ -321,21 +420,22 @@ func (q *Queries) SetPositionPlanRisk(ctx context.Context, arg SetPositionPlanRi
 
 const updatePositionPlan = `-- name: UpdatePositionPlan :exec
 UPDATE position_plans
-SET stop = ?, risk = ?, target = ?, thesis = ?, source = ?, updated_at = CURRENT_TIMESTAMP
+SET stop = ?, risk = ?, target = ?, thesis = ?, source = ?, set_plan = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 `
 
 type UpdatePositionPlanParams struct {
-	Stop   *float64 `json:"stop"`
-	Risk   *float64 `json:"risk"`
-	Target *float64 `json:"target"`
-	Thesis string   `json:"thesis"`
-	Source string   `json:"source"`
-	ID     int64    `json:"id"`
+	Stop    *float64 `json:"stop"`
+	Risk    *float64 `json:"risk"`
+	Target  *float64 `json:"target"`
+	Thesis  string   `json:"thesis"`
+	Source  string   `json:"source"`
+	SetPlan int64    `json:"set_plan"`
+	ID      int64    `json:"id"`
 }
 
-// The trader's edit: levels, thesis and who set them. The hand-off state is
-// left alone.
+// The trader's edit: levels, thesis, who set them and whether it is the
+// whole decision's plan. The hand-off state is left alone.
 func (q *Queries) UpdatePositionPlan(ctx context.Context, arg UpdatePositionPlanParams) error {
 	_, err := q.db.ExecContext(ctx, updatePositionPlan,
 		arg.Stop,
@@ -343,6 +443,7 @@ func (q *Queries) UpdatePositionPlan(ctx context.Context, arg UpdatePositionPlan
 		arg.Target,
 		arg.Thesis,
 		arg.Source,
+		arg.SetPlan,
 		arg.ID,
 	)
 	return err

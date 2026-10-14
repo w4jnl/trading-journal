@@ -24,16 +24,29 @@ JOIN accounts a ON a.id = pp.account_id
 WHERE pp.id = ? AND a.user_id = ?;
 
 -- name: CreatePositionPlan :one
-INSERT INTO position_plans (account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO position_plans (account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, set_plan)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
+
+-- name: CreateHandedOffPositionPlan :one
+-- A plan written straight onto a closed trade (a leg that joined its set
+-- after the set was planned): anchored on the trade's opening fill like
+-- any other, already linked and handed off.
+INSERT INTO position_plans (account_id, symbol, open_exec_id, open_order_id, opened_at, stop, risk, target, thesis, source, set_plan, trade_id, handed_off_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 RETURNING *;
 
 -- name: UpdatePositionPlan :exec
--- The trader's edit: levels, thesis and who set them. The hand-off state is
--- left alone.
+-- The trader's edit: levels, thesis, who set them and whether it is the
+-- whole decision's plan. The hand-off state is left alone.
 UPDATE position_plans
-SET stop = ?, risk = ?, target = ?, thesis = ?, source = ?, updated_at = CURRENT_TIMESTAMP
+SET stop = ?, risk = ?, target = ?, thesis = ?, source = ?, set_plan = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
+
+-- name: GetPositionPlanByTrade :one
+-- The plan a closed trade came from, if its cycle was planned while open
+-- (or inherited from its set): the trade sheet shows where the plan came from.
+SELECT * FROM position_plans WHERE trade_id = ? ORDER BY id DESC LIMIT 1;
 
 -- name: RepointPositionPlanExec :exec
 -- The opening fill got a new execution id (CSV superseded the e-mail row):

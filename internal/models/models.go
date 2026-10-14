@@ -25,6 +25,7 @@ type Account struct {
 	ApiBackfillDone   int64      `json:"api_backfill_done"`
 	LiveSyncSince     *time.Time `json:"live_sync_since"`
 	EmailRef          *string    `json:"email_ref"`
+	CopyGroup         *string    `json:"copy_group"`
 }
 
 type AiOutput struct {
@@ -327,6 +328,7 @@ type PositionPlan struct {
 	HandedOffAt *time.Time `json:"handed_off_at"`
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
+	SetPlan     int64      `json:"set_plan"`
 }
 
 type PriceBar struct {
