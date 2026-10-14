@@ -1,0 +1,82 @@
+{{/* position_sheet: the sheet of an OPEN position (one account, one
+     contract), rendered into #trade-sheet-content like trade_detail. Data:
+     Pos (positionView: the live numbers, the cycle's fills and its plan),
+     Flash ("plan" after a save), ClosedTrade (*int64: the trade the cycle
+     became when the position is flat by now), TradesHref (the account's
+     closed trades on this instrument). The plan form reuses the trade
+     plan's classes, so trade_sheet.js mirrors stop and risk live. */}}
+{{define "position_sheet"}}
+{{with .Pos}}
+<span class="sheet-title-src" hidden data-sheet-title="{{.Symbol}} · open {{if eq .Direction "long"}}↑{{else}}↓{{end}} {{.Qty}}"></span>
+<div class="row-sm" style="margin-bottom: 8px; flex-wrap: wrap;">
+  <span class="num" style="font-size: 18px; font-weight: 600;">{{.Symbol}}</span>
+  <span class="muted">({{.SymbolRoot}})</span>
+  {{if eq .Qty 0.0}}
+  <span class="pill pill--retired">flat</span>
+  {{else}}
+  {{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}
+  <span class="pill pill--live" title="The account's fills on this contract do not net flat">open</span>
+  {{if .Stale}}<span class="pill pill--stale" title="Opened more than three days ago: a carried position, or fills are missing (reconcile the account)">carried?</span>{{end}}
+  {{end}}
+  <span class="ml-auto muted" style="font-size: 12px;">{{.AccountName}}{{if .Firm}} · <code>{{derefStr .Firm}}</code>{{end}}</span>
+</div>
+
+{{if eq .Qty 0.0}}
+<p class="muted" style="font-size: 13px;">This position is flat now: the cycle closed and its fills became a trade.
+  {{if $.ClosedTrade}}<a href="/trades/{{derefInt $.ClosedTrade}}" data-trade-id="{{derefInt $.ClosedTrade}}" hx-get="/trades/{{derefInt $.ClosedTrade}}" hx-target="#trade-sheet-content" hx-swap="innerHTML">Open the trade</a>, where its plan now lives.{{else}}See <a href="{{$.TradesHref}}">the account's {{.SymbolRoot}} trades</a>.{{end}}</p>
+{{else}}
+<div class="muted" style="margin-bottom: 12px; font-size: 12px;">
+  opened {{ltime .OpenedAt "datetime"}} · {{.Fills}} fill{{if ne .Fills 1}}s{{end}} so far
+</div>
+
+<div class="trade-stat-strip">
+  <div><div class="label">Qty</div><div class="num">{{.Qty}}</div></div>
+  <div><div class="label" title="Volume-weighted average entry of the contracts still open (FIFO)">Avg entry</div><div class="num">{{if .AvgEntry}}{{printf "%.2f" (deref .AvgEntry)}}{{else}}—{{end}}</div></div>
+  <div><div class="label" title="{{if .LastPrice}}Last price via {{.PriceSource}}, {{ltimep .LastAt "datetime"}}{{else}}No provider priced this contract{{end}}">Last</div><div class="num">{{if .LastPrice}}{{printf "%.2f" (deref .LastPrice)}}{{else}}—{{end}}</div></div>
+  <div><div class="label" title="Pending P&amp;L at the last price: ticks from the average entry × tick value × contracts">Unrealized</div><div class="num">{{if .Unrealized}}<span class="{{pnlSign (deref .Unrealized)}}">{{if ge (deref .Unrealized) 0.0}}+{{end}}{{printf "%.2f" (deref .Unrealized)}}</span>{{else}}<span class="muted">—</span>{{end}}</div></div>
+  <div><div class="label" title="Money at risk between the average entry and the stop, at the current size">Risk</div><div class="num">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}<span class="muted">—</span>{{end}}</div></div>
+  <div><div class="label" title="Distance from the last price to the stop, in ticks; negative once price is through it">To stop</div><div class="num">{{if .TicksToStop}}<span class="{{if .BeyondStop}}pnl-neg{{end}}">{{printf "%g" (deref .TicksToStop)}} ticks</span>{{else}}<span class="muted">—</span>{{end}}</div></div>
+</div>
+{{if .BeyondStop}}<p class="position-warn">Price is through the recorded stop. If the stop order filled, the fill will arrive with the next sync.</p>{{end}}
+
+{{/* The plan: stop, money at risk, target and the thesis. Risk follows the
+     stop through the instrument's tick value at the current size; a typed
+     risk sets the stop; an empty form clears the plan. Same form classes as
+     the trade sheet, so the live mirror in trade_sheet.js applies. */}}
+<form class="trade-plan position-plan" hx-post="{{.PlanURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML"
+      data-plan-entry="{{if .AvgEntry}}{{deref .AvgEntry}}{{end}}" data-plan-qty="{{.Qty}}" data-plan-direction="{{.Direction}}" data-plan-point-value="{{.PointValue}}" data-plan-tick="{{.TickSize}}">
+  <span class="label">Plan{{if eq .PlanSource "api"}} <span class="pill pill--api" title="Set through the API or an AI tool; saving confirms it">api</span>{{else if eq .PlanSource "ai"}} <span class="pill pill--suggest" title="Taken from an AI suggestion">✨ ai</span>{{end}}</span>
+  <label>Stop <input type="number" step="any" inputmode="decimal" name="stop" value="{{if .Stop}}{{printf "%g" (deref .Stop)}}{{end}}" placeholder="price"></label>
+  <label>Risk <input type="number" step="any" inputmode="decimal" name="risk" value="{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{end}}" placeholder="from stop"></label>
+  <label>Target <input type="number" step="any" inputmode="decimal" name="target" value="{{if .Target}}{{printf "%g" (deref .Target)}}{{end}}" placeholder="price"></label>
+  <button type="submit" class="btn btn--secondary btn--sm">Save plan</button>
+  <label class="position-plan__thesis">Thesis <input type="text" name="thesis" maxlength="2000" value="{{.Thesis}}" placeholder="why this trade, and what would prove it wrong"></label>
+  <span class="trade-plan-hint">{{if .RewardRisk}}reward:risk <strong class="num">{{.RewardRisk}}</strong> · {{end}}{{if not .HasPlan}}no plan recorded yet · {{end}}the plan follows the position into its trade when it closes{{if eq .PointValue 0.0}} · set the instrument's tick size and value to derive risk from the stop{{end}}</span>
+</form>
+
+{{if .CycleFills}}
+<h3 style="margin: 12px 0 6px; font-size: 13px;">Fills of this position</h3>
+<div class="table-scroll">
+  <table class="position-fills">
+    <thead><tr><th>Time</th><th>Side</th><th class="tabular">Qty</th><th class="tabular">Price</th><th>Via</th></tr></thead>
+    <tbody>
+    {{range .CycleFills}}
+      <tr>
+        <td>{{ltime .ExecTime "datetime"}}</td>
+        <td>{{if eq .Side "buy"}}<span class="pill dir-long">buy</span>{{else}}<span class="pill dir-short">sell</span>{{end}}</td>
+        <td class="num">{{.Qty}}</td>
+        <td class="num">{{printf "%.2f" .Price}}</td>
+        <td class="muted" style="font-size: 11px;">{{.ImportMethod}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+</div>
+{{end}}
+
+<p class="muted" style="font-size: 11px; margin-top: 12px;">
+  <a href="{{$.TradesHref}}">Closed {{.SymbolRoot}} trades on this account</a>{{if .ReconcileHref}} · <a href="{{.ReconcileHref}}">Reconcile fills</a>{{end}}
+</p>
+{{end}}
+{{end}}
+{{end}}

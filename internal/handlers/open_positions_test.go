@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"strings"
 	"testing"
 	"time"
 
@@ -11,34 +10,42 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
-// Open-position rows link where the viewer may actually go: admins to the
-// reconcile editor, everyone else to the account's trades for that
-// instrument (the editor is behind RequireAdmin and would answer "admin
-// only"). Data fields stay promoted for the partial.
+// Open-position rows link to the position's sheet (deep-linked on /trades)
+// for every viewer; only admins also get the reconcile editor link, which is
+// behind RequireAdmin. Data fields stay promoted for the partial.
 func TestOpenPositionRowsLinkPerViewer(t *testing.T) {
 	rows := []models.ListOpenPositionsRow{{AccountID: 16, AccountName: "U10000001", Symbol: "ESU6", SymbolRoot: "ES", NetQty: 1}}
+	wantHref := "/trades?sheet=pos%3A16%3AESU6&status=open"
 
 	admin := auth.WithUser(context.Background(), &auth.User{ID: 1, Username: "a", IsAdmin: true})
 	got := (&Handlers{}).openPositionRows(admin, rows)
-	if len(got) != 1 || got[0].Href != "/admin/transactions?account_id=16&symbol=ESU6" || got[0].AccountName != "U10000001" {
+	if len(got) != 1 || got[0].Href != wantHref || got[0].AccountName != "U10000001" || got[0].Key != "pos:16:ESU6" || got[0].SheetURL != "/positions/16/ESU6" {
 		t.Errorf("admin row = %+v", got)
+	}
+	if got[0].ReconcileHref != "/admin/transactions?account_id=16&symbol=ESU6" {
+		t.Errorf("admin reconcile link = %q", got[0].ReconcileHref)
 	}
 
 	user := auth.WithUser(context.Background(), &auth.User{ID: 2, Username: "u"})
 	got = (&Handlers{}).openPositionRows(user, rows)
-	if len(got) != 1 || got[0].Href != "/trades?filter=acc%3A16&symbol_root=ES" {
+	if len(got) != 1 || got[0].Href != wantHref || got[0].Direction != "long" || got[0].Qty != 1 {
 		t.Errorf("non-admin row = %+v", got)
 	}
-	if strings.Contains(got[0].Href, "/admin/") {
-		t.Errorf("non-admin must never be sent to an admin-only page")
+	if got[0].ReconcileHref != "" {
+		t.Errorf("non-admin must never be sent to an admin-only page: %q", got[0].ReconcileHref)
 	}
-	// No user in context (defensive): the non-admin link.
-	if got := (&Handlers{}).openPositionRows(context.Background(), rows); len(got) != 1 || strings.Contains(got[0].Href, "/admin/") {
+	// No user in context (defensive): no admin link.
+	if got := (&Handlers{}).openPositionRows(context.Background(), rows); len(got) != 1 || got[0].ReconcileHref != "" {
 		t.Errorf("anonymous row = %+v", got)
 	}
 	// Empty input stays an empty, non-nil slice so the partial renders "flat".
 	if got := (&Handlers{}).openPositionRows(user, nil); got == nil || len(got) != 0 {
 		t.Errorf("empty = %#v", got)
+	}
+	// A short position reads as such.
+	short := (&Handlers{}).openPositionRows(user, []models.ListOpenPositionsRow{{AccountID: 3, Symbol: "NQU6", SymbolRoot: "NQ", NetQty: -2}})
+	if short[0].Direction != "short" || short[0].Qty != 2 {
+		t.Errorf("short row = %+v", short[0])
 	}
 }
 

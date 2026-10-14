@@ -1,15 +1,14 @@
-{{/* open_positions — shared flat/open-position summary. Dict/context is a list of
-     openPositionRow (ListOpenPositionsRow + .Href/.Title resolved per viewer by
-     openPositionRows: admins land in the reconcile editor pre-filtered to that
-     account + contract, everyone else in /trades filtered to the account +
-     instrument - the editor is admin-only). Empty list => flat. Used on the
-     dashboard and at the top of /admin/transactions. */}}
+{{/* open_positions — the open-position card (dashboard, top of
+     /admin/transactions). Context is a list of positionView (open_positions.go
+     / positions.go): each row links to the position's sheet, deep-linked on
+     /trades, and shows the plan recorded for it - or a dashed "set plan" chip
+     when there is none. Empty list => flat. */}}
 {{define "open_positions"}}
 <div class="card open-pos {{if .}}open-pos--open{{else}}open-pos--flat{{end}}">
   {{if .}}
   <div class="card-title-row">
     <span class="card-title">Open positions</span>
-    <span class="muted" style="font-size:11px;">nonzero net = open / carried / missing fills</span>
+    <span class="muted" style="font-size:11px;">nonzero net = open / carried / missing fills · click a row to plan it</span>
   </div>
   <ul class="open-pos__list">
     {{range .}}
@@ -20,6 +19,7 @@
         <span class="pill {{if gt .NetQty 0.0}}dir-long{{else}}dir-short{{end}}">{{posLabel .NetQty}}</span>
         {{if .AvgEntry}}<span class="open-pos__avg muted" title="Volume-weighted average entry of the contracts still open (FIFO)">avg <span class="num">{{printf "%.2f" (deref .AvgEntry)}}</span></span>{{end}}
         {{if .LastPrice}}<span class="open-pos__avg muted" title="Last price via {{.PriceSource}}; the time is the quote's own timestamp">last <span class="num">{{printf "%.2f" (deref .LastPrice)}}</span> <span class="open-pos__asof">{{ltimep .LastAt "datetime"}} · {{.PriceSource}}</span></span>{{end}}
+        {{template "position_plan_cells" .}}
         {{if .Unrealized}}<span class="open-pos__pnl num {{if ge (deref .Unrealized) 0.0}}pnl-pos{{else}}pnl-neg{{end}}" title="Pending (unrealized) P&amp;L at the last price: ticks from the average entry × tick value × contracts">{{if ge (deref .Unrealized) 0.0}}+{{end}}{{printf "%.2f" (deref .Unrealized)}}</span>{{end}}
       </a>
     </li>
@@ -29,4 +29,78 @@
   <div class="open-pos__flat"><span class="open-pos__tick">✓</span> Flat — all positions closed.</div>
   {{end}}
 </div>
+{{end}}
+
+{{/* position_plan_cells: the plan of one positionView as inline cells: stop
+     (with the ticks left to it, red once price is through), target and risk,
+     or a dashed "set plan" chip when nothing is recorded. */}}
+{{define "position_plan_cells"}}
+{{if .HasPlan}}
+  <span class="open-pos__plan muted" title="The plan recorded on this position{{if .TicksToStop}}: {{printf "%g" (deref .TicksToStop)}} ticks to the stop{{end}}">
+    stop <span class="num {{if .BeyondStop}}pnl-neg{{end}}">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else}}—{{end}}</span>
+    · target <span class="num">{{if .Target}}{{printf "%g" (deref .Target)}}{{else}}—{{end}}</span>
+    · risk <span class="num">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}—{{end}}</span>
+  </span>
+{{else if .AvgEntry}}
+  <span class="pill pill--plan-missing" title="No stop, target or risk recorded for this position yet">set plan</span>
+{{end}}
+{{end}}
+
+{{/* open_positions_strip: the open positions above the trades table on
+     /trades. Context: the page data (OpenPositions []positionView, Status).
+     Rows carry data-trade-id="pos:<account>:<symbol>" so trade_sheet.js opens
+     the position's sheet and the live refresh swaps changed rows in place;
+     when a position closes its row leaves and the trade appears below. */}}
+{{define "open_positions_strip"}}
+{{if .OpenPositions}}
+<div class="card card--compact open-strip" data-open-strip>
+  <div class="row-sm" style="justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
+    <span class="label">Open now · <span class="num">{{len .OpenPositions}}</span></span>
+    <span class="muted" style="font-size: 11px;">a position becomes a trade when it closes; plan it while it is open</span>
+  </div>
+  <div class="table-scroll">
+  <table class="trades-table open-strip__table">
+    <thead>
+      <tr>
+        <th class="c-time">Opened</th>
+        <th class="c-acct">Account</th>
+        <th class="c-sym">Symbol</th>
+        <th class="c-dir">Dir</th>
+        <th class="tabular c-qty">Qty</th>
+        <th class="tabular c-entry">Avg entry</th>
+        <th class="tabular">Last</th>
+        <th class="tabular">Unrealized</th>
+        <th class="tabular">Stop</th>
+        <th class="tabular">Target</th>
+        <th class="tabular">Risk</th>
+        <th class="tabular" title="Ticks from the last price to the stop; negative once price is through it">To stop</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .OpenPositions}}
+      <tr class="trade-row open-row{{if .BeyondStop}} open-row--beyond{{end}}" data-trade-id="{{.Key}}" tabindex="0"
+          hx-get="{{.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="{{.Title}}">
+        <td class="c-time">{{if not .OpenedAt.IsZero}}{{ltime .OpenedAt "datetime"}}{{else}}{{ltimep .LastExecTime "datetime"}}{{end}}{{if .Stale}} <span class="pill pill--stale" title="Opened more than three days ago: carried, or fills are missing">carried?</span>{{end}}</td>
+        <td class="c-acct">{{.AccountName}}</td>
+        <td class="c-sym"><span class="num">{{.Symbol}}</span> <span class="pill pill--live">open</span></td>
+        <td class="c-dir">{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td class="num c-qty">{{.Qty}}</td>
+        <td class="num c-entry">{{if .AvgEntry}}{{printf "%.2f" (deref .AvgEntry)}}{{else}}—{{end}}</td>
+        <td class="num" title="{{if .LastPrice}}via {{.PriceSource}}{{end}}">{{if .LastPrice}}{{printf "%.2f" (deref .LastPrice)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{if .Unrealized}}<span class="{{pnlSign (deref .Unrealized)}}">{{if ge (deref .Unrealized) 0.0}}+{{end}}{{printf "%.2f" (deref .Unrealized)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        {{if .HasPlan}}
+        <td class="num {{if .BeyondStop}}pnl-neg{{end}}">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{if .Target}}{{printf "%g" (deref .Target)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{if .TicksToStop}}<span class="{{if .BeyondStop}}pnl-neg{{end}}">{{printf "%g" (deref .TicksToStop)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        {{else}}
+        <td colspan="4">{{if .AvgEntry}}<span class="pill pill--plan-missing">set plan</span>{{else}}<span class="muted" title="The fills do not replay to an open position: reconcile the account">data gap</span>{{end}}</td>
+        {{end}}
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
 {{end}}

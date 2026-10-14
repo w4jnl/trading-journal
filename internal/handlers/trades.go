@@ -9,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -61,6 +62,10 @@ type tradeFilters struct {
 	// count sets it; users override the rule by naming the account in the
 	// filter, which buildWhere honors on its own.
 	IncludeHidden bool
+	// Status picks what the page lists: "" (closed trades under the open
+	// positions), "open" (only the open positions) or "closed" (no open
+	// strip). Open positions are not trades yet (positions.go).
+	Status string
 }
 
 // tradeRow mirrors models.ListTradesFilteredRow, but we hand-scan it because
@@ -298,9 +303,23 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// The open positions, above the table: not trades yet, but the trader
+	// plans them here (positions.go). Narrowed by the account and symbol
+	// filters; left out when the page asks for closed trades only.
+	var openPositions []positionView
+	if filters.Status != "closed" {
+		openRows, err := h.rq().ListOpenPositions(ctx, userID(ctx))
+		if err != nil {
+			h.logger().Warn("trades: open positions", "err", err)
+		}
+		openPositions = h.openPositionRows(ctx, filterOpenPositions(openRows, filters))
+	}
+
 	data := map[string]any{
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
+		"OpenPositions":    openPositions,
+		"Status":           filters.Status,
 		"Trades":           rows,
 		"Total":            total,
 		"Totals":           totals,
@@ -1019,6 +1038,9 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	if v := strings.TrimSpace(q.Get("risk")); v == "planned" || v == "past-stop" {
 		f.Risk = &v
 	}
+	if v := strings.TrimSpace(q.Get("status")); v == "open" || v == "closed" {
+		f.Status = v
+	}
 	// Dates are trading-tz calendar days (keywords today|yesterday|last are
 	// resolved server-side), converted to UTC instants: exit_time is stored
 	// in UTC and compared as text, so a Chicago day must be expressed as its
@@ -1058,6 +1080,22 @@ func (h *Handlers) parseTradeFilters(r *http.Request) (tradeFilters, error) {
 	return f, nil
 }
 
+// filterOpenPositions keeps the open positions the page's account and
+// symbol filters select (the other filters describe closed trades).
+func filterOpenPositions(rows []models.ListOpenPositionsRow, f tradeFilters) []models.ListOpenPositionsRow {
+	out := rows[:0:0]
+	for _, r := range rows {
+		if f.Account.Active && !slices.Contains(f.Account.AccountIDs, r.AccountID) {
+			continue
+		}
+		if f.SymbolRoot != nil && r.SymbolRoot != *f.SymbolRoot {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // cloneURL returns a shallow copy so we can mutate query params without
 // affecting the caller's request URL.
 func cloneURL(u *url.URL) *url.URL { c := *u; return &c }
@@ -1082,6 +1120,7 @@ func filtersAsForm(f tradeFilters) map[string]string {
 	if f.Risk != nil {
 		out["Risk"] = *f.Risk
 	}
+	out["Status"] = f.Status
 	if f.From != nil {
 		out["From"] = f.fromLabel()
 	}

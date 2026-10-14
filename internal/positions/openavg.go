@@ -5,9 +5,17 @@ import "github.com/w4jnl/trading-journal/internal/models"
 // OpenPosition is what remains after replaying an (account, symbol) fill
 // history: the signed net quantity (+ long, - short) and the volume-weighted
 // average price of the lots still open. Flat -> zero values.
+//
+// Opened identifies the cycle: the fill that took the account from flat
+// (or the flip fill whose remainder opened the other way), the same fill
+// Builder.replay records as the trade's first entry, so a plan anchored on
+// it meets the trade the cycle becomes. Fills is how many fills the cycle
+// holds so far (entries and partial exits).
 type OpenPosition struct {
 	NetQty   float64
 	AvgPrice float64
+	Opened   models.Execution
+	Fills    int
 }
 
 // OpenFromFills replays fills in the given (chronological) order with the
@@ -25,6 +33,8 @@ func OpenFromFills(fills []models.Execution) OpenPosition {
 	type lot struct{ qty, price float64 }
 	var lots []lot
 	long := true
+	var opened models.Execution
+	count := 0
 	for _, f := range fills {
 		if f.Qty <= 0 {
 			continue
@@ -33,8 +43,10 @@ func OpenFromFills(fills []models.Execution) OpenPosition {
 		if len(lots) == 0 {
 			long = fillLong
 			lots = []lot{{qty: f.Qty, price: f.Price}}
+			opened, count = f, 1
 			continue
 		}
+		count++
 		if fillLong == long {
 			lots = append(lots, lot{qty: f.Qty, price: f.Price})
 			continue
@@ -55,6 +67,7 @@ func OpenFromFills(fills []models.Execution) OpenPosition {
 		if left > 0 { // flip
 			long = fillLong
 			lots = []lot{{qty: left, price: f.Price}}
+			opened, count = f, 1
 		}
 	}
 	var qty, notional float64
@@ -65,7 +78,7 @@ func OpenFromFills(fills []models.Execution) OpenPosition {
 	if qty == 0 {
 		return OpenPosition{}
 	}
-	pos := OpenPosition{NetQty: qty, AvgPrice: notional / qty}
+	pos := OpenPosition{NetQty: qty, AvgPrice: notional / qty, Opened: opened, Fills: count}
 	if !long {
 		pos.NetQty = -qty
 	}

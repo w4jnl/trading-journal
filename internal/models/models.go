@@ -311,6 +311,24 @@ type OauthRefreshToken struct {
 	CreatedAt   time.Time  `json:"created_at"`
 }
 
+type PositionPlan struct {
+	ID          int64      `json:"id"`
+	AccountID   int64      `json:"account_id"`
+	Symbol      string     `json:"symbol"`
+	OpenExecID  int64      `json:"open_exec_id"`
+	OpenOrderID *string    `json:"open_order_id"`
+	OpenedAt    time.Time  `json:"opened_at"`
+	Stop        *float64   `json:"stop"`
+	Risk        *float64   `json:"risk"`
+	Target      *float64   `json:"target"`
+	Thesis      string     `json:"thesis"`
+	Source      string     `json:"source"`
+	TradeID     *int64     `json:"trade_id"`
+	HandedOffAt *time.Time `json:"handed_off_at"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
 type PriceBar struct {
 	YahooSymbol string  `json:"yahoo_symbol"`
 	Timeframe   string  `json:"timeframe"`

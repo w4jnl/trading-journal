@@ -60,6 +60,14 @@
       <option value="past-stop" {{if eq "past-stop" $selRisk}}selected{{end}}>Past stop</option>
     </select>
   </label>
+  <label>Status
+    <select name="status" data-autosubmit title="Open positions are not trades yet: they show above the table until they close">
+      {{$selStatus := index .Filters "Status"}}
+      <option value="" {{if eq "" $selStatus}}selected{{end}}>Open + closed</option>
+      <option value="open" {{if eq "open" $selStatus}}selected{{end}}>Open only</option>
+      <option value="closed" {{if eq "closed" $selStatus}}selected{{end}}>Closed only</option>
+    </select>
+  </label>
   <label>From
     <input type="date" name="from" value="{{index .Filters "From"}}">
   </label>
@@ -347,6 +355,10 @@
 
 {{define "trades_table_live"}}
 <div id="trades-table-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+{{template "open_positions_strip" .}}
+{{if eq .Status "open"}}
+{{if not .OpenPositions}}<div class="card card--compact open-strip open-strip--flat"><span class="open-pos__tick">✓</span> Flat — no open positions{{if or .FilterCount (index .Filters "SymbolRoot")}} in this selection{{end}}. <a href="/trades?{{.ViewTradesQS}}">Show closed trades</a>.</div>{{end}}
+{{else}}
 <div class="muted retired-toggle-row" style="margin-bottom:8px;">
   {{/* Unit of the list: every trade, or one row per decision with the copy
        set's accounts folded underneath. The choice is remembered. */}}
@@ -454,6 +466,7 @@
   <span class="muted">Page <span class="num">{{.Page}}</span> of <span class="num">{{.Pages}}</span></span>
   <a href="{{.NextPage}}" class="{{if not .NextPage}}disabled{{end}}">Next ›</a>
 </div>
+{{end}}
 {{end}}
 </div>
 {{end}}
