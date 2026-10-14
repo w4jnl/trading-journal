@@ -369,6 +369,7 @@ func (h *Handlers) renderPositionSheet(w http.ResponseWriter, r *http.Request, p
 	tradesHref := "/trades?" + url.Values{"filter": {"acc:" + strconv.FormatInt(pos.AccountID, 10)}, "symbol_root": {pos.SymbolRoot}}.Encode()
 	h.renderPartial(w, "_position_sheet.html", "position_sheet", map[string]any{
 		"Pos":         pos,
+		"AI":          h.positionSuggestion(ctx, pos),
 		"Flash":       flash,
 		"ClosedTrade": closedTrade,
 		"TradesHref":  tradesHref,

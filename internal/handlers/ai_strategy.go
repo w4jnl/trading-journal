@@ -723,6 +723,15 @@ func (h *Handlers) AITaskStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	then, ref, _ := strings.Cut(q.Get("then"), ":")
 	switch then {
+	case "position": // the open position's sheet, in place (ref = account:symbol)
+		acct, sym, _ := strings.Cut(ref, ":")
+		r.SetPathValue("account", acct)
+		r.SetPathValue("symbol", sym)
+		w.Header().Set("HX-Retarget", "#trade-sheet-content")
+		w.Header().Set("HX-Reswap", "innerHTML")
+		if pos, ok := h.loadPosition(w, r); ok {
+			h.renderPositionSheet(w, r, pos, "")
+		}
 	case "plan": // the day page's plan card, in place
 		var outcome any
 		if d, err := time.ParseInLocation("2006-01-02", ref, h.localTZ()); err == nil {

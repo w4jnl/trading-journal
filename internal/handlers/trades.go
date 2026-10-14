@@ -634,6 +634,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"PointValue":       pointValue,
 		"TickSize":         tickSize,
 		"PlanOrigin":       h.planOrigin(ctx, trade.ID),
+		"AISuggested":      h.tradeSuggestion(ctx, trade),
 		"Executions":       execs,
 		"ChartEnabled":     h.chartShow(chartTrades),
 		"ChartEndpoint":    fmt.Sprintf("/charts/trade/%d", id),
