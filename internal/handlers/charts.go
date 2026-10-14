@@ -33,20 +33,24 @@ type chartMarker struct {
 }
 
 type chartPanel struct {
-	Contract     string           `json:"contract"`
-	SymbolRoot   string           `json:"symbolRoot"`
-	YahooSymbol  string           `json:"yahooSymbol"`
-	Timeframe    string           `json:"timeframe"`    // default/selected display bar size
-	BarTimeframe string           `json:"barTimeframe"` // granularity of the Bars array (finest available)
-	Timeframes   []string         `json:"timeframes"`   // selectable bar sizes (finest .. 1d)
-	Direction    string           `json:"direction"`
-	From         int64            `json:"from"`
-	To           int64            `json:"to"`
-	EntryAvg     float64          `json:"entryAvg,omitempty"`
-	ExitAvg      float64          `json:"exitAvg,omitempty"`
-	Bars         []marketdata.Bar `json:"bars"`
-	Markers      []chartMarker    `json:"markers"`
-	Note         string           `json:"note,omitempty"`
+	Contract     string   `json:"contract"`
+	SymbolRoot   string   `json:"symbolRoot"`
+	YahooSymbol  string   `json:"yahooSymbol"`
+	Timeframe    string   `json:"timeframe"`    // default/selected display bar size
+	BarTimeframe string   `json:"barTimeframe"` // granularity of the Bars array (finest available)
+	Timeframes   []string `json:"timeframes"`   // selectable bar sizes (finest .. 1d)
+	Direction    string   `json:"direction"`
+	From         int64    `json:"from"` // the loaded window: the trade's whole trading day(s)
+	To           int64    `json:"to"`
+	// FocusFrom / FocusTo is the stretch around the trade the chart opens on
+	// (and the PNG renders): the rest of the day is a scroll away.
+	FocusFrom int64            `json:"focusFrom,omitempty"`
+	FocusTo   int64            `json:"focusTo,omitempty"`
+	EntryAvg  float64          `json:"entryAvg,omitempty"`
+	ExitAvg   float64          `json:"exitAvg,omitempty"`
+	Bars      []marketdata.Bar `json:"bars"`
+	Markers   []chartMarker    `json:"markers"`
+	Note      string           `json:"note,omitempty"`
 }
 
 type chartEnvelope struct {
@@ -282,8 +286,13 @@ func (h *Handlers) buildChartPanel(ctx context.Context, g chartGroup, load bool,
 	}
 	panel.YahooSymbol = g.yahooSym
 
-	displayTf, from, to := marketdata.SelectTimeframe(g.firstEntry, g.effectiveExit(now), now)
+	// The bar size the trade reads best at, and the stretch around it the
+	// chart opens on; the bars loaded cover the whole trading day(s), so
+	// the session around the trade is there without another fetch.
+	displayTf, focusFrom, focusTo := marketdata.SelectTimeframe(g.firstEntry, g.effectiveExit(now), now)
+	from, to := h.chartWindow(g, now)
 	panel.From, panel.To = from.Unix(), to.Unix()
+	panel.FocusFrom, panel.FocusTo = focusFrom.Unix(), focusTo.Unix()
 
 	if load {
 		if err := h.MarketData.EnsureWindow(ctx, g.yahooSym, from, to); err != nil {
@@ -312,7 +321,7 @@ func (h *Handlers) buildChartPanel(ctx context.Context, g chartGroup, load bool,
 	// client rolls them up to the chosen bar size via the header selector. The
 	// default selection is the duration-adaptive timeframe (never finer than the
 	// data we have).
-	const maxPayloadBars = 2500
+	const maxPayloadBars = 4500 // three days at one minute
 	baseTf := readTf
 	baseBars := bars
 	if len(baseBars) > maxPayloadBars {
@@ -440,11 +449,24 @@ func (h *Handlers) chartCached(ctx context.Context, trades []linkedTrade) bool {
 		if !g.mapped {
 			continue
 		}
-		_, from, to := marketdata.SelectTimeframe(g.firstEntry, g.effectiveExit(now), now)
+		from, to := h.chartWindow(g, now)
 		covered, err := h.MarketData.WindowCovered(ctx, g.yahooSym, from, to)
 		if err != nil || !covered {
 			return false
 		}
 	}
 	return true
+}
+
+// chartWindow is the stretch of bars a chart loads for a group: its whole
+// trading day(s), in the cache's day bucketing, clipped at now.
+func (h *Handlers) chartWindow(g chartGroup, now time.Time) (time.Time, time.Time) {
+	loc := h.Timezone
+	if h.MarketData != nil && h.MarketData.Loc != nil {
+		loc = h.MarketData.Loc
+	}
+	if loc == nil {
+		loc = time.UTC
+	}
+	return marketdata.DayWindow(g.firstEntry, g.effectiveExit(now), now, loc)
 }

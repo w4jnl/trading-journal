@@ -57,6 +57,11 @@ market_data:
   # Prune cached intraday bars (1m/5m/1h) older than this many days, daily;
   # daily bars are kept. 0 disables. The cache grows ~2.5M rows/year otherwise.
   bar_retention_days: 90
+  # Keep today's one-minute bars fresh for every root with a fill in the
+  # last days, re-fetched on this cadence (minutes) while Globex trades, and
+  # the two previous days complete: what the open position's sheet, the
+  # guardrail and the AI stop & target read live. 0 disables.
+  session_warmup_min: 2
 
 # Model Context Protocol (MCP) server for AI agents, at POST /mcp. When enabled
 # (default true), it is authenticated by the SAME per-user API keys as /api -- so

@@ -288,6 +288,15 @@ Not part of this proposal; the model above leaves room for it.
   the trade sheet after the close). Not built: watch mode (needs the
   second "fast model" setting), the plan history timeline, the lab's "AI
   advice" axis, the MCP suggest tool.
+- Phase 5: the session for the model. `marketdata.ComputeSession` (prior
+  RTH, overnight, opening range, session extremes, VWAP, ATR, swings,
+  nearest levels) and a multi-timeframe window from the cached 1m bars, as
+  of a moment; the levels prompt and the trade review (as of entry) use
+  it; `marketdata.Warmer` keeps the traded roots' today and two previous
+  days complete and fresh; the guardrail's `past-stop-live` reads the
+  newest cached bar. Not built: TopstepX exchange bars as the primary
+  source for today (Yahoo's continuous series is used), the lab's
+  structure-relative stop axis.
 
 ## Delivery
 

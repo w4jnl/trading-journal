@@ -221,6 +221,23 @@
       } else if (panel.timeframe) {
         right.textContent = "Bar size: " + humanTimeframe(panel.timeframe);
       }
+      // The whole trading day is loaded; the chart opens on the trade.
+      // Day / Trade switch the visible range without reloading anything.
+      var rangeBtns = null;
+      if (panel.bars && panel.bars.length && panel.focusFrom && panel.focusTo) {
+        rangeBtns = document.createElement("span");
+        rangeBtns.className = "trade-chart__range";
+        ["Trade", "Day"].forEach(function (label) {
+          var b = document.createElement("button");
+          b.type = "button";
+          b.className = "trade-chart__range-btn" + (label === "Trade" ? " active" : "");
+          b.textContent = label;
+          b.title = label === "Day" ? "Show the whole trading day" : "Back to the stretch around the trade";
+          b.dataset.range = label.toLowerCase();
+          rangeBtns.appendChild(b);
+        });
+        right.insertBefore(rangeBtns, right.firstChild);
+      }
       // Name the timezone the axis is rendered in - the header timestamps on
       // the same page localize to the BROWSER timezone, so when the two zones
       // differ this label is what tells the viewer why the clocks disagree.
@@ -245,7 +262,7 @@
       el.appendChild(card);
 
       if (panel.bars && panel.bars.length) {
-        var handle = drawPanel(holder, panel, fmts);
+        var handle = drawPanel(holder, panel, fmts, rangeBtns);
         if (handle) {
           el.__tcCharts.push(handle.chart);
           if (sel) sel.addEventListener("change", function () { handle.applyTf(sel.value); });
@@ -258,7 +275,7 @@
 
   // ---------- rendering ----------
 
-  function drawPanel(holder, panel, fmts) {
+  function drawPanel(holder, panel, fmts, rangeBtns) {
     var LWC = window.LightweightCharts;
     if (!LWC) return null;
     var c = themeColors();
@@ -338,7 +355,30 @@
         candle.setMarkers(markers); // v4 fallback
       }
       chart.applyOptions({ timeScale: { secondsVisible: tf === "1m" } });
-      chart.timeScale().fitContent();
+      showRange(currentRange);
+    }
+
+    // showRange opens the chart on the trade (its focus window, padded to a
+    // few bars at the current size) or fits the whole loaded day.
+    var currentRange = "trade";
+    function showRange(which) {
+      currentRange = which;
+      if (which === "trade" && panel.focusFrom && panel.focusTo) {
+        chart.timeScale().setVisibleRange({ from: panel.focusFrom, to: panel.focusTo });
+      } else {
+        chart.timeScale().fitContent();
+      }
+      if (rangeBtns) {
+        rangeBtns.querySelectorAll("button").forEach(function (b) {
+          b.classList.toggle("active", b.dataset.range === which);
+        });
+      }
+    }
+    if (rangeBtns) {
+      rangeBtns.addEventListener("click", function (e) {
+        var b = e.target.closest("button[data-range]");
+        if (b) showRange(b.dataset.range);
+      });
     }
 
     applyTf(panel.timeframe || panel.barTimeframe);

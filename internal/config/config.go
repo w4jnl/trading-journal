@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -340,6 +341,20 @@ type MarketData struct {
 	// many days once a day; daily bars are kept. The cache is otherwise
 	// unbounded (~2.5M rows a year at one minute). Default 90; 0 disables.
 	BarRetentionDays int `yaml:"bar_retention_days"`
+	// SessionWarmupMin re-fetches today's one-minute bars for every root
+	// with a fill in the last days, on this cadence while Globex trades,
+	// and keeps the two previous days complete: what the open position's
+	// sheet, the guardrail and the AI levels read live. Default 2; 0
+	// disables (today then ages per intraday_refresh_min).
+	SessionWarmupMin *int `yaml:"session_warmup_min"`
+}
+
+// SessionWarmup is the warm-up cadence, defaulted.
+func (m MarketData) SessionWarmup() time.Duration {
+	if m.SessionWarmupMin == nil {
+		return 2 * time.Minute
+	}
+	return time.Duration(*m.SessionWarmupMin) * time.Minute
 }
 
 // NightlyRefreshHM parses NightlyRefresh ("HH:MM") into hour+minute. ok is false

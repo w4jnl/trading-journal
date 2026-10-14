@@ -57,7 +57,23 @@ around it.
   to tick) and prices itself. It is shown dashed; "Use as plan" writes it
   with source `ai`, nothing else touches the plan, and after the close the
   suggestion stays on the trade sheet next to what the trader chose, made
-  before the outcome existed.
+  before the outcome existed. The model does not get a bare slice of bars:
+  it gets the **session** as a trader reads it, computed from the cached
+  one-minute bars as of the moment (prior RTH range and close, overnight
+  range, opening range, session extremes, VWAP, ATR, the last swing highs
+  and lows, and the structural levels nearest the last price) plus a
+  multi-timeframe window (15m over the last sessions, 5m over the last
+  hours, 1m over the last minutes). The trade review gets the same, as it
+  stood at the entry. A **session warm-up** keeps today's one-minute bars
+  fresh for every root with a fill in the last days (every two minutes
+  while Globex trades, `session_warmup_min`) and the two previous days
+  complete, which is also what makes the sheet's distance to the stop and
+  the guardrail's "price is through your stop" current. Trade charts load
+  the trade's whole trading day at the finest cached size (one minute is
+  the finest the cache holds) and open on the stretch around the trade
+  at the bar size the trade reads best at; **Day** and **Trade** switch
+  the view, the bar-size selector rolls the same bars up, and the chart
+  image sent to the API and the AI keeps the stretch around the trade.
 - **Journal** entries attach to any of four scopes — a single trade, a
   whole day, an ISO week, or a freely-assembled group of trades. Each
   view shows the same shape: tag picker, mistake and emotion labels from

@@ -700,6 +700,20 @@ func run() error {
 	// The intraday guardrail: re-reads the day of each user who turned it on
 	// as their fills arrive and records nudges the pages pick up.
 	guard := &guardrail.Service{DB: conn, RDB: rconn, Live: liveData, TZ: tz}
+	if marketCache != nil {
+		// The newest cached bar, never a fetch: the warm-up keeps it fresh.
+		guard.LastClose = func(ctx context.Context, root string) (float64, time.Time, bool) {
+			sym, ok := marketdata.YahooSymbol(root)
+			if !ok {
+				return 0, time.Time{}, false
+			}
+			b, ok := marketCache.CachedLatest(ctx, sym)
+			if !ok {
+				return 0, time.Time{}, false
+			}
+			return b.Close, time.Unix(b.Time, 0), true
+		}
+	}
 
 	h := &handlers.Handlers{
 		LiveData:         liveData,
@@ -1030,6 +1044,9 @@ func run() error {
 	// archive, both of which otherwise grow without bound.
 	if marketCache != nil {
 		go marketdata.Retention{Cache: marketCache, Days: cfg.MarketData.BarRetentionDays}.Start(ctx)
+		// The traded roots' recent sessions, kept complete and fresh for
+		// what reads the session live (positions, guardrail, AI levels).
+		go (&marketdata.Warmer{Cache: marketCache, DB: conn, Every: cfg.MarketData.SessionWarmup()}).Start(ctx)
 	}
 	if cfg.MWEmail.Enabled {
 		go mwmail.RunArchiveRetention(ctx, cfg.MWEmail.ArchiveDir, cfg.MWEmail.ArchiveRetentionDays, nil)

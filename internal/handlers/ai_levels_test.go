@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/ai"
+	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/secretbox"
 )
@@ -174,5 +175,44 @@ func TestPositionSuggestion_RefusedAndDismiss(t *testing.T) {
 	rec := fx2.post(t, fx2.h.PositionSuggestDismiss, "/positions/x/y/suggest/dismiss")
 	if rec.Code != http.StatusOK || strings.Contains(rec.Body.String(), "Use as plan") {
 		t.Errorf("dismiss = %d, suggestion still shown", rec.Code)
+	}
+}
+
+// minuteSource serves flat one-minute bars for any window (a cache feed).
+type minuteSource struct{ price float64 }
+
+func (m minuteSource) FetchBars(_ context.Context, _ string, _ marketdata.Timeframe, from, to time.Time) ([]marketdata.Bar, error) {
+	var out []marketdata.Bar
+	for ts := from.Truncate(time.Minute); ts.Before(to) && ts.Before(time.Now()); ts = ts.Add(time.Minute) {
+		out = append(out, marketdata.Bar{Time: ts.Unix(), Open: m.price, High: m.price + 1, Low: m.price - 1, Close: m.price, Volume: 5})
+	}
+	if len(out) == 0 {
+		return nil, marketdata.ErrNoData
+	}
+	return out, nil
+}
+
+// With cached one-minute bars the levels prompt carries the session: its
+// structure and the multi-timeframe window, not the bare bar slice.
+func TestPositionSuggestion_SessionContext(t *testing.T) {
+	fx, fp := aiPositionFixture(t, `{"stop": 7241, "target": 7271, "summary": "with structure"}`)
+	fx.h.MarketData = &marketdata.CachingSource{DB: fx.h.DB, Source: minuteSource{price: 7252}, Loc: time.UTC}
+	w := &marketdata.Warmer{Cache: fx.h.MarketData, Chicago: time.UTC, Every: time.Minute, Roots: func(context.Context) ([]string, error) { return []string{"ES"}, nil }}
+	w.Tick(context.Background())
+	fx.post(t, fx.h.PositionSuggestStart, "/positions/x/y/suggest")
+	waitTasks(t, fx.h)
+	fp.mu.Lock()
+	user := fp.user
+	fp.mu.Unlock()
+	for _, want := range []string{`"session"`, `"structure"`, `"levelsNearest"`, `"windows"`, `"15m"`, `"5m"`, `"1m"`, `"barsStoredAt": "1m"`} {
+		if !strings.Contains(user, want) {
+			t.Errorf("prompt lacks %s", want)
+		}
+	}
+	if strings.Contains(user, `"bars":`) {
+		t.Errorf("the bare bar slice should give way to the session")
+	}
+	if body := fx.sheet(t); !strings.Contains(body, "Use as plan") || strings.Contains(body, "no bars were available") {
+		t.Errorf("suggestion with bars should carry no bars warning")
 	}
 }

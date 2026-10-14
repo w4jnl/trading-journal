@@ -168,3 +168,42 @@ func (s *Service) openLegs(ctx context.Context, uid int64) ([]positions.OpenLeg,
 	}
 	return legs, names, nil
 }
+
+// throughStop says, once per leg, when the newest cached price is through
+// the recorded stop: below it for a long, above it for a short. The price
+// must be recent (within fresh) so a stale cache never cries wolf; the
+// wording allows for a stop order that filled and has not arrived yet.
+func (s *Service) throughStop(ctx context.Context, legs []positions.OpenLeg, now time.Time) []Nudge {
+	if s.LastClose == nil {
+		return nil
+	}
+	var out []Nudge
+	prices := map[string]struct {
+		p  float64
+		at time.Time
+		ok bool
+	}{}
+	for _, l := range legs {
+		if l.Plan == nil || l.Plan.Stop == nil {
+			continue
+		}
+		q, seen := prices[l.SymbolRoot]
+		if !seen {
+			q.p, q.at, q.ok = s.LastClose(ctx, l.SymbolRoot)
+			prices[l.SymbolRoot] = q
+		}
+		if !q.ok || !isFresh(now, q.at, s.fresh()) {
+			continue
+		}
+		stop := *l.Plan.Stop
+		through := (l.Direction() == "long" && q.p < stop) || (l.Direction() == "short" && q.p > stop)
+		if !through {
+			continue
+		}
+		out = append(out, Nudge{Key: "past-stop-live", Ref: strconv.FormatInt(l.Position.Opened.ID, 10), Severity: "warn", Mistake: "moved-stop",
+			Title:  "Price is through your stop on " + l.Symbol,
+			Detail: fmt.Sprintf("Last %.2f against the recorded stop %g on %s %g. If the stop order filled, its fill arrives with the next sync; if not, this is the moment the plan was for.", q.p, stop, l.Direction(), l.Qty()),
+			Href:   positionHref(l.AccountID, l.Symbol)})
+	}
+	return out
+}

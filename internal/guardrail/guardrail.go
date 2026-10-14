@@ -48,6 +48,9 @@ type Service struct {
 	Fresh time.Duration
 	Now   func() time.Time
 	Log   *slog.Logger
+	// LastClose is the newest cached price of a root (never a fetch), for
+	// the "price through your stop" rule; nil leaves that rule off.
+	LastClose func(ctx context.Context, root string) (price float64, at time.Time, ok bool)
 
 	mu   sync.Mutex
 	seen map[int64]uint64 // the data version last read per user
@@ -186,6 +189,7 @@ func (s *Service) Check(ctx context.Context, uid int64, dataChanged bool) ([]mod
 			}
 		}
 		cands = append(cands, fromOpenPositions(legs, names, plan, trades, now, s.fresh())...)
+		cands = append(cands, s.throughStop(ctx, legs, now)...)
 	}
 	if len(cands) == 0 {
 		return nil, nil
