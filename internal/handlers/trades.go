@@ -633,6 +633,7 @@ func (h *Handlers) renderTradeDetail(w http.ResponseWriter, r *http.Request, fla
 		"JournalOpen":      journalOpen,
 		"PointValue":       pointValue,
 		"TickSize":         tickSize,
+		"PlanOrigin":       h.planOrigin(ctx, trade.ID),
 		"Executions":       execs,
 		"ChartEnabled":     h.chartShow(chartTrades),
 		"ChartEndpoint":    fmt.Sprintf("/charts/trade/%d", id),
@@ -1155,4 +1156,19 @@ func pageRef(r *http.Request, page, pages int) string {
 	q := r.URL.Query()
 	q.Set("page", strconv.Itoa(page))
 	return "?" + q.Encode()
+}
+
+// planOrigin says where a closed trade's plan came from when it was set
+// before the close: "position" (planned while open), "set" (inherited from
+// the copied decision) or "ai"; "" when the plan was set on the trade.
+func (h *Handlers) planOrigin(ctx context.Context, tradeID int64) string {
+	p, err := h.rq().GetPositionPlanByTrade(ctx, &tradeID)
+	if err != nil {
+		return ""
+	}
+	switch p.Source {
+	case "set", "ai", "api":
+		return p.Source
+	}
+	return "position"
 }

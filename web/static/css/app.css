@@ -2027,6 +2027,9 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .open-strip__table th, .open-strip__table td { white-space: nowrap; }
 .open-row--beyond td.c-sym .pill--live { border-color: var(--neg); color: var(--neg); }
 .position-plan { align-items: flex-end; }
+.position-plan__legs { white-space: nowrap; }
+.pill--inherited { background: transparent; color: var(--accent-text); border: 1px dashed var(--accent); font-size: 0.85em; }
+.position-legs__self td { color: var(--fg-muted); }
 .position-plan__thesis { display: flex; flex-basis: 100%; }
 .position-plan__thesis input { flex: 1 1 auto; width: auto; max-width: 560px; }
 .position-warn { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; font-size: var(--fs-12); color: var(--neg); border: 1px solid color-mix(in srgb, var(--neg) 50%, transparent); background: color-mix(in srgb, var(--neg) 8%, transparent); }

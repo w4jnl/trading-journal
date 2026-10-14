@@ -21,13 +21,35 @@ import (
 // Window is how close two entries must be to count as the same decision.
 const Window = 2 * time.Second
 
-// Trade is what clustering needs from a trade.
+// GroupWindow is the window between two accounts the trader declared as
+// copied together (accounts.copy_group): the copier adds latency, IBKR
+// reports fills to the second and broker clocks differ, so legs of one
+// decision can sit further apart than Window without being a new decision.
+const GroupWindow = 30 * time.Second
+
+// Trade is what clustering needs from a trade. CopyGroup is the account's
+// copy group ("" for none).
 type Trade struct {
 	ID         int64
 	AccountID  int64
 	SymbolRoot string
 	Direction  string
 	EntryTime  time.Time
+	CopyGroup  string
+}
+
+// sameDecision reports whether t belongs to the cluster that first opened:
+// within Window, or within GroupWindow when both accounts are in the same
+// declared copy group.
+func sameDecision(first, t Trade) bool {
+	if Key(t.SymbolRoot) != Key(first.SymbolRoot) || t.Direction != first.Direction {
+		return false
+	}
+	gap := t.EntryTime.Sub(first.EntryTime)
+	if gap <= Window {
+		return true
+	}
+	return first.CopyGroup != "" && first.CopyGroup == t.CopyGroup && gap <= GroupWindow
 }
 
 // Key is the underlying-price key for clustering: micros fold into their
@@ -65,8 +87,7 @@ func Cluster(trs []Trade) (sets [][]int, solos []int) {
 		first := trs[idx[i]]
 		j := i + 1
 		for j < len(idx) {
-			t := trs[idx[j]]
-			if Key(t.SymbolRoot) != Key(first.SymbolRoot) || t.Direction != first.Direction || t.EntryTime.Sub(first.EntryTime) > Window {
+			if !sameDecision(first, trs[idx[j]]) {
 				break
 			}
 			j++
@@ -95,7 +116,7 @@ func Rebuild(ctx context.Context, q *models.Queries, userID int64) (int, error) 
 	}
 	trs := make([]Trade, len(rows))
 	for i, r := range rows {
-		trs[i] = Trade{ID: r.ID, AccountID: r.AccountID, SymbolRoot: r.SymbolRoot, Direction: r.Direction, EntryTime: r.EntryTime}
+		trs[i] = Trade{ID: r.ID, AccountID: r.AccountID, SymbolRoot: r.SymbolRoot, Direction: r.Direction, EntryTime: r.EntryTime, CopyGroup: groupOf(r.CopyGroup)}
 	}
 	sets, _ := Cluster(trs)
 	if err := q.DeleteTradeSetsForUser(ctx, userID); err != nil {
@@ -153,6 +174,14 @@ func Backfill(ctx context.Context, q *models.Queries, log *slog.Logger) {
 			log.Info("copyset backfill: sets built from existing trades", "user", u.ID, "sets", built)
 		}
 	}
+}
+
+// groupOf reads a nullable copy group as its name, "" for none.
+func groupOf(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return strings.TrimSpace(*p)
 }
 
 // summarize folds a cluster's members into the set row.

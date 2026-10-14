@@ -272,6 +272,14 @@ the actual stop/limit orders and mark `source='broker'`, which removes the
 assumption entirely for those accounts. MotiveWave e-mail carries fills only.
 Not part of this proposal; the model above leaves room for it.
 
+## Status
+
+- Phase 1 (PR #109): `position_plans`, hand-off, position sheet, /trades
+  strip, dashboard columns.
+- Phase 2: open sets (fan-out, inheritance on every rebuild, declared copy
+  groups with a 30 s window). The manual "join a leg" anchor is not built
+  yet; the copy group covers the cases seen so far.
+
 ## Delivery
 
 1. `position_plans` + service + builder hand-off at close + supersede re-point

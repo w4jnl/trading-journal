@@ -225,3 +225,106 @@ func TestOpenPosition_OtherUser(t *testing.T) {
 		t.Errorf("other user's sheet = %d, want 404", rec.Code)
 	}
 }
+
+// Two accounts open the same underlying within a second: one decision. The
+// sheet lists the other leg, and a plan saved with "all legs" lands on
+// both, each leg's risk from its own entry and size; saved for this leg
+// only, the other leg is untouched.
+func TestOpenPosition_SetFanOut(t *testing.T) {
+	fx := newPositionFixture(t)
+	ctx := context.Background()
+	firm := "lucid"
+	follower, err := fx.q.CreateAccount(ctx, models.CreateAccountParams{UserID: fx.uid, Name: "pos-b", Firm: &firm,
+		ImportSource: "motivewave_csv", AccountRef: "LFE-POS-B", Currency: "USD", CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid := "O-B1"
+	if _, err := fx.q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: follower.ID, BrokerExecID: "B1", OrderID: &oid, ImportMethod: "motivewave_csv",
+		Symbol: "MESM6", SymbolRoot: "MES", Side: "buy", Qty: 2, Price: 7250.5, ExecTime: fx.t0.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	body := fx.sheet(t)
+	for _, want := range []string{"set · 1 more leg", "Legs of this decision", `name="all_legs"`, "pos-b", `hx-get="/positions/` + strconv.FormatInt(follower.ID, 10) + `/MESM6"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("set sheet lacks %q", want)
+		}
+	}
+	if page := fx.trades(t, ""); strings.Count(page, `class="pill set-badge"`) != 2 {
+		t.Errorf("both strip rows should carry the set badge")
+	}
+
+	// All legs: stop 7241 on both; the follower's risk |7250.5 - 7241| * 5 * 2 = 95.
+	code, out := fx.savePlan(t, url.Values{"stop": {"7241"}, "risk": {""}, "target": {"7271"}, "thesis": {"copied"}, "all_legs": {"1"}})
+	if code != http.StatusOK {
+		t.Fatalf("save = %d: %s", code, out)
+	}
+	plans, _ := fx.q.ListOpenPositionPlansForUser(ctx, fx.uid)
+	if len(plans) != 2 {
+		t.Fatalf("plans = %d, want 2", len(plans))
+	}
+	for _, p := range plans {
+		if p.Stop == nil || *p.Stop != 7241 || p.Target == nil || *p.Target != 7271 || p.Thesis != "copied" || p.SetPlan != 1 || p.Source != "trader" {
+			t.Errorf("leg plan = %+v", p)
+		}
+		if p.AccountID == follower.ID && (p.Risk == nil || *p.Risk != 95) {
+			t.Errorf("follower risk = %v, want 95", p.Risk)
+		}
+		if p.AccountID == fx.acct.ID && (p.Risk == nil || *p.Risk != 1500) {
+			t.Errorf("leader risk = %v, want 1500", p.Risk)
+		}
+	}
+	if !strings.Contains(out, "risk 1595.00 in total") {
+		t.Errorf("set risk not summed: %s", out)
+	}
+
+	// This leg only: the leader moves its stop, the follower keeps 7241.
+	if code, _ := fx.savePlan(t, url.Values{"stop": {"7243"}, "risk": {""}, "target": {"7271"}, "thesis": {"copied"}}); code != http.StatusOK {
+		t.Fatalf("save = %d", code)
+	}
+	plans, _ = fx.q.ListOpenPositionPlansForUser(ctx, fx.uid)
+	for _, p := range plans {
+		switch p.AccountID {
+		case fx.acct.ID:
+			if *p.Stop != 7243 || p.SetPlan != 0 {
+				t.Errorf("leader after single-leg save = %+v", p)
+			}
+		case follower.ID:
+			if *p.Stop != 7241 || p.SetPlan != 1 {
+				t.Errorf("follower touched by a single-leg save = %+v", p)
+			}
+		}
+	}
+
+	// A third leg that lands later inherits the set plan still flagged on
+	// the follower, marked as from the set.
+	third, err := fx.q.CreateAccount(ctx, models.CreateAccountParams{UserID: fx.uid, Name: "pos-c", Firm: &firm,
+		ImportSource: "motivewave_csv", AccountRef: "LFE-POS-C", Currency: "USD", CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid = "O-C1"
+	if _, err := fx.q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: third.ID, BrokerExecID: "C1", OrderID: &oid, ImportMethod: "motivewave_csv",
+		Symbol: "ESM6", SymbolRoot: "ES", Side: "buy", Qty: 1, Price: 7251, ExecTime: fx.t0.Add(2 * time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.svc.RebuildTradesForAccountSymbol(ctx, fx.uid, third.ID, "ESM6"); err != nil {
+		t.Fatal(err)
+	}
+	plans, _ = fx.q.ListOpenPositionPlansForUser(ctx, fx.uid)
+	found := false
+	for _, p := range plans {
+		if p.AccountID == third.ID {
+			found = true
+			if p.Source != "set" || *p.Stop != 7241 || p.Risk == nil || *p.Risk != 500 {
+				t.Errorf("third leg = %+v", p)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("third leg did not inherit: %+v", plans)
+	}
+	if page := fx.trades(t, ""); !strings.Contains(page, "from set") {
+		t.Errorf("inherited plan not marked on the strip")
+	}
+}
