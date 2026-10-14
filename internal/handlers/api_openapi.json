@@ -1,726 +1,3206 @@
 {
-  "openapi": "3.1.0",
-  "info": {
-    "title": "Trading Journal API",
-    "version": "v1",
-    "description": "Read strategies, journal entries, trades and daily P&L / trade stats, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content). Poll /version to learn when the user's data changed."
-  },
-  "servers": [{ "url": "/api/v1" }],
-  "security": [{ "bearerApiKey": [] }],
-  "components": {
-    "securitySchemes": {
-      "bearerApiKey": { "type": "http", "scheme": "bearer", "description": "Authorization: Bearer tj_... (the API also accepts the key in an X-API-Key header at runtime, but the spec advertises one scheme since ChatGPT supports only one)." }
-    },
-    "schemas": {
-      "AnalyticsSummary": {
-        "type": "object",
-        "description": "Everything /analytics shows for the same filter. Money is in the account currency; R values are multiples of the trade's planned risk.",
-        "properties": {
-          "from": { "type": "string" }, "to": { "type": "string" }, "timezone": { "type": "string" },
-          "totals": { "type": "object", "properties": {
-            "trades": { "type": "integer" }, "wins": { "type": "integer" }, "losses": { "type": "integer" }, "winRate": { "type": "number" },
-            "net": { "type": "number" }, "gross": { "type": "number" }, "commission": { "type": "number" },
-            "avgWin": { "type": "number" }, "avgLoss": { "type": "number", "description": "negative" },
-            "payoffRatio": { "type": ["number", "null"], "description": "avgWin / |avgLoss|" },
-            "profitFactor": { "type": ["number", "null"], "description": "sum of wins / sum of losses; null without losses" },
-            "expectancy": { "type": "number", "description": "per trade, in money" },
-            "largestWin": { "type": "number" }, "largestLoss": { "type": "number" } } },
-          "r": { "type": "object", "properties": {
-            "plannedTrades": { "type": "integer", "description": "trades carrying a planned risk; the other fields are meaningless when 0" },
-            "avgR": { "type": "number" }, "winRate": { "type": "number" }, "avgWinR": { "type": "number" }, "avgLossR": { "type": "number" } } },
-          "excursion": { "type": "object", "description": "Price path while open (MAE / MFE from cached bars) over the measured trades; the other fields mean nothing when trades is 0.", "properties": {
-            "trades": { "type": "integer" },
-            "exitEfficiency": { "type": "number", "description": "total gross P&L / total MFE: the share of the profit on the table the exits kept" },
-            "avgMae": { "type": "number" }, "avgMfe": { "type": "number" },
-            "winnersAvgMae": { "type": "number", "description": "heat a winning trade sat through, on average" },
-            "losersAvgMfe": { "type": "number", "description": "profit a losing trade had before it turned, on average" } } },
-          "drawdown": { "type": "object", "properties": {
-            "maxDrawdown": { "type": "number", "description": "deepest peak-to-trough fall of cumulative net P&L, positive magnitude" },
-            "maxDrawdownPeakAt": { "type": ["string", "null"], "format": "date-time" }, "maxDrawdownTroughAt": { "type": ["string", "null"], "format": "date-time" },
-            "maxDrawdownRecoverAt": { "type": ["string", "null"], "format": "date-time", "description": "null while the fall is still open" },
-            "maxDrawdownDays": { "type": "integer" }, "currentDrawdown": { "type": "number" }, "underwater": { "type": "boolean" },
-            "peakAt": { "type": ["string", "null"], "format": "date-time" } } },
-          "compliance": { "type": "array", "description": "playbook checklist compliance per strategy, over trades whose note carries a strategy with a checklist", "items": { "type": "object", "properties": {
-            "strategy": { "type": "string" }, "trades": { "type": "integer" }, "avgPct": { "type": "number", "description": "mean share of rules ticked, 0..1" },
-            "complete": { "type": "integer", "description": "trades with every rule ticked" }, "completeNet": { "type": "number" }, "incompleteNet": { "type": "number" } } } },
-          "streaks": { "type": "object", "properties": {
-            "longestWinTrades": { "type": "integer" }, "longestLossTrades": { "type": "integer" }, "currentTrades": { "type": "integer", "description": "signed: +n wins running, -n losses" },
-            "longestGreenDays": { "type": "integer" }, "longestRedDays": { "type": "integer" }, "currentDays": { "type": "integer", "description": "signed" } } },
-          "breakdowns": { "type": "object", "description": "bySymbol, byDirection, byStrategy, byTag, byMistake, byEmotion, byDayOfWeek, byHour. A trade with several labels counts in every matching byMistake / byEmotion bucket; (none logged) is the unlabelled rest. Labels reach a trade from its own entry, a group entry it is in, or the day entry of the day it closed.", "additionalProperties": { "type": "array", "items": { "type": "object", "properties": {
-            "key": { "type": "string" }, "trades": { "type": "integer" }, "wins": { "type": "integer" }, "losses": { "type": "integer" },
-            "net": { "type": "number" }, "gross": { "type": "number" }, "best": { "type": "number" }, "worst": { "type": "number" } } } } }
-        }
-      },
-      "Error": { "type": "object", "properties": { "error": { "type": "string" } }, "required": ["error"] },
-      "Attachment": {
-        "type": "object",
-        "properties": { "id": { "type": "integer" }, "url": { "type": "string", "description": "Fetch with your API key." } }
-      },
-      "Strategy": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "name": { "type": "string", "description": "Short name." },
-          "body": { "type": "string", "description": "Full description (markdown); image refs rewritten to API URLs." },
-          "attachments": { "type": "array", "items": { "$ref": "#/components/schemas/Attachment" } },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "Trade": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" }, "symbol": { "type": "string" }, "symbolRoot": { "type": "string" },
-          "direction": { "type": "string", "enum": ["long", "short"] }, "qty": { "type": "number" },
-          "account": { "type": "string" },
-          "entryTime": { "type": "string", "format": "date-time" },
-          "exitTime": { "type": ["string", "null"], "format": "date-time" },
-          "grossPnl": { "type": ["number", "null"] }, "commission": { "type": ["number", "null"] },
-          "netPnl": { "type": ["number", "null"] }
-        }
-      },
-      "Summary": {
-        "type": "object",
-        "properties": {
-          "trades": { "type": "integer" }, "net": { "type": "number" }, "gross": { "type": "number" },
-          "commission": { "type": "number" }, "wins": { "type": "integer" }, "losses": { "type": "integer" }
-        }
-      },
-      "DayRef": {
-        "type": "object",
-        "properties": { "date": { "type": "string", "example": "2026-08-14" }, "net": { "type": "number" } }
-      },
-      "DailyStatsItem": {
-        "allOf": [
-          { "$ref": "#/components/schemas/Summary" },
-          {
-            "type": "object",
-            "properties": {
-              "date": { "type": "string", "example": "2026-08-03", "description": "Trading day in the trading timezone; a trade belongs to the day of its exit." },
-              "winRate": { "type": ["number", "null"], "description": "wins/(wins+losses); null when no decided trades." },
-              "largestWin": { "type": ["number", "null"], "description": "null when no winning trade that day." },
-              "largestLoss": { "type": ["number", "null"], "description": "Negative; null when no losing trade that day." }
-            }
-          }
-        ]
-      },
-      "DailyStatsTotals": {
-        "allOf": [
-          { "$ref": "#/components/schemas/Summary" },
-          {
-            "type": "object",
-            "properties": {
-              "winRate": { "type": ["number", "null"] },
-              "winDays": { "type": "integer", "description": "Days with net > 0." },
-              "lossDays": { "type": "integer", "description": "Days with net < 0." },
-              "bestDay": { "oneOf": [{ "$ref": "#/components/schemas/DayRef" }, { "type": "null" }] },
-              "worstDay": { "oneOf": [{ "$ref": "#/components/schemas/DayRef" }, { "type": "null" }] },
-              "largestWin": { "type": ["number", "null"] },
-              "largestLoss": { "type": ["number", "null"] }
-            }
-          }
-        ]
-      },
-      "DailyStats": {
-        "type": "object",
-        "properties": {
-          "from": { "type": "string", "example": "2026-08-03", "description": "Effective range start (echoed even when defaulted)." },
-          "to": { "type": "string", "example": "2026-09-01" },
-          "timezone": { "type": "string", "example": "America/Chicago", "description": "The trading timezone every date is in." },
-          "totals": { "$ref": "#/components/schemas/DailyStatsTotals" },
-          "items": { "type": "array", "items": { "$ref": "#/components/schemas/DailyStatsItem" }, "description": "One per day WITH closed trades, ascending; gap days omitted." }
-        }
-      },
-      "DataVersion": {
-        "type": "object",
-        "properties": { "v": { "type": "integer", "description": "Opaque per-user data version. Compare for inequality only (process-local; resets on restart)." } }
-      },
-      "DayPlan": {
-        "type": "object",
-        "properties": {
-          "day": { "type": "string", "example": "2026-10-12" },
-          "bias": { "type": "string", "enum": ["long", "short", "neutral", "flat", ""], "description": "neutral = both ways, flat = stay out" },
-          "levels": { "type": "string", "description": "one level per line" },
-          "maxTrades": { "type": ["integer", "null"], "description": "decisions; a copy set counts once" },
-          "stopTime": { "type": "string", "description": "HH:MM trading timezone; empty for none" },
-          "maxLoss": { "type": ["number", "null"], "description": "per account, positive money" },
-          "notes": { "type": "string" },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "DayPlanInput": {
-        "type": "object",
-        "properties": {
-          "day": { "type": "string", "description": "YYYY-MM-DD or today; default today" },
-          "bias": { "type": "string", "enum": ["long", "short", "neutral", "flat", ""] },
-          "levels": { "type": "string" }, "maxTrades": { "type": "integer" }, "stopTime": { "type": "string" },
-          "maxLoss": { "type": "number" }, "notes": { "type": "string" }
-        }
-      },
-      "PlanOutcome": {
-        "type": "object",
-        "properties": {
-          "plan": { "$ref": "#/components/schemas/DayPlan" },
-          "checks": { "type": "array", "description": "empty until the day has trades", "items": { "type": "object", "properties": {
-            "key": { "type": "string", "enum": ["bias", "max-trades", "stop-time", "max-loss"] },
-            "rule": { "type": "string" }, "actual": { "type": "string" }, "held": { "type": "boolean" } } } },
-          "held": { "type": "integer" },
-          "writtenLate": { "type": "boolean", "description": "the plan was saved after the day's first entry" },
-          "editedLate": { "type": "boolean", "description": "the plan was changed after the day's first entry" }
-        }
-      },
-      "CoachReport": {
-        "type": "object",
-        "properties": {
-          "date": { "type": "string" },
-          "trades": { "type": "integer" },
-          "decisions": { "type": "integer", "description": "copy sets count once" },
-          "baseline": { "type": "object", "description": "the trader's own norms from the preceding weeks; the norm-based checks need 5 trading days", "properties": {
-            "days": { "type": "integer" }, "medianDecisions": { "type": "number" }, "usualLastEntry": { "type": "string", "description": "HH:MM trading timezone, 90th percentile of entry times" }, "medianWinnerHoldSec": { "type": "number" } } },
-          "plan": { "oneOf": [ { "$ref": "#/components/schemas/PlanOutcome" }, { "type": "null" } ], "description": "the day's pre-market plan against the day; absent without one" },
-          "findings": { "type": "array", "items": { "type": "object", "properties": {
-            "key": { "type": "string", "enum": ["plan-bias", "plan-max-trades", "plan-stop-time", "plan-max-loss", "revenge-entry", "size-up-after-loss", "past-stop", "left-on-table", "held-loser", "overtraded", "late-session"] },
-            "title": { "type": "string" }, "detail": { "type": "string", "description": "one sentence with the numbers" },
-            "severity": { "type": "string", "enum": ["warn", "info"] },
-            "tradeIds": { "type": "array", "items": { "type": "integer" } },
-            "label": { "type": ["object", "null"], "description": "the review label the finding suggests", "properties": { "kind": { "type": "string" }, "key": { "type": "string" }, "name": { "type": "string" } } } } } }
-        }
-      },
-      "Labels": {
-        "type": "object",
-        "description": "Review labels from the fixed vocabulary. mistakes: chased, early-exit, late-exit, oversized, no-stop, moved-stop, held-loser, revenge, fomo, hesitated, overtraded, against-plan. emotions: calm, focused, confident, anxious, greedy, frustrated, bored, tilted, rushed.",
-        "properties": {
-          "mistakes": { "type": "array", "items": { "type": "string" } },
-          "emotions": { "type": "array", "items": { "type": "string" } }
-        }
-      },
-      "JournalDetail": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "scope": { "type": "string", "enum": ["day", "week", "trade", "group"] },
-          "date": { "type": "string", "example": "2026-06-02" },
-          "tag": { "type": ["string", "null"], "enum": ["good", "neutral", "bad", null] },
-          "mood": { "type": ["integer", "null"] },
-          "notes": { "type": "string", "description": "Markdown; image refs rewritten to API URLs." },
-          "labels": { "$ref": "#/components/schemas/Labels" },
-          "checklist": { "type": ["object", "null"], "description": "The entry's strategy playbook checklist with the trader's ticks; null without a strategy or when the strategy has no checklist.", "properties": {
-            "strategyId": { "type": "integer" }, "done": { "type": "integer" }, "total": { "type": "integer" },
-            "items": { "type": "array", "items": { "type": "object", "properties": { "id": { "type": "integer" }, "text": { "type": "string" }, "checked": { "type": "boolean" } } } } } },
-          "strategy": {
-            "type": ["object", "null"],
-            "properties": { "id": { "type": "integer" }, "name": { "type": "string" } },
-            "description": "Assigned strategy, short name only (not the full description)."
-          },
-          "summary": { "$ref": "#/components/schemas/Summary" },
-          "trades": { "type": "array", "items": { "$ref": "#/components/schemas/Trade" } },
-          "chart": { "type": "object", "description": "Chart data: OHLC bars + entry/exit markers per contract panel." },
-          "attachments": { "type": "array", "items": { "$ref": "#/components/schemas/Attachment" } },
-          "chartPng": { "type": "string", "description": "URL of the rendered chart image." },
-          "createdAt": { "type": "string", "format": "date-time" },
-          "updatedAt": { "type": "string", "format": "date-time" }
-        }
-      },
-      "Execution": {
-        "type": "object",
-        "properties": {
-          "time": { "type": "string", "format": "date-time" },
-          "side": { "type": "string", "enum": ["buy", "sell"] },
-          "role": { "type": "string", "enum": ["entry", "exit"] },
-          "qty": { "type": "number", "description": "Qty of this fill attributed to the trade." },
-          "price": { "type": "number" }
-        }
-      },
-      "TradeRow": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "accountId": { "type": "integer" },
-          "account": { "type": "string" },
-          "firm": { "type": ["string", "null"] },
-          "symbol": { "type": "string" },
-          "symbolRoot": { "type": "string" },
-          "direction": { "type": "string", "enum": ["long", "short"] },
-          "qty": { "type": "number" },
-          "entryPrice": { "type": "number" },
-          "exitPrice": { "type": ["number", "null"] },
-          "entryTime": { "type": "string", "format": "date-time" },
-          "exitTime": { "type": ["string", "null"], "format": "date-time" },
-          "grossPnl": { "type": ["number", "null"], "description": "null for stub instruments awaiting tick setup." },
-          "commission": { "type": ["number", "null"] },
-          "netPnl": { "type": ["number", "null"] },
-          "plannedStop": { "type": ["number", "null"], "description": "The planned stop price recorded on the trade sheet; null without a plan." },
-          "plannedRisk": { "type": ["number", "null"], "description": "Money at risk per the plan (account currency), derived from the stop via the instrument tick value or typed directly." },
-          "r": { "type": ["number", "null"], "description": "R multiple: netPnl / plannedRisk. null without a plan." },
-          "mae": { "type": ["number", "null"], "description": "Maximum adverse excursion in money: the most the trade was under water from its average entry. null until measured from cached bars." },
-          "mfe": { "type": ["number", "null"], "description": "Maximum favourable excursion in money: the best the trade ever looked." },
-          "maePoints": { "type": ["number", "null"] }, "mfePoints": { "type": ["number", "null"] },
-          "exitEfficiency": { "type": ["number", "null"], "description": "Realized move over MFE: 1 = out at the best price, negative = had profit and closed red. null without MFE." },
-          "excursionBars": { "type": ["string", "null"], "description": "Bar size the excursion was read from (1m, 5m, 1h, 1d)." },
-          "setId": { "type": ["integer", "null"], "description": "Copy set: copies of one decision across accounts share a setId. null for a decision of its own. Ids change when trades are rebuilt." },
-          "setSize": { "type": "integer", "description": "Members of the set (0 when not in one)." },
-          "status": { "type": "string" },
-          "retired": { "type": "boolean", "description": "Trade is on a retired account." },
-          "hasJournal": { "type": "boolean" },
-          "journalTag": { "type": "string" },
-          "groupCount": { "type": "integer", "description": "Number of group entries that include this trade." }
-        }
-      },
-      "TradeDetail": {
-        "type": "object",
-        "properties": {
-          "id": { "type": "integer" },
-          "accountId": { "type": "integer" },
-          "account": { "type": "string" },
-          "firm": { "type": ["string", "null"] },
-          "symbol": { "type": "string" },
-          "symbolRoot": { "type": "string" },
-          "direction": { "type": "string", "enum": ["long", "short"] },
-          "qty": { "type": "number" },
-          "entryPrice": { "type": "number" },
-          "exitPrice": { "type": ["number", "null"] },
-          "entryTime": { "type": "string", "format": "date-time" },
-          "exitTime": { "type": ["string", "null"], "format": "date-time" },
-          "grossPnl": { "type": ["number", "null"] },
-          "commission": { "type": ["number", "null"] },
-          "netPnl": { "type": ["number", "null"] },
-          "plannedStop": { "type": ["number", "null"], "description": "The planned stop price recorded on the trade sheet; null without a plan." },
-          "plannedRisk": { "type": ["number", "null"], "description": "Money at risk per the plan (account currency), derived from the stop via the instrument tick value or typed directly." },
-          "r": { "type": ["number", "null"], "description": "R multiple: netPnl / plannedRisk. null without a plan." },
-          "mae": { "type": ["number", "null"], "description": "Maximum adverse excursion in money: the most the trade was under water from its average entry. null until measured from cached bars." },
-          "mfe": { "type": ["number", "null"], "description": "Maximum favourable excursion in money: the best the trade ever looked." },
-          "maePoints": { "type": ["number", "null"] }, "mfePoints": { "type": ["number", "null"] },
-          "exitEfficiency": { "type": ["number", "null"], "description": "Realized move over MFE: 1 = out at the best price, negative = had profit and closed red. null without MFE." },
-          "excursionBars": { "type": ["string", "null"], "description": "Bar size the excursion was read from (1m, 5m, 1h, 1d)." },
-          "setId": { "type": ["integer", "null"], "description": "Copy set: copies of one decision across accounts share a setId. null for a decision of its own. Ids change when trades are rebuilt." },
-          "setSize": { "type": "integer", "description": "Members of the set (0 when not in one)." },
-          "status": { "type": "string" },
-          "brokerTradeId": { "type": ["string", "null"] },
-          "hasJournal": { "type": "boolean" },
-          "journalEntryId": { "type": ["integer", "null"] },
-          "journalTag": { "type": "string" },
-          "groupCount": { "type": "integer" },
-          "executions": { "type": "array", "items": { "$ref": "#/components/schemas/Execution" } },
-          "chart": { "type": "object", "description": "Cached OHLC bars + entry/exit markers per contract panel." },
-          "chartPng": { "type": "string" }
-        }
-      },
-      "JournalCreate": {
-        "type": "object",
-        "required": ["scope"],
-        "description": "Create body. The required scope-specific field depends on scope: day->date, week->week, trade->tradeId, group->tradeIds.",
-        "properties": {
-          "scope": { "type": "string", "enum": ["day", "week", "trade", "group"] },
-          "body": { "type": "string", "description": "Markdown. Required for day/week/trade; optional for group." },
-          "tag": { "type": "string", "enum": ["good", "neutral", "bad"] },
-          "mood": { "type": "integer", "minimum": 1, "maximum": 5, "description": "Day scope only." },
-          "strategyId": { "type": "integer", "description": "Optional; must be owned." },
-          "date": { "type": "string", "example": "2026-06-02", "description": "scope=day (YYYY-MM-DD, trading tz; not future)." },
-          "week": { "type": "string", "example": "2026-W23", "description": "scope=week (YYYY-Www)." },
-          "tradeId": { "type": "integer", "description": "scope=trade (must be owned)." },
-          "tradeIds": { "type": "array", "items": { "type": "integer" }, "description": "scope=group (>=1; non-owned ids dropped)." }
-        }
-      }
-    }
-  },
-  "paths": {
-    "/stats/daily": {
-      "get": {
-        "operationId": "getDailyStats",
-        "summary": "Daily P&L + trade stats per trading day with range totals - the Calendar's numbers (daily_stats cache; retired accounts never count, excluded-from-stats accounts are dropped unless filtered).",
-        "parameters": [
-          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-08-01" }, "description": "First day, inclusive, trading timezone: YYYY-MM-DD or the keyword today|yesterday|last (resolved server-side - never compute the date yourself). Default: to minus 29 days." },
-          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last. Default: today. Span at most 400 days." },
-          { "name": "day", "in": "query", "schema": { "type": "string", "example": "today" }, "description": "Shorthand for from=to=day. Use day=today for the intraday check." },
-          { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug> (live|prop_live|prop_funded|prop_eval|paper). An explicit filter overrides excluded_from_stats." },
-          { "name": "account_id", "in": "query", "deprecated": true, "schema": { "type": "integer" }, "description": "Legacy alias for filter=acc:<id>." },
-          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday today questions." }
-        ],
-        "responses": {
-          "200": { "description": "OK (an empty range is a 200 with items: [] and zeroed totals)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DailyStats" } } } },
-          "400": { "description": "Malformed date, to before from, or span over 400 days", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/analytics/summary": {
-      "get": {
-        "operationId": "getAnalyticsSummary",
-        "summary": "The /analytics page for a date range as one object: totals, R (over planned trades), drawdown, streaks, and breakdowns by symbol, direction, strategy, tag, weekday and entry hour. Same parameters and account rules as /stats/daily; default range = last 30 days.",
-        "parameters": [
-          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-08-01" }, "description": "First day, inclusive, trading timezone: YYYY-MM-DD or today|yesterday|last." },
-          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-08-31" }, "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last." },
-          { "name": "day", "in": "query", "schema": { "type": "string", "example": "yesterday" }, "description": "Shorthand for from=to=day." },
-          { "name": "filter", "in": "query", "style": "form", "explode": true, "schema": { "type": "array", "items": { "type": "string" } }, "description": "Repeatable: acc:<id> or type:<slug>. An explicit filter lifts the excluded-from-stats rule." },
-          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s)." },
-          { "name": "unit", "in": "query", "schema": { "type": "string", "enum": ["trades", "sets"] }, "description": "What one count means: trades (default), or sets, where a copy set counts once with its money summed." },
-          { "name": "src", "in": "query", "schema": { "type": "string", "enum": ["confirmed"] }, "description": "confirmed: count only tags, strategies and labels the trader set or confirmed in the app, leaving out values written through the API or MCP and never saved in an editor." }
-        ],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnalyticsSummary" } } } },
-          "400": { "description": "Malformed date, to before from, or span over 400 days", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/version": {
-      "get": {
-        "operationId": "getVersion",
-        "summary": "Per-user data version for change detection: poll it and refetch when the value differs from the last one you saw.",
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DataVersion" } } } }
-        }
-      }
-    },
-    "/strategies": {
-      "get": {
-        "operationId": "listStrategies",
-        "summary": "List the caller's strategies (name + full markdown + image URLs).",
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": { "application/json": { "schema": {
-              "type": "object",
-              "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Strategy" } } }
-            } } }
-          },
-          "401": { "description": "Missing/invalid API key", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/strategies/{id}": {
-      "get": {
-        "operationId": "getStrategy",
-        "summary": "Strategy detail.",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Strategy" } } } },
-          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/journal": {
-      "get": {
-        "operationId": "listJournal",
-        "summary": "List journal entries (summary rows).",
-        "parameters": [
-          { "name": "scope", "in": "query", "schema": { "type": "string", "enum": ["day", "week", "trade", "group"] }, "description": "Repeatable." },
-          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" } },
-          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" } },
-          { "name": "tag", "in": "query", "schema": { "type": "string", "enum": ["good", "neutral", "bad", "untagged"] } },
-          { "name": "strategy", "in": "query", "schema": { "type": "string" }, "description": "Strategy id, or 'none'." },
-          { "name": "mistake", "in": "query", "schema": { "type": "string" }, "description": "Repeatable. Mistake label key (see Labels), or 'none' for entries with no mistake logged." },
-          { "name": "emotion", "in": "query", "schema": { "type": "string" }, "description": "Repeatable. Emotion label key (see Labels)." },
-          { "name": "limit", "in": "query", "schema": { "type": "integer", "default": 50, "maximum": 200 } },
-          { "name": "offset", "in": "query", "schema": { "type": "integer", "default": 0 } }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": { "application/json": { "schema": {
-              "type": "object",
-              "properties": {
-                "items": { "type": "array", "items": { "type": "object" } },
-                "page": { "type": "object", "properties": { "limit": { "type": "integer" }, "offset": { "type": "integer" }, "count": { "type": "integer" } } }
-              }
-            } } }
-          }
-        }
-      },
-      "post": {
-        "operationId": "createJournalEntry",
-        "summary": "Create a journal entry (day/week/trade/group). Day/week/trade are singletons -> 409 if one already exists (use the notes endpoint to append); group always creates.",
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalCreate" } } }
-        },
-        "responses": {
-          "201": { "description": "Created (returns the entry in the GET /journal/{id} shape; Location header set)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalDetail" } } } },
-          "400": { "description": "Validation error (missing/invalid field for the scope)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "409": { "description": "An entry already exists for this date/week/trade", "content": { "application/json": { "schema": { "type": "object", "properties": { "error": { "type": "string" }, "entryId": { "type": "integer" } } } } } }
-        }
-      }
-    },
-    "/journal/prepare-day": {
-      "post": {
-        "operationId": "prepareDay",
-        "summary": "Prepare a day for review: cluster copytrader fan-out into group entries and solos into trade entries, create the missing ones (idempotent), and return them to analyze (by entryId). Defaults to the last trading day before today.",
-        "requestBody": {
-          "content": { "application/json": { "schema": {
-            "type": "object",
-            "properties": { "date": { "type": "string", "example": "2026-05-12", "description": "YYYY-MM-DD; default = last trading day before today." } }
-          } } }
-        },
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": { "application/json": { "schema": {
-              "type": "object",
-              "properties": {
-                "date": { "type": "string" },
-                "entries": { "type": "array", "items": {
-                  "type": "object",
-                  "properties": {
-                    "entryId": { "type": "integer" },
-                    "scope": { "type": "string", "enum": ["group", "trade"] },
-                    "created": { "type": "boolean" },
-                    "alreadyAnalyzed": { "type": "boolean" },
-                    "label": { "type": "string" },
-                    "symbolRoot": { "type": "string" },
-                    "direction": { "type": "string" },
-                    "accounts": { "type": "integer" },
-                    "netPnl": { "type": ["number", "null"] },
-                    "tradeIds": { "type": "array", "items": { "type": "integer" } }
-                  }
-                } },
-                "note": { "type": "string" },
-                "checks": { "$ref": "#/components/schemas/CoachReport", "description": "The day's coach checks (see GET /coach); absent when they could not run." }
-              }
-            } } }
-          }
-        }
-      }
-    },
-    "/journal/{id}": {
-      "get": {
-        "operationId": "getJournalEntry",
-        "summary": "Journal entry detail (notes, tag, mood, strategy short name, trades overview + list, chart data, attachments).",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/JournalDetail" } } } },
-          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/journal/{id}/notes": {
-      "post": {
-        "operationId": "appendNote",
-        "summary": "Append a dated note to the entry's body. Append-only: existing content is never removed.",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": {
-            "type": "object", "required": ["note"],
-            "properties": { "note": { "type": "string", "description": "Markdown; appended under a dated heading." } }
-          } } }
-        },
-        "responses": {
-          "200": { "description": "Appended", "content": { "application/json": { "schema": {
-            "type": "object", "properties": { "id": { "type": "integer" }, "appended": { "type": "boolean" } }
-          } } } },
-          "400": { "description": "Empty/invalid note", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "404": { "description": "Entry not found (the API does not create entries)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/journal/{id}/strategy": {
-      "post": {
-        "operationId": "assignStrategy",
-        "summary": "Assign a strategy to the entry, but only if it has none yet - an existing assignment is never changed (assigned=false then).",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": {
-            "type": "object", "required": ["strategyId"],
-            "properties": { "strategyId": { "type": "integer" } }
-          } } }
-        },
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": {
-            "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
-          } } } },
-          "400": { "description": "Unknown entry/strategy or missing strategyId", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/journal/{id}/tag": {
-      "post": {
-        "operationId": "setTag",
-        "summary": "Set the entry's tag (good|neutral|bad), but only if it has none yet - an existing tag is never changed (assigned=false then).",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": {
-            "type": "object", "required": ["tag"],
-            "properties": { "tag": { "type": "string", "enum": ["good", "neutral", "bad"] } }
-          } } }
-        },
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": {
-            "type": "object", "properties": { "id": { "type": "integer" }, "assigned": { "type": "boolean" } }
-          } } } },
-          "400": { "description": "Unknown entry or bad/missing tag", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/journal/{id}/labels": {
-      "post": {
-        "operationId": "addLabels",
-        "summary": "Add mistake and/or emotion labels to the entry. Additive: existing labels are kept, duplicates ignored; only the UI removes labels. Keys must come from the fixed vocabulary (see Labels).",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "requestBody": {
-          "required": true,
-          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Labels" } } }
-        },
-        "responses": {
-          "200": { "description": "The entry's labels after the add", "content": { "application/json": { "schema": {
-            "type": "object", "properties": { "id": { "type": "integer" }, "labels": { "$ref": "#/components/schemas/Labels" } }
-          } } } },
-          "400": { "description": "Unknown label key or empty body", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } },
-          "404": { "description": "Entry not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/coach": {
-      "get": {
-        "operationId": "getCoachChecks",
-        "summary": "Rule-based coach checks for a trading day: re-entry within a minute of a loss, size up after a loss, heat past the planned stop, a winner that kept under a quarter of its best move, a loser held several times a usual winner, more decisions than the trader's usual day, entries past the usual hour. Observations with numbers, trade ids and suggested labels; not verdicts.",
-        "parameters": [
-          { "name": "day", "in": "query", "schema": { "type": "string", "example": "yesterday" }, "description": "Trading day: YYYY-MM-DD or today|yesterday|last; default = the last trading day." }
-        ],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CoachReport" } } } },
-          "400": { "description": "Bad day", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/digest": {
-      "get": {
-        "operationId": "getWeeklyDigest",
-        "summary": "The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before, keep and fix sentences derived from the numbers, best and worst decision, the coach's findings tallied across the days, how the day plans held, the week's AI review lessons, and the week's analytics summary.",
-        "parameters": [
-          { "name": "week", "in": "query", "schema": { "type": "string", "example": "2026-W41" }, "description": "YYYY-Www; default the week of the last trading day." }
-        ],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "type": "object", "properties": {
-            "week": { "type": "string" }, "from": { "type": "string" }, "to": { "type": "string" }, "tradingDays": { "type": "integer" },
-            "kpis": { "type": "array", "items": { "type": "object", "properties": {
-              "key": { "type": "string", "enum": ["net", "decisions", "winRate", "profitFactor", "avgR", "exitKept"] },
-              "label": { "type": "string" }, "value": { "type": ["number", "null"] }, "previous": { "type": ["number", "null"] } } } },
-            "keep": { "type": "array", "items": { "type": "string" } },
-            "fix": { "type": "array", "items": { "type": "string" } },
-            "bestDecision": { "type": ["object", "null"] }, "worstDecision": { "type": ["object", "null"] },
-            "coach": { "type": "array", "items": { "type": "object", "properties": {
-              "key": { "type": "string" }, "title": { "type": "string" }, "severity": { "type": "string" }, "count": { "type": "integer" }, "days": { "type": "integer" } } } },
-            "plan": { "type": "object", "properties": {
-              "tradingDays": { "type": "integer" }, "planned": { "type": "integer" }, "writtenLate": { "type": "integer" },
-              "rules": { "type": "array", "items": { "type": "object", "properties": { "key": { "type": "string" }, "name": { "type": "string" }, "held": { "type": "integer" }, "total": { "type": "integer" } } } } } },
-            "lessons": { "type": "array", "description": "The week's AI review lessons, grouped by the mistake they are about.", "items": { "type": "object", "properties": {
-              "mistake": { "type": "string" }, "mistakeName": { "type": "string" }, "count": { "type": "integer" }, "open": { "type": "integer", "description": "Not yet marked learned." },
-              "lesson": { "type": "string", "description": "The newest lesson's words." }, "day": { "type": "string" } } } },
-            "this": { "$ref": "#/components/schemas/AnalyticsSummary" },
-            "previous": { "$ref": "#/components/schemas/AnalyticsSummary" } } } } } },
-          "400": { "description": "Bad week", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/plan": {
-      "get": {
-        "operationId": "getDayPlan",
-        "summary": "The trader's pre-market plan for a day and how the day measured against it (one check per rule, held or not).",
-        "parameters": [
-          { "name": "day", "in": "query", "schema": { "type": "string", "example": "today" }, "description": "YYYY-MM-DD or today|yesterday|last; default today." }
-        ],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": {
-            "type": "object", "properties": {
-              "day": { "type": "string" },
-              "plan": { "oneOf": [ { "$ref": "#/components/schemas/DayPlan" }, { "type": "null" } ] },
-              "outcome": { "oneOf": [ { "$ref": "#/components/schemas/PlanOutcome" }, { "type": "null" } ] } } } } } },
-          "400": { "description": "Bad day", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      },
-      "post": {
-        "operationId": "setDayPlan",
-        "summary": "Write or amend the plan for today or a future day. Present fields replace the stored ones (an empty string or 0 clears), absent fields are kept; a plan left empty is removed. Past days are refused: their record is edited in the app, where a late edit is flagged.",
-        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/DayPlanInput" } } } },
-        "responses": {
-          "200": { "description": "The stored plan (null when it ended up empty)", "content": { "application/json": { "schema": {
-            "type": "object", "properties": { "plan": { "oneOf": [ { "$ref": "#/components/schemas/DayPlan" }, { "type": "null" } ] } } } } } },
-          "400": { "description": "Past day or invalid field", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/journal/{id}/chart.png": {
-      "get": {
-        "operationId": "getJournalChart",
-        "summary": "Server-rendered candlestick PNG of the entry's chart (cached data only).",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
-          { "name": "contract", "in": "query", "schema": { "type": "string" }, "description": "Pick a contract/root when the entry spans several; defaults to the first." }
-        ],
-        "responses": {
-          "200": { "description": "PNG image", "content": { "image/png": { "schema": { "type": "string", "format": "binary" } } } },
-          "404": { "description": "No cached chart data", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/attachments/{id}": {
-      "get": {
-        "operationId": "getAttachment",
-        "summary": "Fetch an embedded image referenced by a strategy/journal body the caller owns.",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": { "description": "Image bytes", "content": { "image/png": {}, "image/jpeg": {}, "image/gif": {}, "image/webp": {} } },
-          "404": { "description": "Not found / not owned", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/trades": {
-      "get": {
-        "operationId": "listTrades",
-        "summary": "List closed trades (filtered, paged; page size 50). Retired accounts and accounts hidden in Settings (excluded_from_stats) are left out by default; an explicit account_id / filter overrides the visibility rule, show_retired the retired one.",
-        "parameters": [
-          { "name": "symbol_root", "in": "query", "schema": { "type": "string" }, "description": "e.g. MES" },
-          { "name": "direction", "in": "query", "schema": { "type": "string", "enum": ["long", "short"] } },
-          { "name": "outcome", "in": "query", "schema": { "type": "string", "enum": ["win", "loss", "breakeven"] } },
-          { "name": "risk", "in": "query", "schema": { "type": "string", "enum": ["planned", "past-stop"] }, "description": "planned: trades carrying a stop or risk; past-stop: planned trades whose measured heat (mae) exceeded plannedRisk." },
-          { "name": "from", "in": "query", "schema": { "type": "string", "example": "2026-06-01" }, "description": "Inclusive lower bound on the exit day (trading timezone): YYYY-MM-DD or today|yesterday|last (resolved server-side)." },
-          { "name": "to", "in": "query", "schema": { "type": "string", "example": "2026-06-30" }, "description": "Inclusive upper bound: YYYY-MM-DD or today|yesterday|last. For today's trades send from=today&to=today." },
-          { "name": "account_id", "in": "query", "schema": { "type": "integer" } },
-          { "name": "page", "in": "query", "schema": { "type": "integer", "default": 1 } },
-          { "name": "show_retired", "in": "query", "schema": { "type": "boolean" } },
-          { "name": "refresh", "in": "query", "schema": { "type": "boolean" }, "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before listing." }
-        ],
-        "responses": {
-          "200": {
-            "description": "OK",
-            "content": { "application/json": { "schema": {
-              "type": "object",
-              "properties": {
-                "items": { "type": "array", "items": { "$ref": "#/components/schemas/TradeRow" } },
-                "page": { "type": "object", "properties": { "page": { "type": "integer" }, "pageSize": { "type": "integer" }, "pages": { "type": "integer" }, "total": { "type": "integer" } } }
-              }
-            } } }
-          }
-        }
-      }
-    },
-    "/trades/{id}": {
-      "get": {
-        "operationId": "getTrade",
-        "summary": "Trade detail: fills, linked journal entry id, group count, and cached chart data.",
-        "parameters": [{ "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }],
-        "responses": {
-          "200": { "description": "OK", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/TradeDetail" } } } },
-          "404": { "description": "Not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    },
-    "/trades/{id}/chart.png": {
-      "get": {
-        "operationId": "getTradeChart",
-        "summary": "Server-rendered candlestick PNG of the trade's chart (cached data only).",
-        "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } },
-          { "name": "contract", "in": "query", "schema": { "type": "string" }, "description": "Pick a contract/root; defaults to the first with data." }
-        ],
-        "responses": {
-          "200": { "description": "PNG image", "content": { "image/png": { "schema": { "type": "string", "format": "binary" } } } },
-          "404": { "description": "No cached chart data", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } }
-        }
-      }
-    }
+ "openapi": "3.1.0",
+ "info": {
+  "title": "Trading Journal API",
+  "version": "v1",
+  "description": "Read strategies, journal entries, trades and daily P&L / trade stats, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content). Poll /version to learn when the user's data changed."
+ },
+ "servers": [
+  {
+   "url": "/api/v1"
   }
+ ],
+ "security": [
+  {
+   "bearerApiKey": []
+  }
+ ],
+ "components": {
+  "securitySchemes": {
+   "bearerApiKey": {
+    "type": "http",
+    "scheme": "bearer",
+    "description": "Authorization: Bearer tj_... (the API also accepts the key in an X-API-Key header at runtime, but the spec advertises one scheme since ChatGPT supports only one)."
+   }
+  },
+  "schemas": {
+   "AnalyticsSummary": {
+    "type": "object",
+    "description": "Everything /analytics shows for the same filter. Money is in the account currency; R values are multiples of the trade's planned risk.",
+    "properties": {
+     "from": {
+      "type": "string"
+     },
+     "to": {
+      "type": "string"
+     },
+     "timezone": {
+      "type": "string"
+     },
+     "totals": {
+      "type": "object",
+      "properties": {
+       "trades": {
+        "type": "integer"
+       },
+       "wins": {
+        "type": "integer"
+       },
+       "losses": {
+        "type": "integer"
+       },
+       "winRate": {
+        "type": "number"
+       },
+       "net": {
+        "type": "number"
+       },
+       "gross": {
+        "type": "number"
+       },
+       "commission": {
+        "type": "number"
+       },
+       "avgWin": {
+        "type": "number"
+       },
+       "avgLoss": {
+        "type": "number",
+        "description": "negative"
+       },
+       "payoffRatio": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "avgWin / |avgLoss|"
+       },
+       "profitFactor": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "sum of wins / sum of losses; null without losses"
+       },
+       "expectancy": {
+        "type": "number",
+        "description": "per trade, in money"
+       },
+       "largestWin": {
+        "type": "number"
+       },
+       "largestLoss": {
+        "type": "number"
+       }
+      }
+     },
+     "r": {
+      "type": "object",
+      "properties": {
+       "plannedTrades": {
+        "type": "integer",
+        "description": "trades carrying a planned risk; the other fields are meaningless when 0"
+       },
+       "avgR": {
+        "type": "number"
+       },
+       "winRate": {
+        "type": "number"
+       },
+       "avgWinR": {
+        "type": "number"
+       },
+       "avgLossR": {
+        "type": "number"
+       }
+      }
+     },
+     "excursion": {
+      "type": "object",
+      "description": "Price path while open (MAE / MFE from cached bars) over the measured trades; the other fields mean nothing when trades is 0.",
+      "properties": {
+       "trades": {
+        "type": "integer"
+       },
+       "exitEfficiency": {
+        "type": "number",
+        "description": "total gross P&L / total MFE: the share of the profit on the table the exits kept"
+       },
+       "avgMae": {
+        "type": "number"
+       },
+       "avgMfe": {
+        "type": "number"
+       },
+       "winnersAvgMae": {
+        "type": "number",
+        "description": "heat a winning trade sat through, on average"
+       },
+       "losersAvgMfe": {
+        "type": "number",
+        "description": "profit a losing trade had before it turned, on average"
+       }
+      }
+     },
+     "drawdown": {
+      "type": "object",
+      "properties": {
+       "maxDrawdown": {
+        "type": "number",
+        "description": "deepest peak-to-trough fall of cumulative net P&L, positive magnitude"
+       },
+       "maxDrawdownPeakAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       },
+       "maxDrawdownTroughAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       },
+       "maxDrawdownRecoverAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time",
+        "description": "null while the fall is still open"
+       },
+       "maxDrawdownDays": {
+        "type": "integer"
+       },
+       "currentDrawdown": {
+        "type": "number"
+       },
+       "underwater": {
+        "type": "boolean"
+       },
+       "peakAt": {
+        "type": [
+         "string",
+         "null"
+        ],
+        "format": "date-time"
+       }
+      }
+     },
+     "compliance": {
+      "type": "array",
+      "description": "playbook checklist compliance per strategy, over trades whose note carries a strategy with a checklist",
+      "items": {
+       "type": "object",
+       "properties": {
+        "strategy": {
+         "type": "string"
+        },
+        "trades": {
+         "type": "integer"
+        },
+        "avgPct": {
+         "type": "number",
+         "description": "mean share of rules ticked, 0..1"
+        },
+        "complete": {
+         "type": "integer",
+         "description": "trades with every rule ticked"
+        },
+        "completeNet": {
+         "type": "number"
+        },
+        "incompleteNet": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "streaks": {
+      "type": "object",
+      "properties": {
+       "longestWinTrades": {
+        "type": "integer"
+       },
+       "longestLossTrades": {
+        "type": "integer"
+       },
+       "currentTrades": {
+        "type": "integer",
+        "description": "signed: +n wins running, -n losses"
+       },
+       "longestGreenDays": {
+        "type": "integer"
+       },
+       "longestRedDays": {
+        "type": "integer"
+       },
+       "currentDays": {
+        "type": "integer",
+        "description": "signed"
+       }
+      }
+     },
+     "breakdowns": {
+      "type": "object",
+      "description": "bySymbol, byDirection, byStrategy, byTag, byMistake, byEmotion, byDayOfWeek, byHour. A trade with several labels counts in every matching byMistake / byEmotion bucket; (none logged) is the unlabelled rest. Labels reach a trade from its own entry, a group entry it is in, or the day entry of the day it closed.",
+      "additionalProperties": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "key": {
+          "type": "string"
+         },
+         "trades": {
+          "type": "integer"
+         },
+         "wins": {
+          "type": "integer"
+         },
+         "losses": {
+          "type": "integer"
+         },
+         "net": {
+          "type": "number"
+         },
+         "gross": {
+          "type": "number"
+         },
+         "best": {
+          "type": "number"
+         },
+         "worst": {
+          "type": "number"
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "Error": {
+    "type": "object",
+    "properties": {
+     "error": {
+      "type": "string"
+     }
+    },
+    "required": [
+     "error"
+    ]
+   },
+   "Attachment": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "url": {
+      "type": "string",
+      "description": "Fetch with your API key."
+     }
+    }
+   },
+   "Strategy": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string",
+      "description": "Short name."
+     },
+     "body": {
+      "type": "string",
+      "description": "Full description (markdown); image refs rewritten to API URLs."
+     },
+     "attachments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Attachment"
+      }
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "Trade": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "symbol": {
+      "type": "string"
+     },
+     "symbolRoot": {
+      "type": "string"
+     },
+     "direction": {
+      "type": "string",
+      "enum": [
+       "long",
+       "short"
+      ]
+     },
+     "qty": {
+      "type": "number"
+     },
+     "account": {
+      "type": "string"
+     },
+     "entryTime": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "exitTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "grossPnl": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "commission": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "netPnl": {
+      "type": [
+       "number",
+       "null"
+      ]
+     }
+    }
+   },
+   "Summary": {
+    "type": "object",
+    "properties": {
+     "trades": {
+      "type": "integer"
+     },
+     "net": {
+      "type": "number"
+     },
+     "gross": {
+      "type": "number"
+     },
+     "commission": {
+      "type": "number"
+     },
+     "wins": {
+      "type": "integer"
+     },
+     "losses": {
+      "type": "integer"
+     }
+    }
+   },
+   "DayRef": {
+    "type": "object",
+    "properties": {
+     "date": {
+      "type": "string",
+      "example": "2026-08-14"
+     },
+     "net": {
+      "type": "number"
+     }
+    }
+   },
+   "DailyStatsItem": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Summary"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "date": {
+        "type": "string",
+        "example": "2026-08-03",
+        "description": "Trading day in the trading timezone; a trade belongs to the day of its exit."
+       },
+       "winRate": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "wins/(wins+losses); null when no decided trades."
+       },
+       "largestWin": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "null when no winning trade that day."
+       },
+       "largestLoss": {
+        "type": [
+         "number",
+         "null"
+        ],
+        "description": "Negative; null when no losing trade that day."
+       }
+      }
+     }
+    ]
+   },
+   "DailyStatsTotals": {
+    "allOf": [
+     {
+      "$ref": "#/components/schemas/Summary"
+     },
+     {
+      "type": "object",
+      "properties": {
+       "winRate": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "winDays": {
+        "type": "integer",
+        "description": "Days with net > 0."
+       },
+       "lossDays": {
+        "type": "integer",
+        "description": "Days with net < 0."
+       },
+       "bestDay": {
+        "oneOf": [
+         {
+          "$ref": "#/components/schemas/DayRef"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "worstDay": {
+        "oneOf": [
+         {
+          "$ref": "#/components/schemas/DayRef"
+         },
+         {
+          "type": "null"
+         }
+        ]
+       },
+       "largestWin": {
+        "type": [
+         "number",
+         "null"
+        ]
+       },
+       "largestLoss": {
+        "type": [
+         "number",
+         "null"
+        ]
+       }
+      }
+     }
+    ]
+   },
+   "DailyStats": {
+    "type": "object",
+    "properties": {
+     "from": {
+      "type": "string",
+      "example": "2026-08-03",
+      "description": "Effective range start (echoed even when defaulted)."
+     },
+     "to": {
+      "type": "string",
+      "example": "2026-09-01"
+     },
+     "timezone": {
+      "type": "string",
+      "example": "America/Chicago",
+      "description": "The trading timezone every date is in."
+     },
+     "totals": {
+      "$ref": "#/components/schemas/DailyStatsTotals"
+     },
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DailyStatsItem"
+      },
+      "description": "One per day WITH closed trades, ascending; gap days omitted."
+     }
+    }
+   },
+   "DataVersion": {
+    "type": "object",
+    "properties": {
+     "v": {
+      "type": "integer",
+      "description": "Opaque per-user data version. Compare for inequality only (process-local; resets on restart)."
+     }
+    }
+   },
+   "DayPlan": {
+    "type": "object",
+    "properties": {
+     "day": {
+      "type": "string",
+      "example": "2026-10-12"
+     },
+     "bias": {
+      "type": "string",
+      "enum": [
+       "long",
+       "short",
+       "neutral",
+       "flat",
+       ""
+      ],
+      "description": "neutral = both ways, flat = stay out"
+     },
+     "levels": {
+      "type": "string",
+      "description": "one level per line"
+     },
+     "maxTrades": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "decisions; a copy set counts once"
+     },
+     "stopTime": {
+      "type": "string",
+      "description": "HH:MM trading timezone; empty for none"
+     },
+     "maxLoss": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "per account, positive money"
+     },
+     "notes": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "DayPlanInput": {
+    "type": "object",
+    "properties": {
+     "day": {
+      "type": "string",
+      "description": "YYYY-MM-DD or today; default today"
+     },
+     "bias": {
+      "type": "string",
+      "enum": [
+       "long",
+       "short",
+       "neutral",
+       "flat",
+       ""
+      ]
+     },
+     "levels": {
+      "type": "string"
+     },
+     "maxTrades": {
+      "type": "integer"
+     },
+     "stopTime": {
+      "type": "string"
+     },
+     "maxLoss": {
+      "type": "number"
+     },
+     "notes": {
+      "type": "string"
+     }
+    }
+   },
+   "PlanOutcome": {
+    "type": "object",
+    "properties": {
+     "plan": {
+      "$ref": "#/components/schemas/DayPlan"
+     },
+     "checks": {
+      "type": "array",
+      "description": "empty until the day has trades",
+      "items": {
+       "type": "object",
+       "properties": {
+        "key": {
+         "type": "string",
+         "enum": [
+          "bias",
+          "max-trades",
+          "stop-time",
+          "max-loss"
+         ]
+        },
+        "rule": {
+         "type": "string"
+        },
+        "actual": {
+         "type": "string"
+        },
+        "held": {
+         "type": "boolean"
+        }
+       }
+      }
+     },
+     "held": {
+      "type": "integer"
+     },
+     "writtenLate": {
+      "type": "boolean",
+      "description": "the plan was saved after the day's first entry"
+     },
+     "editedLate": {
+      "type": "boolean",
+      "description": "the plan was changed after the day's first entry"
+     }
+    }
+   },
+   "CoachReport": {
+    "type": "object",
+    "properties": {
+     "date": {
+      "type": "string"
+     },
+     "trades": {
+      "type": "integer"
+     },
+     "decisions": {
+      "type": "integer",
+      "description": "copy sets count once"
+     },
+     "baseline": {
+      "type": "object",
+      "description": "the trader's own norms from the preceding weeks; the norm-based checks need 5 trading days",
+      "properties": {
+       "days": {
+        "type": "integer"
+       },
+       "medianDecisions": {
+        "type": "number"
+       },
+       "usualLastEntry": {
+        "type": "string",
+        "description": "HH:MM trading timezone, 90th percentile of entry times"
+       },
+       "medianWinnerHoldSec": {
+        "type": "number"
+       }
+      }
+     },
+     "plan": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/PlanOutcome"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "the day's pre-market plan against the day; absent without one"
+     },
+     "findings": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "key": {
+         "type": "string",
+         "enum": [
+          "plan-bias",
+          "plan-max-trades",
+          "plan-stop-time",
+          "plan-max-loss",
+          "revenge-entry",
+          "size-up-after-loss",
+          "past-stop",
+          "left-on-table",
+          "held-loser",
+          "overtraded",
+          "late-session"
+         ]
+        },
+        "title": {
+         "type": "string"
+        },
+        "detail": {
+         "type": "string",
+         "description": "one sentence with the numbers"
+        },
+        "severity": {
+         "type": "string",
+         "enum": [
+          "warn",
+          "info"
+         ]
+        },
+        "tradeIds": {
+         "type": "array",
+         "items": {
+          "type": "integer"
+         }
+        },
+        "label": {
+         "type": [
+          "object",
+          "null"
+         ],
+         "description": "the review label the finding suggests",
+         "properties": {
+          "kind": {
+           "type": "string"
+          },
+          "key": {
+           "type": "string"
+          },
+          "name": {
+           "type": "string"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "Labels": {
+    "type": "object",
+    "description": "Review labels from the fixed vocabulary. mistakes: chased, early-exit, late-exit, oversized, no-stop, moved-stop, held-loser, revenge, fomo, hesitated, overtraded, against-plan. emotions: calm, focused, confident, anxious, greedy, frustrated, bored, tilted, rushed.",
+    "properties": {
+     "mistakes": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "emotions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "JournalDetail": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "scope": {
+      "type": "string",
+      "enum": [
+       "day",
+       "week",
+       "trade",
+       "group"
+      ]
+     },
+     "date": {
+      "type": "string",
+      "example": "2026-06-02"
+     },
+     "tag": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "enum": [
+       "good",
+       "neutral",
+       "bad",
+       null
+      ]
+     },
+     "mood": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "notes": {
+      "type": "string",
+      "description": "Markdown; image refs rewritten to API URLs."
+     },
+     "labels": {
+      "$ref": "#/components/schemas/Labels"
+     },
+     "checklist": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "The entry's strategy playbook checklist with the trader's ticks; null without a strategy or when the strategy has no checklist.",
+      "properties": {
+       "strategyId": {
+        "type": "integer"
+       },
+       "done": {
+        "type": "integer"
+       },
+       "total": {
+        "type": "integer"
+       },
+       "items": {
+        "type": "array",
+        "items": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer"
+          },
+          "text": {
+           "type": "string"
+          },
+          "checked": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "strategy": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "properties": {
+       "id": {
+        "type": "integer"
+       },
+       "name": {
+        "type": "string"
+       }
+      },
+      "description": "Assigned strategy, short name only (not the full description)."
+     },
+     "summary": {
+      "$ref": "#/components/schemas/Summary"
+     },
+     "trades": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Trade"
+      }
+     },
+     "chart": {
+      "type": "object",
+      "description": "Chart data: OHLC bars + entry/exit markers per contract panel."
+     },
+     "attachments": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Attachment"
+      }
+     },
+     "chartPng": {
+      "type": "string",
+      "description": "URL of the rendered chart image."
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "Execution": {
+    "type": "object",
+    "properties": {
+     "time": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "side": {
+      "type": "string",
+      "enum": [
+       "buy",
+       "sell"
+      ]
+     },
+     "role": {
+      "type": "string",
+      "enum": [
+       "entry",
+       "exit"
+      ]
+     },
+     "qty": {
+      "type": "number",
+      "description": "Qty of this fill attributed to the trade."
+     },
+     "price": {
+      "type": "number"
+     }
+    }
+   },
+   "TradeRow": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "accountId": {
+      "type": "integer"
+     },
+     "account": {
+      "type": "string"
+     },
+     "firm": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "symbol": {
+      "type": "string"
+     },
+     "symbolRoot": {
+      "type": "string"
+     },
+     "direction": {
+      "type": "string",
+      "enum": [
+       "long",
+       "short"
+      ]
+     },
+     "qty": {
+      "type": "number"
+     },
+     "entryPrice": {
+      "type": "number"
+     },
+     "exitPrice": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "entryTime": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "exitTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "grossPnl": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "null for stub instruments awaiting tick setup."
+     },
+     "commission": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "netPnl": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "plannedStop": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "The planned stop price recorded on the trade sheet; null without a plan."
+     },
+     "plannedRisk": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Money at risk per the plan (account currency), derived from the stop via the instrument tick value or typed directly."
+     },
+     "r": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "R multiple: netPnl / plannedRisk. null without a plan."
+     },
+     "mae": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Maximum adverse excursion in money: the most the trade was under water from its average entry. null until measured from cached bars."
+     },
+     "mfe": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Maximum favourable excursion in money: the best the trade ever looked."
+     },
+     "maePoints": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "mfePoints": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "exitEfficiency": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Realized move over MFE: 1 = out at the best price, negative = had profit and closed red. null without MFE."
+     },
+     "excursionBars": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Bar size the excursion was read from (1m, 5m, 1h, 1d)."
+     },
+     "setId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Copy set: copies of one decision across accounts share a setId. null for a decision of its own. Ids change when trades are rebuilt."
+     },
+     "setSize": {
+      "type": "integer",
+      "description": "Members of the set (0 when not in one)."
+     },
+     "status": {
+      "type": "string"
+     },
+     "retired": {
+      "type": "boolean",
+      "description": "Trade is on a retired account."
+     },
+     "hasJournal": {
+      "type": "boolean"
+     },
+     "journalTag": {
+      "type": "string"
+     },
+     "groupCount": {
+      "type": "integer",
+      "description": "Number of group entries that include this trade."
+     }
+    }
+   },
+   "TradeDetail": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "accountId": {
+      "type": "integer"
+     },
+     "account": {
+      "type": "string"
+     },
+     "firm": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "symbol": {
+      "type": "string"
+     },
+     "symbolRoot": {
+      "type": "string"
+     },
+     "direction": {
+      "type": "string",
+      "enum": [
+       "long",
+       "short"
+      ]
+     },
+     "qty": {
+      "type": "number"
+     },
+     "entryPrice": {
+      "type": "number"
+     },
+     "exitPrice": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "entryTime": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "exitTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "grossPnl": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "commission": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "netPnl": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "plannedStop": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "The planned stop price recorded on the trade sheet; null without a plan."
+     },
+     "plannedRisk": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Money at risk per the plan (account currency), derived from the stop via the instrument tick value or typed directly."
+     },
+     "r": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "R multiple: netPnl / plannedRisk. null without a plan."
+     },
+     "mae": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Maximum adverse excursion in money: the most the trade was under water from its average entry. null until measured from cached bars."
+     },
+     "mfe": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Maximum favourable excursion in money: the best the trade ever looked."
+     },
+     "maePoints": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "mfePoints": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "exitEfficiency": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "Realized move over MFE: 1 = out at the best price, negative = had profit and closed red. null without MFE."
+     },
+     "excursionBars": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "Bar size the excursion was read from (1m, 5m, 1h, 1d)."
+     },
+     "setId": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Copy set: copies of one decision across accounts share a setId. null for a decision of its own. Ids change when trades are rebuilt."
+     },
+     "setSize": {
+      "type": "integer",
+      "description": "Members of the set (0 when not in one)."
+     },
+     "status": {
+      "type": "string"
+     },
+     "brokerTradeId": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "hasJournal": {
+      "type": "boolean"
+     },
+     "journalEntryId": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "journalTag": {
+      "type": "string"
+     },
+     "groupCount": {
+      "type": "integer"
+     },
+     "executions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Execution"
+      }
+     },
+     "chart": {
+      "type": "object",
+      "description": "Cached OHLC bars + entry/exit markers per contract panel."
+     },
+     "chartPng": {
+      "type": "string"
+     }
+    }
+   },
+   "JournalCreate": {
+    "type": "object",
+    "required": [
+     "scope"
+    ],
+    "description": "Create body. The required scope-specific field depends on scope: day->date, week->week, trade->tradeId, group->tradeIds.",
+    "properties": {
+     "scope": {
+      "type": "string",
+      "enum": [
+       "day",
+       "week",
+       "trade",
+       "group"
+      ]
+     },
+     "body": {
+      "type": "string",
+      "description": "Markdown. Required for day/week/trade; optional for group."
+     },
+     "tag": {
+      "type": "string",
+      "enum": [
+       "good",
+       "neutral",
+       "bad"
+      ]
+     },
+     "mood": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "description": "Day scope only."
+     },
+     "strategyId": {
+      "type": "integer",
+      "description": "Optional; must be owned."
+     },
+     "date": {
+      "type": "string",
+      "example": "2026-06-02",
+      "description": "scope=day (YYYY-MM-DD, trading tz; not future)."
+     },
+     "week": {
+      "type": "string",
+      "example": "2026-W23",
+      "description": "scope=week (YYYY-Www)."
+     },
+     "tradeId": {
+      "type": "integer",
+      "description": "scope=trade (must be owned)."
+     },
+     "tradeIds": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "scope=group (>=1; non-owned ids dropped)."
+     }
+    }
+   },
+   "Position": {
+    "type": "object",
+    "properties": {
+     "accountId": {
+      "type": "integer"
+     },
+     "account": {
+      "type": "string"
+     },
+     "firm": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "symbol": {
+      "type": "string"
+     },
+     "symbolRoot": {
+      "type": "string"
+     },
+     "direction": {
+      "type": "string",
+      "enum": [
+       "long",
+       "short"
+      ]
+     },
+     "qty": {
+      "type": "number"
+     },
+     "avgEntry": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "openedAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "fills": {
+      "type": "integer"
+     },
+     "lastPrice": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "lastAt": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "priceSource": {
+      "type": "string"
+     },
+     "unrealized": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "stop": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "risk": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "target": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "thesis": {
+      "type": "string"
+     },
+     "planSource": {
+      "type": "string",
+      "description": "trader | api | ai | set (inherited from the copied decision); absent without a plan"
+     },
+     "setPlan": {
+      "type": "boolean"
+     },
+     "ticksToStop": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "beyondStop": {
+      "type": "boolean"
+     },
+     "setLegs": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "account ids of the other legs of the same copied decision"
+     },
+     "stale": {
+      "type": "boolean",
+      "description": "opened more than three days ago: carried, or fills are missing"
+     },
+     "planUrl": {
+      "type": "string"
+     }
+    }
+   },
+   "PositionPlanInput": {
+    "type": "object",
+    "properties": {
+     "stop": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "stop price; alone, the risk follows at the position's size"
+     },
+     "risk": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "money at risk; alone, the stop follows (snapped to tick)"
+     },
+     "target": {
+      "type": [
+       "number",
+       "null"
+      ]
+     },
+     "thesis": {
+      "type": "string"
+     },
+     "allLegs": {
+      "type": "boolean",
+      "description": "on a leg of a copied decision, write the plan on every leg (default true)"
+     }
+    }
+   }
+  }
+ },
+ "paths": {
+  "/stats/daily": {
+   "get": {
+    "operationId": "getDailyStats",
+    "summary": "Daily P&L + trade stats per trading day with range totals - the Calendar's numbers (daily_stats cache; retired accounts never count, excluded-from-stats accounts are dropped unless filtered).",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-08-01"
+      },
+      "description": "First day, inclusive, trading timezone: YYYY-MM-DD or the keyword today|yesterday|last (resolved server-side - never compute the date yourself). Default: to minus 29 days."
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-08-31"
+      },
+      "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last. Default: today. Span at most 400 days."
+     },
+     {
+      "name": "day",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "today"
+      },
+      "description": "Shorthand for from=to=day. Use day=today for the intraday check."
+     },
+     {
+      "name": "filter",
+      "in": "query",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "description": "Repeatable: acc:<id> or type:<slug> (live|prop_live|prop_funded|prop_eval|paper). An explicit filter overrides excluded_from_stats."
+     },
+     {
+      "name": "account_id",
+      "in": "query",
+      "deprecated": true,
+      "schema": {
+       "type": "integer"
+      },
+      "description": "Legacy alias for filter=acc:<id>."
+     },
+     {
+      "name": "refresh",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday today questions."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK (an empty range is a 200 with items: [] and zeroed totals)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DailyStats"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Malformed date, to before from, or span over 400 days",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Missing/invalid API key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/analytics/summary": {
+   "get": {
+    "operationId": "getAnalyticsSummary",
+    "summary": "The /analytics page for a date range as one object: totals, R (over planned trades), drawdown, streaks, and breakdowns by symbol, direction, strategy, tag, weekday and entry hour. Same parameters and account rules as /stats/daily; default range = last 30 days.",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-08-01"
+      },
+      "description": "First day, inclusive, trading timezone: YYYY-MM-DD or today|yesterday|last."
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-08-31"
+      },
+      "description": "Last day, inclusive: YYYY-MM-DD or today|yesterday|last."
+     },
+     {
+      "name": "day",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "yesterday"
+      },
+      "description": "Shorthand for from=to=day."
+     },
+     {
+      "name": "filter",
+      "in": "query",
+      "style": "form",
+      "explode": true,
+      "schema": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       }
+      },
+      "description": "Repeatable: acc:<id> or type:<slug>. An explicit filter lifts the excluded-from-stats rule."
+     },
+     {
+      "name": "refresh",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s)."
+     },
+     {
+      "name": "unit",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "trades",
+        "sets"
+       ]
+      },
+      "description": "What one count means: trades (default), or sets, where a copy set counts once with its money summed."
+     },
+     {
+      "name": "src",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "confirmed"
+       ]
+      },
+      "description": "confirmed: count only tags, strategies and labels the trader set or confirmed in the app, leaving out values written through the API or MCP and never saved in an editor."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AnalyticsSummary"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Malformed date, to before from, or span over 400 days",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Missing/invalid API key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/version": {
+   "get": {
+    "operationId": "getVersion",
+    "summary": "Per-user data version for change detection: poll it and refetch when the value differs from the last one you saw.",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/DataVersion"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/strategies": {
+   "get": {
+    "operationId": "listStrategies",
+    "summary": "List the caller's strategies (name + full markdown + image URLs).",
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Strategy"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "401": {
+      "description": "Missing/invalid API key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/strategies/{id}": {
+   "get": {
+    "operationId": "getStrategy",
+    "summary": "Strategy detail.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Strategy"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal": {
+   "get": {
+    "operationId": "listJournal",
+    "summary": "List journal entries (summary rows).",
+    "parameters": [
+     {
+      "name": "scope",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "day",
+        "week",
+        "trade",
+        "group"
+       ]
+      },
+      "description": "Repeatable."
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-01"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-30"
+      }
+     },
+     {
+      "name": "tag",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "good",
+        "neutral",
+        "bad",
+        "untagged"
+       ]
+      }
+     },
+     {
+      "name": "strategy",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "Strategy id, or 'none'."
+     },
+     {
+      "name": "mistake",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "Repeatable. Mistake label key (see Labels), or 'none' for entries with no mistake logged."
+     },
+     {
+      "name": "emotion",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "Repeatable. Emotion label key (see Labels)."
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 50,
+       "maximum": 200
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 0
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "type": "object"
+           }
+          },
+          "page": {
+           "type": "object",
+           "properties": {
+            "limit": {
+             "type": "integer"
+            },
+            "offset": {
+             "type": "integer"
+            },
+            "count": {
+             "type": "integer"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "operationId": "createJournalEntry",
+    "summary": "Create a journal entry (day/week/trade/group). Day/week/trade are singletons -> 409 if one already exists (use the notes endpoint to append); group always creates.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JournalCreate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Created (returns the entry in the GET /journal/{id} shape; Location header set)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JournalDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Validation error (missing/invalid field for the scope)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "An entry already exists for this date/week/trade",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "entryId": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/prepare-day": {
+   "post": {
+    "operationId": "prepareDay",
+    "summary": "Prepare a day for review: cluster copytrader fan-out into group entries and solos into trade entries, create the missing ones (idempotent), and return them to analyze (by entryId). Defaults to the last trading day before today.",
+    "requestBody": {
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "date": {
+          "type": "string",
+          "example": "2026-05-12",
+          "description": "YYYY-MM-DD; default = last trading day before today."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "date": {
+           "type": "string"
+          },
+          "entries": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "entryId": {
+              "type": "integer"
+             },
+             "scope": {
+              "type": "string",
+              "enum": [
+               "group",
+               "trade"
+              ]
+             },
+             "created": {
+              "type": "boolean"
+             },
+             "alreadyAnalyzed": {
+              "type": "boolean"
+             },
+             "label": {
+              "type": "string"
+             },
+             "symbolRoot": {
+              "type": "string"
+             },
+             "direction": {
+              "type": "string"
+             },
+             "accounts": {
+              "type": "integer"
+             },
+             "netPnl": {
+              "type": [
+               "number",
+               "null"
+              ]
+             },
+             "tradeIds": {
+              "type": "array",
+              "items": {
+               "type": "integer"
+              }
+             }
+            }
+           }
+          },
+          "note": {
+           "type": "string"
+          },
+          "checks": {
+           "$ref": "#/components/schemas/CoachReport",
+           "description": "The day's coach checks (see GET /coach); absent when they could not run."
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}": {
+   "get": {
+    "operationId": "getJournalEntry",
+    "summary": "Journal entry detail (notes, tag, mood, strategy short name, trades overview + list, chart data, attachments).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JournalDetail"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}/notes": {
+   "post": {
+    "operationId": "appendNote",
+    "summary": "Append a dated note to the entry's body. Append-only: existing content is never removed.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "note"
+        ],
+        "properties": {
+         "note": {
+          "type": "string",
+          "description": "Markdown; appended under a dated heading."
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "Appended",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer"
+          },
+          "appended": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Empty/invalid note",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Entry not found (the API does not create entries)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}/strategy": {
+   "post": {
+    "operationId": "assignStrategy",
+    "summary": "Assign a strategy to the entry, but only if it has none yet - an existing assignment is never changed (assigned=false then).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "strategyId"
+        ],
+        "properties": {
+         "strategyId": {
+          "type": "integer"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer"
+          },
+          "assigned": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Unknown entry/strategy or missing strategyId",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}/tag": {
+   "post": {
+    "operationId": "setTag",
+    "summary": "Set the entry's tag (good|neutral|bad), but only if it has none yet - an existing tag is never changed (assigned=false then).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "tag"
+        ],
+        "properties": {
+         "tag": {
+          "type": "string",
+          "enum": [
+           "good",
+           "neutral",
+           "bad"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer"
+          },
+          "assigned": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Unknown entry or bad/missing tag",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}/labels": {
+   "post": {
+    "operationId": "addLabels",
+    "summary": "Add mistake and/or emotion labels to the entry. Additive: existing labels are kept, duplicates ignored; only the UI removes labels. Keys must come from the fixed vocabulary (see Labels).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/Labels"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The entry's labels after the add",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer"
+          },
+          "labels": {
+           "$ref": "#/components/schemas/Labels"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Unknown label key or empty body",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Entry not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/coach": {
+   "get": {
+    "operationId": "getCoachChecks",
+    "summary": "Rule-based coach checks for a trading day: re-entry within a minute of a loss, size up after a loss, heat past the planned stop, a winner that kept under a quarter of its best move, a loser held several times a usual winner, more decisions than the trader's usual day, entries past the usual hour. Observations with numbers, trade ids and suggested labels; not verdicts.",
+    "parameters": [
+     {
+      "name": "day",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "yesterday"
+      },
+      "description": "Trading day: YYYY-MM-DD or today|yesterday|last; default = the last trading day."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/CoachReport"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad day",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/digest": {
+   "get": {
+    "operationId": "getWeeklyDigest",
+    "summary": "The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before, keep and fix sentences derived from the numbers, best and worst decision, the coach's findings tallied across the days, how the day plans held, the week's AI review lessons, and the week's analytics summary.",
+    "parameters": [
+     {
+      "name": "week",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-W41"
+      },
+      "description": "YYYY-Www; default the week of the last trading day."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "week": {
+           "type": "string"
+          },
+          "from": {
+           "type": "string"
+          },
+          "to": {
+           "type": "string"
+          },
+          "tradingDays": {
+           "type": "integer"
+          },
+          "kpis": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "key": {
+              "type": "string",
+              "enum": [
+               "net",
+               "decisions",
+               "winRate",
+               "profitFactor",
+               "avgR",
+               "exitKept"
+              ]
+             },
+             "label": {
+              "type": "string"
+             },
+             "value": {
+              "type": [
+               "number",
+               "null"
+              ]
+             },
+             "previous": {
+              "type": [
+               "number",
+               "null"
+              ]
+             }
+            }
+           }
+          },
+          "keep": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "fix": {
+           "type": "array",
+           "items": {
+            "type": "string"
+           }
+          },
+          "bestDecision": {
+           "type": [
+            "object",
+            "null"
+           ]
+          },
+          "worstDecision": {
+           "type": [
+            "object",
+            "null"
+           ]
+          },
+          "coach": {
+           "type": "array",
+           "items": {
+            "type": "object",
+            "properties": {
+             "key": {
+              "type": "string"
+             },
+             "title": {
+              "type": "string"
+             },
+             "severity": {
+              "type": "string"
+             },
+             "count": {
+              "type": "integer"
+             },
+             "days": {
+              "type": "integer"
+             }
+            }
+           }
+          },
+          "plan": {
+           "type": "object",
+           "properties": {
+            "tradingDays": {
+             "type": "integer"
+            },
+            "planned": {
+             "type": "integer"
+            },
+            "writtenLate": {
+             "type": "integer"
+            },
+            "rules": {
+             "type": "array",
+             "items": {
+              "type": "object",
+              "properties": {
+               "key": {
+                "type": "string"
+               },
+               "name": {
+                "type": "string"
+               },
+               "held": {
+                "type": "integer"
+               },
+               "total": {
+                "type": "integer"
+               }
+              }
+             }
+            }
+           }
+          },
+          "lessons": {
+           "type": "array",
+           "description": "The week's AI review lessons, grouped by the mistake they are about.",
+           "items": {
+            "type": "object",
+            "properties": {
+             "mistake": {
+              "type": "string"
+             },
+             "mistakeName": {
+              "type": "string"
+             },
+             "count": {
+              "type": "integer"
+             },
+             "open": {
+              "type": "integer",
+              "description": "Not yet marked learned."
+             },
+             "lesson": {
+              "type": "string",
+              "description": "The newest lesson's words."
+             },
+             "day": {
+              "type": "string"
+             }
+            }
+           }
+          },
+          "this": {
+           "$ref": "#/components/schemas/AnalyticsSummary"
+          },
+          "previous": {
+           "$ref": "#/components/schemas/AnalyticsSummary"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad week",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/plan": {
+   "get": {
+    "operationId": "getDayPlan",
+    "summary": "The trader's pre-market plan for a day and how the day measured against it (one check per rule, held or not).",
+    "parameters": [
+     {
+      "name": "day",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "today"
+      },
+      "description": "YYYY-MM-DD or today|yesterday|last; default today."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "day": {
+           "type": "string"
+          },
+          "plan": {
+           "oneOf": [
+            {
+             "$ref": "#/components/schemas/DayPlan"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          },
+          "outcome": {
+           "oneOf": [
+            {
+             "$ref": "#/components/schemas/PlanOutcome"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad day",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "operationId": "setDayPlan",
+    "summary": "Write or amend the plan for today or a future day. Present fields replace the stored ones (an empty string or 0 clears), absent fields are kept; a plan left empty is removed. Past days are refused: their record is edited in the app, where a late edit is flagged.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DayPlanInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The stored plan (null when it ended up empty)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "plan": {
+           "oneOf": [
+            {
+             "$ref": "#/components/schemas/DayPlan"
+            },
+            {
+             "type": "null"
+            }
+           ]
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Past day or invalid field",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}/chart.png": {
+   "get": {
+    "operationId": "getJournalChart",
+    "summary": "Server-rendered candlestick PNG of the entry's chart (cached data only).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "contract",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "Pick a contract/root when the entry spans several; defaults to the first."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "PNG image",
+      "content": {
+       "image/png": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No cached chart data",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/attachments/{id}": {
+   "get": {
+    "operationId": "getAttachment",
+    "summary": "Fetch an embedded image referenced by a strategy/journal body the caller owns.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Image bytes",
+      "content": {
+       "image/png": {},
+       "image/jpeg": {},
+       "image/gif": {},
+       "image/webp": {}
+      }
+     },
+     "404": {
+      "description": "Not found / not owned",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trades": {
+   "get": {
+    "operationId": "listTrades",
+    "summary": "List closed trades (filtered, paged; page size 50). Retired accounts and accounts hidden in Settings (excluded_from_stats) are left out by default; an explicit account_id / filter overrides the visibility rule, show_retired the retired one.",
+    "parameters": [
+     {
+      "name": "symbol_root",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "e.g. MES"
+     },
+     {
+      "name": "direction",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "long",
+        "short"
+       ]
+      }
+     },
+     {
+      "name": "outcome",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "win",
+        "loss",
+        "breakeven"
+       ]
+      }
+     },
+     {
+      "name": "risk",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "planned",
+        "past-stop"
+       ]
+      },
+      "description": "planned: trades carrying a stop or risk; past-stop: planned trades whose measured heat (mae) exceeded plannedRisk."
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-01"
+      },
+      "description": "Inclusive lower bound on the exit day (trading timezone): YYYY-MM-DD or today|yesterday|last (resolved server-side)."
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "2026-06-30"
+      },
+      "description": "Inclusive upper bound: YYYY-MM-DD or today|yesterday|last. For today's trades send from=today&to=today."
+     },
+     {
+      "name": "account_id",
+      "in": "query",
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "page",
+      "in": "query",
+      "schema": {
+       "type": "integer",
+       "default": 1
+      }
+     },
+     {
+      "name": "show_retired",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      }
+     },
+     {
+      "name": "refresh",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before listing."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/TradeRow"
+           }
+          },
+          "page": {
+           "type": "object",
+           "properties": {
+            "page": {
+             "type": "integer"
+            },
+            "pageSize": {
+             "type": "integer"
+            },
+            "pages": {
+             "type": "integer"
+            },
+            "total": {
+             "type": "integer"
+            }
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trades/{id}": {
+   "get": {
+    "operationId": "getTrade",
+    "summary": "Trade detail: fills, linked journal entry id, group count, and cached chart data.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/TradeDetail"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/trades/{id}/chart.png": {
+   "get": {
+    "operationId": "getTradeChart",
+    "summary": "Server-rendered candlestick PNG of the trade's chart (cached data only).",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "contract",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "Pick a contract/root; defaults to the first with data."
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "PNG image",
+      "content": {
+       "image/png": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No cached chart data",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/positions": {
+   "get": {
+    "operationId": "listPositions",
+    "summary": "The caller's open positions right now, each with the plan recorded on it. Not trades yet: a position becomes a trade, carrying its plan, when it closes.",
+    "parameters": [
+     {
+      "name": "refresh",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "example": "1"
+      },
+      "description": "pull the latest broker fills first and wait for them (~15 s max)"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "OK",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Position"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/positions/{account}/{symbol}/plan": {
+   "post": {
+    "operationId": "setPositionPlan",
+    "summary": "Record the plan on an open position (source api: shown as set through the API until the trader saves it). The whole plan is replaced; an empty body clears it.",
+    "parameters": [
+     {
+      "name": "account",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "symbol",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PositionPlanInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The position with its plan",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "position": {
+           "$ref": "#/components/schemas/Position"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid field",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your account",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No open position on this account and contract",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  }
+ }
 }

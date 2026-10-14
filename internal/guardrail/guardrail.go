@@ -131,6 +131,7 @@ type Nudge struct {
 	Detail   string
 	Mistake  string // the mistake label it is about, for the lesson
 	Plan     bool   // a plan rule: quotes the top lesson when none is about it
+	Href     string // where the nudge leads; the day page when empty
 }
 
 // dayTrade is a closed trade of the day.
@@ -156,8 +157,9 @@ func (s *Service) Check(ctx context.Context, uid int64, dataChanged bool) ([]mod
 		return nil, err
 	}
 	var cands []Nudge
+	var trades []dayTrade
 	if dataChanged {
-		trades, err := s.dayTrades(ctx, uid, day)
+		trades, err = s.dayTrades(ctx, uid, day)
 		if err != nil {
 			return nil, err
 		}
@@ -171,6 +173,20 @@ func (s *Service) Check(ctx context.Context, uid int64, dataChanged bool) ([]mod
 		}
 	}
 	cands = append(cands, stopTime(plan, day, now, s.fresh())...)
+	// What is open right now, on the clock: a stop still missing minutes
+	// after the fill, open risk past what the plan leaves.
+	legs, names, err := s.openLegs(ctx, uid)
+	if err != nil {
+		return nil, err
+	}
+	if len(legs) > 0 {
+		if trades == nil {
+			if trades, err = s.dayTrades(ctx, uid, day); err != nil {
+				return nil, err
+			}
+		}
+		cands = append(cands, fromOpenPositions(legs, names, plan, trades, now, s.fresh())...)
+	}
 	if len(cands) == 0 {
 		return nil, nil
 	}
@@ -184,8 +200,12 @@ func (s *Service) Check(ctx context.Context, uid int64, dataChanged bool) ([]mod
 		} else if c.Plan && lessons.top != "" {
 			lesson = &lessons.top
 		}
+		href := c.Href
+		if href == "" {
+			href = "/journal/" + key
+		}
 		n := models.Nudge{UserID: uid, Day: key, Key: c.Key, Ref: c.Ref, Severity: c.Severity, Title: c.Title, Detail: c.Detail,
-			Lesson: lesson, Href: "/journal/" + key}
+			Lesson: lesson, Href: href}
 		added, err := q.InsertNudge(ctx, models.InsertNudgeParams{UserID: n.UserID, Day: n.Day, Key: n.Key, Ref: n.Ref,
 			Severity: n.Severity, Title: n.Title, Detail: n.Detail, Lesson: n.Lesson, Href: n.Href})
 		if err != nil {

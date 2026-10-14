@@ -695,6 +695,46 @@ data. `404` if you don't own it.
 trade. The `chart` field has the same shape as the journal
 [`chart` field](#the-chart-field).
 
+### Open positions
+
+`GET /api/v1/positions` returns what is open right now: every account and
+contract whose fills do not net flat, with the FIFO average entry of the
+contracts still open, the freshest price a provider gives, the unrealised
+P&L at it, and the **plan** recorded on the position - stop, risk, target,
+thesis - with `planSource` saying who set it (`trader`, `api`, `ai`, or
+`set` for a leg that inherited the copied decision's plan) and `setLegs`
+naming the other accounts of the same decision. A position is not a trade
+yet: it becomes one, carrying its plan, when it closes. `?refresh=1` pulls
+the latest broker fills first.
+
+```jsonc
+{
+  "items": [
+    {
+      "accountId": 7, "account": "APEX-100001-28", "firm": "apex",
+      "symbol": "MESZ6", "symbolRoot": "MES", "direction": "long", "qty": 3,
+      "avgEntry": 7766.33, "openedAt": "2026-10-14T20:23:04Z", "fills": 2,
+      "lastPrice": 7767.25, "lastAt": "2026-10-14T20:31:00Z", "priceSource": "Yahoo", "unrealized": 13.75,
+      "stop": 7755, "risk": 170, "target": 7790, "thesis": "reclaim of the overnight high",
+      "planSource": "trader", "setPlan": true, "ticksToStop": 49, "beyondStop": false,
+      "setLegs": [6], "stale": false,
+      "planUrl": "/api/v1/positions/7/MESZ6/plan"
+    }
+  ]
+}
+```
+
+`POST /api/v1/positions/{account}/{symbol}/plan` with `{"stop": 7755,
+"target": 7790, "thesis": "..."}` records the plan. The whole plan is
+replaced (pass every field to keep); a stop alone derives the risk at the
+position's size, a risk alone derives the stop snapped to tick; an empty
+body clears it. On a leg of a copied decision the plan goes on every leg
+unless `"allLegs": false`. The plan is written with source `api`: the
+position's sheet shows it dashed until the trader saves it, the same way
+a tag or label written through the API is marked. The MCP tools
+`list_positions` and `set_position_plan` are the same calls. Write only
+what the trader stated; a stop they did not give is not a plan.
+
 ### Trade chart image (PNG)
 
 `GET /api/v1/trades/{id}/chart.png` - same renderer and `?contract=` rule as the
