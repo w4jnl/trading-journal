@@ -119,3 +119,69 @@ func TestOpenPositionNudges_StaleIsQuiet(t *testing.T) {
 		}
 	}
 }
+
+// The newest cached price through the recorded stop is said once per leg,
+// only while that price is fresh, and never without a stop.
+func TestOpenPositionNudges_ThroughStop(t *testing.T) {
+	s, conn, uid := guardFixture(t)
+	ctx := context.Background()
+	q := models.New(conn)
+	opened := at(14, 5, 0)
+	if _, err := q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: 1, BrokerExecID: "L1", ImportMethod: "motivewave_csv",
+		Symbol: "ESZ6", SymbolRoot: "ES", Side: "buy", Qty: 1, Price: 7000, ExecTime: opened}); err != nil {
+		t.Fatal(err)
+	}
+	first, _ := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{AccountID: 1, BrokerExecID: "L1"})
+	price, priceAt := 6999.0, at(14, 6, 0)
+	s.LastClose = func(context.Context, string) (float64, time.Time, bool) { return price, priceAt, true }
+	s.Now = func() time.Time { return at(14, 6, 30) }
+	got, _ := s.Check(ctx, uid, true)
+	for _, n := range got {
+		if n.Key == "past-stop-live" {
+			t.Fatalf("no stop recorded, yet: %+v", n)
+		}
+	}
+	stop := 6997.0
+	if _, err := q.CreatePositionPlan(ctx, models.CreatePositionPlanParams{AccountID: 1, Symbol: "ESZ6", OpenExecID: first.ID, OpenedAt: first.ExecTime, Stop: &stop, Risk: f64(150), Source: "trader"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ = s.Check(ctx, uid, true)
+	for _, n := range got {
+		if n.Key == "past-stop-live" {
+			t.Fatalf("price above the stop, yet: %+v", n)
+		}
+	}
+	price = 6996.5
+	got, _ = s.Check(ctx, uid, false)
+	var hit *models.Nudge
+	for i := range got {
+		if got[i].Key == "past-stop-live" {
+			hit = &got[i]
+		}
+	}
+	if hit == nil || !strings.Contains(hit.Detail, "Last 6996.50 against the recorded stop 6997") || !strings.Contains(hit.Href, "sheet=pos%3A1%3AESZ6") {
+		t.Fatalf("through-stop nudge = %+v (all %+v)", hit, got)
+	}
+	if again, _ := s.Check(ctx, uid, false); len(again) != 0 {
+		t.Errorf("said twice: %+v", again)
+	}
+	// A stale price (an hour old) never nudges.
+	s2, conn2, uid2 := guardFixture(t)
+	q2 := models.New(conn2)
+	if _, err := q2.InsertExecution(ctx, models.InsertExecutionParams{AccountID: 1, BrokerExecID: "L2", ImportMethod: "motivewave_csv",
+		Symbol: "ESZ6", SymbolRoot: "ES", Side: "buy", Qty: 1, Price: 7000, ExecTime: opened}); err != nil {
+		t.Fatal(err)
+	}
+	e2, _ := q2.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{AccountID: 1, BrokerExecID: "L2"})
+	if _, err := q2.CreatePositionPlan(ctx, models.CreatePositionPlanParams{AccountID: 1, Symbol: "ESZ6", OpenExecID: e2.ID, OpenedAt: e2.ExecTime, Stop: &stop, Source: "trader"}); err != nil {
+		t.Fatal(err)
+	}
+	s2.LastClose = func(context.Context, string) (float64, time.Time, bool) { return 6990, at(13, 0, 0), true }
+	s2.Now = func() time.Time { return at(14, 6, 30) }
+	got, _ = s2.Check(ctx, uid2, true)
+	for _, n := range got {
+		if n.Key == "past-stop-live" {
+			t.Errorf("stale price nudged: %+v", n)
+		}
+	}
+}

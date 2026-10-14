@@ -529,6 +529,19 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	if lessons := h.aiRecentLessons(ctx, e.ID); len(lessons) > 0 {
 		out["recentLessons"] = lessons
 	}
+	// A decision is judged with the session as it stood at its entry: the
+	// structure and the bars known then, never what followed.
+	if decision && len(linked) > 0 {
+		first := linked[0]
+		for _, t := range linked[1:] {
+			if t.EntryTime.Before(first.EntryTime) {
+				first = t
+			}
+		}
+		if session := h.aiSession(ctx, first.SymbolRoot, first.EntryTime); session != nil {
+			out["sessionAtEntry"] = session
+		}
+	}
 
 	if e.StrategyID != nil {
 		if s, err := h.Queries.GetStrategy(ctx, models.GetStrategyParams{ID: *e.StrategyID, UserID: userID(ctx)}); err == nil {

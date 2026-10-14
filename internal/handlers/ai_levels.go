@@ -38,7 +38,7 @@ import (
 const aiKindPositionLevels = "position_levels"
 
 // aiLevelsPrompt is the system prompt of a levels suggestion.
-const aiLevelsPrompt = `You help a futures day trader place the stop and the profit target on a position that is OPEN RIGHT NOW. The user message is JSON: the position (direction, average entry, size, time open, unrealized P&L at the last price), the recent bars ending now (times in the trader's timezone, newest last; the chart image shows the same bars when attached), the trader's day plan (bias, levels they marked, the max loss per account and how much of it the day still allows), the lab's evidence for this instrument (the stop and target distances in points that paid best over the trader's own past decisions, with the win rate), the trader's strategies, their recent lessons, and the plan they recorded so far, if any.
+const aiLevelsPrompt = `You help a futures day trader place the stop and the profit target on a position that is OPEN RIGHT NOW. The user message is JSON: the position (direction, average entry, size, time open, unrealized P&L at the last price), the session as of now - its structure (prior RTH range and close, overnight range, opening range, session extremes, VWAP, ATR, the last swing highs and lows) with the structural levels nearest the last price, and a multi-timeframe window of bars newest last (15m over the last sessions, 5m over the last hours, 1m over the last minutes; the chart image shows the recent bars when attached) - the trader's day plan (bias, levels they marked, the max loss per account and how much of it the day still allows), the lab's evidence for this instrument (the stop and target distances in points that paid best over the trader's own past decisions, with the win rate), the trader's strategies, their recent lessons, and the plan they recorded so far, if any.
 
 Rules:
 - Propose levels, never actions on orders: the trader places every order themselves.
@@ -85,7 +85,7 @@ type aiLevelsRaw struct {
 // parseAILevels reads the model's JSON (code fences tolerated) and checks it
 // against the position: the stop on the losing side of the entry, the
 // targets on the winning side, every level within the bars' range widened
-// by a quarter (when bars were shown), prices snapped to the tick. Risk and
+// by a margin (when bars were shown), prices snapped to the tick. Risk and
 // reward:risk are the app's own numbers.
 func parseAILevels(text string, direction string, entry, qty float64, inst models.Instrument, low, high float64) (aiLevels, error) {
 	s := strings.TrimSpace(text)
@@ -132,7 +132,10 @@ func parseAILevels(text string, direction string, entry, qty float64, inst model
 		out.Target2 = nil
 	}
 	if high > low {
-		margin := (high - low) * 0.25
+		// Room beyond the bars: a quarter of their range, and never less
+		// than half a percent of price, so a quiet window does not refuse
+		// a stop a few points outside it while a level far away still fails.
+		margin := math.Max((high-low)*0.25, entry*0.005)
 		for _, p := range []float64{out.Stop, out.Target} {
 			if p < low-margin || p > high+margin {
 				return aiLevels{}, fmt.Errorf("the model's level %g lies outside the bars shown (%g to %g)", p, low, high)
@@ -225,12 +228,22 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 	if pos.InSet() {
 		payload["copiedDecision"] = map[string]any{"legs": len(pos.Legs) + 1, "setRisk": pos.SetRisk}
 	}
+	// The session as a trader reads it (structure plus a multi-timeframe
+	// window from the cached one-minute bars), with the chart panel kept
+	// for the image and for the range the levels must fall in.
 	panel, window := h.positionBars(ctx, *pos, now)
 	low, high := 0.0, 0.0
 	barsTf := ""
-	if window != nil {
+	if session := h.aiSession(ctx, pos.SymbolRoot, now); session != nil {
+		payload["session"] = session
+		if tf, ok := session["barsStoredAt"].(string); ok {
+			barsTf = tf
+		}
+	} else if window != nil {
 		payload["bars"] = window
 		barsTf, _ = window["tf"].(string)
+	}
+	if panel != nil {
 		for _, b := range panel.Bars {
 			if low == 0 || b.Low < low {
 				low = b.Low
@@ -292,7 +305,7 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 		return err
 	}
 	lv.Last, lv.At, lv.BarsTf = pos.LastPrice, now, barsTf
-	if window == nil {
+	if barsTf == "" {
 		lv.Warnings = append(lv.Warnings, "no bars were available: the levels were judged from the position and the plan only")
 	}
 	data, _ := json.Marshal(lv)
