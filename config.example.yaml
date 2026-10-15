@@ -159,6 +159,19 @@ gex:
 secrets:
   encryption_key: ""
 
+# Push notifications to the phone app (Apple Push Notification service).
+# The .p8 key of your developer account (Certificates, Identifiers &
+# Profiles > Keys, with the APNs capability): give its path or the PEM
+# itself (env TJ_APNS_KEY), its key id, your team id and the app's bundle
+# id. Push is on when a key is set; one key serves Xcode and TestFlight
+# builds alike. Phones register from the app after pairing.
+apns:
+  # enabled: false           # uncomment to force-disable with the key still set
+  key_file: ""               # e.g. /etc/trading-journal/AuthKey_ABC123DEF4.p8
+  key_id: ""
+  team_id: ""
+  topic: "nl.w4j.tradingjournal"
+
 # TopstepX (ProjectX Gateway) API sync. Users connect their own TopstepX
 # username + API key in Settings; trades then sync automatically on page
 # visits (throttled) and hourly during CME Globex hours. The feature turns on

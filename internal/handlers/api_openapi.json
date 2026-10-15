@@ -2034,6 +2034,362 @@
       "type": "number"
      }
     }
+   },
+   "Nudge": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "day": {
+      "type": "string"
+     },
+     "key": {
+      "type": "string"
+     },
+     "ref": {
+      "type": "string"
+     },
+     "severity": {
+      "type": "string"
+     },
+     "title": {
+      "type": "string"
+     },
+     "detail": {
+      "type": "string"
+     },
+     "lesson": {
+      "type": "string",
+      "nullable": true
+     },
+     "href": {
+      "type": "string",
+      "description": "The web page it leads to"
+     },
+     "route": {
+      "type": "string",
+      "description": "The app route it leads to: today, day/<date>, trade/<id>, position/<account>/<symbol>"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "deliveredAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "seenAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     }
+    }
+   },
+   "Today": {
+    "type": "object",
+    "description": "The day in one object; see API.md 'Today'.",
+    "properties": {
+     "day": {
+      "type": "string"
+     },
+     "timezone": {
+      "type": "string"
+     },
+     "v": {
+      "type": "integer"
+     },
+     "asOf": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "session": {
+      "type": "object",
+      "properties": {
+       "rthStart": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "rthEnd": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "inGlobex": {
+        "type": "boolean"
+       },
+       "inRth": {
+        "type": "boolean"
+       }
+      }
+     },
+     "stats": {
+      "$ref": "#/components/schemas/DailyStatsTotals"
+     },
+     "unrealized": {
+      "type": "object",
+      "properties": {
+       "total": {
+        "type": "number"
+       },
+       "stale": {
+        "type": "boolean"
+       },
+       "priced": {
+        "type": "integer"
+       },
+       "unpriced": {
+        "type": "integer"
+       }
+      }
+     },
+     "positions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Position"
+      }
+     },
+     "plan": {
+      "type": "object",
+      "properties": {
+       "plan": {
+        "$ref": "#/components/schemas/DayPlan",
+        "nullable": true
+       },
+       "outcome": {
+        "$ref": "#/components/schemas/PlanOutcome",
+        "nullable": true
+       },
+       "tradesUsed": {
+        "type": "integer"
+       },
+       "maxTrades": {
+        "type": "integer",
+        "nullable": true
+       },
+       "lossUsed": {
+        "type": "number"
+       },
+       "maxLoss": {
+        "type": "number",
+        "nullable": true
+       },
+       "worstAccount": {
+        "type": "string"
+       }
+      }
+     },
+     "nudges": {
+      "type": "object",
+      "properties": {
+       "unseen": {
+        "type": "integer"
+       },
+       "badge": {
+        "type": "integer"
+       },
+       "items": {
+        "type": "array",
+        "items": {
+         "$ref": "#/components/schemas/Nudge"
+        }
+       }
+      }
+     },
+     "lastFillAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "lastTrade": {
+      "type": "object",
+      "nullable": true,
+      "properties": {
+       "id": {
+        "type": "integer"
+       },
+       "symbolRoot": {
+        "type": "string"
+       },
+       "direction": {
+        "type": "string"
+       },
+       "netPnl": {
+        "type": "number"
+       },
+       "exitTime": {
+        "type": "string",
+        "format": "date-time"
+       },
+       "account": {
+        "type": "string"
+       }
+      }
+     },
+     "curve": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "t": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "net": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "equity": {
+      "type": "object",
+      "properties": {
+       "known": {
+        "type": "boolean"
+       },
+       "now": {
+        "type": "number"
+       },
+       "byType": {
+        "type": "array",
+        "items": {
+         "type": "object"
+        }
+       },
+       "dayChange": {
+        "type": "number"
+       },
+       "currentDrawdown": {
+        "type": "number"
+       },
+       "underwater": {
+        "type": "boolean"
+       }
+      }
+     }
+    }
+   },
+   "KindPrefs": {
+    "type": "object",
+    "properties": {
+     "off": {
+      "type": "boolean"
+     },
+     "sound": {
+      "type": "string",
+      "enum": [
+       "tj",
+       "default",
+       "none"
+      ]
+     },
+     "timeSensitive": {
+      "type": "boolean"
+     }
+    }
+   },
+   "DevicePrefs": {
+    "type": "object",
+    "description": "The phone's notification settings, sent whole. Kinds: nudge, tradeClosed, planMissing (opt-in).",
+    "properties": {
+     "kinds": {
+      "type": "object",
+      "additionalProperties": {
+       "$ref": "#/components/schemas/KindPrefs"
+      }
+     },
+     "noActivity": {
+      "type": "boolean"
+     },
+     "finishedAsNotification": {
+      "type": "boolean"
+     },
+     "quietOutsideRth": {
+      "type": "boolean"
+     }
+    }
+   },
+   "DeviceActivity": {
+    "type": "object",
+    "required": [
+     "id",
+     "token"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "token": {
+      "type": "string",
+      "description": "The activity's update token, hex"
+     },
+     "kind": {
+      "type": "string",
+      "default": "session"
+     }
+    }
+   },
+   "Device": {
+    "type": "object",
+    "properties": {
+     "token": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "sandbox": {
+      "type": "boolean"
+     },
+     "bundleId": {
+      "type": "string"
+     },
+     "prefs": {
+      "$ref": "#/components/schemas/DevicePrefs"
+     },
+     "activityStart": {
+      "type": "boolean"
+     },
+     "activities": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DeviceActivity"
+      }
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lastSeenAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "DeviceRegistration": {
+    "type": "object",
+    "required": [
+     "token"
+    ],
+    "properties": {
+     "token": {
+      "type": "string",
+      "description": "The APNs device token, hex"
+     },
+     "name": {
+      "type": "string"
+     },
+     "sandbox": {
+      "type": "boolean",
+      "description": "true for a Debug (Xcode) build, whose tokens belong to Apple's sandbox service"
+     },
+     "bundleId": {
+      "type": "string"
+     },
+     "prefs": {
+      "$ref": "#/components/schemas/DevicePrefs"
+     }
+    }
    }
   }
  },
@@ -4275,6 +4631,487 @@
      },
      "400": {
       "description": "Bad date",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/today": {
+   "get": {
+    "operationId": "today",
+    "summary": "The day in one object: stats, open positions and unrealised P&L, the plan and how much of it is used, nudges, the curve, equity",
+    "parameters": [
+     {
+      "name": "refresh",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      },
+      "description": "Pull the latest broker fills first"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Today",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Today"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/events": {
+   "get": {
+    "operationId": "events",
+    "summary": "Server-sent events (text/event-stream): 'version' events with {\"v\":N} after every change of your data, a ': ping' comment every 25 s",
+    "responses": {
+     "200": {
+      "description": "The stream",
+      "content": {
+       "text/event-stream": {
+        "schema": {
+         "type": "string"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/nudges": {
+   "get": {
+    "operationId": "listNudges",
+    "summary": "A day's guardrail nudges, newest first, with the unseen count",
+    "parameters": [
+     {
+      "name": "day",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "YYYY-MM-DD or today|yesterday|last; default today"
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Nudges",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "day": {
+           "type": "string"
+          },
+          "unseen": {
+           "type": "integer"
+          },
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Nudge"
+           }
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad day",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/nudges/seen": {
+   "post": {
+    "operationId": "markNudgesSeen",
+    "summary": "Mark several nudges seen",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "ids"
+        ],
+        "properties": {
+         "ids": {
+          "type": "array",
+          "items": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "How many changed",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "seen": {
+           "type": "integer"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "ids is required",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/nudges/{id}/seen": {
+   "post": {
+    "operationId": "markNudgeSeen",
+    "summary": "Mark a nudge seen (the trader acknowledged it)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Whether it changed",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "id": {
+           "type": "integer"
+          },
+          "seen": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices": {
+   "get": {
+    "operationId": "listDevices",
+    "summary": "The phones registered for push (device key only)",
+    "responses": {
+     "200": {
+      "description": "Devices",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Device"
+           }
+          },
+          "push": {
+           "type": "boolean",
+           "description": "whether this server can send"
+          }
+         }
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "operationId": "registerDevice",
+    "summary": "Register a phone's push token with its settings (device key only); a known token is updated",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeviceRegistration"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "device": {
+           "$ref": "#/components/schemas/Device"
+          },
+          "push": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad token or settings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices/{token}/prefs": {
+   "put": {
+    "operationId": "setDevicePrefs",
+    "summary": "Replace a phone's notification settings (device key only)",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DevicePrefs"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "device": {
+           "$ref": "#/components/schemas/Device"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad settings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices/{token}/activity": {
+   "put": {
+    "operationId": "setDeviceActivities",
+    "summary": "Report the push-to-start token and the running Live Activities, whole (device key only)",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "startToken": {
+          "type": "string",
+          "nullable": true
+         },
+         "activities": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/DeviceActivity"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "device": {
+           "$ref": "#/components/schemas/Device"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad token",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices/{token}": {
+   "delete": {
+    "operationId": "deleteDevice",
+    "summary": "Forget a phone (device key only)",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Forgotten"
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your device",
       "content": {
        "application/json": {
         "schema": {

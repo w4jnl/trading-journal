@@ -179,6 +179,16 @@ surface:
 | `GET`  | `/api/v1/version` | Data version for change detection |
 | `POST` | `/api/v1/pair` | Exchange a pairing code for a device key (no key; the phone app's sign-in) |
 | `GET`  | `/api/v1/me` | The key's user, the server and the user's settings |
+| `GET`  | `/api/v1/today` | The day in one object (stats, positions, plan, nudges, curve, equity) |
+| `GET`  | `/api/v1/events` | Server-sent events: a version event after every change |
+| `GET`  | `/api/v1/nudges` | A day's guardrail nudges with their seen state |
+| `GET`  | `/api/v1/devices` | The phones registered for push (device key) |
+| `POST` | `/api/v1/devices` | Register a phone's push token and settings (device key) |
+| `PUT`  | `/api/v1/devices/{token}/prefs` | Replace a phone's notification settings (device key) |
+| `PUT`  | `/api/v1/devices/{token}/activity` | Report the push-to-start token and running Live Activities (device key) |
+| `DELETE` | `/api/v1/devices/{token}` | Forget a phone (device key) |
+| `POST` | `/api/v1/nudges/seen` | Mark several nudges seen |
+| `POST` | `/api/v1/nudges/{id}/seen` | Mark a nudge seen |
 | `PUT`  | `/api/v1/settings` | Change the user's switches (device key) |
 | `GET`  | `/api/v1/stats/daily` | Daily P&L + trade stats with range totals |
 | `GET`  | `/api/v1/analytics/summary` | The analytics page for a range as one object (totals, R, drawdown, streaks, breakdowns) |
@@ -1063,6 +1073,137 @@ curl -X PUT https://YOUR_HOST/api/v1/settings -H "Authorization: Bearer tj_..." 
 ```
 
 An agent key gets `403`; an `autoPlan` outside 0..2 gets `400`.
+
+### Today
+
+`GET /api/v1/today` is the day in one object, for a screen or a widget
+that shows "how is it going right now" without six calls (`?refresh=1`
+pulls the latest broker fills first):
+
+```jsonc
+{
+  "day": "2026-10-15", "timezone": "America/Chicago", "v": 137, "asOf": "2026-10-15T14:31:00Z",
+  "session": {"rthStart": "2026-10-15T13:30:00Z", "rthEnd": "2026-10-15T20:00:00Z", "inGlobex": true, "inRth": true},
+  "stats": {"trades": 4, "wins": 3, "losses": 1, "net": 120.5, "gross": 138.5, "commission": 18.0, "winRate": 0.75, "winDays": 1, "lossDays": 0, "bestDay": 120.5, "worstDay": 120.5, "largestWin": 71.0, "largestLoss": -33.3},
+  "unrealized": {"total": 13.75, "stale": false, "priced": 1, "unpriced": 0},
+  "positions": [ /* as GET /positions */ ],
+  "plan": {"plan": { /* as GET /plan */ }, "outcome": { /* checks so far */ },
+           "tradesUsed": 4, "maxTrades": 6, "lossUsed": 84.2, "maxLoss": 300, "worstAccount": "APEX-1"},
+  "nudges": {"unseen": 1, "badge": 1, "items": [ /* newest first, at most 10; as GET /nudges */ ]},
+  "lastFillAt": "2026-10-15T14:28:04Z",
+  "lastTrade": {"id": 4412, "symbolRoot": "MES", "direction": "short", "netPnl": 33.3, "exitTime": "2026-10-15T14:28:04Z", "account": "APEX-1"},
+  "curve": [{"t": "2026-10-15T13:52:10Z", "net": 71.0}, {"t": "2026-10-15T14:28:04Z", "net": 120.5}],
+  "equity": {"known": true, "now": 83410.25, "byType": [{"type": "live", "label": "Live", "total": 32180.0, "accounts": 1}],
+             "dayChange": 120.5, "currentDrawdown": 320.0, "underwater": true}
+}
+```
+
+`session` is the CME day in UTC instants (regular hours 08:30 to 15:00
+Chicago) with whether Globex and regular hours are trading now. `stats`
+are today's daily-stats totals. `unrealized` sums the priced open
+positions (`stale` when a price is older than five minutes). `plan`
+carries the day plan with its outcome so far plus the two budgets:
+decisions made against `maxTrades`, and the worst account's realised
+loss against `maxLoss` (`lossUsed` is positive money). `nudges.unseen`
+counts today's nudges not yet acknowledged, `badge` only those from the
+last two hours. `curve` is the cumulative net after each closed trade of
+the day. `equity` is `GET /equity` reduced to what fits on a card.
+
+### Events (server-sent)
+
+`GET /api/v1/events` keeps a `text/event-stream` open and sends, after
+every committed change of your data, a `version` event carrying the same
+number as `/version`; on seeing one, refetch `/today` (or whatever you
+show). A `: ping` comment every 25 s keeps proxies from closing the
+connection; the stream also starts with `retry: 3000` so a standard
+EventSource reconnects after three seconds. Compare versions for
+inequality only. The stream also counts as presence: opening it nudges
+the broker syncs like a `/version` poll does.
+
+```
+retry: 3000
+
+event: version
+data: {"v":137}
+
+: ping
+
+event: version
+data: {"v":138}
+```
+
+### Nudges
+
+The guardrail's nudges (Settings > Guardrail: "no stop recorded", "near
+the max loss", "stop time", and the coach's live warnings) are rows the
+phone can list and acknowledge. `GET /api/v1/nudges?day=today` lists a
+day's nudges newest first:
+
+```jsonc
+{"day": "2026-10-15", "unseen": 1, "items": [
+  {"id": 912, "day": "2026-10-15", "key": "max-loss-near", "ref": "7", "severity": "warn",
+   "title": "Near the max loss on APEX-1", "detail": "Down 240.00 of the 300.00 the plan allows today.",
+   "lesson": "Stop after two losers.", "href": "/journal/2026-10-15", "route": "day/2026-10-15",
+   "createdAt": "2026-10-15T14:30:12Z", "deliveredAt": null, "seenAt": null}
+]}
+```
+
+`route` is where the nudge leads in the app (`today`, `day/<date>`,
+`trade/<id>`, `position/<account>/<symbol>`), derived from `href` on the
+server so both clients agree. `POST /api/v1/nudges/{id}/seen` marks one
+acknowledged (`{"id": 912, "seen": true}`; `false` when it was seen
+before or is not yours); `POST /api/v1/nudges/seen` with `{"ids": [...]}`
+marks several. `deliveredAt` is set when a web page took the nudge (that
+also counts as seen); `seenAt` when the trader acknowledged it anywhere.
+
+### Devices and push
+
+The phone app registers for push after pairing; the server then sends it
+what deserves attention (the guardrail's nudges, a closed trade, a silent
+sync after any change, the Session Live Activity). This section is the
+platform-neutral contract: a second client would implement the same.
+
+**Server side.** The server speaks APNs over HTTP/2 with the developer
+account's `.p8` key (`apns:` in config.yaml, or `TJ_APNS_KEY`). `GET
+/api/v1/me` says in `features.push` whether this server can send; phones
+register either way and their settings are kept, so push starts the
+moment a key is configured.
+
+**Registration** (`POST /api/v1/devices`, **device key**), once per
+(server, token), and again when the token or the settings change:
+
+```jsonc
+{"token": "6f1a…", "name": "the trader's iPhone", "sandbox": true, "bundleId": "nl.w4j.tradingjournal",
+ "prefs": {"kinds": {"nudge": {"timeSensitive": true}, "tradeClosed": {"sound": "none"}},
+           "noActivity": false, "finishedAsNotification": false, "quietOutsideRth": false}}
+// 200 {"device": {...}, "push": true}
+```
+
+`sandbox` is true for a Debug build installed from Xcode, whose tokens
+belong to Apple's sandbox service; TestFlight and App Store builds use
+production. One key serves both, so a phone says which. A token Apple
+reports as gone (`410`) is forgotten. `GET /api/v1/devices` lists the
+user's phones; `DELETE /api/v1/devices/{token}` forgets one (sign-out).
+
+**Settings** (`prefs`) are the phone's notification preferences, owned by
+the app and sent whole, with the registration and on every change (`PUT
+/api/v1/devices/{token}/prefs`). The server filters before each push;
+iOS cannot drop a push once it arrived. Kinds: `nudge` (a guardrail
+nudge: the trader is needed; time-sensitive by default, the app's
+`tj-nudge.caf` sound), `tradeClosed` (a trade closed; passive, silent by
+default), `planMissing` (the open is near and no plan is written; opt-in,
+off until the phone sends it). Per kind: `off`, `sound` (`tj`, `default`,
+`none`), `timeSensitive`. `noActivity` turns the Session activity off for
+the phone; `finishedAsNotification` keeps a closed trade a notification
+while the activity shows (otherwise it rides the activity as its alert);
+`quietOutsideRth` drops the closed-trade alerts outside regular hours.
+
+**Live Activities.** The app reports its push-to-start token and every
+running activity with its update token, whole, after each change:
+`PUT /api/v1/devices/{token}/activity` with `{"startToken": "…",
+"activities": [{"id": "…", "token": "…", "kind": "session"}]}`. What the
+server pushes to them is described under *The Session activity* once the
+triggers are in place.
 
 ### Data version (change detection)
 

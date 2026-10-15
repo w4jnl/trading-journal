@@ -7,8 +7,28 @@ package models
 
 import (
 	"context"
+	"strings"
 	"time"
 )
+
+const countUnseenNudges = `-- name: CountUnseenNudges :one
+SELECT COUNT(*) FROM nudges WHERE user_id = ? AND day = ? AND seen_at IS NULL AND created_at >= ?
+`
+
+type CountUnseenNudgesParams struct {
+	UserID    int64     `json:"user_id"`
+	Day       string    `json:"day"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// Today's nudges the trader has not acknowledged, created since a moment
+// (older ones have passed): the phone's badge.
+func (q *Queries) CountUnseenNudges(ctx context.Context, arg CountUnseenNudgesParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countUnseenNudges, arg.UserID, arg.Day, arg.CreatedAt)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
 
 const insertNudge = `-- name: InsertNudge :execrows
 INSERT OR IGNORE INTO nudges (user_id, day, key, ref, severity, title, detail, lesson, href)
@@ -47,7 +67,7 @@ func (q *Queries) InsertNudge(ctx context.Context, arg InsertNudgeParams) (int64
 }
 
 const listNudgesForDay = `-- name: ListNudgesForDay :many
-SELECT id, user_id, day, "key", ref, severity, title, detail, lesson, href, created_at, delivered_at FROM nudges WHERE user_id = ? AND day = ? ORDER BY id
+SELECT id, user_id, day, "key", ref, severity, title, detail, lesson, href, created_at, delivered_at, seen_at FROM nudges WHERE user_id = ? AND day = ? ORDER BY id
 `
 
 type ListNudgesForDayParams struct {
@@ -77,6 +97,53 @@ func (q *Queries) ListNudgesForDay(ctx context.Context, arg ListNudgesForDayPara
 			&i.Href,
 			&i.CreatedAt,
 			&i.DeliveredAt,
+			&i.SeenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listNudgesForDayDesc = `-- name: ListNudgesForDayDesc :many
+SELECT id, user_id, day, "key", ref, severity, title, detail, lesson, href, created_at, delivered_at, seen_at FROM nudges WHERE user_id = ? AND day = ? ORDER BY id DESC
+`
+
+type ListNudgesForDayDescParams struct {
+	UserID int64  `json:"user_id"`
+	Day    string `json:"day"`
+}
+
+func (q *Queries) ListNudgesForDayDesc(ctx context.Context, arg ListNudgesForDayDescParams) ([]Nudge, error) {
+	rows, err := q.db.QueryContext(ctx, listNudgesForDayDesc, arg.UserID, arg.Day)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Nudge
+	for rows.Next() {
+		var i Nudge
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Day,
+			&i.Key,
+			&i.Ref,
+			&i.Severity,
+			&i.Title,
+			&i.Detail,
+			&i.Lesson,
+			&i.Href,
+			&i.CreatedAt,
+			&i.DeliveredAt,
+			&i.SeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -92,7 +159,7 @@ func (q *Queries) ListNudgesForDay(ctx context.Context, arg ListNudgesForDayPara
 }
 
 const listUndeliveredNudges = `-- name: ListUndeliveredNudges :many
-SELECT id, user_id, day, "key", ref, severity, title, detail, lesson, href, created_at, delivered_at FROM nudges
+SELECT id, user_id, day, "key", ref, severity, title, detail, lesson, href, created_at, delivered_at, seen_at FROM nudges
 WHERE user_id = ? AND delivered_at IS NULL AND created_at >= ?
 ORDER BY id
 `
@@ -125,6 +192,7 @@ func (q *Queries) ListUndeliveredNudges(ctx context.Context, arg ListUndelivered
 			&i.Href,
 			&i.CreatedAt,
 			&i.DeliveredAt,
+			&i.SeenAt,
 		); err != nil {
 			return nil, err
 		}
@@ -139,8 +207,26 @@ func (q *Queries) ListUndeliveredNudges(ctx context.Context, arg ListUndelivered
 	return items, nil
 }
 
+const markNudgeSeen = `-- name: MarkNudgeSeen :execrows
+UPDATE nudges SET seen_at = CURRENT_TIMESTAMP WHERE id = ? AND user_id = ? AND seen_at IS NULL
+`
+
+type MarkNudgeSeenParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// The trader acknowledged one nudge (the phone); 0 rows = not theirs or seen before.
+func (q *Queries) MarkNudgeSeen(ctx context.Context, arg MarkNudgeSeenParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markNudgeSeen, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const markNudgesDelivered = `-- name: MarkNudgesDelivered :exec
-UPDATE nudges SET delivered_at = CURRENT_TIMESTAMP
+UPDATE nudges SET delivered_at = CURRENT_TIMESTAMP, seen_at = COALESCE(seen_at, CURRENT_TIMESTAMP)
 WHERE user_id = ? AND delivered_at IS NULL AND id <= ?
 `
 
@@ -149,7 +235,36 @@ type MarkNudgesDeliveredParams struct {
 	ID     int64 `json:"id"`
 }
 
+// A page took the nudges: delivered, and seen unless already seen elsewhere.
 func (q *Queries) MarkNudgesDelivered(ctx context.Context, arg MarkNudgesDeliveredParams) error {
 	_, err := q.db.ExecContext(ctx, markNudgesDelivered, arg.UserID, arg.ID)
 	return err
+}
+
+const markNudgesSeen = `-- name: MarkNudgesSeen :execrows
+UPDATE nudges SET seen_at = CURRENT_TIMESTAMP WHERE user_id = ? AND seen_at IS NULL AND id IN (/*SLICE:ids*/?)
+`
+
+type MarkNudgesSeenParams struct {
+	UserID int64   `json:"user_id"`
+	Ids    []int64 `json:"ids"`
+}
+
+func (q *Queries) MarkNudgesSeen(ctx context.Context, arg MarkNudgesSeenParams) (int64, error) {
+	query := markNudgesSeen
+	var queryParams []interface{}
+	queryParams = append(queryParams, arg.UserID)
+	if len(arg.Ids) > 0 {
+		for _, v := range arg.Ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(arg.Ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	result, err := q.db.ExecContext(ctx, query, queryParams...)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

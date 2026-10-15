@@ -32,6 +32,7 @@ type Config struct {
 	IBKR         IBKR         `yaml:"ibkr"`
 	MWEmail      MWEmail      `yaml:"mw_email"`
 	Secrets      Secrets      `yaml:"secrets"`
+	APNS         APNS         `yaml:"apns"`
 	Timezone     string       `yaml:"timezone"`
 	// SyncLogRetentionDays bounds the API polling history in sync_log: rows
 	// from topstepx_api / ibkr_api runs that added nothing and did not error
@@ -168,6 +169,40 @@ func parseHMWindow(window string) (startMin, endMin int, ok bool) {
 
 // EncryptionKeyBytes decodes the hex key; ok=false when unset or malformed.
 func (t TopstepX) EncryptionKeyBytes() ([]byte, bool) { return hexKey(t.EncryptionKey) }
+
+// APNS configures push notifications to the phone app through the Apple
+// Push Notification service: the .p8 key of the developer account (a file
+// path, or the PEM itself through the TJ_APNS_KEY env var), its key id,
+// the team id and the app's bundle id (the topic). Push is on when a key
+// is set and enabled is not false; one key serves Xcode and TestFlight
+// builds alike (each device says which service it belongs to).
+type APNS struct {
+	Enabled *bool  `yaml:"enabled"`  // nil = true when a key is set
+	KeyFile string `yaml:"key_file"` // path to AuthKey_XXXXXXXXXX.p8
+	Key     string `yaml:"key"`      // the PEM itself; env TJ_APNS_KEY
+	KeyID   string `yaml:"key_id"`
+	TeamID  string `yaml:"team_id"`
+	Topic   string `yaml:"topic"` // default nl.w4j.tradingjournal
+}
+
+// KeyBytes is the .p8 PEM, from the inline value or the file; ok false
+// when neither is set (push off).
+func (a APNS) KeyBytes() ([]byte, bool, error) {
+	if a.Enabled != nil && !*a.Enabled {
+		return nil, false, nil
+	}
+	if k := strings.TrimSpace(a.Key); k != "" {
+		return []byte(k), true, nil
+	}
+	if f := strings.TrimSpace(a.KeyFile); f != "" {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, false, fmt.Errorf("apns key_file: %w", err)
+		}
+		return b, true, nil
+	}
+	return nil, false, nil
+}
 
 // Secrets holds the key the per-user secrets (AI provider keys, and TopstepX
 // credentials when topstepx.encryption_key is unset) are stored encrypted
@@ -442,6 +477,7 @@ type OIDashboards struct {
 func defaults() Config {
 	return Config{
 		Server:       Server{Port: 8080},
+		APNS:         APNS{Topic: "nl.w4j.tradingjournal"},
 		Database:     Database{Path: "./data/trading.db"},
 		Imports:      Imports{Root: "./imports"},
 		OIDashboards: OIDashboards{Root: "./oi_dashboard"},
@@ -707,6 +743,9 @@ func Load(cfgPath string) (Config, error) {
 	}
 	if v := os.Getenv("TJ_ENCRYPTION_KEY"); v != "" {
 		cfg.Secrets.EncryptionKey = v
+	}
+	if v := os.Getenv("TJ_APNS_KEY"); v != "" {
+		cfg.APNS.Key = v
 	}
 
 	return cfg, nil

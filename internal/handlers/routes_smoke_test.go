@@ -197,7 +197,9 @@ func (f *smokeFixture) routes() []smokeRoute {
 
 // smokeSkip are GET patterns main.go mounts that the fixture cannot drive:
 // static files, the health probe closure, OAuth consent (needs the server).
-var smokeSkip = map[string]bool{"/healthz": true, "/static/": true, "/oauth/authorize": true}
+// smokeSkip: not pages. /api/v1/events is the key-authenticated SSE stream
+// mounted outside the write timeout.
+var smokeSkip = map[string]bool{"/healthz": true, "/static/": true, "/oauth/authorize": true, "/api/v1/events": true}
 
 func (f *smokeFixture) fill(pattern string) string {
 	p := strings.NewReplacer(

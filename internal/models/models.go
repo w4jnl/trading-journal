@@ -102,6 +102,33 @@ type DayPlan struct {
 	UpdatedAt time.Time `json:"updated_at"`
 }
 
+type Device struct {
+	ID                 int64     `json:"id"`
+	UserID             int64     `json:"user_id"`
+	Token              string    `json:"token"`
+	Name               string    `json:"name"`
+	Sandbox            int64     `json:"sandbox"`
+	BundleID           string    `json:"bundle_id"`
+	Prefs              string    `json:"prefs"`
+	ActivityStartToken *string   `json:"activity_start_token"`
+	CreatedAt          time.Time `json:"created_at"`
+	LastSeenAt         time.Time `json:"last_seen_at"`
+}
+
+type DeviceActivity struct {
+	DeviceID   int64     `json:"device_id"`
+	ActivityID string    `json:"activity_id"`
+	Token      string    `json:"token"`
+	Kind       string    `json:"kind"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
+type DeviceSession struct {
+	DeviceID  int64     `json:"device_id"`
+	Day       string    `json:"day"`
+	StartedAt time.Time `json:"started_at"`
+}
+
 type Execution struct {
 	ID           int64      `json:"id"`
 	AccountID    int64      `json:"account_id"`
@@ -249,6 +276,7 @@ type Nudge struct {
 	Href        string     `json:"href"`
 	CreatedAt   time.Time  `json:"created_at"`
 	DeliveredAt *time.Time `json:"delivered_at"`
+	SeenAt      *time.Time `json:"seen_at"`
 }
 
 type OauthAccessToken struct {

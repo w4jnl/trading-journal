@@ -34,6 +34,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/oauth"
 	"github.com/w4jnl/trading-journal/internal/positions"
+	"github.com/w4jnl/trading-journal/internal/push"
 	"github.com/w4jnl/trading-journal/internal/secretbox"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 )
@@ -139,6 +140,10 @@ type Handlers struct {
 	// PairLimiter throttles the pairing code exchange per address; nil
 	// (tests) means no limit.
 	PairLimiter *auth.AttemptLimiter
+
+	// Push keeps the phones registered for notifications and sends to
+	// them; nil when push is not configured (phones may still pair).
+	Push *push.Service
 
 	// AISecrets opens the per-user AI provider keys (user_ai_settings). Nil
 	// when users may not bring their own key (ai.user_keys false, or no
