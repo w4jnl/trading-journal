@@ -187,3 +187,41 @@ func TestTick(t *testing.T) {
 		t.Errorf("a user who turned it off was nudged")
 	}
 }
+
+// Every nudge recorded reaches OnNudges once, with its row id; a check
+// that records nothing new does not call it.
+func TestOnNudgesHook(t *testing.T) {
+	svc, _, uid := guardFixture(t)
+	ctx := context.Background()
+	svc.Now = func() time.Time { return at(14, 6, 0) }
+	var heard []models.Nudge
+	calls := 0
+	svc.OnNudges = func(_ context.Context, got int64, ns []models.Nudge) {
+		calls++
+		if got != uid {
+			t.Errorf("hook user = %d, want %d", got, uid)
+		}
+		heard = append(heard, ns...)
+	}
+	out, err := svc.Check(ctx, uid, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(out) == 0 {
+		t.Fatal("the fixture should produce nudges")
+	}
+	if calls != 1 || len(heard) != len(out) {
+		t.Fatalf("hook calls = %d with %d nudges, want 1 with %d", calls, len(heard), len(out))
+	}
+	for _, n := range heard {
+		if n.ID == 0 || n.UserID != uid || n.Title == "" {
+			t.Errorf("hook got a nudge without its row: %+v", n)
+		}
+	}
+	if _, err := svc.Check(ctx, uid, true); err != nil {
+		t.Fatal(err)
+	}
+	if calls != 1 {
+		t.Errorf("a repeat check called the hook again (%d)", calls)
+	}
+}

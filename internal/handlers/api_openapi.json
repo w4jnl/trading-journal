@@ -3,7 +3,7 @@
  "info": {
   "title": "Trading Journal API",
   "version": "v1",
-  "description": "Read strategies, journal entries, trades and daily P&L / trade stats, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access and append-only for notes (never overwrite existing content). Poll /version to learn when the user's data changed."
+  "description": "Read strategies, journal entries, trades and daily P&L / trade stats, and append notes to a journal entry. Authenticated with a per-user API key (generate one under Settings). All endpoints require the key; there is no anonymous access. Content (strategy descriptions, journal notes) is markdown; embedded images are exposed as /api/v1/attachments/{id} URLs you fetch with the same key. Keys are full-access to their user's data and come in two kinds: an agent key (Generate key under Settings) writes additively only - create entries, append notes, never edit or delete; a device key (a paired phone, POST /pair) may also edit and delete journal entries, keep balance anchors, change settings and register for push; routes marked device key answer 403 to an agent key. Poll /version, or hold GET /events open, to learn when the user's data changed."
  },
  "servers": [
   {

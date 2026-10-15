@@ -30,9 +30,10 @@ func (q *Queries) CountUnseenNudges(ctx context.Context, arg CountUnseenNudgesPa
 	return count, err
 }
 
-const insertNudge = `-- name: InsertNudge :execrows
+const insertNudge = `-- name: InsertNudge :one
 INSERT OR IGNORE INTO nudges (user_id, day, key, ref, severity, title, detail, lesson, href)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, user_id, day, "key", ref, severity, title, detail, lesson, href, created_at, delivered_at, seen_at
 `
 
 type InsertNudgeParams struct {
@@ -47,9 +48,9 @@ type InsertNudgeParams struct {
 	Href     string  `json:"href"`
 }
 
-// Said once per (user, day, key, ref): 0 rows = already said.
-func (q *Queries) InsertNudge(ctx context.Context, arg InsertNudgeParams) (int64, error) {
-	result, err := q.db.ExecContext(ctx, insertNudge,
+// Said once per (user, day, key, ref): no row back (sql.ErrNoRows) = already said.
+func (q *Queries) InsertNudge(ctx context.Context, arg InsertNudgeParams) (Nudge, error) {
+	row := q.db.QueryRowContext(ctx, insertNudge,
 		arg.UserID,
 		arg.Day,
 		arg.Key,
@@ -60,10 +61,23 @@ func (q *Queries) InsertNudge(ctx context.Context, arg InsertNudgeParams) (int64
 		arg.Lesson,
 		arg.Href,
 	)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
+	var i Nudge
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Day,
+		&i.Key,
+		&i.Ref,
+		&i.Severity,
+		&i.Title,
+		&i.Detail,
+		&i.Lesson,
+		&i.Href,
+		&i.CreatedAt,
+		&i.DeliveredAt,
+		&i.SeenAt,
+	)
+	return i, err
 }
 
 const listNudgesForDay = `-- name: ListNudgesForDay :many

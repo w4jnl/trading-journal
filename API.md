@@ -1,10 +1,16 @@
 # HTTP API
 
-A small, read-plus-append HTTP API over your own strategies, journal
-entries, trades and daily P&L / trade stats, authenticated by a **per-user
-API key**. It's designed to be LLM-friendly: a discovery index, a
-machine-readable OpenAPI 3.1 spec, stable camelCase JSON, and append-only
-note writes that can never destroy what you've already written.
+An HTTP API over your own strategies, journal entries, trades, open
+positions, accounts and daily P&L / trade stats, authenticated by a
+**per-user API key**. It's designed to be LLM-friendly: a discovery index, a
+machine-readable OpenAPI 3.1 spec and stable camelCase JSON.
+
+There are two kinds of key (see *Pairing a phone*). An **agent key**, made
+with *Generate key* under Settings, writes additively only: it can create
+entries and append notes, but can never edit or delete what you've already
+written. A **device key**, made by pairing your phone, is you: it may also
+edit and delete journal entries, keep balance anchors, change settings and
+register for push. Routes marked *device key* answer `403` to an agent key.
 
 Everything is scoped to the key's user. There is no anonymous access -
 every endpoint, including the index and the OpenAPI spec, requires a key.
@@ -1198,12 +1204,71 @@ the phone; `finishedAsNotification` keeps a closed trade a notification
 while the activity shows (otherwise it rides the activity as its alert);
 `quietOutsideRth` drops the closed-trade alerts outside regular hours.
 
+**What is pushed.** Three things, each filtered by the phone's settings:
+
+- A **nudge**, the moment the guardrail records it (`kind: "nudge"`):
+  title = the nudge's title, subtitle = the contract and "open" for a
+  position nudge or the day ("Wed 15 Oct") otherwise, body = the detail
+  with " — Your lesson: …" when the trader has one. Category `TJ_NUDGE`,
+  or `TJ_POSITION` when the nudge is about an open position;
+  `thread-id: nudges`, `collapse-id: nudge:<id>`, time-sensitive and the
+  `tj-nudge.caf` sound by default, `mutable-content`, badge = the unseen
+  count. Custom keys: `kind`, `id`, `key`, `route`, `day`, `lesson`.
+- A **closed trade**, on the tick after it closed (`kind: "trade"`; only
+  trades closed in the last twenty minutes, so an import of a finished
+  session announces nothing): title `MES short`, subtitle the account,
+  body `+71.00 · 14:29`; category `TJ_TRADE`, `thread-id: trades`,
+  passive and silent by default. Custom keys: `kind`, `tradeId`, `route`
+  (`trade/<id>`), `symbolRoot`, `direction`, `netPnl`, `accountId`.
+  Dropped outside regular hours when `quietOutsideRth` is set.
+- A **silent sync** after every change of the data (APNs `background`,
+  `content-available`, priority 5): `{"kind": "sync", "v": 138, "badge":
+  1, "unseen": [912]}`. The app removes its delivered nudge
+  notifications whose id is not in `unseen`, sets the badge and refreshes
+  what it shows. Each sync carries the whole waiting state, so a delayed
+  or merged sync loses nothing.
+- Once a trading day, between 08:15 and 08:30 Chicago, a phone that opted
+  into `planMissing` hears "No plan for today" (category `TJ_NUDGE`,
+  `route: plan`) when the guardrail is on and no plan is written.
+
+A server start announces nothing: the trades of the last minutes are
+taken as known. Every push a phone did not get is logged with why.
+
 **Live Activities.** The app reports its push-to-start token and every
 running activity with its update token, whole, after each change:
 `PUT /api/v1/devices/{token}/activity` with `{"startToken": "…",
 "activities": [{"id": "…", "token": "…", "kind": "session"}]}`. What the
-server pushes to them is described under *The Session activity* once the
-triggers are in place.
+server pushes to them is described next.
+
+**The Session activity.** One Live Activity per trading day (attributes
+type `SessionActivityAttributes`: `{"day", "tz", "rthStart", "rthEnd"}`
+as unix seconds), pushed as ActivityKit payloads (APNs `liveactivity`,
+topic `<bundle id>.push-type.liveactivity`) with this content state,
+every field always present, at most three positions, under 4 KB:
+
+```jsonc
+{"realized": 120.5, "unrealized": 13.75, "trades": 4, "wins": 3, "losses": 1,
+ "maxTrades": 6, "lossUsed": 84.2, "maxLoss": 300,                   // 0 when the plan has no cap or budget
+ "positions": [{"a": 7, "s": "MESZ6", "d": "long", "q": 3, "avg": 7766.25, "last": 7767.25, "u": 13.75, "tts": 49, "beyond": false}],
+ "openCount": 1, "nudges": 1, "lastFill": 1760530000, "updated": 1760530060, "stale": false, "alert": ""}
+```
+
+The server **starts** it by push-to-start on the first fill of the day
+(a closed trade or an open position, during Globex hours), once per
+phone and day, with the alert "Session" and a one-line body; the phone
+reports the new activity's update token through `PUT …/activity`. It
+**updates** it after every change of the data (priority 10) and every
+five minutes while anything is open (prices move without fills, priority
+5), always with a stale date ten minutes out, so a phone that misses an
+update greys the card. A **closed trade** rides the activity as its
+alert (title `MES short`, body `+71.00 · APEX-1`, the kind's sound
+inside the alert, `alert` set in the state) plus a badge-only push, so a
+finish is one thing on the Lock Screen, not two; `finishedAsNotification`
+keeps it a notification. It **ends** once the day is flat and ten
+minutes have passed since the last fill after 15:00 Chicago, or at the
+16:00 Globex break, with a dismissal date fifteen minutes out; a later
+fill starts it again. `noActivity` turns all of this off for a phone; a
+refused activity token is dropped alone.
 
 ### Data version (change detection)
 
@@ -1346,10 +1411,15 @@ curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/js
 
 ## Notes & limits (v1)
 
-- Keys are **full-access** to their user's data (no per-key scopes yet).
-- Writes are **create an entry** and **append a note** - both additive. The API
-  never overwrites or deletes: it can't edit an existing entry's tag/mood/
-  strategy, delete entries, or create/modify trades.
+- Keys are **full-access** to their user's data (no per-key scopes yet);
+  the one distinction is the key's kind. An **agent key** writes additively
+  only (create an entry, append a note, set a tag or strategy only if
+  unset, save a plan as `api`): it never edits or deletes. A **device key**
+  (a paired phone) may also edit and delete journal entries, add and
+  delete balance anchors, change settings and manage push devices, and its
+  plan and journal writes count as the trader's own.
+- Nothing can create or modify trades, executions or accounts: those come
+  from the imports and the live sync.
 - Trades are read-only and the list is page-based (fixed page size 50).
 - No rate limiting (intended for a private network / trusted agents).
 - The PNG is a single panel; the JSON `chart` field carries every panel.

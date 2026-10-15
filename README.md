@@ -191,9 +191,10 @@ around it.
 - **Exports** to Markdown and PDF, filterable by the same controls as
   the on-screen feed. Each entry carries its summary line + up to five
   underlying trades.
-- **HTTP API** with per-user API keys for read + append-only access to
-  strategies and journal entries — built to be LLM/agent-friendly
-  (discovery index + OpenAPI spec). See **[API.md](API.md)**.
+- **HTTP API** with per-user API keys: agent keys get read + append-only
+  access to strategies and journal entries (LLM/agent-friendly: discovery
+  index + OpenAPI spec); a paired phone's device key may also edit the
+  journal, keep balances and receive push. See **[API.md](API.md)**.
 - **⌘K command palette** for fast navigation, recent pages, symbol
   jumps (type `MNQ` → `/trades?symbol_root=MNQ`), and date keywords
   (`today`, `last week`, …).
@@ -392,9 +393,14 @@ Beyond the web UI, the app exposes a small **HTTP API** for external
 clients and AI agents: read your strategies and journal entries (trades
 overview, detailed trade list, tags, assigned strategy, chart data + a
 server-rendered PNG, embedded images), and append dated notes to an entry
-(append-only — existing content is never overwritten). Consumer apps get
-daily P&L / trade stats (`GET /api/v1/stats/daily` — the Calendar's
-numbers) and a data version to poll for changes (`GET /api/v1/version`).
+(append-only — an agent key never overwrites existing content). Consumer
+apps get daily P&L / trade stats (`GET /api/v1/stats/daily` — the
+Calendar's numbers), a data version to poll for changes
+(`GET /api/v1/version`) or a server-sent event stream (`GET /api/v1/events`).
+A paired phone holds a **device key**, which may also edit and delete
+journal entries, keep balance anchors, change settings and register for
+push notifications and the Session Live Activity (`POST /api/v1/pair`,
+`/today`, `/accounts`, `/equity`, `/nudges`, `/devices`).
 
 Access is by **per-user API key**, generated under **Settings**
 (`/settings`) and sent as `Authorization: Bearer tj_...` (or `X-API-Key`).

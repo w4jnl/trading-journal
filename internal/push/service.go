@@ -8,8 +8,10 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/livedata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/push/apns"
 )
@@ -23,6 +25,19 @@ type Service struct {
 	APNs *apns.Client // nil: devices register, nothing is sent
 	Log  *slog.Logger
 	Now  func() time.Time
+	// Live is the change signal the triggers watch; TZ the trading
+	// timezone; Chicago the exchange's (nil loads America/Chicago); Every
+	// the tick (DefaultEvery when 0).
+	Live    *livedata.Notifier
+	TZ      *time.Location
+	Chicago *time.Location
+	Every   time.Duration
+	// State gives the Session activity's content for a user (the handlers,
+	// which price positions); nil leaves the activity off.
+	State StateFunc
+
+	mu     sync.Mutex
+	states map[int64]*tickState
 }
 
 func (s *Service) log() *slog.Logger {
