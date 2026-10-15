@@ -1,0 +1,108 @@
+# Trading Journal for iPhone and iPad: the Xcode project is generated from this file (brew
+# install xcodegen; make ios-project). Local.xcconfig (gitignored) holds what is yours:
+# TJ_TEAM_ID = your Apple team id, and TJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements
+# (pushes, time-sensitive alerts, the App Group and the keychain group the extensions share; a
+# free Apple ID's personal team cannot sign that: leave it empty there). Shared/ is compiled
+# into the app and, in later phases, into its notification and widget extensions.
+name: TradingJournal
+options:
+  bundleIdPrefix: nl.w4j
+  deploymentTarget:
+    iOS: "18.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+configs:
+  Debug: debug
+  Release: release
+configFiles:
+  Debug: Local.xcconfig
+  Release: Local.xcconfig
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    # The server's version scheme: the app ships with the release it was built against.
+    MARKETING_VERSION: "2.18.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: $(TJ_TEAM_ID)
+    ENABLE_USER_SCRIPT_SANDBOXING: true
+targets:
+  TradingJournal:
+    type: application
+    platform: iOS
+    sources:
+      - path: TradingJournal
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        INFOPLIST_KEY_UIUserInterfaceStyle: Automatic
+        CODE_SIGN_ENTITLEMENTS: $(TJ_ENTITLEMENTS)
+    info:
+      path: TradingJournal/Info.plist
+      properties:
+        CFBundleDisplayName: Journal
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UIBackgroundModes: [remote-notification]
+        NSSupportsLiveActivities: true
+        UIAppFonts: [Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf, JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]
+        NSCameraUsageDescription: Scan the pairing code shown in the journal's Settings.
+        NSPhotoLibraryUsageDescription: Attach a photo to a journal note.
+        NSAppTransportSecurity:
+          # A journal on the home network (http://, a plain IP) must be reachable too.
+          NSAllowsLocalNetworking: true
+          NSAllowsArbitraryLoads: true
+        CFBundleURLTypes:
+          - CFBundleURLName: nl.w4j.tradingjournal
+            CFBundleURLSchemes: [tj]
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        ITSAppUsesNonExemptEncryption: false
+  TJTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: TJTests
+    dependencies:
+      - target: TradingJournal
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal.tests
+  TJScreens:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: TJScreens
+    dependencies:
+      - target: TradingJournal
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal.screens
+        TEST_TARGET_NAME: TradingJournal
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  TJScreens: # the screenshot walker (make ios-screens), apart from make ios-test
+    build:
+      targets:
+        TJScreens: [test]
+    test:
+      config: Debug
+      targets: [TJScreens]
+  TradingJournal:
+    build:
+      targets:
+        TradingJournal: all
+        TJTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets: [TJTests]
+    archive:
+      config: Release
