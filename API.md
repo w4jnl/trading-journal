@@ -188,6 +188,10 @@ surface:
 | `POST` | `/api/v1/journal` | Create an entry (day/week/trade/group) |
 | `POST` | `/api/v1/journal/prepare-day` | Cluster a day's trades + create the entries to analyze |
 | `GET`  | `/api/v1/journal/{id}` | One journal entry (full detail) |
+| `PUT`  | `/api/v1/journal/{id}` | Replace the entry: body, tag, mood, strategy, labels, checklist (device key) |
+| `DELETE` | `/api/v1/journal/{id}` | Delete the entry (device key) |
+| `POST` | `/api/v1/journal/attachments` | Upload an image for a body (device key) |
+| `GET`  | `/api/v1/journal/labels` | The mistake / emotion vocabulary with display names |
 | `POST` | `/api/v1/journal/{id}/notes` | Append a dated note (append-only) |
 | `POST` | `/api/v1/journal/{id}/strategy` | Assign a strategy (only if the entry has none) |
 | `POST` | `/api/v1/journal/{id}/tag` | Set a tag (only if the entry has none) |
@@ -385,6 +389,53 @@ Errors:
 |---|---|
 | `400` | Body isn't `{"note": "..."}`, or the note is empty/whitespace |
 | `404` | Entry doesn't exist or you don't own it - this endpoint only appends to an existing entry; create one with `POST /api/v1/journal` |
+
+### Editing and deleting entries (device key)
+
+The paired phone edits like the page editors do; an agent key gets `403`
+on these three routes and keeps to the additive calls above.
+
+`PUT /api/v1/journal/{id}` replaces the entry in one go, the way a page
+save does: **absent fields clear** (no `tag` removes the tag, an empty
+`mistakes` removes the mistakes), `body` must not be empty (use DELETE),
+`mood` is accepted on day entries only, `strategyId` must be one of your
+strategies, `checks` are the ticked checklist item ids of the entry's
+strategy (trade and group entries). Images in the body are written as
+`/api/v1/attachments/{id}` (the server stores them in its own form and
+rewrites them back on read). What you write is recorded as the trader's
+own, not as `api`.
+
+```bash
+curl -X PUT https://YOUR_HOST/api/v1/journal/412 -H "Authorization: Bearer tj_..." \
+  -H "Content-Type: application/json" -d '{
+    "body": "Took the open-drive long at 7762; **held into the target**.\n\n![](/api/v1/attachments/88)",
+    "tag": "good", "mood": 4, "strategyId": 12,
+    "mistakes": [], "emotions": ["calm", "focused"], "checks": [3, 4],
+    "updatedAt": "2026-10-15T14:02:11Z"
+  }'
+```
+
+The response is the entry as `GET /api/v1/journal/{id}` returns it. Pass
+`updatedAt` exactly as you loaded it: when the entry changed meanwhile
+(the desk edited it, an AI review wrote to it), the answer is `409` with
+`"reason": "stale"` and the current entry under `entry`, so the app can
+reload or ask before overwriting. While an AI review is writing the note
+the save is refused with `409` and `"reason": "review-pending"`; append a
+note instead, or wait.
+
+`DELETE /api/v1/journal/{id}` removes the entry (`204`; `409` under an AI
+review; a group entry's links to its trades go with it).
+
+`POST /api/v1/journal/attachments` takes a multipart upload (field
+`file`: PNG, JPEG, GIF or WebP, up to 8 MiB) and answers `201` with the
+image's id, its API URL and the markdown line to put in a body:
+
+```jsonc
+{"id": 88, "url": "/api/v1/attachments/88", "name": "IMG_0412.jpg", "size": 182311, "markdown": "![IMG_0412.jpg](/api/v1/attachments/88)"}
+```
+
+`GET /api/v1/journal/labels` lists the vocabulary with display names for
+pickers: `{"mistakes": [{"key": "chased", "name": "Chased the entry"}, ...], "emotions": [...]}`.
 
 ### Creating journal entries
 

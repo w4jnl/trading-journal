@@ -1677,6 +1677,112 @@
       ]
      }
     }
+   },
+   "JournalUpdate": {
+    "type": "object",
+    "required": [
+     "body"
+    ],
+    "description": "The whole entry as the page editors save it: absent tag, strategy, labels and checks clear them.",
+    "properties": {
+     "body": {
+      "type": "string",
+      "description": "Markdown; images as /api/v1/attachments/{id}"
+     },
+     "tag": {
+      "type": "string",
+      "enum": [
+       "good",
+       "neutral",
+       "bad"
+      ],
+      "nullable": true
+     },
+     "mood": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 5,
+      "nullable": true,
+      "description": "Day entries only"
+     },
+     "strategyId": {
+      "type": "integer",
+      "nullable": true
+     },
+     "mistakes": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "emotions": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "checks": {
+      "type": "array",
+      "items": {
+       "type": "integer"
+      },
+      "description": "Ticked checklist item ids (trade and group entries)"
+     },
+     "updatedAt": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The entry's updatedAt as loaded; a differing value answers 409 stale with the current entry"
+     }
+    }
+   },
+   "LabelOption": {
+    "type": "object",
+    "properties": {
+     "key": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     }
+    }
+   },
+   "LabelVocabulary": {
+    "type": "object",
+    "properties": {
+     "mistakes": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LabelOption"
+      }
+     },
+     "emotions": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/LabelOption"
+      }
+     }
+    }
+   },
+   "AttachmentUpload": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "url": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "size": {
+      "type": "integer"
+     },
+     "markdown": {
+      "type": "string",
+      "description": "The image line to put in a body"
+     }
+    }
    }
   }
  },
@@ -2282,6 +2388,146 @@
      },
      "404": {
       "description": "Not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "put": {
+    "operationId": "updateJournalEntry",
+    "summary": "Replace the entry (device key only): body, tag, mood, strategy, labels, checklist",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/JournalUpdate"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The entry after the save",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JournalDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid field",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "review-pending (an AI review is writing the note) or stale (it changed since you loaded it; the current entry is included)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "error": {
+           "type": "string"
+          },
+          "reason": {
+           "type": "string",
+           "enum": [
+            "review-pending",
+            "stale"
+           ]
+          },
+          "entry": {
+           "$ref": "#/components/schemas/JournalDetail"
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "deleteJournalEntry",
+    "summary": "Delete the entry (device key only)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Deleted"
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "An AI review is writing the note",
       "content": {
        "application/json": {
         "schema": {
@@ -3457,6 +3703,88 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/attachments": {
+   "post": {
+    "operationId": "uploadJournalAttachment",
+    "summary": "Upload an image (device key only; multipart field 'file', PNG/JPEG/GIF/WebP, 8 MiB)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "multipart/form-data": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "file": {
+          "type": "string",
+          "format": "binary"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "Stored",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/AttachmentUpload"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Missing or malformed file",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "415": {
+      "description": "Not an image type we store",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/labels": {
+   "get": {
+    "operationId": "journalLabels",
+    "summary": "The mistake and emotion vocabulary with display names",
+    "responses": {
+     "200": {
+      "description": "The vocabulary",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/LabelVocabulary"
         }
        }
       }
