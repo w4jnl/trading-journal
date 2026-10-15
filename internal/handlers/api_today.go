@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -116,7 +117,10 @@ func (h *Handlers) APINudgesSeen(w http.ResponseWriter, r *http.Request) {
 // unseenBadge is the phone's badge: today's unseen nudges from the last
 // two hours.
 func (h *Handlers) unseenBadge(r *http.Request, day string) int64 {
-	ctx := r.Context()
+	return h.unseenBadgeCtx(r.Context(), day)
+}
+
+func (h *Handlers) unseenBadgeCtx(ctx context.Context, day string) int64 {
 	n, err := h.rq().CountUnseenNudges(ctx, models.CountUnseenNudgesParams{UserID: userID(ctx), Day: day, CreatedAt: time.Now().UTC().Add(-nudgeStaleForBadge)})
 	if err != nil {
 		return 0

@@ -1114,7 +1114,8 @@ func run() error {
 		go excursions.FillAll(ctx)
 	}
 	go guard.Run(ctx)
-	go pushSvc.Run(ctx) // nothing without an APNs key
+	pushSvc.State = h.SessionState // the Session Live Activity's content
+	go pushSvc.Run(ctx)            // nothing without an APNs key
 	if aiTasks != nil {
 		// Stop and target on new positions for the users who asked for it.
 		go h.RunAutoPlanner(ctx)

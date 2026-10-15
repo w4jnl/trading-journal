@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -72,7 +73,10 @@ func apiAccountBalanceFrom(b AccountBalance, tz *time.Location) *apiAccountBalan
 
 // dayNetByAccount is today's net per account from the daily_stats cache.
 func (h *Handlers) dayNetByAccount(r *http.Request, day time.Time) map[int64]float64 {
-	ctx := r.Context()
+	return h.dayNetByAccountCtx(r.Context(), day)
+}
+
+func (h *Handlers) dayNetByAccountCtx(ctx context.Context, day time.Time) map[int64]float64 {
 	rows, err := h.rq().ListDailyStatsForRange(ctx, models.ListDailyStatsForRangeParams{UserID: userID(ctx), StatDate: day, StatDate_2: day.AddDate(0, 0, 1)})
 	if err != nil {
 		return nil

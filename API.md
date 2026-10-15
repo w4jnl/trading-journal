@@ -1232,7 +1232,37 @@ taken as known. Every push a phone did not get is logged with why.
 running activity with its update token, whole, after each change:
 `PUT /api/v1/devices/{token}/activity` with `{"startToken": "…",
 "activities": [{"id": "…", "token": "…", "kind": "session"}]}`. What the
-server pushes to them is described under *The Session activity*.
+server pushes to them is described next.
+
+**The Session activity.** One Live Activity per trading day (attributes
+type `SessionActivityAttributes`: `{"day", "tz", "rthStart", "rthEnd"}`
+as unix seconds), pushed as ActivityKit payloads (APNs `liveactivity`,
+topic `<bundle id>.push-type.liveactivity`) with this content state,
+every field always present, at most three positions, under 4 KB:
+
+```jsonc
+{"realized": 120.5, "unrealized": 13.75, "trades": 4, "wins": 3, "losses": 1,
+ "maxTrades": 6, "lossUsed": 84.2, "maxLoss": 300,                   // 0 when the plan has no cap or budget
+ "positions": [{"a": 7, "s": "MESZ6", "d": "long", "q": 3, "avg": 7766.25, "last": 7767.25, "u": 13.75, "tts": 49, "beyond": false}],
+ "openCount": 1, "nudges": 1, "lastFill": 1760530000, "updated": 1760530060, "stale": false, "alert": ""}
+```
+
+The server **starts** it by push-to-start on the first fill of the day
+(a closed trade or an open position, during Globex hours), once per
+phone and day, with the alert "Session" and a one-line body; the phone
+reports the new activity's update token through `PUT …/activity`. It
+**updates** it after every change of the data (priority 10) and every
+five minutes while anything is open (prices move without fills, priority
+5), always with a stale date ten minutes out, so a phone that misses an
+update greys the card. A **closed trade** rides the activity as its
+alert (title `MES short`, body `+71.00 · APEX-1`, the kind's sound
+inside the alert, `alert` set in the state) plus a badge-only push, so a
+finish is one thing on the Lock Screen, not two; `finishedAsNotification`
+keeps it a notification. It **ends** once the day is flat and ten
+minutes have passed since the last fill after 15:00 Chicago, or at the
+16:00 Globex break, with a dismissal date fifteen minutes out; a later
+fill starts it again. `noActivity` turns all of this off for a phone; a
+refused activity token is dropped alone.
 
 ### Data version (change detection)
 

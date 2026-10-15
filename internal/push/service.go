@@ -32,6 +32,9 @@ type Service struct {
 	TZ      *time.Location
 	Chicago *time.Location
 	Every   time.Duration
+	// State gives the Session activity's content for a user (the handlers,
+	// which price positions); nil leaves the activity off.
+	State StateFunc
 
 	mu     sync.Mutex
 	states map[int64]*tickState

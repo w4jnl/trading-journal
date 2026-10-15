@@ -54,6 +54,7 @@ type tickState struct {
 	version     uint64
 	pushedTrade map[string]time.Time // closed trades announced, by their identity
 	planMissing string               // the day the reminder went out
+	live        liveMemory
 }
 
 // Run ticks until ctx ends; nothing happens without an APNs client.
