@@ -44,19 +44,20 @@ func allowedAILanguage(v string) bool {
 // SettingsPage: GET /settings - the user's API keys, AI provider and review
 // language, account visibility and sync connections.
 func (h *Handlers) SettingsPage(w http.ResponseWriter, r *http.Request) {
-	h.renderSettings(w, r, "")
+	h.renderSettings(w, r, "", nil)
 }
 
 // renderSettings renders the settings page. newKey, when non-empty, is a
 // just-created plaintext key shown ONCE (passed in-memory, never via a redirect
 // URL or log).
-func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey string) {
+func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey string, pair *pairView) {
 	ctx := r.Context()
-	keys, err := h.Queries.ListAPIKeysForUser(ctx, userID(ctx))
+	allKeys, err := h.Queries.ListAPIKeysForUser(ctx, userID(ctx))
 	if err != nil {
 		h.serverError(w, fmt.Errorf("list api keys: %w", err))
 		return
 	}
+	deviceKeys, keys := deviceKeysOf(allKeys)
 	// Account-visibility selector: active accounts only (retired accounts are
 	// already hidden from stats, so listing them here would be misleading).
 	accounts, err := h.Queries.ListAccounts(ctx, userID(ctx))
@@ -150,6 +151,8 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"NavActive":       "settings",
 		"BackHref":        validBackHref(r),
 		"Keys":            keys,
+		"DeviceKeys":      deviceKeys,
+		"Pair":            pair,
 		"OAuthEnabled":    h.OAuth != nil,
 		"OAuthGrants":     h.oauthGrantRows(ctx),
 		"NewKey":          newKey,
@@ -323,14 +326,14 @@ func (h *Handlers) APIKeyCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if _, err := h.Queries.CreateAPIKey(ctx, models.CreateAPIKeyParams{
-		UserID: userID(ctx), Name: name, KeyPrefix: prefix, KeySha256: sha,
+		UserID: userID(ctx), Name: name, KeyPrefix: prefix, KeySha256: sha, Kind: string(auth.KeyKindAgent),
 	}); err != nil {
 		h.serverError(w, fmt.Errorf("create api key: %w", err))
 		return
 	}
 	// Render directly with the plaintext (shown once); no redirect so it never
 	// lands in a URL or the access log.
-	h.renderSettings(w, r, full)
+	h.renderSettings(w, r, full, nil)
 }
 
 // APIKeyRevoke: POST /settings/api-keys/{id}/revoke (soft-revoke).

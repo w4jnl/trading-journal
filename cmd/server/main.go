@@ -753,6 +753,7 @@ func run() error {
 		GEX:              gexClient,
 		TopstepxSync:     topstepxSync,
 		IbkrSync:         ibkrSync,
+		PairLimiter:      auth.NewAttemptLimiter(),
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so
@@ -847,6 +848,7 @@ func run() error {
 	// Settings: per-user API key management (session + CSRF chain).
 	mux.HandleFunc("GET /settings", h.SettingsPage)
 	mux.HandleFunc("POST /settings/api-keys", h.APIKeyCreate)
+	mux.HandleFunc("POST /settings/devices/pair", h.SettingsPairStart)
 	mux.HandleFunc("POST /settings/api-keys/{id}/revoke", h.APIKeyRevoke)
 	mux.HandleFunc("POST /settings/api-keys/{id}/delete", h.APIKeyDelete)
 	// Connected apps (OAuth grants for /mcp): revoke cuts the app off at once.
@@ -991,6 +993,9 @@ func run() error {
 	apiKeyAuth := &auth.APIKeyAuth{Queries: queries}
 	root := http.NewServeMux()
 	root.Handle("/api/", apiKeyAuth.Middleware(debugHTTP(h.APIMux())))
+	// The one API route without a key: the phone's pairing-code exchange
+	// (throttled per address). A more specific pattern than "/api/".
+	root.Handle("POST /api/v1/pair", debugHTTP(http.HandlerFunc(h.APIPair)))
 	// MCP server for AI clients - same per-user key auth as /api, no CSRF/session.
 	if cfg.MCP.Enabled == nil || *cfg.MCP.Enabled {
 		// /mcp accepts tj_ API keys; with mcp.oauth on, MCPAuth also accepts

@@ -22,6 +22,8 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	// HTML pages poll, reachable with a key (the /data/version route sits
 	// behind the session chain) - plus the read-triggered sync nudge.
 	m.HandleFunc("GET /api/v1/version", h.APIVersion)
+	m.HandleFunc("GET /api/v1/me", h.APIMe)
+	m.HandleFunc("PUT /api/v1/settings", h.APISettingsSave)
 	m.HandleFunc("GET /api/v1/stats/daily", h.APIStatsDaily)
 	m.HandleFunc("GET /api/v1/analytics/summary", h.APIAnalyticsSummary)
 	m.HandleFunc("GET /api/v1/strategies", h.APIStrategiesList)

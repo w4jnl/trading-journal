@@ -17,6 +17,9 @@ var apiOpenAPISpec []byte
 var apiIndexEndpoints = []map[string]string{
 	{"method": "GET", "path": "/api/v1/openapi.json", "summary": "OpenAPI 3 spec"},
 	{"method": "GET", "path": "/api/v1/version", "summary": "Data version for change detection (poll; refetch on any change)"},
+	{"method": "POST", "path": "/api/v1/pair", "summary": "Exchange a pairing code from Settings for a device key (no key needed; the phone app's sign-in)"},
+	{"method": "GET", "path": "/api/v1/me", "summary": "The key's user, the server (version, timezone, features) and the user's settings"},
+	{"method": "PUT", "path": "/api/v1/settings", "summary": "Change the user's switches: guardrail, automatic plans (device key)"},
 	{"method": "GET", "path": "/api/v1/stats/daily", "summary": "Daily P&L + trade stats per trading day, with range totals (the Calendar's numbers)"},
 	{"method": "GET", "path": "/api/v1/analytics/summary", "summary": "Analytics for a range as one object: totals, R, drawdown, streaks, breakdowns by symbol/direction/strategy/tag/weekday/hour"},
 	{"method": "GET", "path": "/api/v1/strategies", "summary": "List strategies"},

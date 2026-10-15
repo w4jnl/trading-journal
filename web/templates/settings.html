@@ -507,6 +507,63 @@
 </div>
 {{end}}
 
+<div class="card mb-16" id="phone">
+  <div class="card-title">Phone app</div>
+  <p class="muted" style="font-size: 12px;">
+    The companion app signs in with a <strong>device key</strong> it gets from a one-time pairing code. Tap
+    <em>Pair a phone</em>, then scan the code with the app (or type it in, with this server's address). The code
+    works once and for five minutes; a device key may edit your journal and settings, which an API key may not.
+  </p>
+  <form method="post" action="/settings/devices/pair" style="margin: 10px 0;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <button type="submit" class="btn btn--primary btn--sm">Pair a phone</button>
+  </form>
+  {{with .Pair}}
+  <div class="pair-card">
+    <div class="pair-card__qr">{{.QR}}</div>
+    <div class="pair-card__text">
+      <div class="label">Pairing code</div>
+      <div class="num pair-card__code" data-copy="{{.Code}}">{{.Code}}</div>
+      <div class="muted" style="font-size: 12px; margin-top: 6px;">Server <code>{{.Server}}</code> · expires {{ltime .Expires "time"}}</div>
+      <div class="muted" style="font-size: 11px; margin-top: 4px; word-break: break-all;">Link: <code>{{.URL}}</code></div>
+      <div class="muted" style="font-size: 11px; margin-top: 6px;">Scan with the app, or enter the server and the code by hand.</div>
+    </div>
+  </div>
+  {{end}}
+  {{if .DeviceKeys}}
+  <div class="table-scroll mt-8">
+    <table>
+      <thead><tr><th>Phone</th><th>Paired</th><th>Last seen</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {{range .DeviceKeys}}
+        <tr>
+          <td>{{if .DeviceName}}{{derefStr .DeviceName}}{{else}}{{.Name}}{{end}}</td>
+          <td class="num muted">{{ltime .CreatedAt "datetime"}}</td>
+          <td class="num muted">{{if .LastUsedAt}}{{ltimep .LastUsedAt "datetime"}}{{else}}never{{end}}</td>
+          <td>{{if .RevokedAt}}<span class="pill">revoked</span>{{else}}<span class="pill dir-long">paired</span>{{end}}</td>
+          <td class="tar">
+            {{if .RevokedAt}}
+            <form method="post" action="/settings/api-keys/{{.ID}}/delete" style="display: inline;" data-confirm="Forget this phone?">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn--danger btn--sm">Delete</button>
+            </form>
+            {{else}}
+            <form method="post" action="/settings/api-keys/{{.ID}}/revoke" style="display: inline;" data-confirm="Unpair this phone? It will have to pair again.">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn--ghost btn--sm">Unpair</button>
+            </form>
+            {{end}}
+          </td>
+        </tr>
+      {{end}}
+      </tbody>
+    </table>
+  </div>
+  {{else}}
+  <p class="muted" style="font-size: 12px;">No phone paired yet.</p>
+  {{end}}
+</div>
+
 <div class="card">
   <div class="card-title-row">
     <div class="card-title">API keys</div>

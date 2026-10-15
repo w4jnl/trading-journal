@@ -2023,6 +2023,9 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .pill--stale { background: transparent; color: var(--warn-text, var(--fg-muted)); border: 1px dashed var(--warn, var(--border-strong)); }
 .pill--plan-missing { background: transparent; color: var(--warn-text, var(--fg-muted)); border: 1px dashed var(--warn, var(--border-strong)); font-weight: var(--fw-semibold); }
 .open-strip { margin-bottom: 12px; border-left: 3px solid var(--accent); }
+.pair-card { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; margin: 10px 0; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-elev); }
+.pair-card__qr svg { width: 168px; height: 168px; display: block; border-radius: var(--r-sm); }
+.pair-card__code { font-size: 28px; font-weight: 600; letter-spacing: 0.08em; }
 .pill--scaled { background: var(--bg-sunken); color: var(--fg-muted); border: 1px solid var(--border); }
 .position-note { font-size: 12px; margin: -4px 0 12px; padding: 6px 10px; border-radius: var(--r-sm, 4px); background: var(--bg-sunken); color: var(--fg-muted); }
 .position-note--scaled { border-left: 3px solid var(--border-strong, var(--border)); }

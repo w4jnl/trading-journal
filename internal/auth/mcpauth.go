@@ -42,7 +42,7 @@ func (a *MCPAuth) Middleware(next http.Handler) http.Handler {
 		case tok == "":
 			reason = "missing bearer token"
 		case strings.HasPrefix(tok, "tj_"):
-			u, reason = a.Keys.authenticate(r, tok)
+			u, _, reason = a.Keys.authenticate(r, tok)
 		case strings.HasPrefix(tok, "tjo_"):
 			u, reason = a.authenticateOAuth(r, tok)
 		default:

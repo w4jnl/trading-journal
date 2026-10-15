@@ -57,6 +57,45 @@ Failures return `401` with a JSON body `{"error": "..."}`:
 | Unknown or revoked key | `invalid API key` |
 | The key's user has been deactivated | `account disabled` |
 
+### Pairing a phone (device keys)
+
+The companion phone app does not paste a key: it **pairs**. In
+**Settings → Phone app** click *Pair a phone*; the page shows a one-time
+code such as `AB7Q-K2MN`, as text and as a QR of
+`tj://pair?server=https://YOUR_HOST&code=AB7Q-K2MN`. The app scans it (or
+you type the server and the code) and calls the one API route that needs
+no key:
+
+```bash
+curl -X POST https://YOUR_HOST/api/v1/pair \
+  -H "Content-Type: application/json" \
+  -d '{"code": "AB7Q-K2MN", "deviceName": "Trader'"'"'s iPhone"}'
+```
+
+```jsonc
+// 201
+{
+  "key": "tj_...",                                   // shown once; the app stores it in its keychain
+  "server": {"url": "https://YOUR_HOST", "version": "v2.17.0", "timezone": "America/Chicago",
+             "features": {"ai": true, "charts": true, "guardrail": true, "push": false}},
+  "user": {"id": 1, "username": "trader", "displayName": "Trader", "email": "trader@example.com"}
+}
+```
+
+Case, spaces and the dash in the code do not matter. A code works **once**
+and for **five minutes**; making a new one retires the old; a wrong, used
+or expired code answers `400` with the same message, and an address that
+keeps failing is answered `429` with `Retry-After` for a while.
+
+The key it returns is a **device key** (`kind: "device"`): it is the
+trader's own phone, so it may do what an agent key may not - edit and
+delete journal entries, change settings, register for push. Keys made with
+*Generate key* are **agent keys** (`kind: "agent"`): the additive rules in
+this document (append notes, set a tag only if unset, never overwrite)
+apply to them, and the write routes marked *device key* answer `403` to
+them. Paired phones are listed under *Phone app* with an *Unpair* button;
+that revokes the key.
+
 ## Conventions
 
 - **JSON, camelCase.** Request and response bodies are `application/json`
@@ -138,6 +177,9 @@ surface:
 | `GET`  | `/api/v1` | Discovery index |
 | `GET`  | `/api/v1/openapi.json` | OpenAPI 3.1 spec |
 | `GET`  | `/api/v1/version` | Data version for change detection |
+| `POST` | `/api/v1/pair` | Exchange a pairing code for a device key (no key; the phone app's sign-in) |
+| `GET`  | `/api/v1/me` | The key's user, the server and the user's settings |
+| `PUT`  | `/api/v1/settings` | Change the user's switches (device key) |
 | `GET`  | `/api/v1/stats/daily` | Daily P&L + trade stats with range totals |
 | `GET`  | `/api/v1/analytics/summary` | The analytics page for a range as one object (totals, R, drawdown, streaks, breakdowns) |
 | `GET`  | `/api/v1/strategies` | List your strategies |
@@ -873,6 +915,39 @@ Errors as for `/stats/daily`. `src=confirmed` counts only the tags,
 strategies and labels the trader set or confirmed in the app: values written
 through the API or MCP (recorded with source `api`) stay out until the trader
 saves the note in its editor.
+
+### Me and settings
+
+`GET /api/v1/me` says who the key belongs to and what the server is, in
+one call - the app's first request after pairing and its Settings screen:
+
+```jsonc
+{
+  "user": {"id": 1, "username": "trader", "displayName": "Trader", "email": "trader@example.com"},
+  "server": {"url": "https://YOUR_HOST", "version": "v2.17.0", "timezone": "America/Chicago",
+             "features": {"ai": true, "charts": true, "guardrail": true, "push": false}},
+  "settings": {"guardrail": true, "autoPlan": 0},
+  "key": {"kind": "device", "name": "the trader's iPhone", "createdAt": "2026-10-15T14:02:11Z"}
+}
+```
+
+`features` says what this server can do: `ai` (an AI provider is set up),
+`charts` (a market-data source is configured, so chart images and session
+context exist), `guardrail` (the intraday worker runs), `push` (phones can
+register for notifications). `settings.autoPlan` is what a new open
+position gets without a click: `0` nothing, `1` the AI's stop and target
+as a suggestion on its sheet, `2` the suggestion written into the plan.
+
+`PUT /api/v1/settings` (**device key**) changes the switches; present
+fields change, absent ones are kept:
+
+```bash
+curl -X PUT https://YOUR_HOST/api/v1/settings -H "Authorization: Bearer tj_..." \
+  -H "Content-Type: application/json" -d '{"guardrail": true, "autoPlan": 1}'
+# 200 {"settings": {"guardrail": true, "autoPlan": 1}}
+```
+
+An agent key gets `403`; an `autoPlan` outside 0..2 gets `400`.
 
 ### Data version (change detection)
 

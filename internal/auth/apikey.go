@@ -71,31 +71,32 @@ type APIKeyAuth struct {
 // userID(ctx)/MustUser helpers the session app uses.
 func (a *APIKeyAuth) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, reason := a.authenticate(r, parseBearer(r))
+		u, info, reason := a.authenticate(r, parseBearer(r))
 		if u == nil {
 			slog.Debug("api auth rejected", "reason", reason, "method", r.Method, "path", r.URL.Path)
 			writeAPIError(w, http.StatusUnauthorized, reason)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(WithUser(r.Context(), u)))
+		next.ServeHTTP(w, r.WithContext(WithAPIKey(WithUser(r.Context(), u), info)))
 	})
 }
 
-// authenticate resolves a tj_ key to its user, or returns nil and the reason
-// for the 401. Shared by Middleware and the OAuth-aware /mcp middleware so
-// the key rules live in exactly one place.
-func (a *APIKeyAuth) authenticate(r *http.Request, tok string) (*User, string) {
+// authenticate resolves a tj_ key to its user and the key itself, or
+// returns nil and the reason for the 401. Shared by Middleware and the
+// OAuth-aware /mcp middleware so the key rules live in exactly one place.
+func (a *APIKeyAuth) authenticate(r *http.Request, tok string) (*User, APIKeyInfo, string) {
 	if tok == "" || !strings.HasPrefix(tok, "tj_") {
-		return nil, "missing or malformed API key"
+		return nil, APIKeyInfo{}, "missing or malformed API key"
 	}
 	row, err := a.Queries.GetAPIKeyBySHA256(r.Context(), HashAPIKey(tok))
 	if err != nil {
 		// sql.ErrNoRows (unknown OR revoked key) and any other error -> 401.
-		return nil, "invalid API key"
+		return nil, APIKeyInfo{}, "invalid API key"
 	}
 	if row.IsActive == 0 {
-		return nil, "account disabled"
+		return nil, APIKeyInfo{}, "account disabled"
 	}
+	info := APIKeyInfo{ID: row.KeyID, Name: row.KeyName, Kind: normalizeKeyKind(row.KeyKind), CreatedAt: row.KeyCreatedAt}
 	u := &User{
 		ID:          row.UserID,
 		Username:    row.Username,
@@ -114,7 +115,7 @@ func (a *APIKeyAuth) authenticate(r *http.Request, tok string) (*User, string) {
 			_ = a.Queries.TouchAPIKeyLastUsed(ctx, keyID)
 		}()
 	}
-	return u, ""
+	return u, info, ""
 }
 
 // writeAPIError writes a JSON {"error": ...} body. It lives in auth (which can't

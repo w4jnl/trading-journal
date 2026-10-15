@@ -1535,6 +1535,148 @@
       "description": "on a leg of a copied decision, write the plan on every leg (default true)"
      }
     }
+   },
+   "PairRequest": {
+    "type": "object",
+    "required": [
+     "code"
+    ],
+    "properties": {
+     "code": {
+      "type": "string",
+      "description": "The pairing code from Settings > Phone app, e.g. AB7Q-K2MN (case, spaces and the dash do not matter)"
+     },
+     "deviceName": {
+      "type": "string",
+      "description": "The phone's name, shown in Settings"
+     }
+    }
+   },
+   "ServerInfo": {
+    "type": "object",
+    "properties": {
+     "url": {
+      "type": "string"
+     },
+     "version": {
+      "type": "string"
+     },
+     "timezone": {
+      "type": "string"
+     },
+     "features": {
+      "type": "object",
+      "properties": {
+       "ai": {
+        "type": "boolean"
+       },
+       "charts": {
+        "type": "boolean"
+       },
+       "guardrail": {
+        "type": "boolean"
+       },
+       "push": {
+        "type": "boolean"
+       }
+      }
+     }
+    }
+   },
+   "UserInfo": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "username": {
+      "type": "string"
+     },
+     "displayName": {
+      "type": "string"
+     },
+     "email": {
+      "type": "string"
+     }
+    }
+   },
+   "UserSettings": {
+    "type": "object",
+    "properties": {
+     "guardrail": {
+      "type": "boolean",
+      "description": "The intraday guardrail nudges"
+     },
+     "autoPlan": {
+      "type": "integer",
+      "description": "What a new open position gets: 0 nothing, 1 the AI suggestion on its sheet, 2 the suggestion written into the plan"
+     }
+    }
+   },
+   "PairResponse": {
+    "type": "object",
+    "properties": {
+     "key": {
+      "type": "string",
+      "description": "The device key (tj_...), shown once; store it securely"
+     },
+     "server": {
+      "$ref": "#/components/schemas/ServerInfo"
+     },
+     "user": {
+      "$ref": "#/components/schemas/UserInfo"
+     }
+    }
+   },
+   "Me": {
+    "type": "object",
+    "properties": {
+     "user": {
+      "$ref": "#/components/schemas/UserInfo"
+     },
+     "server": {
+      "$ref": "#/components/schemas/ServerInfo"
+     },
+     "settings": {
+      "$ref": "#/components/schemas/UserSettings"
+     },
+     "key": {
+      "type": "object",
+      "properties": {
+       "kind": {
+        "type": "string",
+        "enum": [
+         "agent",
+         "device"
+        ]
+       },
+       "name": {
+        "type": "string"
+       },
+       "createdAt": {
+        "type": "string",
+        "format": "date-time"
+       }
+      }
+     }
+    }
+   },
+   "SettingsInput": {
+    "type": "object",
+    "description": "Present fields change, absent ones are kept.",
+    "properties": {
+     "guardrail": {
+      "type": "boolean"
+     },
+     "autoPlan": {
+      "type": "integer",
+      "enum": [
+       0,
+       1,
+       2
+      ]
+     }
+    }
    }
   }
  },
@@ -3191,6 +3333,126 @@
      },
      "409": {
       "description": "No open position on this account and contract",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/pair": {
+   "post": {
+    "operationId": "pair",
+    "security": [],
+    "summary": "Exchange a one-time pairing code (Settings > Phone app) for a device key. No key needed; throttled per address.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/PairRequest"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "The device key, the server and the user",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/PairResponse"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Unknown, used or expired code",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "429": {
+      "description": "Too many failed attempts from this address; see Retry-After",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/me": {
+   "get": {
+    "operationId": "me",
+    "summary": "The key's user, the server (version, timezone, features) and the user's settings",
+    "responses": {
+     "200": {
+      "description": "Who and where",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Me"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/settings": {
+   "put": {
+    "operationId": "setSettings",
+    "summary": "Change the user's switches (device key only): guardrail, automatic plans",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/SettingsInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The settings after the change",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "settings": {
+           "$ref": "#/components/schemas/UserSettings"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid field",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
       "content": {
        "application/json": {
         "schema": {
