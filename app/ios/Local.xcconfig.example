@@ -1,0 +1,14 @@
+// Copy to Local.xcconfig (gitignored; make ios-project writes a default one). Your Apple team
+// id signs device and TestFlight builds (the simulator needs none): Xcode → Settings → Accounts,
+// or Membership in the developer account.
+TJ_TEAM_ID = ABCDE12345
+// The push, App Group and keychain entitlements. Keep it for a paid developer account; a free
+// Apple ID's personal team cannot sign it: make it empty (the app then works while open, without
+// pushes or widgets).
+TJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements
+// Optional: an App Store Connect API key (Users and Access → Integrations → App Store Connect
+// API, role Admin), so make ios-testflight and ios-device sign in with it instead of Xcode's
+// account, whose session expires. The .p8 goes to ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8
+// (chmod 600); empty: Xcode's account.
+TJ_ASC_KEY_ID =
+TJ_ASC_ISSUER_ID =
