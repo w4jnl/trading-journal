@@ -11,24 +11,29 @@ import (
 )
 
 const createAPIKey = `-- name: CreateAPIKey :one
-INSERT INTO api_keys (user_id, name, key_prefix, key_sha256)
-VALUES (?, ?, ?, ?)
-RETURNING id, user_id, name, key_prefix, key_sha256, created_at, last_used_at, revoked_at
+INSERT INTO api_keys (user_id, name, key_prefix, key_sha256, kind, device_name)
+VALUES (?, ?, ?, ?, ?, ?)
+RETURNING id, user_id, name, key_prefix, key_sha256, created_at, last_used_at, revoked_at, kind, device_name
 `
 
 type CreateAPIKeyParams struct {
-	UserID    int64  `json:"user_id"`
-	Name      string `json:"name"`
-	KeyPrefix string `json:"key_prefix"`
-	KeySha256 string `json:"key_sha256"`
+	UserID     int64   `json:"user_id"`
+	Name       string  `json:"name"`
+	KeyPrefix  string  `json:"key_prefix"`
+	KeySha256  string  `json:"key_sha256"`
+	Kind       string  `json:"kind"`
+	DeviceName *string `json:"device_name"`
 }
 
+// kind is 'agent' or 'device'; device_name names the phone of a device key.
 func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (ApiKey, error) {
 	row := q.db.QueryRowContext(ctx, createAPIKey,
 		arg.UserID,
 		arg.Name,
 		arg.KeyPrefix,
 		arg.KeySha256,
+		arg.Kind,
+		arg.DeviceName,
 	)
 	var i ApiKey
 	err := row.Scan(
@@ -40,6 +45,8 @@ func (q *Queries) CreateAPIKey(ctx context.Context, arg CreateAPIKeyParams) (Api
 		&i.CreatedAt,
 		&i.LastUsedAt,
 		&i.RevokedAt,
+		&i.Kind,
+		&i.DeviceName,
 	)
 	return i, err
 }
@@ -63,6 +70,8 @@ SELECT k.id         AS key_id,
        k.user_id    AS user_id,
        k.name       AS key_name,
        k.key_prefix AS key_prefix,
+       k.kind       AS key_kind,
+       k.created_at AS key_created_at,
        u.username,
        COALESCE(u.display_name, u.username) AS display_name,
        COALESCE(u.email, '')                AS email,
@@ -74,15 +83,17 @@ WHERE k.key_sha256 = ? AND k.revoked_at IS NULL
 `
 
 type GetAPIKeyBySHA256Row struct {
-	KeyID       int64  `json:"key_id"`
-	UserID      int64  `json:"user_id"`
-	KeyName     string `json:"key_name"`
-	KeyPrefix   string `json:"key_prefix"`
-	Username    string `json:"username"`
-	DisplayName string `json:"display_name"`
-	Email       string `json:"email"`
-	IsAdmin     int64  `json:"is_admin"`
-	IsActive    int64  `json:"is_active"`
+	KeyID        int64     `json:"key_id"`
+	UserID       int64     `json:"user_id"`
+	KeyName      string    `json:"key_name"`
+	KeyPrefix    string    `json:"key_prefix"`
+	KeyKind      string    `json:"key_kind"`
+	KeyCreatedAt time.Time `json:"key_created_at"`
+	Username     string    `json:"username"`
+	DisplayName  string    `json:"display_name"`
+	Email        string    `json:"email"`
+	IsAdmin      int64     `json:"is_admin"`
+	IsActive     int64     `json:"is_active"`
 }
 
 // Auth lookup. Joins users (COALESCE so display_name/email come back as plain
@@ -98,6 +109,8 @@ func (q *Queries) GetAPIKeyBySHA256(ctx context.Context, keySha256 string) (GetA
 		&i.UserID,
 		&i.KeyName,
 		&i.KeyPrefix,
+		&i.KeyKind,
+		&i.KeyCreatedAt,
 		&i.Username,
 		&i.DisplayName,
 		&i.Email,
@@ -108,7 +121,7 @@ func (q *Queries) GetAPIKeyBySHA256(ctx context.Context, keySha256 string) (GetA
 }
 
 const listAPIKeysForUser = `-- name: ListAPIKeysForUser :many
-SELECT id, user_id, name, key_prefix, created_at, last_used_at, revoked_at
+SELECT id, user_id, name, key_prefix, kind, device_name, created_at, last_used_at, revoked_at
 FROM api_keys
 WHERE user_id = ?
 ORDER BY created_at DESC, id DESC
@@ -119,6 +132,8 @@ type ListAPIKeysForUserRow struct {
 	UserID     int64      `json:"user_id"`
 	Name       string     `json:"name"`
 	KeyPrefix  string     `json:"key_prefix"`
+	Kind       string     `json:"kind"`
+	DeviceName *string    `json:"device_name"`
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	RevokedAt  *time.Time `json:"revoked_at"`
@@ -139,6 +154,8 @@ func (q *Queries) ListAPIKeysForUser(ctx context.Context, userID int64) ([]ListA
 			&i.UserID,
 			&i.Name,
 			&i.KeyPrefix,
+			&i.Kind,
+			&i.DeviceName,
 			&i.CreatedAt,
 			&i.LastUsedAt,
 			&i.RevokedAt,

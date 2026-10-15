@@ -47,6 +47,8 @@ type ApiKey struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	LastUsedAt *time.Time `json:"last_used_at"`
 	RevokedAt  *time.Time `json:"revoked_at"`
+	Kind       string     `json:"kind"`
+	DeviceName *string    `json:"device_name"`
 }
 
 type AssetClass struct {
@@ -310,6 +312,16 @@ type OauthRefreshToken struct {
 	RevokedAt   *time.Time `json:"revoked_at"`
 	RotatedTo   *string    `json:"rotated_to"`
 	CreatedAt   time.Time  `json:"created_at"`
+}
+
+type PairCode struct {
+	ID         int64      `json:"id"`
+	UserID     int64      `json:"user_id"`
+	CodeSha256 string     `json:"code_sha256"`
+	DeviceHint string     `json:"device_hint"`
+	CreatedAt  time.Time  `json:"created_at"`
+	ExpiresAt  time.Time  `json:"expires_at"`
+	UsedAt     *time.Time `json:"used_at"`
 }
 
 type PositionPlan struct {

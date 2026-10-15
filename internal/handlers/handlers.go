@@ -136,6 +136,10 @@ type Handlers struct {
 	// autoPlan is the automatic planner's memory (RunAutoPlanner).
 	autoPlan autoPlanner
 
+	// PairLimiter throttles the pairing code exchange per address; nil
+	// (tests) means no limit.
+	PairLimiter *auth.AttemptLimiter
+
 	// AISecrets opens the per-user AI provider keys (user_ai_settings). Nil
 	// when users may not bring their own key (ai.user_keys false, or no
 	// secrets encryption key configured).
