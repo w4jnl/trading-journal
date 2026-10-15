@@ -42,7 +42,6 @@ func newJournalEditFixture(t *testing.T) *journalEditFixture {
 		agent:  auth.WithAPIKey(fx.ctx, auth.APIKeyInfo{Kind: auth.KeyKindAgent}), day: e}
 }
 
-
 func (fx *journalEditFixture) call(ctx context.Context, fn http.HandlerFunc, method string, id int64, body string) (int, map[string]any) {
 	req := httptest.NewRequest(method, "/api/v1/journal/x", strings.NewReader(body)).WithContext(ctx)
 	if id > 0 {
