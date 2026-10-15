@@ -343,6 +343,7 @@ type positionAIView struct {
 	At       time.Time
 	Key      string // the task key for the poll
 	Outdated bool   // the position's size or entry changed since
+	Auto     string // what new positions get without a click: "off", "suggest", "plan"
 }
 
 // positionSuggestion loads the sheet's view of the suggestion.
@@ -355,6 +356,7 @@ func (h *Handlers) positionSuggestion(ctx context.Context, pos positionView) pos
 	key := aiTaskKey(uid, "levels", strconv.FormatInt(pos.AccountID, 10), pos.Symbol)
 	v.Pending = h.AITasks.Pending(key)
 	v.Error = h.AITasks.TakeError(uid, key)
+	v.Auto = h.userAutoPlan(ctx)
 	out, err := h.Queries.GetAIOutput(ctx, models.GetAIOutputParams{UserID: uid, Kind: aiKindPositionLevels, Ref: aiLevelsRef(pos.AccountID, pos.Symbol, pos.Opened.ID)})
 	if err != nil {
 		return v
@@ -432,12 +434,7 @@ func (h *Handlers) PositionSuggestApply(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, "no suggestion to apply", http.StatusConflict)
 		return
 	}
-	stop, target := v.Levels.Stop, v.Levels.Target
-	thesis := pos.Thesis
-	if thesis == "" {
-		thesis = aiTruncate(v.Levels.Summary, 300)
-	}
-	msg, err := h.savePositionPlan(ctx, pos, positionPlanInput{Stop: &stop, Target: &target, Thesis: thesis, AllLegs: pos.InSet(), Source: "ai"})
+	msg, err := h.applyPositionSuggestion(ctx, pos, v)
 	if err != nil {
 		h.serverError(w, err)
 		return
@@ -450,6 +447,18 @@ func (h *Handlers) PositionSuggestApply(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	http.Redirect(w, r, positionHref(pos.AccountID, pos.Symbol), http.StatusSeeOther)
+}
+
+// applyPositionSuggestion writes the suggestion's stop and first target
+// into the position's plan (source 'ai'), on every leg of a copied
+// decision, keeping a thesis the trader typed; the message is the sheet's.
+func (h *Handlers) applyPositionSuggestion(ctx context.Context, pos positionView, v positionAIView) (string, error) {
+	stop, target := v.Levels.Stop, v.Levels.Target
+	thesis := pos.Thesis
+	if thesis == "" {
+		thesis = aiTruncate(v.Levels.Summary, 300)
+	}
+	return h.savePositionPlan(ctx, pos, positionPlanInput{Stop: &stop, Target: &target, Thesis: thesis, AllLegs: pos.InSet(), Source: "ai"})
 }
 
 // PositionSuggestDismiss: POST /positions/{account}/{symbol}/suggest/dismiss.

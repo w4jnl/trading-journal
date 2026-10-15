@@ -319,6 +319,7 @@ func (h *Handlers) TradesPage(w http.ResponseWriter, r *http.Request) {
 		"NavActive":        "trades",
 		"BackHref":         validBackHref(r),
 		"OpenPositions":    openPositions,
+		"OpenDecisions":    groupOpenDecisions(openPositions),
 		"Status":           filters.Status,
 		"Trades":           rows,
 		"Total":            total,

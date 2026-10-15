@@ -42,7 +42,10 @@ around it.
   flat) inherits the set's plan, marked "from set" until the trader
   saves it. Accounts a copier drives together can be given the same
   **copy group** on `/accounts`, which lets their legs count as one
-  decision up to thirty seconds apart instead of two. The guardrail, when
+  decision up to thirty seconds apart instead of two; in the sets view the
+  open strip folds such a decision into one row (size, risk and unrealized
+  summed, the entry averaged with the spread, the shared stop and target)
+  with the legs under a chevron, like a closed set. The guardrail, when
   on, says once when a position has been open for a few minutes with no
   stop recorded and when the stops on what is open risk more than the day
   plan's max loss still allows; the API and MCP list positions and record
@@ -57,7 +60,17 @@ around it.
   to tick) and prices itself. It is shown dashed; "Use as plan" writes it
   with source `ai`, nothing else touches the plan, and after the close the
   suggestion stays on the trade sheet next to what the trader chose, made
-  before the outcome existed. The model does not get a bare slice of bars:
+  before the outcome existed. Settings > AI chooses what a **new open
+  position** gets without a click (nothing, by default): the suggestion
+  made for it and waiting on its sheet, or the suggestion written straight
+  into the plan, a copied decision once for all its legs; the plan then
+  reads as `ai` and the trader edits or clears it like any other. Each
+  position is judged once (a dismissed suggestion or a cleared plan is not
+  made again) and a carried position (open for days) is left alone. A
+  scale-in (a fill adding to the open position) is the same cycle: the
+  sheet says so and shows how the average moved, the stop and target set
+  on the first fill stay until the trader changes them, nothing moves them
+  automatically, and only the money at risk follows the size. The model does not get a bare slice of bars:
   it gets the **session** as a trader reads it, computed from the cached
   one-minute bars as of the moment (prior RTH range and close, overnight
   range, opening range, session extremes, VWAP, ATR, the last swing highs

@@ -72,8 +72,16 @@ type positionView struct {
 	PointValue  float64  // for the form's live mirror (0 on a stub instrument)
 	TickSize    float64
 
-	// Fills of the cycle (entries and partial exits), for the sheet.
+	// Fills of the cycle (entries and partial exits), for the sheet. A
+	// scale-in (DCA: a fill adding to the position after the one that opened
+	// it) is counted, with the opening fill's price, so the sheet can say
+	// the average moved while the plan did not: the stop and target set on
+	// the first fill stay until the trader changes them (nothing changes
+	// them automatically; only the money at risk follows the size).
 	CycleFills []models.Execution
+	AddedFills int
+	AddedQty   float64
+	OpenPrice  float64
 	// Admin link to the reconcile editor for this account and contract.
 	ReconcileHref string
 
@@ -242,6 +250,13 @@ func (h *Handlers) fillPositionView(ctx context.Context, row *positionView, inst
 			break
 		}
 	}
+	row.OpenPrice = pos.Opened.Price
+	for _, f := range row.CycleFills {
+		if f.ID != pos.Opened.ID && f.Side == pos.Opened.Side {
+			row.AddedFills++
+			row.AddedQty += f.Qty
+		}
+	}
 
 	inst := h.instrument(ctx, row.SymbolRoot, insts)
 	if inst != nil {
@@ -263,7 +278,7 @@ func (h *Handlers) fillPositionView(ctx context.Context, row *positionView, inst
 		if plan.Stop != nil && inst != nil {
 			if r := positions.PlannedRisk(avg, *plan.Stop, row.Qty, *inst); r != nil && !sameFloat(r, plan.Risk) {
 				row.Risk = r
-				if err := h.rq().SetPositionPlanRisk(ctx, models.SetPositionPlanRiskParams{Risk: r, ID: plan.ID}); err != nil {
+				if err := h.Queries.SetPositionPlanRisk(ctx, models.SetPositionPlanRiskParams{Risk: r, ID: plan.ID}); err != nil {
 					h.logger().Warn("open positions: update plan risk", "plan", plan.ID, "err", err)
 				}
 			}
@@ -322,15 +337,8 @@ func (h *Handlers) loadPosition(w http.ResponseWriter, r *http.Request) (positio
 		http.Error(w, "account not found", http.StatusNotFound)
 		return positionView{}, false
 	}
-	open, err := h.rq().ListOpenPositions(ctx, userID(ctx))
-	if err != nil {
-		h.serverError(w, fmt.Errorf("list open positions: %w", err))
-		return positionView{}, false
-	}
-	for _, v := range h.openPositionRows(ctx, open) {
-		if v.AccountID == accountID && v.Symbol == symbol {
-			return v, true
-		}
+	if v, ok := h.openPosition(ctx, accountID, symbol); ok {
+		return v, true
 	}
 	// Flat: the sheet reports it and points at the trade the cycle became.
 	root := symbol
@@ -340,6 +348,23 @@ func (h *Handlers) loadPosition(w http.ResponseWriter, r *http.Request) (positio
 	v := positionView{ListOpenPositionsRow: models.ListOpenPositionsRow{AccountID: accountID, AccountName: acct.Name, AccountRef: acct.AccountRef, Firm: acct.Firm, Symbol: symbol, SymbolRoot: root}}
 	v.Key = positionKey(accountID, symbol)
 	return v, true
+}
+
+// openPosition is the caller's open position on the account and contract
+// with its siblings linked, false when it is flat (or the account not
+// theirs: ListOpenPositions is scoped to the user).
+func (h *Handlers) openPosition(ctx context.Context, accountID int64, symbol string) (positionView, bool) {
+	open, err := h.rq().ListOpenPositions(ctx, userID(ctx))
+	if err != nil {
+		h.logger().Warn("list open positions", "err", err)
+		return positionView{}, false
+	}
+	for _, v := range h.openPositionRows(ctx, open) {
+		if v.AccountID == accountID && v.Symbol == symbol {
+			return v, true
+		}
+	}
+	return positionView{}, false
 }
 
 // PositionSheet: GET /positions/{account}/{symbol} - the sheet of one open

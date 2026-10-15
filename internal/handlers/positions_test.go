@@ -253,6 +253,17 @@ func TestOpenPosition_SetFanOut(t *testing.T) {
 	if page := fx.trades(t, ""); strings.Count(page, `class="pill set-badge"`) != 2 {
 		t.Errorf("both strip rows should carry the set badge")
 	}
+	// The sets view folds the decision into one row with the legs under it.
+	sets := fx.trades(t, "?view=sets")
+	leadKey := "posset:" + strconv.FormatInt(fx.acct.ID, 10) + ":ESM6"
+	for _, want := range []string{"1</span> decision", "2</span> legs", `data-trade-id="` + leadKey + `"`, `data-set-toggle="` + leadKey + `"`, "set ×2", "2</span> accounts", "±0.5"} {
+		if !strings.Contains(sets, want) {
+			t.Errorf("sets strip lacks %q", want)
+		}
+	}
+	if strings.Count(sets, `data-member-of="`+leadKey+`"`) != 2 {
+		t.Errorf("sets strip should fold both legs under the decision")
+	}
 
 	// All legs: stop 7241 on both; the follower's risk |7250.5 - 7241| * 5 * 2 = 95.
 	code, out := fx.savePlan(t, url.Values{"stop": {"7241"}, "risk": {""}, "target": {"7271"}, "thesis": {"copied"}, "all_legs": {"1"}})

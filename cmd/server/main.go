@@ -868,6 +868,7 @@ func run() error {
 	mux.HandleFunc("POST /settings/ai/delete", h.SettingsAIDelete)
 	mux.HandleFunc("POST /settings/ai/models", h.SettingsAIModels)
 	mux.HandleFunc("POST /settings/ai/chart", h.SettingsAIChartSave)
+	mux.HandleFunc("POST /settings/ai/autoplan", h.SettingsAIAutoPlanSave)
 	mux.HandleFunc("POST /settings/guardrail", h.SettingsGuardrailSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
@@ -1085,6 +1086,10 @@ func run() error {
 		go excursions.FillAll(ctx)
 	}
 	go guard.Run(ctx)
+	if aiTasks != nil {
+		// Stop and target on new positions for the users who asked for it.
+		go h.RunAutoPlanner(ctx)
+	}
 	// Copy sets for databases from before the feature: one pass, fast.
 	copyset.Backfill(ctx, queries, slog.Default())
 

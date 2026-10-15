@@ -2023,6 +2023,9 @@ body[data-ai="off"] .ai-action { display: none !important; }
 .pill--stale { background: transparent; color: var(--warn-text, var(--fg-muted)); border: 1px dashed var(--warn, var(--border-strong)); }
 .pill--plan-missing { background: transparent; color: var(--warn-text, var(--fg-muted)); border: 1px dashed var(--warn, var(--border-strong)); font-weight: var(--fw-semibold); }
 .open-strip { margin-bottom: 12px; border-left: 3px solid var(--accent); }
+.pill--scaled { background: var(--bg-sunken); color: var(--fg-muted); border: 1px solid var(--border); }
+.position-note { font-size: 12px; margin: -4px 0 12px; padding: 6px 10px; border-radius: var(--r-sm, 4px); background: var(--bg-sunken); color: var(--fg-muted); }
+.position-note--scaled { border-left: 3px solid var(--border-strong, var(--border)); }
 .open-strip--flat { color: var(--pos); font-weight: var(--fw-semibold); font-size: var(--fs-13); }
 .open-strip__table th, .open-strip__table td { white-space: nowrap; }
 .open-row--beyond td.c-sym .pill--live { border-color: var(--neg); color: var(--neg); }

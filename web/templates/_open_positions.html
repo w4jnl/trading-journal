@@ -50,18 +50,23 @@
      /trades. Context: the page data (OpenPositions []positionView, Status).
      Rows carry data-trade-id="pos:<account>:<symbol>" so trade_sheet.js opens
      the position's sheet and the live refresh swaps changed rows in place;
-     when a position closes its row leaves and the trade appears below. */}}
+     when a position closes its row leaves and the trade appears below. In the
+     sets view (View "sets", OpenDecisions []openDecision) a copied decision is
+     one row keyed "posset:..." with its legs folded under the chevron, like
+     a closed set. */}}
 {{define "open_positions_strip"}}
 {{if .OpenPositions}}
 <div class="card card--compact open-strip" data-open-strip>
   <div class="row-sm" style="justify-content: space-between; align-items: baseline; margin-bottom: 6px;">
-    <span class="label">Open now · <span class="num">{{len .OpenPositions}}</span></span>
+    {{if eq .View "sets"}}<span class="label">Open now · <span class="num">{{len .OpenDecisions}}</span> decision{{if ne (len .OpenDecisions) 1}}s{{end}}{{if ne (len .OpenDecisions) (len .OpenPositions)}} · <span class="num">{{len .OpenPositions}}</span> legs{{end}}</span>
+    {{else}}<span class="label">Open now · <span class="num">{{len .OpenPositions}}</span></span>{{end}}
     <span class="muted" style="font-size: 11px;">a position becomes a trade when it closes; plan it while it is open</span>
   </div>
   <div class="table-scroll">
-  <table class="trades-table open-strip__table">
+  <table class="trades-table open-strip__table{{if eq .View "sets"}} sets-table{{end}}">
     <thead>
       <tr>
+        {{if eq .View "sets"}}<th class="c-x"></th>{{end}}
         <th class="c-time">Opened</th>
         <th class="c-acct">Account</th>
         <th class="c-sym">Symbol</th>
@@ -77,9 +82,61 @@
       </tr>
     </thead>
     <tbody>
+    {{if eq .View "sets"}}
+    {{range .OpenDecisions}}{{$d := .}}
+      {{if .IsSet}}
+      <tr class="trade-row open-row set-row{{if .BeyondStop}} open-row--beyond{{end}}" data-trade-id="{{.Key}}" tabindex="0"
+          hx-get="{{.Lead.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="One decision copied across {{.Accounts}} accounts: open the sheet to plan every leg at once">
+        <td class="c-x"><button type="button" class="set-toggle" data-set-toggle="{{.Key}}" data-stop aria-expanded="false" title="Show the accounts in this decision" aria-label="Show the accounts in this decision">▸</button></td>
+        <td class="c-time">{{ltime .Lead.OpenedAt "datetime"}}{{if .Lead.Stale}} <span class="pill pill--stale" title="Opened more than three days ago: carried, or fills are missing">carried?</span>{{end}}</td>
+        <td class="c-acct"><span class="num">{{.Accounts}}</span> accounts</td>
+        <td class="c-sym"><span class="num">{{.Lead.Symbol}}</span> <span class="pill pill--live">open</span> <span class="pill set-badge" title="One decision copied across {{.Accounts}} accounts">set ×{{.Accounts}}</span></td>
+        <td class="c-dir">{{if eq .Lead.Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td class="num c-qty">{{.Qty}}</td>
+        <td class="num c-entry">{{if .EntryAvg}}{{printf "%.2f" (deref .EntryAvg)}}{{if gt .Spread 0.0}} <span class="subtle" title="Spread between the best and worst leg's entry">±{{printf "%g" .Spread}}</span>{{end}}{{else}}—{{end}}</td>
+        <td class="num" title="{{if .Lead.LastPrice}}via {{.Lead.PriceSource}}{{end}}">{{if .Lead.LastPrice}}{{printf "%.2f" (deref .Lead.LastPrice)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num" title="Summed over the legs">{{if .Unrealized}}<span class="{{pnlSign (deref .Unrealized)}}">{{if ge (deref .Unrealized) 0.0}}+{{end}}{{printf "%.2f" (deref .Unrealized)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        {{if .HasPlan}}
+        <td class="num {{if .BeyondStop}}pnl-neg{{end}}">{{if .Stop}}{{printf "%g" (deref .Stop)}}{{else if .Varies}}<span class="muted" title="The legs' plans differ: open the chevron">varies</span>{{else}}<span class="muted">—</span>{{end}}{{if .Unplanned}} <span class="pill pill--plan-missing" title="{{.Unplanned}} of the legs have no plan">{{.Unplanned}} unplanned</span>{{end}}</td>
+        <td class="num">{{if .Target}}{{printf "%g" (deref .Target)}}{{else if .Varies}}<span class="muted">varies</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num" title="Summed over the planned legs">{{if .Risk}}{{printf "%.2f" (deref .Risk)}}{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="num">{{if .Lead.TicksToStop}}<span class="{{if .Lead.BeyondStop}}pnl-neg{{end}}" title="On the lead leg">{{printf "%g" (deref .Lead.TicksToStop)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        {{else}}
+        <td colspan="4"><span class="pill pill--plan-missing">set plan</span></td>
+        {{end}}
+      </tr>
+      {{range .Members}}
+      <tr class="trade-row open-row set-member{{if .BeyondStop}} open-row--beyond{{end}}" data-trade-id="{{.Key}}" data-member-of="{{$d.Key}}" hidden tabindex="0"
+          hx-get="{{.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="{{.Title}}">
+        <td class="c-x"></td>
+        {{template "open_position_cells" .}}
+      </tr>
+      {{end}}
+      {{else}}
+      <tr class="trade-row open-row{{if .Lead.BeyondStop}} open-row--beyond{{end}}" data-trade-id="{{.Lead.Key}}" tabindex="0"
+          hx-get="{{.Lead.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="{{.Lead.Title}}">
+        <td class="c-x"></td>
+        {{template "open_position_cells" .Lead}}
+      </tr>
+      {{end}}
+    {{end}}
+    {{else}}
     {{range .OpenPositions}}
       <tr class="trade-row open-row{{if .BeyondStop}} open-row--beyond{{end}}" data-trade-id="{{.Key}}" tabindex="0"
           hx-get="{{.SheetURL}}" hx-target="#trade-sheet-content" hx-swap="innerHTML" title="{{.Title}}">
+        {{template "open_position_cells" .}}
+      </tr>
+    {{end}}
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+</div>
+{{end}}
+{{end}}
+
+{{/* open_position_cells: the cells of one open position's strip row. */}}
+{{define "open_position_cells"}}
         <td class="c-time">{{if not .OpenedAt.IsZero}}{{ltime .OpenedAt "datetime"}}{{else}}{{ltimep .LastExecTime "datetime"}}{{end}}{{if .Stale}} <span class="pill pill--stale" title="Opened more than three days ago: carried, or fills are missing">carried?</span>{{end}}</td>
         <td class="c-acct">{{.AccountName}}</td>
         <td class="c-sym"><span class="num">{{.Symbol}}</span> <span class="pill pill--live">open</span>{{if .InSet}} <span class="pill set-badge" title="One decision copied across {{add (len .Legs) 1}} accounts">set</span>{{end}}</td>
@@ -96,11 +153,4 @@
         {{else}}
         <td colspan="4">{{if .AvgEntry}}<span class="pill pill--plan-missing">set plan</span>{{else}}<span class="muted" title="The fills do not replay to an open position: reconcile the account">data gap</span>{{end}}</td>
         {{end}}
-      </tr>
-    {{end}}
-    </tbody>
-  </table>
-  </div>
-</div>
-{{end}}
 {{end}}
