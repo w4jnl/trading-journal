@@ -40,11 +40,19 @@ in the app forgets it on the phone.
 
 ## On a phone
 
-1. Copy `Local.xcconfig.example` to `Local.xcconfig` and put your Apple team id in it. A free
-   Apple ID installs on your own phone from Xcode (set `TJ_ENTITLEMENTS =` empty: its personal
-   team cannot sign push); the Developer Program adds push, widgets and TestFlight.
-2. `make ios-device` with the phone unlocked on a cable.
-3. `make ios-testflight` archives and uploads (the app record `nl.w4j.tradingjournal` must exist
+1. Copy `Local.xcconfig.example` to `Local.xcconfig` and put your Apple team id in it, plus an
+   App Store Connect API key (role Admin) so the command line signs in without Xcode's account.
+   A free Apple ID installs on your own phone from Xcode (set `TJ_ENTITLEMENTS =` empty: its
+   personal team cannot sign push); the Developer Program adds push, widgets and TestFlight.
+2. The first build registers the App ID `nl.w4j.tradingjournal` with Push Notifications and App
+   Groups by itself. Two things the API cannot register, done once in the developer portal
+   (Certificates, Identifiers & Profiles): under **Identifiers → App Groups** register
+   `group.nl.w4j.tradingjournal`; under **Identifiers → App IDs → nl.w4j.tradingjournal** tick
+   **Time Sensitive Notifications** and, next to App Groups, *Configure* and tick the group.
+   Until then sign with `TradingJournal.basic.entitlements` (see `Local.xcconfig.example`):
+   push and the keychain group, no widgets.
+3. `make ios-device` with the phone unlocked on a cable.
+4. `make ios-testflight` archives and uploads (the app record `nl.w4j.tradingjournal` must exist
    in App Store Connect). The marketing version follows the server's release.
 
 ## Layout
