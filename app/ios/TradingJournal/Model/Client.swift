@@ -6,6 +6,7 @@ import Foundation
 import Observation
 import OSLog
 import UIKit
+import WidgetKit
 
 @MainActor
 @Observable
@@ -33,6 +34,9 @@ final class Client {
     private(set) var lastError: String?
     /// Set by a notification tap, a deep link or a launch argument: RootView navigates there and clears it.
     var pendingRoute: Route?
+    /// The last trading days for the widgets' strip, refreshed every quarter hour at most.
+    private var recentDays: [TodayCache.DayCell] = []
+    private var recentDaysAt: Date?
 
     private let session: URLSession
     private let streamSession: URLSession
@@ -181,10 +185,25 @@ final class Client {
             }
             try? await UNUserNotificationCenterBadge.set(t.nudges.badge)
             await Notifications.clearDelivered(unseen: Set(t.nudges.items.filter(\.unseen).map(\.id)))
+            await refreshRecentDays(t)
+            TodayCache.from(t, days: recentDays).write()
+            WidgetCenter.shared.reloadAllTimelines()
+            LiveActivities.shared.ensureSession(t, allowed: settings.notificationPrefs.showsActivity)
         } catch TJError.unauthorized {
             connection = .unauthorized
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// The last ten trading days before today, for the widgets; at most every quarter hour.
+    private func refreshRecentDays(_ t: Today) async {
+        if let at = recentDaysAt, Date.now.timeIntervalSince(at) < 15 * 60 { return }
+        guard let api else { return }
+        let from = Formatting.day(Date().addingTimeInterval(-16 * 86400), tz: t.tz)
+        if let s = try? await api.get(DailyStats.self, "/stats/daily", query: [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: "yesterday")], session: session) {
+            recentDays = s.items.suffix(10).map { TodayCache.DayCell(date: $0.date, net: $0.net, trades: $0.trades) }
+            recentDaysAt = .now
         }
     }
 

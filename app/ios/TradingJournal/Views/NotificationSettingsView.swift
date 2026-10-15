@@ -36,7 +36,10 @@ struct NotificationSettingsView: View {
                 }
             }
             Section {
-                Toggle("Session in the Dynamic Island and on the Lock Screen", isOn: Binding(get: { prefs.showsActivity }, set: { on in notifications.updatePrefs { $0.noActivity = on ? nil : true } }))
+                Toggle("Session in the Dynamic Island and on the Lock Screen", isOn: Binding(get: { prefs.showsActivity }, set: { on in
+                    notifications.updatePrefs { $0.noActivity = on ? nil : true }
+                    if let t = client.today { LiveActivities.shared.ensureSession(t, allowed: on) }
+                }))
                     .tint(Brand.accent)
                 if prefs.showsActivity {
                     Toggle("Closed trades as notifications too", isOn: Binding(get: { prefs.finishedAsNotification == true }, set: { on in notifications.updatePrefs { $0.finishedAsNotification = on ? true : nil } }))
@@ -45,7 +48,9 @@ struct NotificationSettingsView: View {
             } header: {
                 Text("Live Activity")
             } footer: {
-                Text("The Session activity starts on the first fill of the day and ends when the day is flat and quiet. While it shows, a closed trade lights it up with its sound instead of a separate notification; nudges are always notifications. The activity itself arrives with the next build of the app.")
+                Text(LiveActivities.shared.enabled
+                     ? "The Session activity starts on the first fill of the day and ends when the day is flat and quiet. While it shows, a closed trade lights it up with its sound instead of a separate notification; nudges are always notifications."
+                     : "Live Activities are off for Journal: Settings → Journal → Live Activities.")
             }
             if let e = notifications.prefsError {
                 Section {

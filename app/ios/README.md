@@ -50,7 +50,10 @@ in the app forgets it on the phone.
    `group.nl.w4j.tradingjournal`; under **Identifiers → App IDs → nl.w4j.tradingjournal** tick
    **Time Sensitive Notifications** and, next to App Groups, *Configure* and tick the group.
    Until then sign with `TradingJournal.basic.entitlements` (see `Local.xcconfig.example`):
-   push and the keychain group, no widgets.
+   push and the keychain group, no widgets. The widgets' own App ID,
+   `nl.w4j.tradingjournal.Widgets`, needs the same group assigned (the first signed build
+   registers the App ID; then App IDs → it → App Groups → Configure); until then leave
+   `TJ_WIDGET_ENTITLEMENTS` empty and the widgets show their placeholder.
 3. `make ios-device` with the phone unlocked on a cable.
 4. `make ios-testflight` archives and uploads (the app record `nl.w4j.tradingjournal` must exist
    in App Store Connect). The marketing version follows the server's release.
@@ -81,6 +84,22 @@ are checked on a phone, where `make ios-device` installs a build that registers 
 `SHOTS=/dir PUSH=1 make ios-screens` with `SHOTS=/dir app/ios/TJScreens/push-driver.sh` beside it
 walks the notification flow in the simulator and photographs the banner and the expanded card.
 
+## Live Activity and widgets
+
+`TJWidgets` is the Session Live Activity (Dynamic Island, Lock Screen) and the Today widgets.
+`Shared/SessionActivity.swift` holds the attributes and the content state the server pushes
+(API.md, "The Session activity"), `Shared/LiveViews.swift` the faces. `LiveActivities.swift`
+hands the server the push-to-start token and each activity's update token, starts the Session
+itself when the app is open and the day has begun, refreshes it from Today while the app is in
+front, and ends it when the user switches it off. The server starts it on the first fill of the
+day, updates it on every change and ends it when the day is flat and quiet. While it shows, a
+closed trade lights it up with its sound instead of a separate notification (Settings →
+Notifications → "Closed trades as notifications too" turns that off). The Today widgets
+(`accessoryCircular`, `accessoryRectangular`, `accessoryInline`, `systemSmall`, `systemMedium`)
+read `Shared/TodayCache.swift`, which the app writes to the App Group after every fetch, and
+reload then and on the silent sync. An unsigned simulator build has no APS environment: the
+activity still starts locally and follows the app, but no push reaches it.
+
 ## Layout
 
 - `Shared/`: compiled into the app and, in later phases, every extension. `Wire.swift` (the
@@ -95,15 +114,14 @@ walks the notification flow in the simulator and photographs the banner and the 
 
 ## What is in this build
 
-Phases 1 to 3 of the plan: pairing, the read-only screens (Today, positions, trades, journal,
+Phases 1 to 4 of the plan: pairing, the read-only screens (Today, positions, trades, journal,
 calendar, accounts and equity, nudges, the day plan, settings), the writes from the phone
 (journal edit, delete, append and the first note on a trade or a day, photos as attachments, the
 day plan, the plan on an open position with the risk mirrored live, the trader's switches,
-balance anchors), and push: registration, the three categories with their Lock Screen actions,
-the service and content extensions, the settings mirrored to the server, the badge and the
-silent sync. A save that meets an AI review in progress offers to append instead; one that
-meets a changed entry offers to reload or overwrite.
+balance anchors), push (registration, the three categories with their Lock Screen actions, the
+service and content extensions, the settings mirrored to the server, the badge and the silent
+sync), and the Session Live Activity with the Today widgets. A save that meets an AI review in
+progress offers to append instead; one that meets a changed entry offers to reload or overwrite.
 
 `SERVER=http://… KEY=tj_… make ios-test` also runs the live write tests against that
-journal (they put back what they change). The Session Live Activity and the widgets follow in
-the next phase; the server already serves all of it.
+journal (they put back what they change). iPad polish and TestFlight follow in the last phase.

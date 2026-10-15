@@ -4,7 +4,8 @@
 # (pushes, time-sensitive alerts, the App Group and the keychain group the extensions share; a
 # free Apple ID's personal team cannot sign that: leave it empty there). Shared/ is compiled
 # into the app and its extensions: TJNotificationService puts the trade's chart on a push,
-# TJNotificationContent is the expanded card with the live numbers and Seen in place.
+# TJNotificationContent is the expanded card with the live numbers and Seen in place, TJWidgets
+# is the Session Live Activity and the Today widgets (TJ_WIDGET_ENTITLEMENTS: the App Group).
 name: TradingJournal
 options:
   bundleIdPrefix: nl.w4j
@@ -38,6 +39,7 @@ targets:
     dependencies:
       - target: TJNotificationService
       - target: TJNotificationContent
+      - target: TJWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal
@@ -124,6 +126,34 @@ targets:
             UNNotificationExtensionInitialContentSizeRatio: 0.5
             UNNotificationExtensionDefaultContentHidden: true
             UNNotificationExtensionUserInteractionEnabled: true
+  TJWidgets: # the Session Live Activity (Dynamic Island, Lock Screen) and the Today widgets
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: TJWidgets
+      - path: Shared/SessionActivity.swift
+      - path: Shared/LiveViews.swift
+      - path: Shared/TodayCache.swift
+      - path: Shared/Brand.swift
+      - path: Shared/Formatting.swift
+      - path: Shared/Route.swift
+      - path: Shared/Wire.swift
+      - path: Shared/Markdown.swift
+      - path: Shared/Fonts
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal.Widgets
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: $(TJ_WIDGET_ENTITLEMENTS)
+    info:
+      path: TJWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Journal
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIAppFonts: [Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf, JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
   TJTests:
     type: bundle.unit-test
     platform: iOS

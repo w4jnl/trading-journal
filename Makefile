@@ -29,7 +29,7 @@ ASC_AUTH = $(if $(ASC_KEY_ID),-authenticationKeyPath '$(ASC_KEY_PATH)' -authenti
 XCB = xcodebuild -project TradingJournal.xcodeproj -derivedDataPath build/DerivedData
 
 ios-project:
-	@[ -f app/ios/Local.xcconfig ] || printf 'TJ_TEAM_ID =\nTJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements\n' > app/ios/Local.xcconfig
+	@[ -f app/ios/Local.xcconfig ] || printf 'TJ_TEAM_ID =\nTJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements\nTJ_WIDGET_ENTITLEMENTS = TJWidgets/TJWidgets.entitlements\n' > app/ios/Local.xcconfig
 	cd app/ios && xcodegen generate
 ios-build: ios-project
 	cd app/ios && $(XCB) -scheme TradingJournal -configuration Debug -destination '$(IOS_SIM)' build CODE_SIGNING_ALLOWED=NO -quiet

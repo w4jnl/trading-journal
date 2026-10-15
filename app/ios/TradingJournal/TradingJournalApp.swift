@@ -19,6 +19,7 @@ struct TradingJournalApp: App {
             case .active:
                 Client.shared.start()
                 Task { await Notifications.shared.refreshAuthorization() }
+                LiveActivities.shared.reportSoon()
             case .background:
                 Client.shared.stop()
             default:
@@ -32,6 +33,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         // The delegate is set before launching finishes, or a cold-start tap on a notification is lost.
         Notifications.shared.setup(client: Client.shared)
+        LiveActivities.shared.setup(client: Client.shared)
         return true
     }
 
