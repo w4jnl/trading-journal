@@ -8,6 +8,8 @@ enum TJError: LocalizedError, Equatable {
     case http(Int, String)
     case unauthorized
     case decoding(String)
+    /// A 409 with the server's reason ("stale", "review-pending", or none) and its whole body.
+    case conflict(reason: String, message: String, body: Data)
 
     var errorDescription: String? {
         switch self {
@@ -16,6 +18,7 @@ enum TJError: LocalizedError, Equatable {
         case .http(let code, let msg):
             if isMissingRoute { "the journal is older than this app: update the server" } else { msg.isEmpty ? "the journal answered \(code)" : msg }
         case .decoding(let what): "unexpected answer from the journal: \(what)"
+        case .conflict(_, let msg, _): msg.isEmpty ? "the journal refused: it changed meanwhile" : msg
         }
     }
 
@@ -79,6 +82,10 @@ struct TJAPI: Sendable {
     static func check(_ data: Data, _ resp: URLResponse) throws -> Data {
         let code = (resp as? HTTPURLResponse)?.statusCode ?? 0
         if code == 401 { throw TJError.unauthorized }
+        if code == 409 {
+            let b = try? JSONDecoder().decode(APIErrorBody.self, from: data)
+            throw TJError.conflict(reason: b?.reason ?? "", message: b?.error ?? "", body: data)
+        }
         if code < 200 || code >= 300 {
             let msg = (try? JSONDecoder().decode(APIErrorBody.self, from: data))?.error ?? ""
             throw TJError.http(code, msg)
@@ -106,6 +113,18 @@ struct TJAPI: Sendable {
         }
     }
 
+    /// Uploads one file as multipart/form-data (field "file") and decodes the answer.
+    func upload<T: Decodable & Sendable>(_ path: String, file: Data, name: String, mimeType: String, as type: T.Type, session: URLSession = .shared) async throws -> T {
+        let boundary = "tj-" + UUID().uuidString
+        let body = Multipart.body(boundary: boundary, field: "file", filename: name, mimeType: mimeType, data: file)
+        let data = try await send("POST", path, body: body, contentType: "multipart/form-data; boundary=\(boundary)", session: session)
+        do {
+            return try Wire.decoder.decode(T.self, from: data)
+        } catch {
+            throw TJError.decoding(String(describing: error).prefix(200).description)
+        }
+    }
+
     /// An image the API serves (a chart PNG, an attachment), with the key.
     func image(_ href: String, session: URLSession = .shared) async throws -> Data {
         var req = request("GET", href, timeout: 20)
@@ -124,6 +143,19 @@ struct TJAPI: Sendable {
         let (data, resp) = try await session.data(for: req)
         let body = try check(data, resp)
         return try Wire.decoder.decode(PairResponse.self, from: body)
+    }
+}
+
+/// One file in a multipart/form-data body, as Go's multipart reader expects it.
+enum Multipart {
+    nonisolated static func body(boundary: String, field: String, filename: String, mimeType: String, data: Data) -> Data {
+        var b = Data()
+        b.append(Data("--\(boundary)\r\n".utf8))
+        b.append(Data("Content-Disposition: form-data; name=\"\(field)\"; filename=\"\(filename.replacingOccurrences(of: "\"", with: ""))\"\r\n".utf8))
+        b.append(Data("Content-Type: \(mimeType)\r\n\r\n".utf8))
+        b.append(data)
+        b.append(Data("\r\n--\(boundary)--\r\n".utf8))
+        return b
     }
 }
 

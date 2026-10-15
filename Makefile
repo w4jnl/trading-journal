@@ -33,11 +33,13 @@ ios-project:
 	cd app/ios && xcodegen generate
 ios-build: ios-project
 	cd app/ios && $(XCB) -scheme TradingJournal -configuration Debug -destination '$(IOS_SIM)' build CODE_SIGNING_ALLOWED=NO -quiet
+# With SERVER=http://… KEY=tj_… the live write tests run too (they leave the journal as found).
 ios-test: ios-project
-	cd app/ios && $(XCB) -scheme TradingJournal -configuration Debug -destination '$(IOS_SIM)' test CODE_SIGNING_ALLOWED=NO -quiet
-# Screenshots of every tab against a running journal: SERVER=http://… KEY=tj_… SHOTS=/dir make ios-screens
+	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' $(XCB) -scheme TradingJournal -configuration Debug -destination '$(IOS_SIM)' test CODE_SIGNING_ALLOWED=NO -quiet
+# Screenshots of every tab and editor against a running journal:
+#   SERVER=http://… KEY=tj_… SHOTS=/dir ENTRY=<journal id> POSITION=<account>/<symbol> make ios-screens
 ios-screens: ios-project
-	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' TEST_RUNNER_TJ_SHOTS='$(SHOTS)' \
+	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' TEST_RUNNER_TJ_SHOTS='$(SHOTS)' TEST_RUNNER_TJ_ENTRY='$(ENTRY)' TEST_RUNNER_TJ_POSITION='$(POSITION)' \
 	$(XCB) -scheme TJScreens -configuration Debug -destination '$(IOS_SCREENS_SIM)' test CODE_SIGNING_ALLOWED=NO -quiet
 # Build, install and launch on the iPhone (unlocked; cable, or Wi-Fi once paired); signs with Local.xcconfig's team.
 ios-device: ios-project

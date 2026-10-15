@@ -62,7 +62,7 @@ struct AccountsView: View {
                 Card {
                     CardTitle("Accounts", trailing: "\(accounts.filter { showRetired || !$0.retired }.count)")
                     ForEach(accounts.filter { showRetired || !$0.retired }) { a in
-                        AccountRow(account: a)
+                        NavigationLink { AccountDetailView(accountId: a.id) } label: { AccountRow(account: a) }.buttonStyle(.plain)
                         if a.id != accounts.last?.id { Divider() }
                     }
                     Toggle("Show retired", isOn: $showRetired).font(Brand.text(13, relativeTo: .footnote)).tint(Brand.accent)
@@ -145,7 +145,7 @@ struct NudgesView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if let l = list, l.unseen > 0 {
-                Button("Seen") { Task { for n in l.items where n.unseen { try? await client.markSeen(n.id) }; await load() } }
+                Button("All seen") { Task { try? await client.markSeen(l.items.filter(\.unseen).map(\.id)); await load() } }
             }
         }
         .refreshable { await load() }
@@ -166,6 +166,7 @@ struct NudgesView: View {
 /// The day plan as the guardrail reads it; editing it comes with the writes phase.
 struct PlanView: View {
     @Environment(Client.self) private var client
+    @State private var editing = false
 
     var body: some View {
         ScrollView {
@@ -203,7 +204,13 @@ struct PlanView: View {
                             }
                         }
                     } else {
-                        ContentUnavailableView("No plan for today", systemImage: "doc.text", description: Text("Write it on the web before the open; writing it here comes with the next build."))
+                        ContentUnavailableView {
+                            Label("No plan for today", systemImage: "doc.text")
+                        } description: {
+                            Text("A bias, a max number of trades, a stop time and a max loss, written before the open.")
+                        } actions: {
+                            Button("Write the plan") { editing = true }.buttonStyle(.borderedProminent)
+                        }
                     }
                 } else {
                     ProgressView()
@@ -214,5 +221,11 @@ struct PlanView: View {
         .background(Brand.bg)
         .navigationTitle("Day plan")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if client.today?.plan.plan != nil { Button("Edit") { editing = true } }
+        }
+        .sheet(isPresented: $editing) {
+            if let t = client.today { PlanEditView(day: t.day, plan: t.plan.plan) }
+        }
     }
 }

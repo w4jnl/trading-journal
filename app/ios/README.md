@@ -61,7 +61,13 @@ in the app forgets it on the phone.
 
 ## What is in this build
 
-Phase 1 of the plan: pairing and the read-only screens (Today, positions, trades, journal,
-calendar, accounts and equity, nudges, the day plan, settings). Writes from the phone (journal
-edits, plans, balance anchors), push notifications, the Session Live Activity and the widgets
-follow in the next phases; the server already serves all of it.
+Phases 1 and 2 of the plan: pairing, the read-only screens (Today, positions, trades,
+journal, calendar, accounts and equity, nudges, the day plan, settings), and the writes from
+the phone: journal edit, delete, append and the first note on a trade or a day, photos as
+attachments, the day plan, the plan on an open position with the risk mirrored live, the
+trader's switches, balance anchors. A save that meets an AI review in progress offers to
+append instead; one that meets a changed entry offers to reload or overwrite.
+
+`SERVER=http://… KEY=tj_… make ios-test` also runs the live write tests against that
+journal (they put back what they change). Push notifications, the Session Live Activity and
+the widgets follow in the next phases; the server already serves all of it.

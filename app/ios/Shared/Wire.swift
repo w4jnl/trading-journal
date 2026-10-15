@@ -681,3 +681,165 @@ struct Equity: Codable, Sendable, Hashable {
     var drawdown: Drawdown
     var dayChange: Double
 }
+
+// MARK: writes (device key)
+
+/// PUT /journal/{id}: the whole entry; an absent field clears it (nil tag removes the tag).
+struct JournalUpdate: Encodable, Sendable, Hashable {
+    var body: String
+    var tag: JournalTag?
+    var mood: Int?
+    var strategyId: Int?
+    var mistakes: [String]
+    var emotions: [String]
+    var checks: [Int]
+    var updatedAt: Date
+
+    enum CodingKeys: String, CodingKey { case body, tag, mood, strategyId, mistakes, emotions, checks, updatedAt }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(body, forKey: .body)
+        if let tag, tag != .unknown { try c.encode(tag, forKey: .tag) }
+        if let mood { try c.encode(mood, forKey: .mood) }
+        if let strategyId { try c.encode(strategyId, forKey: .strategyId) }
+        try c.encode(mistakes, forKey: .mistakes)
+        try c.encode(emotions, forKey: .emotions)
+        try c.encode(checks, forKey: .checks)
+        try c.encode(updatedAt, forKey: .updatedAt)
+    }
+
+    /// What the entry holds now, to edit from.
+    init(_ e: JournalDetail) {
+        body = e.notes
+        tag = e.tag == .unknown ? nil : e.tag
+        mood = e.mood
+        strategyId = e.strategy?.id
+        mistakes = e.labels.mistakes
+        emotions = e.labels.emotions
+        checks = e.checklist?.items.filter(\.checked).map(\.id) ?? []
+        updatedAt = e.updatedAt
+    }
+}
+
+/// POST /journal: one scope's fields.
+struct JournalCreate: Encodable, Sendable, Hashable {
+    var scope: JournalScope
+    var body: String
+    var tag: JournalTag?
+    var mood: Int?
+    var strategyId: Int?
+    var date: String?
+    var week: String?
+    var tradeId: Int?
+    var tradeIds: [Int]?
+
+    enum CodingKeys: String, CodingKey { case scope, body, tag, mood, strategyId, date, week, tradeId, tradeIds }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(scope, forKey: .scope)
+        try c.encode(body, forKey: .body)
+        if let tag, tag != .unknown { try c.encode(tag, forKey: .tag) }
+        try c.encodeIfPresent(mood, forKey: .mood)
+        try c.encodeIfPresent(strategyId, forKey: .strategyId)
+        try c.encodeIfPresent(date, forKey: .date)
+        try c.encodeIfPresent(week, forKey: .week)
+        try c.encodeIfPresent(tradeId, forKey: .tradeId)
+        try c.encodeIfPresent(tradeIds, forKey: .tradeIds)
+    }
+}
+
+/// POST /journal/attachments → 201.
+struct AttachmentUpload: Codable, Sendable, Hashable {
+    var id: Int
+    var url: String
+    var name: String?
+    var size: Int?
+    var markdown: String
+}
+
+struct NoteAppended: Codable, Sendable { var id: Int; var appended: Bool }
+
+/// POST /plan: present fields replace the stored ones (an empty string or 0 clears).
+struct DayPlanSave: Encodable, Sendable, Hashable {
+    var day: String
+    var bias: Bias
+    var levels: String
+    var maxTrades: Int
+    var stopTime: String
+    var maxLoss: Double
+    var notes: String
+
+    enum CodingKeys: String, CodingKey { case day, bias, levels, maxTrades, stopTime, maxLoss, notes }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(day, forKey: .day)
+        try c.encode(bias == .unknown ? "" : bias.rawValue, forKey: .bias)
+        try c.encode(levels, forKey: .levels)
+        try c.encode(maxTrades, forKey: .maxTrades)
+        try c.encode(stopTime, forKey: .stopTime)
+        try c.encode(maxLoss, forKey: .maxLoss)
+        try c.encode(notes, forKey: .notes)
+    }
+
+    init(day: String, plan: DayPlan?) {
+        self.day = day
+        bias = plan?.bias ?? .none
+        levels = plan?.levels ?? ""
+        maxTrades = plan?.maxTrades ?? 0
+        stopTime = plan?.stopTime ?? ""
+        maxLoss = plan?.maxLoss ?? 0
+        notes = plan?.notes ?? ""
+    }
+}
+
+struct DayPlanSaved: Codable, Sendable { var plan: DayPlan? }
+
+/// POST /positions/{account}/{symbol}/plan: the whole plan; a null stop clears it.
+struct PositionPlanSave: Encodable, Sendable, Hashable {
+    var stop: Double?
+    var risk: Double?
+    var target: Double?
+    var thesis: String
+    var allLegs: Bool
+
+    enum CodingKeys: String, CodingKey { case stop, risk, target, thesis, allLegs }
+
+    func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(stop, forKey: .stop) // null on the wire clears
+        try c.encode(risk, forKey: .risk)
+        try c.encode(target, forKey: .target)
+        try c.encode(thesis, forKey: .thesis)
+        try c.encode(allLegs, forKey: .allLegs)
+    }
+}
+
+struct PositionSaved: Codable, Sendable { var position: Position }
+
+struct SettingsUpdate: Encodable, Sendable, Hashable {
+    var guardrail: Bool?
+    var autoPlan: Int?
+}
+
+struct SettingsSaved: Codable, Sendable { var settings: UserSettings }
+
+struct BalanceAnchorAdd: Encodable, Sendable, Hashable {
+    var date: String
+    var balance: Double
+    var note: String
+}
+
+struct AccountSaved: Codable, Sendable { var account: Account }
+
+struct NudgeIDs: Encodable, Sendable { var ids: [Int] }
+
+/// The 409 a journal save can meet: an AI review is writing, or the entry changed meanwhile.
+struct JournalConflict: Decodable, Sendable {
+    var error: String?
+    var reason: String?
+    var entry: JournalDetail?
+    var entryId: Int?
+}
