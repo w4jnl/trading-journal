@@ -66,7 +66,11 @@ around it.
   into the plan, a copied decision once for all its legs; the plan then
   reads as `ai` and the trader edits or clears it like any other. Each
   position is judged once (a dismissed suggestion or a cleared plan is not
-  made again) and a carried position (open for days) is left alone. The model does not get a bare slice of bars:
+  made again) and a carried position (open for days) is left alone. A
+  scale-in (a fill adding to the open position) is the same cycle: the
+  sheet says so and shows how the average moved, the stop and target set
+  on the first fill stay until the trader changes them, nothing moves them
+  automatically, and only the money at risk follows the size. The model does not get a bare slice of bars:
   it gets the **session** as a trader reads it, computed from the cached
   one-minute bars as of the moment (prior RTH range and close, overnight
   range, opening range, session extremes, VWAP, ATR, the last swing highs

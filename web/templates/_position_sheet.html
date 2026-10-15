@@ -18,6 +18,7 @@
   <span class="pill pill--live" title="The account's fills on this contract do not net flat">open</span>
   {{if .InSet}}<span class="pill set-badge" title="One decision copied across accounts: the other legs are listed below{{if .CopyGroup}} (copy group {{.CopyGroup}}){{end}}">set · {{len .Legs}} more leg{{if ne (len .Legs) 1}}s{{end}}</span>{{end}}
   {{if .Stale}}<span class="pill pill--stale" title="Opened more than three days ago: a carried position, or fills are missing (reconcile the account)">carried?</span>{{end}}
+  {{if .AddedFills}}<span class="pill pill--scaled" title="Scaled in: {{.AddedFills}} fill{{if ne .AddedFills 1}}s{{end}} added to the position after the one that opened it">scaled in ×{{.AddedFills}}</span>{{end}}
   {{end}}
   <span class="ml-auto muted" style="font-size: 12px;">{{.AccountName}}{{if .Firm}} · <code>{{derefStr .Firm}}</code>{{end}}</span>
 </div>
@@ -29,6 +30,10 @@
 <div class="muted" style="margin-bottom: 12px; font-size: 12px;">
   opened {{ltime .OpenedAt "datetime"}} · {{.Fills}} fill{{if ne .Fills 1}}s{{end}} so far
 </div>
+{{if .AddedFills}}
+<p class="position-note position-note--scaled">Scaled in: {{printf "%g" .AddedQty}} added in {{.AddedFills}} fill{{if ne .AddedFills 1}}s{{end}} after the opening fill at {{printf "%.2f" .OpenPrice}}{{if .AvgEntry}}; the average entry is {{printf "%.2f" (deref .AvgEntry)}} now{{end}}.
+  {{if .HasPlan}}The stop and target are the ones set on the first fill and stay until you change them; only the money at risk follows the size. Nothing moves them automatically{{if eq .PlanSource "ai"}}, the AI included{{end}}.{{else}}No plan is recorded yet: set the stop and target for the whole size.{{end}}</p>
+{{end}}
 
 <div class="trade-stat-strip">
   <div><div class="label">Qty</div><div class="num">{{.Qty}}</div></div>

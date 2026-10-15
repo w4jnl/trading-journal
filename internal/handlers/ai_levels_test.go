@@ -247,10 +247,37 @@ func TestAutoPlan(t *testing.T) {
 	}
 
 	// The same data version is not read twice; a new version with the plan
-	// in place starts nothing; a cleared plan is left cleared.
+	// in place starts nothing; a scale-in (a fill adding to the position)
+	// changes the size and the average, never the stop or the target; a
+	// cleared plan is left cleared.
 	fx.h.autoPlanTick(ctx)
 	fx.h.LiveData.Bump(fx.uid)
 	fx.h.autoPlanTick(ctx)
+	oid := "O-DCA"
+	if _, err := fx.q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: fx.acct.ID, BrokerExecID: "P-DCA", OrderID: &oid, ImportMethod: "motivewave_csv",
+		Symbol: "ESM6", SymbolRoot: "ES", Side: "buy", Qty: 3, Price: 7247, ExecTime: fx.t0.Add(10 * time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
+	fx.h.LiveData.Bump(fx.uid)
+	fx.h.autoPlanTick(ctx)
+	waitTasks(t, fx.h)
+	body := fx.sheet(t)
+	for _, want := range []string{"scaled in ×2", "Scaled in: 4 added in 2 fills", "stay until you change them", "the AI included", `name="stop" value="7241"`, `name="target" value="7271"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("sheet after the scale-in lacks %q", want)
+		}
+	}
+	plans, _ = fx.q.ListOpenPositionPlansForUser(ctx, fx.uid)
+	// Six contracts from an average of 7249: (7249 - 7241) * 50 * 6.
+	if len(plans) != 1 || *plans[0].Stop != 7241 || *plans[0].Target != 7271 || plans[0].Risk == nil || *plans[0].Risk != 2400 {
+		t.Fatalf("plan after the scale-in = %+v", plans)
+	}
+	fp.mu.Lock()
+	calls = fp.calls
+	fp.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("the scale-in asked the model again: %d calls", calls)
+	}
 	if err := fx.q.DeletePositionPlan(ctx, plans[0].ID); err != nil {
 		t.Fatal(err)
 	}

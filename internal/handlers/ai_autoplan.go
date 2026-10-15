@@ -26,6 +26,9 @@ import (
 // the next. Carried positions (open for days) are left alone, as
 // everywhere else. In the plan mode a cycle the trader planned already is
 // left to them; in the suggest mode every new cycle gets its suggestion.
+// A scale-in (a fill adding to an open position) is the same cycle: the
+// plan set on the first fill is never touched, no second suggestion is
+// made, only the money at risk follows the size (fillPositionView).
 
 // The users.auto_plan modes.
 const (

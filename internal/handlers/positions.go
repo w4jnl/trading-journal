@@ -72,8 +72,16 @@ type positionView struct {
 	PointValue  float64  // for the form's live mirror (0 on a stub instrument)
 	TickSize    float64
 
-	// Fills of the cycle (entries and partial exits), for the sheet.
+	// Fills of the cycle (entries and partial exits), for the sheet. A
+	// scale-in (DCA: a fill adding to the position after the one that opened
+	// it) is counted, with the opening fill's price, so the sheet can say
+	// the average moved while the plan did not: the stop and target set on
+	// the first fill stay until the trader changes them (nothing changes
+	// them automatically; only the money at risk follows the size).
 	CycleFills []models.Execution
+	AddedFills int
+	AddedQty   float64
+	OpenPrice  float64
 	// Admin link to the reconcile editor for this account and contract.
 	ReconcileHref string
 
@@ -240,6 +248,13 @@ func (h *Handlers) fillPositionView(ctx context.Context, row *positionView, inst
 		if f.ID == pos.Opened.ID {
 			row.CycleFills = fills[i:]
 			break
+		}
+	}
+	row.OpenPrice = pos.Opened.Price
+	for _, f := range row.CycleFills {
+		if f.ID != pos.Opened.ID && f.Side == pos.Opened.Side {
+			row.AddedFills++
+			row.AddedQty += f.Qty
 		}
 	}
 
