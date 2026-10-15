@@ -322,15 +322,8 @@ func (h *Handlers) loadPosition(w http.ResponseWriter, r *http.Request) (positio
 		http.Error(w, "account not found", http.StatusNotFound)
 		return positionView{}, false
 	}
-	open, err := h.rq().ListOpenPositions(ctx, userID(ctx))
-	if err != nil {
-		h.serverError(w, fmt.Errorf("list open positions: %w", err))
-		return positionView{}, false
-	}
-	for _, v := range h.openPositionRows(ctx, open) {
-		if v.AccountID == accountID && v.Symbol == symbol {
-			return v, true
-		}
+	if v, ok := h.openPosition(ctx, accountID, symbol); ok {
+		return v, true
 	}
 	// Flat: the sheet reports it and points at the trade the cycle became.
 	root := symbol
@@ -340,6 +333,23 @@ func (h *Handlers) loadPosition(w http.ResponseWriter, r *http.Request) (positio
 	v := positionView{ListOpenPositionsRow: models.ListOpenPositionsRow{AccountID: accountID, AccountName: acct.Name, AccountRef: acct.AccountRef, Firm: acct.Firm, Symbol: symbol, SymbolRoot: root}}
 	v.Key = positionKey(accountID, symbol)
 	return v, true
+}
+
+// openPosition is the caller's open position on the account and contract
+// with its siblings linked, false when it is flat (or the account not
+// theirs: ListOpenPositions is scoped to the user).
+func (h *Handlers) openPosition(ctx context.Context, accountID int64, symbol string) (positionView, bool) {
+	open, err := h.rq().ListOpenPositions(ctx, userID(ctx))
+	if err != nil {
+		h.logger().Warn("list open positions", "err", err)
+		return positionView{}, false
+	}
+	for _, v := range h.openPositionRows(ctx, open) {
+		if v.AccountID == accountID && v.Symbol == symbol {
+			return v, true
+		}
+	}
+	return positionView{}, false
 }
 
 // PositionSheet: GET /positions/{account}/{symbol} - the sheet of one open

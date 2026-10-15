@@ -23,7 +23,7 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, is_admin, display_name)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail
+RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan
 `
 
 type CreateUserParams struct {
@@ -58,6 +58,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.AiLanguage,
 		&i.AiSendChart,
 		&i.Guardrail,
+		&i.AutoPlan,
 	)
 	return i, err
 }
@@ -76,7 +77,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail FROM users WHERE id = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan FROM users WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -95,12 +96,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.AiLanguage,
 		&i.AiSendChart,
 		&i.Guardrail,
+		&i.AutoPlan,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail FROM users WHERE username = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan FROM users WHERE username = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -119,8 +121,37 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.AiLanguage,
 		&i.AiSendChart,
 		&i.Guardrail,
+		&i.AutoPlan,
 	)
 	return i, err
+}
+
+const listAutoPlanUserIDs = `-- name: ListAutoPlanUserIDs :many
+SELECT id FROM users WHERE auto_plan = 1 AND is_active = 1 ORDER BY id
+`
+
+// The active users whose new open positions get an AI plan automatically.
+func (q *Queries) ListAutoPlanUserIDs(ctx context.Context) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listAutoPlanUserIDs)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listGuardrailUserIDs = `-- name: ListGuardrailUserIDs :many
@@ -152,7 +183,7 @@ func (q *Queries) ListGuardrailUserIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail FROM users ORDER BY username
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -177,6 +208,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.AiLanguage,
 			&i.AiSendChart,
 			&i.Guardrail,
+			&i.AutoPlan,
 		); err != nil {
 			return nil, err
 		}
@@ -246,6 +278,20 @@ type SetUserAdminParams struct {
 
 func (q *Queries) SetUserAdmin(ctx context.Context, arg SetUserAdminParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAdmin, arg.IsAdmin, arg.ID)
+	return err
+}
+
+const setUserAutoPlan = `-- name: SetUserAutoPlan :exec
+UPDATE users SET auto_plan = ? WHERE id = ?
+`
+
+type SetUserAutoPlanParams struct {
+	AutoPlan int64 `json:"auto_plan"`
+	ID       int64 `json:"id"`
+}
+
+func (q *Queries) SetUserAutoPlan(ctx context.Context, arg SetUserAutoPlanParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAutoPlan, arg.AutoPlan, arg.ID)
 	return err
 }
 

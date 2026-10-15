@@ -133,6 +133,9 @@ type Handlers struct {
 	// poll for nudges for the users who turned it on).
 	Guardrail *guardrail.Service
 
+	// autoPlan is the automatic planner's memory (RunAutoPlanner).
+	autoPlan autoPlanner
+
 	// AISecrets opens the per-user AI provider keys (user_ai_settings). Nil
 	// when users may not bring their own key (ai.user_keys false, or no
 	// secrets encryption key configured).

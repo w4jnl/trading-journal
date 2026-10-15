@@ -21,6 +21,7 @@
 {{if eq .Flash "ai-test-ok"}}<div class="flash saved mb-16">AI provider answered — your key works.</div>{{end}}
 {{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
 {{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
+{{if eq .Flash "auto-plan"}}<div class="flash saved mb-16">Automatic plans {{if .AIAutoPlan}}on: every new open position gets the AI's stop and target as its plan{{else}}off: the suggestion stays a button on the position sheet{{end}}.</div>{{end}}
 {{if eq .Flash "ai-removed"}}<div class="flash saved mb-16">Your AI provider and key were removed.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
@@ -243,6 +244,19 @@
         trade always go along as numbers; a model that cannot read images gets the review without the picture.</span></span>
     </label>
   </form>
+
+  {{if .AutoPlanRuns}}
+  <form method="post" action="/settings/ai/autoplan" style="margin: 10px 0 0;">
+    <label class="row-sm" style="gap: 8px; align-items: flex-start; font-size: 13px;">
+      <input type="checkbox" name="auto_plan" value="1" {{if .AIAutoPlan}}checked{{end}} data-autosubmit style="margin-top: 3px;">
+      <span>Set the stop and target on every new open position automatically
+        <span class="muted" style="font-size: 12px;">As soon as a position opens (a copied decision counts once, every leg gets the plan), the
+        model is asked where the levels belong from the session's structure, your day plan, the lab's evidence and your rules, and its
+        answer is written into the plan marked <em>ai</em>. You edit or clear it like any plan; a cleared plan is not set again.
+        Off, the suggestion is a button on the position sheet.</span></span>
+    </label>
+  </form>
+  {{end}}
 
   <div class="field-label" style="margin-top: 14px;">Review language</div>
   <p class="muted" style="font-size: 12px;">

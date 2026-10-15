@@ -55,3 +55,10 @@ UPDATE users SET guardrail = ? WHERE id = ?;
 -- name: ListGuardrailUserIDs :many
 -- The users the intraday guardrail watches.
 SELECT id FROM users WHERE guardrail = 1 ORDER BY id;
+
+-- name: SetUserAutoPlan :exec
+UPDATE users SET auto_plan = ? WHERE id = ?;
+
+-- name: ListAutoPlanUserIDs :many
+-- The active users whose new open positions get an AI plan automatically.
+SELECT id FROM users WHERE auto_plan = 1 AND is_active = 1 ORDER BY id;

@@ -128,6 +128,7 @@
     </form>
     {{end}}
   </div>
+  {{if $.AI.Auto}}<p class="muted" style="font-size: 11px; margin: 4px 0 0;">New positions get this suggestion as their plan automatically (Settings &rsaquo; AI).</p>{{end}}
   {{with $.AI.Error}}<div class="flash error" role="alert" style="margin-top: 6px;">Suggestion failed: {{.}}</div>{{end}}
   {{if $.AI.Has}}{{with $.AI.Levels}}
   <div class="position-ai__levels">

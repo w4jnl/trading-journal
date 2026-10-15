@@ -57,7 +57,12 @@ around it.
   to tick) and prices itself. It is shown dashed; "Use as plan" writes it
   with source `ai`, nothing else touches the plan, and after the close the
   suggestion stays on the trade sheet next to what the trader chose, made
-  before the outcome existed. The model does not get a bare slice of bars:
+  before the outcome existed. With **automatic plans** on (Settings > AI,
+  off by default) the same suggestion is made and written into the plan
+  as soon as a position opens, a copied decision once for all its legs;
+  the plan reads as `ai`, the trader edits or clears it like any other,
+  a cleared plan is not set again, and a carried position (open for days)
+  is left alone. The model does not get a bare slice of bars:
   it gets the **session** as a trader reads it, computed from the cached
   one-minute bars as of the moment (prior RTH range and close, overnight
   range, opening range, session extremes, VWAP, ATR, the last swing highs

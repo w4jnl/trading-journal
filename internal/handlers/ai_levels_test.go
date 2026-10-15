@@ -5,6 +5,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"testing"
@@ -214,5 +215,148 @@ func TestPositionSuggestion_SessionContext(t *testing.T) {
 	}
 	if body := fx.sheet(t); !strings.Contains(body, "Use as plan") || strings.Contains(body, "no bars were available") {
 		t.Errorf("suggestion with bars should carry no bars warning")
+	}
+}
+
+// With automatic plans on, an unplanned open position gets the suggestion
+// written into its plan without a click: once per cycle (a plan the
+// trader clears is not set again), never for a user who did not ask.
+func TestAutoPlan(t *testing.T) {
+	fx, fp := aiPositionFixture(t, `{"stop": 7241, "target": 7271, "trail": "none", "reasons": {"stop": "swing", "target": "high"}, "summary": "Auto levels."}`)
+	ctx := context.Background()
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 0 {
+		t.Fatalf("planned for a user without the setting: %d", n)
+	}
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: 1, ID: fx.uid}); err != nil {
+		t.Fatal(err)
+	}
+	fx.h.autoPlanTick(ctx)
+	waitTasks(t, fx.h)
+	plans, _ := fx.q.ListOpenPositionPlansForUser(ctx, fx.uid)
+	if len(plans) != 1 || plans[0].Source != "ai" || plans[0].Stop == nil || *plans[0].Stop != 7241 || plans[0].Target == nil || *plans[0].Target != 7271 || !strings.Contains(plans[0].Thesis, "Auto levels") {
+		t.Fatalf("auto plan = %+v", plans)
+	}
+	fp.mu.Lock()
+	calls := fp.calls
+	fp.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("model calls = %d, want 1", calls)
+	}
+	if body := fx.sheet(t); !strings.Contains(body, "✨ ai") || !strings.Contains(body, "as their plan automatically") {
+		t.Errorf("sheet should show the ai plan and the automatic note")
+	}
+
+	// The same data version is not read twice; a new version with the plan
+	// in place starts nothing; a cleared plan is left cleared.
+	fx.h.autoPlanTick(ctx)
+	fx.h.LiveData.Bump(fx.uid)
+	fx.h.autoPlanTick(ctx)
+	if err := fx.q.DeletePositionPlan(ctx, plans[0].ID); err != nil {
+		t.Fatal(err)
+	}
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 0 {
+		t.Errorf("a cleared plan was set again")
+	}
+	waitTasks(t, fx.h)
+	fp.mu.Lock()
+	calls = fp.calls
+	fp.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("model calls = %d after the plan was cleared, want still 1", calls)
+	}
+	if plans, _ := fx.q.ListOpenPositionPlansForUser(ctx, fx.uid); len(plans) != 0 {
+		t.Errorf("plan came back: %+v", plans)
+	}
+}
+
+// A copied decision is planned once, from its earliest leg, and every leg
+// gets the plan.
+func TestAutoPlan_Set(t *testing.T) {
+	fx, fp := aiPositionFixture(t, `{"stop": 7241, "target": 7271, "trail": "none", "summary": "Set levels."}`)
+	ctx := context.Background()
+	firm := "lucid"
+	follower, err := fx.q.CreateAccount(ctx, models.CreateAccountParams{UserID: fx.uid, Name: "pos-b", Firm: &firm,
+		ImportSource: "motivewave_csv", AccountRef: "LFE-POS-B", Currency: "USD", CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	oid := "O-B1"
+	if _, err := fx.q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: follower.ID, BrokerExecID: "B1", OrderID: &oid, ImportMethod: "motivewave_csv",
+		Symbol: "MESM6", SymbolRoot: "MES", Side: "buy", Qty: 2, Price: 7250.5, ExecTime: fx.t0.Add(time.Second)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: 1, ID: fx.uid}); err != nil {
+		t.Fatal(err)
+	}
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 1 {
+		t.Fatalf("started %d, want 1 for the set", n)
+	}
+	waitTasks(t, fx.h)
+	plans, _ := fx.q.ListOpenPositionPlansForUser(ctx, fx.uid)
+	if len(plans) != 2 {
+		t.Fatalf("plans = %+v, want both legs", plans)
+	}
+	for _, p := range plans {
+		if p.Source != "ai" || p.SetPlan != 1 || p.Stop == nil || *p.Stop != 7241 || p.Target == nil || *p.Target != 7271 {
+			t.Errorf("leg plan = %+v", p)
+		}
+		if p.AccountID == follower.ID && (p.Risk == nil || *p.Risk != 95) {
+			t.Errorf("follower risk = %v, want 95", p.Risk)
+		}
+	}
+	fp.mu.Lock()
+	calls := fp.calls
+	fp.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("model calls = %d, want 1 for the decision", calls)
+	}
+}
+
+// A refused answer writes no plan, and the cycle waits before it is tried
+// again.
+func TestAutoPlan_Refused(t *testing.T) {
+	fx, fp := aiPositionFixture(t, `{"stop": 7290, "target": 7271, "summary": "wrong side"}`)
+	ctx := context.Background()
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: 1, ID: fx.uid}); err != nil {
+		t.Fatal(err)
+	}
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 1 {
+		t.Fatalf("started %d", n)
+	}
+	waitTasks(t, fx.h)
+	if plans, _ := fx.q.ListOpenPositionPlansForUser(ctx, fx.uid); len(plans) != 0 {
+		t.Fatalf("a refused answer wrote a plan: %+v", plans)
+	}
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 0 {
+		t.Errorf("retried at once")
+	}
+	fp.mu.Lock()
+	calls := fp.calls
+	fp.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("model calls = %d", calls)
+	}
+	if body := fx.sheet(t); !strings.Contains(body, "Suggestion failed") {
+		t.Errorf("the sheet should report the failed attempt once")
+	}
+}
+
+// The setting is a checkbox in Settings > AI.
+func TestSettingsAIAutoPlanSave(t *testing.T) {
+	fx := newPositionFixture(t)
+	fx.h.AITasks = ai.NewTasks(nil, 1)
+	for _, on := range []string{"1", ""} {
+		form := url.Values{"auto_plan": {on}}
+		req := httptest.NewRequest(http.MethodPost, "/settings/ai/autoplan", strings.NewReader(form.Encode())).WithContext(fx.ctx)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		rec := httptest.NewRecorder()
+		fx.h.SettingsAIAutoPlanSave(rec, req)
+		if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "flash=auto-plan") {
+			t.Fatalf("save %q = %d %s", on, rec.Code, rec.Header().Get("Location"))
+		}
+		u, _ := fx.q.GetUserByID(context.Background(), fx.uid)
+		if (u.AutoPlan == 1) != (on == "1") {
+			t.Errorf("auto_plan after %q = %d", on, u.AutoPlan)
+		}
 	}
 }

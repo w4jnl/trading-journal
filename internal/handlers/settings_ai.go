@@ -252,6 +252,29 @@ func (h *Handlers) SettingsAIChartSave(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/settings?flash=ai-chart#ai", http.StatusSeeOther)
 }
 
+// SettingsAIAutoPlanSave: POST /settings/ai/autoplan - whether every new
+// open position gets the AI's stop and target as its plan automatically.
+func (h *Handlers) SettingsAIAutoPlanSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	var on int64
+	if r.PostFormValue("auto_plan") == "1" {
+		on = 1
+	}
+	if err := h.Queries.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: on, ID: userID(ctx)}); err != nil {
+		h.serverError(w, fmt.Errorf("set auto plan: %w", err))
+		return
+	}
+	if on == 1 {
+		// What is open now gets its plan without waiting for the next fill.
+		h.LiveData.Bump(userID(ctx))
+	}
+	http.Redirect(w, r, "/settings?flash=auto-plan#ai", http.StatusSeeOther)
+}
+
 // SettingsAIModels: POST /settings/ai/models (htmx) - list the models the
 // form's provider and key can use, as the model field's suggestions. Errors
 // render inline next to the field.

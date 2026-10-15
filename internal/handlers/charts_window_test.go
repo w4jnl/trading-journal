@@ -33,7 +33,10 @@ func TestChartPanelLoadsTheDayAndFocusesTheTrade(t *testing.T) {
 	if panel.FocusFrom >= entry.Unix() || panel.FocusTo <= exit.Unix() || panel.FocusFrom < panel.From {
 		t.Errorf("focus %v..%v does not wrap the trade inside the day", time.Unix(panel.FocusFrom, 0).UTC(), time.Unix(panel.FocusTo, 0).UTC())
 	}
-	if len(panel.Bars) < 600 || int64(len(panel.Bars)) > (now.Unix()-dayStart.Unix())/60+1 {
+	// The day so far at one minute: as many bars as minutes since the
+	// day's start, give or take the partial minute at each end (the test
+	// runs at any hour, so the count is relative, not fixed).
+	if minutes := (now.Unix() - dayStart.Unix()) / 60; int64(len(panel.Bars)) < minutes-2 || int64(len(panel.Bars)) > minutes+1 {
 		t.Errorf("bars = %d, want the day so far at one minute", len(panel.Bars))
 	}
 	focused := focusPanel(panel)

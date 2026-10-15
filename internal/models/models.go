@@ -348,6 +348,16 @@ type PriceBarDay struct {
 	Timeframe   string `json:"timeframe"`
 	Day         string `json:"day"`
 	FetchedAt   int64  `json:"fetched_at"`
+	Source      string `json:"source"`
+}
+
+type PriceBarWindow struct {
+	YahooSymbol string `json:"yahoo_symbol"`
+	Timeframe   string `json:"timeframe"`
+	FromTime    int64  `json:"from_time"`
+	ToTime      int64  `json:"to_time"`
+	Source      string `json:"source"`
+	FetchedAt   int64  `json:"fetched_at"`
 }
 
 type Session struct {
@@ -487,6 +497,7 @@ type User struct {
 	AiLanguage   string     `json:"ai_language"`
 	AiSendChart  int64      `json:"ai_send_chart"`
 	Guardrail    int64      `json:"guardrail"`
+	AutoPlan     int64      `json:"auto_plan"`
 }
 
 type UserAiSetting struct {
