@@ -37,6 +37,8 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/mwmail"
 	"github.com/w4jnl/trading-journal/internal/oauth"
+	"github.com/w4jnl/trading-journal/internal/push"
+	"github.com/w4jnl/trading-journal/internal/push/apns"
 	"github.com/w4jnl/trading-journal/internal/secretbox"
 	"github.com/w4jnl/trading-journal/internal/topstepx"
 	"github.com/w4jnl/trading-journal/web"
@@ -721,6 +723,23 @@ func run() error {
 		}
 	}
 
+	// Push to the phone app: on when an APNs key is configured.
+	var pushSvc *push.Service
+	if keyPEM, ok, err := cfg.APNS.KeyBytes(); err != nil {
+		return err
+	} else if ok {
+		client, err := apns.New(apns.Config{Key: keyPEM, KeyID: cfg.APNS.KeyID, TeamID: cfg.APNS.TeamID, Topic: cfg.APNS.Topic})
+		if err != nil {
+			return err
+		}
+		pushSvc = &push.Service{DB: conn, Q: queries, APNs: client, Log: slog.Default()}
+		slog.Info("push enabled", "topic", cfg.APNS.Topic, "key_id", cfg.APNS.KeyID)
+	} else {
+		// Phones still register (and keep their settings) so push starts
+		// the moment a key is configured.
+		pushSvc = &push.Service{DB: conn, Q: queries, Log: slog.Default()}
+	}
+
 	h := &handlers.Handlers{
 		LiveData:         liveData,
 		Guardrail:        guard,
@@ -754,6 +773,7 @@ func run() error {
 		TopstepxSync:     topstepxSync,
 		IbkrSync:         ibkrSync,
 		PairLimiter:      auth.NewAttemptLimiter(),
+		Push:             pushSvc,
 	}
 
 	// LocalAuth's login template uses the existing renderPage pipeline so

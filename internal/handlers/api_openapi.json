@@ -2268,6 +2268,128 @@
       }
      }
     }
+   },
+   "KindPrefs": {
+    "type": "object",
+    "properties": {
+     "off": {
+      "type": "boolean"
+     },
+     "sound": {
+      "type": "string",
+      "enum": [
+       "tj",
+       "default",
+       "none"
+      ]
+     },
+     "timeSensitive": {
+      "type": "boolean"
+     }
+    }
+   },
+   "DevicePrefs": {
+    "type": "object",
+    "description": "The phone's notification settings, sent whole. Kinds: nudge, tradeClosed, planMissing (opt-in).",
+    "properties": {
+     "kinds": {
+      "type": "object",
+      "additionalProperties": {
+       "$ref": "#/components/schemas/KindPrefs"
+      }
+     },
+     "noActivity": {
+      "type": "boolean"
+     },
+     "finishedAsNotification": {
+      "type": "boolean"
+     },
+     "quietOutsideRth": {
+      "type": "boolean"
+     }
+    }
+   },
+   "DeviceActivity": {
+    "type": "object",
+    "required": [
+     "id",
+     "token"
+    ],
+    "properties": {
+     "id": {
+      "type": "string"
+     },
+     "token": {
+      "type": "string",
+      "description": "The activity's update token, hex"
+     },
+     "kind": {
+      "type": "string",
+      "default": "session"
+     }
+    }
+   },
+   "Device": {
+    "type": "object",
+    "properties": {
+     "token": {
+      "type": "string"
+     },
+     "name": {
+      "type": "string"
+     },
+     "sandbox": {
+      "type": "boolean"
+     },
+     "bundleId": {
+      "type": "string"
+     },
+     "prefs": {
+      "$ref": "#/components/schemas/DevicePrefs"
+     },
+     "activityStart": {
+      "type": "boolean"
+     },
+     "activities": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/DeviceActivity"
+      }
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "lastSeenAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "DeviceRegistration": {
+    "type": "object",
+    "required": [
+     "token"
+    ],
+    "properties": {
+     "token": {
+      "type": "string",
+      "description": "The APNs device token, hex"
+     },
+     "name": {
+      "type": "string"
+     },
+     "sandbox": {
+      "type": "boolean",
+      "description": "true for a Debug (Xcode) build, whose tokens belong to Apple's sandbox service"
+     },
+     "bundleId": {
+      "type": "string"
+     },
+     "prefs": {
+      "$ref": "#/components/schemas/DevicePrefs"
+     }
+    }
    }
   }
  },
@@ -4701,6 +4823,299 @@
            "type": "boolean"
           }
          }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices": {
+   "get": {
+    "operationId": "listDevices",
+    "summary": "The phones registered for push (device key only)",
+    "responses": {
+     "200": {
+      "description": "Devices",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Device"
+           }
+          },
+          "push": {
+           "type": "boolean",
+           "description": "whether this server can send"
+          }
+         }
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "post": {
+    "operationId": "registerDevice",
+    "summary": "Register a phone's push token with its settings (device key only); a known token is updated",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DeviceRegistration"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "device": {
+           "$ref": "#/components/schemas/Device"
+          },
+          "push": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad token or settings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices/{token}/prefs": {
+   "put": {
+    "operationId": "setDevicePrefs",
+    "summary": "Replace a phone's notification settings (device key only)",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/DevicePrefs"
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "device": {
+           "$ref": "#/components/schemas/Device"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad settings",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices/{token}/activity": {
+   "put": {
+    "operationId": "setDeviceActivities",
+    "summary": "Report the push-to-start token and the running Live Activities, whole (device key only)",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "startToken": {
+          "type": "string",
+          "nullable": true
+         },
+         "activities": {
+          "type": "array",
+          "items": {
+           "$ref": "#/components/schemas/DeviceActivity"
+          }
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "device": {
+           "$ref": "#/components/schemas/Device"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad token",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/devices/{token}": {
+   "delete": {
+    "operationId": "deleteDevice",
+    "summary": "Forget a phone (device key only)",
+    "parameters": [
+     {
+      "name": "token",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Forgotten"
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
         }
        }
       }

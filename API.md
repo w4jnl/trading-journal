@@ -182,6 +182,11 @@ surface:
 | `GET`  | `/api/v1/today` | The day in one object (stats, positions, plan, nudges, curve, equity) |
 | `GET`  | `/api/v1/events` | Server-sent events: a version event after every change |
 | `GET`  | `/api/v1/nudges` | A day's guardrail nudges with their seen state |
+| `GET`  | `/api/v1/devices` | The phones registered for push (device key) |
+| `POST` | `/api/v1/devices` | Register a phone's push token and settings (device key) |
+| `PUT`  | `/api/v1/devices/{token}/prefs` | Replace a phone's notification settings (device key) |
+| `PUT`  | `/api/v1/devices/{token}/activity` | Report the push-to-start token and running Live Activities (device key) |
+| `DELETE` | `/api/v1/devices/{token}` | Forget a phone (device key) |
 | `POST` | `/api/v1/nudges/seen` | Mark several nudges seen |
 | `POST` | `/api/v1/nudges/{id}/seen` | Mark a nudge seen |
 | `PUT`  | `/api/v1/settings` | Change the user's switches (device key) |
@@ -1150,6 +1155,55 @@ acknowledged (`{"id": 912, "seen": true}`; `false` when it was seen
 before or is not yours); `POST /api/v1/nudges/seen` with `{"ids": [...]}`
 marks several. `deliveredAt` is set when a web page took the nudge (that
 also counts as seen); `seenAt` when the trader acknowledged it anywhere.
+
+### Devices and push
+
+The phone app registers for push after pairing; the server then sends it
+what deserves attention (the guardrail's nudges, a closed trade, a silent
+sync after any change, the Session Live Activity). This section is the
+platform-neutral contract: a second client would implement the same.
+
+**Server side.** The server speaks APNs over HTTP/2 with the developer
+account's `.p8` key (`apns:` in config.yaml, or `TJ_APNS_KEY`). `GET
+/api/v1/me` says in `features.push` whether this server can send; phones
+register either way and their settings are kept, so push starts the
+moment a key is configured.
+
+**Registration** (`POST /api/v1/devices`, **device key**), once per
+(server, token), and again when the token or the settings change:
+
+```jsonc
+{"token": "6f1a…", "name": "the trader's iPhone", "sandbox": true, "bundleId": "nl.w4j.tradingjournal",
+ "prefs": {"kinds": {"nudge": {"timeSensitive": true}, "tradeClosed": {"sound": "none"}},
+           "noActivity": false, "finishedAsNotification": false, "quietOutsideRth": false}}
+// 200 {"device": {...}, "push": true}
+```
+
+`sandbox` is true for a Debug build installed from Xcode, whose tokens
+belong to Apple's sandbox service; TestFlight and App Store builds use
+production. One key serves both, so a phone says which. A token Apple
+reports as gone (`410`) is forgotten. `GET /api/v1/devices` lists the
+user's phones; `DELETE /api/v1/devices/{token}` forgets one (sign-out).
+
+**Settings** (`prefs`) are the phone's notification preferences, owned by
+the app and sent whole, with the registration and on every change (`PUT
+/api/v1/devices/{token}/prefs`). The server filters before each push;
+iOS cannot drop a push once it arrived. Kinds: `nudge` (a guardrail
+nudge: the trader is needed; time-sensitive by default, the app's
+`tj-nudge.caf` sound), `tradeClosed` (a trade closed; passive, silent by
+default), `planMissing` (the open is near and no plan is written; opt-in,
+off until the phone sends it). Per kind: `off`, `sound` (`tj`, `default`,
+`none`), `timeSensitive`. `noActivity` turns the Session activity off for
+the phone; `finishedAsNotification` keeps a closed trade a notification
+while the activity shows (otherwise it rides the activity as its alert);
+`quietOutsideRth` drops the closed-trade alerts outside regular hours.
+
+**Live Activities.** The app reports its push-to-start token and every
+running activity with its update token, whole, after each change:
+`PUT /api/v1/devices/{token}/activity` with `{"startToken": "…",
+"activities": [{"id": "…", "token": "…", "kind": "session"}]}`. What the
+server pushes to them is described under *The Session activity* once the
+triggers are in place.
 
 ### Data version (change detection)
 

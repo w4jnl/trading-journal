@@ -196,7 +196,7 @@ func (h *Handlers) apiServerInfo(r *http.Request) map[string]any {
 			"ai":        h.aiPossible(),
 			"charts":    h.MarketData != nil,
 			"guardrail": h.Guardrail != nil,
-			"push":      false,
+			"push":      h.Push.Enabled(),
 		},
 	}
 }
