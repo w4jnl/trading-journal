@@ -34,6 +34,10 @@ struct TodayView: View {
         .toolbar {
             ToolbarItem(placement: .topBarLeading) { ConnectionLine() }
             ToolbarItem(placement: .topBarTrailing) {
+                Button { Task { await client.refreshToday(refresh: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                    .keyboardShortcut("r", modifiers: .command)
+            }
+            ToolbarItem(placement: .topBarTrailing) {
                 NavigationLink(value: Route.nudges) {
                     Image(systemName: "bell").overlay(alignment: .topTrailing) {
                         if let n = client.today?.nudges.unseen, n > 0 {

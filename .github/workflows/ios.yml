@@ -1,0 +1,34 @@
+name: iOS
+
+# The phone app's unit tests on a macOS runner, only when the app changed. Unsigned, on the
+# newest iPhone simulator the runner's Xcode ships (the Makefile's IOS_SIM names the local one).
+on:
+  push:
+    branches: [main]
+    paths: ['app/ios/**', 'Makefile', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['app/ios/**', 'Makefile', '.github/workflows/ios.yml']
+
+jobs:
+  test:
+    runs-on: macos-15
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select the newest Xcode
+        run: sudo xcode-select -s "$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)" && xcodebuild -version
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Pick a simulator
+        id: sim
+        run: |
+          name=$(xcrun simctl list devices available | grep -oE 'iPhone 1[0-9][^(]*' | sed 's/ *$//' | sort -V | tail -1)
+          echo "sim=platform=iOS Simulator,name=$name" >> "$GITHUB_OUTPUT"
+          echo "using $name"
+      - name: Unit tests
+        run: make ios-test IOS_SIM='${{ steps.sim.outputs.sim }}'
+      - name: Test summary
+        if: always()
+        run: |
+          r=$(ls -dt app/ios/build/DerivedData/Logs/Test/*.xcresult 2>/dev/null | head -1)
+          [ -n "$r" ] && xcrun xcresulttool get test-results summary --path "$r" >> "$GITHUB_STEP_SUMMARY" || true

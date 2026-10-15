@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// The screenshot walker and the one smoke path, not a test of behaviour: run against a journal
@@ -13,6 +14,7 @@ final class ScreensTests: XCTestCase {
         let server = try XCTUnwrap(env["TJ_SERVER"], "TJ_SERVER: the journal to show")
         let key = try XCTUnwrap(env["TJ_KEY"], "TJ_KEY: a device key for it")
         let app = XCUIApplication()
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft } // the sidebar stays
         app.launchArguments = ["-serverURL", server, "-apiKey", key]
         app.launch()
         XCTAssertTrue(app.staticTexts["TODAY"].waitForExistence(timeout: 20), "Today never rendered")
@@ -20,7 +22,8 @@ final class ScreensTests: XCTestCase {
         shot("today")
 
         for (tab, title) in [("Trades", "trades"), ("Journal", "journal"), ("Calendar", "calendar"), ("Settings", "settings")] {
-            let button = app.tabBars.buttons[tab].exists ? app.tabBars.buttons[tab] : app.buttons[tab]
+            let button = app.tabBars.buttons[tab].exists ? app.tabBars.buttons[tab]
+                : app.buttons[tab].exists ? app.buttons[tab] : app.cells.staticTexts[tab].firstMatch // an iPad's sidebar row (its title says Journal too)
             if button.waitForExistence(timeout: 5) {
                 button.tap()
                 sleep(3)
@@ -77,7 +80,7 @@ final class ScreensTests: XCTestCase {
         }
 
         // notifications: allowed, then pushes asked of the script by a file (only simctl reaches the simulator)
-        guard env["TJ_PUSH"] != nil else { return }
+        guard let push = env["TJ_PUSH"], !push.isEmpty else { return }
         app.terminate()
         app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "settings"]
         app.launch()

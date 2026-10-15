@@ -457,6 +457,24 @@ image's id, its API URL and the markdown line to put in a body:
 `GET /api/v1/journal/labels` lists the vocabulary with display names for
 pickers: `{"mistakes": [{"key": "chased", "name": "Chased the entry"}, ...], "emotions": [...]}`.
 
+### The AI review's suggestions (device key)
+
+The in-app AI review never writes a tag, strategy or label: it records
+suggestions the trader accepts or dismisses. `GET /api/v1/journal/{id}`
+lists the open ones under `suggestions`, each with what to show:
+
+```jsonc
+"suggestions": [ { "kind": "strategy", "value": "12", "name": "VWAP Bounce" },
+                 { "kind": "mistake", "value": "chased", "name": "Chased the entry" } ]
+```
+
+`POST /api/v1/journal/{id}/suggestions` with `{"kind", "value", "do":
+"accept"|"dismiss"}` acts on one: accept makes it the field, recorded as
+the trader's own; dismiss keeps it dismissed, so a later review does not
+propose it again. The answer is the entry as `GET` returns it (`404` for
+a suggestion that is not open, `409` with `reason: review-pending` while
+a review writes the note, `403` for an agent key).
+
 ### Creating journal entries
 
 `POST /api/v1/journal` creates one entry. A single `scope` field selects the

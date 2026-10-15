@@ -46,6 +46,7 @@ var apiIndexEndpoints = []map[string]string{
 	{"method": "POST", "path": "/api/v1/journal/{id}/strategy", "summary": "Assign a strategy (only if the entry has none; never overwrites)"},
 	{"method": "POST", "path": "/api/v1/journal/{id}/tag", "summary": "Set a tag good|neutral|bad (only if the entry has none; never overwrites)"},
 	{"method": "POST", "path": "/api/v1/journal/{id}/labels", "summary": "Add mistake / emotion labels from the fixed vocabulary (additive; never removes)"},
+	{"method": "POST", "path": "/api/v1/journal/{id}/suggestions", "summary": "Accept or dismiss an AI review's suggestion on the entry (device key)"},
 	{"method": "GET", "path": "/api/v1/coach", "summary": "Rule-based coach checks for a trading day, with the numbers and the labels they suggest"},
 	{"method": "GET", "path": "/api/v1/plan", "summary": "The pre-market plan of a day and how the day measured against it"},
 	{"method": "GET", "path": "/api/v1/digest", "summary": "The weekly edge digest: an ISO week per decision against the week before, what to keep and fix, coach and plan tallies"},

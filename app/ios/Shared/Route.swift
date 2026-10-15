@@ -13,6 +13,7 @@ enum Route: Hashable, Sendable {
     case plan
     case accounts
     case settings
+    case digest(String?) // an ISO week, nil for the last one
     case pair(server: String?, code: String?)
 
     /// The tab a route lives in.
@@ -20,7 +21,7 @@ enum Route: Hashable, Sendable {
         switch self {
         case .today, .position, .nudges, .plan, .accounts: .today
         case .trade: .trades
-        case .journal: .journal
+        case .journal, .digest: .journal
         case .day: .calendar
         case .settings, .pair: .settings
         }
@@ -61,6 +62,7 @@ enum Route: Hashable, Sendable {
         case .plan: s += "plan"
         case .accounts: s += "accounts"
         case .settings: s += "settings"
+        case .digest(let w): s += w.map { "digest/\($0)" } ?? "digest"
         case .pair(let server, let code):
             var c = URLComponents(string: "tj://pair")!
             c.queryItems = [URLQueryItem(name: "server", value: server ?? ""), URLQueryItem(name: "code", value: code ?? "")]
@@ -107,6 +109,7 @@ enum Route: Hashable, Sendable {
         case "plan": return .plan
         case "accounts": return .accounts
         case "settings": return .settings
+        case "digest": return .digest(rest.first)
         default: return nil
         }
     }

@@ -139,6 +139,8 @@ targets:
       - path: Shared/Route.swift
       - path: Shared/Wire.swift
       - path: Shared/Markdown.swift
+      - path: Shared/API.swift
+      - path: Shared/Keychain.swift
       - path: Shared/Fonts
     settings:
       base:

@@ -592,9 +592,12 @@ struct JournalDetail: Codable, Sendable, Hashable {
     var summary: Summary?
     var trades: [JournalTrade]
     var attachments: [Attachment]
+    var suggestions: [Suggestion]?
     var chartPng: String?
     var createdAt: Date
     var updatedAt: Date
+
+    var openSuggestions: [Suggestion] { suggestions ?? [] }
 }
 
 struct LabelOption: Codable, Sendable, Hashable, Identifiable {
@@ -842,4 +845,111 @@ struct JournalConflict: Decodable, Sendable {
     var reason: String?
     var entry: JournalDetail?
     var entryId: Int?
+}
+
+// MARK: the AI review's suggestions
+
+struct Suggestion: Codable, Sendable, Hashable, Identifiable {
+    var kind: String // tag | strategy | mistake | emotion
+    var value: String
+    var name: String
+    var id: String { kind + ":" + value }
+    var title: String {
+        switch kind {
+        case "tag": "tag \(value)"
+        case "strategy": name
+        case "mistake": "mistake: \(name)"
+        case "emotion": "felt \(name)"
+        default: name
+        }
+    }
+}
+
+struct SuggestionAction: Encodable, Sendable {
+    var kind: String
+    var value: String
+    var `do`: String // accept | dismiss
+}
+
+// MARK: the weekly digest
+
+struct DigestKPI: Codable, Sendable, Hashable, Identifiable {
+    var key: String // net | decisions | winRate | profitFactor | avgR | exitKept
+    var label: String
+    var value: Double?
+    var previous: Double?
+    var id: String { key }
+
+    /// The number as the key wants it shown.
+    var text: String { Self.format(key, value) }
+    var previousText: String { Self.format(key, previous) }
+
+    nonisolated static func format(_ key: String, _ v: Double?) -> String {
+        guard let v else { return "—" }
+        switch key {
+        case "net": return Formatting.money(v)
+        case "decisions": return String(Int(v))
+        case "winRate", "exitKept": return Formatting.percent(v)
+        case "avgR": return Formatting.r(v)
+        default: return String(format: "%.2f", v)
+        }
+    }
+}
+
+struct DigestDecision: Codable, Sendable, Hashable {
+    var tradeId: Int
+    var day: String
+    var symbolRoot: String
+    var direction: Direction
+    var accounts: Int
+    var net: Double
+}
+
+struct DigestCoach: Codable, Sendable, Hashable, Identifiable {
+    var key: String
+    var title: String
+    var severity: String
+    var count: Int
+    var days: Int
+    var id: String { key }
+}
+
+struct DigestRule: Codable, Sendable, Hashable, Identifiable {
+    var key: String
+    var name: String
+    var held: Int
+    var total: Int
+    var id: String { key }
+}
+
+struct DigestPlan: Codable, Sendable, Hashable {
+    var tradingDays: Int
+    var planned: Int
+    var writtenLate: Int
+    var rules: [DigestRule]
+}
+
+struct DigestLesson: Codable, Sendable, Hashable, Identifiable {
+    var mistake: String? // absent for a lesson about no mistake
+    var mistakeName: String?
+    var count: Int
+    var open: Int
+    var lesson: String
+    var day: String?
+    var id: String { (mistake ?? "") + ":" + lesson }
+}
+
+struct Digest: Codable, Sendable, Hashable {
+    var week: String
+    var from: String
+    var to: String
+    var tradingDays: Int
+    var kpis: [DigestKPI]
+    var keep: [String]
+    var fix: [String]
+    var bestDecision: DigestDecision?
+    var worstDecision: DigestDecision?
+    var coach: [DigestCoach]
+    var plan: DigestPlan
+    var lessons: [DigestLesson]
 }
