@@ -38,8 +38,10 @@ ios-test: ios-project
 	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' $(XCB) -scheme TradingJournal -configuration Debug -destination '$(IOS_SIM)' test CODE_SIGNING_ALLOWED=NO -quiet
 # Screenshots of every tab and editor against a running journal:
 #   SERVER=http://… KEY=tj_… SHOTS=/dir ENTRY=<journal id> POSITION=<account>/<symbol> make ios-screens
+# With PUSH=1 it also allows notifications and asks for pushes by files under SHOTS; run
+# `SHOTS=/dir app/ios/TJScreens/push-driver.sh` beside it to deliver them with simctl.
 ios-screens: ios-project
-	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' TEST_RUNNER_TJ_SHOTS='$(SHOTS)' TEST_RUNNER_TJ_ENTRY='$(ENTRY)' TEST_RUNNER_TJ_POSITION='$(POSITION)' \
+	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' TEST_RUNNER_TJ_SHOTS='$(SHOTS)' TEST_RUNNER_TJ_ENTRY='$(ENTRY)' TEST_RUNNER_TJ_POSITION='$(POSITION)' TEST_RUNNER_TJ_PUSH='$(PUSH)' \
 	$(XCB) -scheme TJScreens -configuration Debug -destination '$(IOS_SCREENS_SIM)' test CODE_SIGNING_ALLOWED=NO -quiet
 # Build, install and launch on the iPhone (unlocked; cable, or Wi-Fi once paired); signs with Local.xcconfig's team.
 ios-device: ios-project

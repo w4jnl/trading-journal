@@ -1,0 +1,8 @@
+{
+  "Simulator Target Bundle": "nl.w4j.tradingjournal",
+  "aps": {
+    "alert": {"title": "No plan for today", "subtitle": "Thu 15 Oct", "body": "The open is in fifteen minutes and no plan is written: bias, levels, max trades, max loss."},
+    "sound": "tj-nudge.caf", "category": "TJ_NUDGE", "thread-id": "nudges", "mutable-content": 1
+  },
+  "kind": "nudge", "key": "plan-missing", "route": "plan", "day": "2026-10-15"
+}

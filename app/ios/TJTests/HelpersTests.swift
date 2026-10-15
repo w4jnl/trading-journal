@@ -153,16 +153,16 @@ struct URLTests {
 
 /// What the app remembers between starts: UserDefaults, read back at init.
 struct SettingsTests {
-    @MainActor @Test func theActivityIsOnByDefaultAndAChoiceIsKept() {
+    @MainActor @Test func setsAreOffByDefaultAndAChoiceIsKept() {
         let d = UserDefaults.standard
-        let before = d.object(forKey: "showsActivity")
-        defer { if let before { d.set(before, forKey: "showsActivity") } else { d.removeObject(forKey: "showsActivity") } }
-        d.removeObject(forKey: "showsActivity")
-        #expect(Settings().showsActivity, "a fresh install shows the Session activity")
+        let before = d.object(forKey: "tradesBySet")
+        defer { if let before { d.set(before, forKey: "tradesBySet") } else { d.removeObject(forKey: "tradesBySet") } }
+        d.removeObject(forKey: "tradesBySet")
+        #expect(!Settings().tradesBySet, "a fresh install lists trades one by one")
         let s = Settings()
-        s.showsActivity = false
-        #expect(!Settings().showsActivity, "switched off, it stays off at the next start")
-        s.showsActivity = true
+        s.tradesBySet = true
+        #expect(Settings().tradesBySet, "switched on, it stays on at the next start")
+        s.tradesBySet = false
     }
 
     @MainActor @Test func pairedMeansAServerAndAKey() {

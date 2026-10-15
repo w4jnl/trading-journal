@@ -180,6 +180,7 @@ final class Client {
                 settings.server = s
             }
             try? await UNUserNotificationCenterBadge.set(t.nudges.badge)
+            await Notifications.clearDelivered(unseen: Set(t.nudges.items.filter(\.unseen).map(\.id)))
         } catch TJError.unauthorized {
             connection = .unauthorized
         } catch {
@@ -387,6 +388,53 @@ final class Client {
         _ = try await journalWrite { try await api.send("DELETE", "/accounts/\(account)/balances/\(anchor)", session: session) }
     }
 
+    // MARK: devices
+
+    /// Hands the server this phone's APNs token with its settings; the token the app registered
+    /// before (an Xcode build TestFlight replaced) is forgotten on the server.
+    func registerDevice(apnsToken: String) async throws -> Bool {
+        guard let api else { throw TJError.notConfigured }
+        let sandbox: Bool
+        #if DEBUG
+        sandbox = true
+        #else
+        sandbox = false
+        #endif
+        let reg = DeviceRegistration(token: apnsToken, name: UIDevice.current.name, sandbox: sandbox,
+                                     bundleId: Bundle.main.bundleIdentifier ?? "nl.w4j.tradingjournal", prefs: settings.notificationPrefs)
+        let r = try await api.send("POST", "/devices", json: reg, as: DeviceRegistered.self, session: session)
+        let before = settings.registeredToken
+        settings.registered = "\(settings.serverURL)|\(apnsToken)"
+        if let before, before != apnsToken {
+            _ = try? await api.send("DELETE", "/devices/\(before)", session: session)
+        }
+        return r.push
+    }
+
+    /// Sends the settings whole; before the phone registered there is nothing to update.
+    func putPrefs() async throws {
+        guard let api, let token = settings.registeredToken else { return }
+        do {
+            _ = try await api.send("PUT", "/devices/\(token)/prefs", json: settings.notificationPrefs, as: DeviceSaved.self, session: session)
+        } catch TJError.http(404, _) { // the server forgot this phone: register again, with them
+            settings.registered = nil
+            throw TJError.http(404, "the journal forgot this phone; it registers again at the next start")
+        }
+    }
+
+    /// Hands the server this phone's Live Activity tokens, whole.
+    func reportActivities(start: String?, activities: [DeviceActivity]) async {
+        guard let api, let token = settings.registeredToken else { return }
+        _ = try? await api.send("PUT", "/devices/\(token)/activity", json: ActivityReport(startToken: start, activities: activities), as: DeviceSaved.self, session: session)
+    }
+
+    /// Forgets this phone on the server (sign out).
+    func deleteDevice() async {
+        guard let api, let token = settings.registeredToken else { return }
+        _ = try? await api.send("DELETE", "/devices/\(token)", session: session)
+        settings.registered = nil
+    }
+
     /// Marks several nudges seen in one call.
     func markSeen(_ ids: [Int]) async throws {
         guard let api, !ids.isEmpty else { return }
@@ -423,6 +471,7 @@ final class Client {
     }
 
     func signOut() {
+        Task { await deleteDevice() }
         settings.signOut()
         reset()
     }

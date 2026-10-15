@@ -1,0 +1,9 @@
+{
+  "Simulator Target Bundle": "nl.w4j.tradingjournal",
+  "aps": {
+    "alert": {"title": "Re-entry right after a loss", "subtitle": "Wed 14 Oct", "body": "MES short opened 1s after a -203.47 loss on the same market."},
+    "sound": "tj-nudge.caf", "badge": 2, "category": "TJ_NUDGE", "thread-id": "nudges",
+    "interruption-level": "time-sensitive", "mutable-content": 1
+  },
+  "kind": "nudge", "id": 7, "key": "revenge", "route": "day/2026-10-14", "day": "2026-10-14"
+}

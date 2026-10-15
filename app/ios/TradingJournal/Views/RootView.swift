@@ -39,6 +39,7 @@ struct RootView: View {
         }
         .onAppear {
             client.start()
+            Task { await Notifications.shared.refreshAuthorization() }
             if !settings.isPaired { pairing = .pair(server: settings.serverURL.isEmpty ? nil : settings.serverURL, code: nil) }
             // development: `simctl launch … -open trade/5` opens a screen straight away
             if let o = UserDefaults.standard.string(forKey: "open"), let r = Route.from(route: o) {
@@ -55,6 +56,9 @@ struct RootView: View {
         }
         .onChange(of: client.connection) { _, c in
             if c == .unauthorized, pairing == nil { pairing = .pair(server: settings.serverURL, code: nil) }
+        }
+        .onChange(of: settings.apiKey) { _, _ in
+            Task { await Notifications.shared.registerIfNeeded() } // paired again: the token goes to this server
         }
     }
 

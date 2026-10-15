@@ -1,0 +1,5 @@
+{
+  "Simulator Target Bundle": "nl.w4j.tradingjournal",
+  "aps": {"content-available": 1},
+  "kind": "sync", "v": 140, "badge": 1, "unseen": [9]
+}

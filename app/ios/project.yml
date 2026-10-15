@@ -3,7 +3,8 @@
 # TJ_TEAM_ID = your Apple team id, and TJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements
 # (pushes, time-sensitive alerts, the App Group and the keychain group the extensions share; a
 # free Apple ID's personal team cannot sign that: leave it empty there). Shared/ is compiled
-# into the app and, in later phases, into its notification and widget extensions.
+# into the app and its extensions: TJNotificationService puts the trade's chart on a push,
+# TJNotificationContent is the expanded card with the live numbers and Seen in place.
 name: TradingJournal
 options:
   bundleIdPrefix: nl.w4j
@@ -34,6 +35,9 @@ targets:
     sources:
       - path: TradingJournal
       - path: Shared
+    dependencies:
+      - target: TJNotificationService
+      - target: TJNotificationContent
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal
@@ -64,11 +68,70 @@ targets:
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         ITSAppUsesNonExemptEncryption: false
+  TJNotificationService: # a closed trade's push gets the trade's chart as its attachment
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: TJNotificationService
+      - path: Shared/PushPayload.swift
+      - path: Shared/API.swift
+      - path: Shared/Keychain.swift
+      - path: Shared/Wire.swift
+      - path: Shared/Formatting.swift
+      - path: Shared/Markdown.swift
+      - path: Shared/Route.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal.NotificationService
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: TJNotificationService/TJNotificationService.entitlements
+    info:
+      path: TJNotificationService/Info.plist
+      properties:
+        CFBundleDisplayName: Journal
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.service
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationService
+  TJNotificationContent: # the expanded card with the live numbers and Seen in place
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: TJNotificationContent
+      - path: Shared
+    dependencies: # linked by hand: the extension's context class lives in UserNotificationsUI, and
+      # without the link iOS cannot load the card (it crashes and shows the plain notification)
+      - sdk: UserNotifications.framework
+      - sdk: UserNotificationsUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: nl.w4j.tradingjournal.NotificationContent
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: TJNotificationContent/TJNotificationContent.entitlements
+    info:
+      path: TJNotificationContent/Info.plist
+      properties:
+        CFBundleDisplayName: Journal
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UIAppFonts: [Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf, JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.usernotifications.content-extension
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).NotificationViewController
+          NSExtensionAttributes:
+            UNNotificationExtensionCategory: [TJ_NUDGE, TJ_POSITION, TJ_TRADE]
+            UNNotificationExtensionInitialContentSizeRatio: 0.5
+            UNNotificationExtensionDefaultContentHidden: true
+            UNNotificationExtensionUserInteractionEnabled: true
   TJTests:
     type: bundle.unit-test
     platform: iOS
     sources:
       - path: TJTests
+        excludes: [Payloads]
+      - path: TJTests/Payloads # the simctl payload files, as resources (an unknown extension would be skipped)
+        buildPhase: resources
     dependencies:
       - target: TradingJournal
     settings:

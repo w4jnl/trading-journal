@@ -55,6 +55,32 @@ in the app forgets it on the phone.
 4. `make ios-testflight` archives and uploads (the app record `nl.w4j.tradingjournal` must exist
    in App Store Connect). The marketing version follows the server's release.
 
+## Notifications
+
+Settings → Notifications asks once, hands the APNs token to the journal (`POST /api/v1/devices`,
+once per server and token) and decides what this phone gets: each kind on or off, its sound
+(the journal's two, bundled from `TradingJournal/Sounds`, the iOS default, or silent), whether it
+breaks through Focus, closed trades only in regular hours, and the Live Activity choices. The
+server keeps a copy per phone and filters before every push. Two extensions dress the push:
+`TJNotificationService` puts the trade's chart on a closed-trade push, `TJNotificationContent`
+is the expanded card (`Shared/NotificationCard.swift`) that fetches the live numbers and marks a
+nudge seen in place. Both read the server's address and the key from the keychain group the app
+shares, so they work once the app ran after an update. On the Lock Screen a nudge offers Seen
+and Open, a closed trade Note… (dictation included) and Open; a swipe away marks a nudge seen;
+the server's silent sync takes seen nudges off the Lock Screen and keeps the badge right.
+
+In the simulator a payload file stands in for APNs, extensions included:
+
+```sh
+xcrun simctl push booted nl.w4j.tradingjournal app/ios/TJTests/Payloads/nudge.apns
+```
+
+`TJTests/Payloads/` has one per kind: `nudge`, `day-nudge`, `trade-closed`, `plan-missing`, `sync`.
+`simctl` refuses the silent `sync` (no visible content): that path, and the real APNs round trip,
+are checked on a phone, where `make ios-device` installs a build that registers a sandbox token.
+`SHOTS=/dir PUSH=1 make ios-screens` with `SHOTS=/dir app/ios/TJScreens/push-driver.sh` beside it
+walks the notification flow in the simulator and photographs the banner and the expanded card.
+
 ## Layout
 
 - `Shared/`: compiled into the app and, in later phases, every extension. `Wire.swift` (the
@@ -69,13 +95,15 @@ in the app forgets it on the phone.
 
 ## What is in this build
 
-Phases 1 and 2 of the plan: pairing, the read-only screens (Today, positions, trades,
-journal, calendar, accounts and equity, nudges, the day plan, settings), and the writes from
-the phone: journal edit, delete, append and the first note on a trade or a day, photos as
-attachments, the day plan, the plan on an open position with the risk mirrored live, the
-trader's switches, balance anchors. A save that meets an AI review in progress offers to
-append instead; one that meets a changed entry offers to reload or overwrite.
+Phases 1 to 3 of the plan: pairing, the read-only screens (Today, positions, trades, journal,
+calendar, accounts and equity, nudges, the day plan, settings), the writes from the phone
+(journal edit, delete, append and the first note on a trade or a day, photos as attachments, the
+day plan, the plan on an open position with the risk mirrored live, the trader's switches,
+balance anchors), and push: registration, the three categories with their Lock Screen actions,
+the service and content extensions, the settings mirrored to the server, the badge and the
+silent sync. A save that meets an AI review in progress offers to append instead; one that
+meets a changed entry offers to reload or overwrite.
 
 `SERVER=http://… KEY=tj_… make ios-test` also runs the live write tests against that
-journal (they put back what they change). Push notifications, the Session Live Activity and
-the widgets follow in the next phases; the server already serves all of it.
+journal (they put back what they change). The Session Live Activity and the widgets follow in
+the next phase; the server already serves all of it.

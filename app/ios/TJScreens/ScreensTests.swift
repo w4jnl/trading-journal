@@ -7,6 +7,7 @@ import XCTest
 final class ScreensTests: XCTestCase {
     private let env = ProcessInfo.processInfo.environment
     private lazy var shots = env["TJ_SHOTS"] ?? NSTemporaryDirectory()
+    private let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
 
     func testScreens() throws {
         let server = try XCTUnwrap(env["TJ_SERVER"], "TJ_SERVER: the journal to show")
@@ -74,6 +75,53 @@ final class ScreensTests: XCTestCase {
             sleep(3)
             shot("plan-edit")
         }
+
+        // notifications: allowed, then pushes asked of the script by a file (only simctl reaches the simulator)
+        guard env["TJ_PUSH"] != nil else { return }
+        app.terminate()
+        app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "settings"]
+        app.launch()
+        if app.buttons["Enable notifications"].waitForExistence(timeout: 20) {
+            if !app.buttons["Enable notifications"].isHittable { app.swipeUp() } // below the fold on a phone
+            app.buttons["Enable notifications"].tap()
+            let allow = springboard.alerts.buttons["Allow"]
+            if allow.waitForExistence(timeout: 8) { allow.tap() }
+            sleep(1)
+        }
+        shot("settings-notifications")
+        if app.buttons["Which pushes, sounds, Focus"].waitForExistence(timeout: 5) {
+            if !app.buttons["Which pushes, sounds, Focus"].isHittable { app.swipeUp() }
+            app.buttons["Which pushes, sounds, Focus"].tap()
+            sleep(2)
+            shot("notification-settings")
+        }
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        ask("nudge")
+        let banner = springboard.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'through your stop'")).firstMatch
+        if banner.waitForExistence(timeout: 20) {
+            sleep(1)
+            shot("banner")
+            banner.press(forDuration: 1.2)
+            sleep(5) // the card fetches the numbers
+            shot("card")
+            springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.04)).tap()
+            sleep(1)
+        } else {
+            XCTFail("the nudge banner never showed")
+        }
+        ask("trade-closed") // simctl cannot deliver the silent sync (no visible content): a device-only check
+        sleep(6)
+        XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
+        sleep(2)
+        XCUIDevice.shared.perform(NSSelectorFromString("pressLockButton"))
+        sleep(3)
+        shot("lock")
+    }
+
+    /// Asks the script for a payload: it watches for the file and runs `simctl push`.
+    private func ask(_ payload: String) {
+        FileManager.default.createFile(atPath: shots + "/push-" + payload, contents: Data())
     }
 
     private func shot(_ name: String) {
