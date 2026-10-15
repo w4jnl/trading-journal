@@ -180,9 +180,12 @@
   // nav and deep links where no row click happened.
   // sheetURL is the sheet content for a row id: a trade, a copy set
   // ("set:N" rows of the sets view) or an open position ("pos:<account>:<symbol>"
-  // rows of the open strip; the symbol may itself hold colons).
+  // rows of the open strip; the symbol may itself hold colons). A copied
+  // decision's row in the sets view ("posset:<account>:<symbol>") opens its
+  // lead leg's sheet, which lists the other legs.
   function sheetURL(id) {
     id = String(id);
+    if (id.indexOf("posset:") === 0) id = "pos:" + id.slice(7);
     if (id.indexOf("set:") === 0) return "/trades/sets/" + id.slice(4);
     if (id.indexOf("pos:") === 0) {
       var rest = id.slice(4), cut = rest.indexOf(":");

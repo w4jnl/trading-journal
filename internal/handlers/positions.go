@@ -263,7 +263,7 @@ func (h *Handlers) fillPositionView(ctx context.Context, row *positionView, inst
 		if plan.Stop != nil && inst != nil {
 			if r := positions.PlannedRisk(avg, *plan.Stop, row.Qty, *inst); r != nil && !sameFloat(r, plan.Risk) {
 				row.Risk = r
-				if err := h.rq().SetPositionPlanRisk(ctx, models.SetPositionPlanRiskParams{Risk: r, ID: plan.ID}); err != nil {
+				if err := h.Queries.SetPositionPlanRisk(ctx, models.SetPositionPlanRiskParams{Risk: r, ID: plan.ID}); err != nil {
 					h.logger().Warn("open positions: update plan risk", "plan", plan.ID, "err", err)
 				}
 			}

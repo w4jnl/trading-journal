@@ -42,7 +42,10 @@ around it.
   flat) inherits the set's plan, marked "from set" until the trader
   saves it. Accounts a copier drives together can be given the same
   **copy group** on `/accounts`, which lets their legs count as one
-  decision up to thirty seconds apart instead of two. The guardrail, when
+  decision up to thirty seconds apart instead of two; in the sets view the
+  open strip folds such a decision into one row (size, risk and unrealized
+  summed, the entry averaged with the spread, the shared stop and target)
+  with the legs under a chevron, like a closed set. The guardrail, when
   on, says once when a position has been open for a few minutes with no
   stop recorded and when the stops on what is open risk more than the day
   plan's max loss still allows; the API and MCP list positions and record
