@@ -188,6 +188,10 @@ surface:
 | `POST` | `/api/v1/journal` | Create an entry (day/week/trade/group) |
 | `POST` | `/api/v1/journal/prepare-day` | Cluster a day's trades + create the entries to analyze |
 | `GET`  | `/api/v1/journal/{id}` | One journal entry (full detail) |
+| `PUT`  | `/api/v1/journal/{id}` | Replace the entry: body, tag, mood, strategy, labels, checklist (device key) |
+| `DELETE` | `/api/v1/journal/{id}` | Delete the entry (device key) |
+| `POST` | `/api/v1/journal/attachments` | Upload an image for a body (device key) |
+| `GET`  | `/api/v1/journal/labels` | The mistake / emotion vocabulary with display names |
 | `POST` | `/api/v1/journal/{id}/notes` | Append a dated note (append-only) |
 | `POST` | `/api/v1/journal/{id}/strategy` | Assign a strategy (only if the entry has none) |
 | `POST` | `/api/v1/journal/{id}/tag` | Set a tag (only if the entry has none) |
@@ -200,6 +204,10 @@ surface:
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
 | `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
 | `GET`  | `/api/v1/trades/{id}/chart.png` | Server-rendered trade chart image |
+| `GET`  | `/api/v1/accounts` | Accounts with their running balance and today's net |
+| `POST` | `/api/v1/accounts/{id}/balances` | Record a balance anchor (device key) |
+| `DELETE` | `/api/v1/accounts/{id}/balances/{anchorId}` | Remove a balance anchor (device key) |
+| `GET`  | `/api/v1/equity` | Equity now by type, the per-day curve, the drawdown, today's change |
 | `GET`  | `/api/v1/attachments/{id}` | Fetch an embedded image |
 
 ### Strategies
@@ -385,6 +393,53 @@ Errors:
 |---|---|
 | `400` | Body isn't `{"note": "..."}`, or the note is empty/whitespace |
 | `404` | Entry doesn't exist or you don't own it - this endpoint only appends to an existing entry; create one with `POST /api/v1/journal` |
+
+### Editing and deleting entries (device key)
+
+The paired phone edits like the page editors do; an agent key gets `403`
+on these three routes and keeps to the additive calls above.
+
+`PUT /api/v1/journal/{id}` replaces the entry in one go, the way a page
+save does: **absent fields clear** (no `tag` removes the tag, an empty
+`mistakes` removes the mistakes), `body` must not be empty (use DELETE),
+`mood` is accepted on day entries only, `strategyId` must be one of your
+strategies, `checks` are the ticked checklist item ids of the entry's
+strategy (trade and group entries). Images in the body are written as
+`/api/v1/attachments/{id}` (the server stores them in its own form and
+rewrites them back on read). What you write is recorded as the trader's
+own, not as `api`.
+
+```bash
+curl -X PUT https://YOUR_HOST/api/v1/journal/412 -H "Authorization: Bearer tj_..." \
+  -H "Content-Type: application/json" -d '{
+    "body": "Took the open-drive long at 7762; **held into the target**.\n\n![](/api/v1/attachments/88)",
+    "tag": "good", "mood": 4, "strategyId": 12,
+    "mistakes": [], "emotions": ["calm", "focused"], "checks": [3, 4],
+    "updatedAt": "2026-10-15T14:02:11Z"
+  }'
+```
+
+The response is the entry as `GET /api/v1/journal/{id}` returns it. Pass
+`updatedAt` exactly as you loaded it: when the entry changed meanwhile
+(the desk edited it, an AI review wrote to it), the answer is `409` with
+`"reason": "stale"` and the current entry under `entry`, so the app can
+reload or ask before overwriting. While an AI review is writing the note
+the save is refused with `409` and `"reason": "review-pending"`; append a
+note instead, or wait.
+
+`DELETE /api/v1/journal/{id}` removes the entry (`204`; `409` under an AI
+review; a group entry's links to its trades go with it).
+
+`POST /api/v1/journal/attachments` takes a multipart upload (field
+`file`: PNG, JPEG, GIF or WebP, up to 8 MiB) and answers `201` with the
+image's id, its API URL and the markdown line to put in a body:
+
+```jsonc
+{"id": 88, "url": "/api/v1/attachments/88", "name": "IMG_0412.jpg", "size": 182311, "markdown": "![IMG_0412.jpg](/api/v1/attachments/88)"}
+```
+
+`GET /api/v1/journal/labels` lists the vocabulary with display names for
+pickers: `{"mistakes": [{"key": "chased", "name": "Chased the entry"}, ...], "emotions": [...]}`.
 
 ### Creating journal entries
 
@@ -687,6 +742,8 @@ Query parameters (all optional):
 | `to` | same | inclusive upper bound |
 | `account_id` | integer | one account (`filter=acc:<id>` / `filter=type:<slug>` also work) |
 | `page` | integer | 1-based; default `1` |
+| `sort` | `entry` \| `exit` \| `account` \| `symbol` \| `dir` \| `duration` \| `qty` \| `entryp` \| `exitp` \| `gross` \| `comm` \| `net` \| `r` | order of the list; default newest entry first |
+| `dir` | `asc` \| `desc` | with `sort`; each column has its natural default |
 | `show_retired` | `1` | include trades on retired accounts |
 | `refresh` | `1` | pull the latest broker fills first and wait for them (~15 s max) before listing |
 
@@ -776,6 +833,64 @@ position's sheet shows it dashed until the trader saves it, the same way
 a tag or label written through the API is marked. The MCP tools
 `list_positions` and `set_position_plan` are the same calls. Write only
 what the trader stated; a stop they did not give is not a plan.
+
+### Accounts and balances
+
+`GET /api/v1/accounts` lists your accounts (`?show_retired=1` includes
+retired ones) with the **running balance** each has, computed as the
+`/accounts` page does: the latest balance anchor at or before today plus
+the net of the trades closed after it. `balance` is `null` for an account
+with no anchor; `dayNet` is today's net from the daily stats, `null` on a
+day without trades.
+
+```jsonc
+{
+  "items": [
+    {
+      "id": 7, "name": "APEX-100001-28", "firm": "apex", "type": "prop_funded", "typeLabel": "Prop · Funded",
+      "currency": "USD", "active": true, "retired": false, "excludedFromStats": false, "needsSetup": false,
+      "copyGroup": "apex", "importSource": "motivewave_csv",
+      "balance": {"balance": 51230.5, "asOf": "2026-10-15", "anchorDate": "2026-10-01", "unchangedSinceAnchor": false,
+                  "anchors": [{"id": 3, "date": "2026-10-01", "balance": 50000, "note": "payout reset"}]},
+      "dayNet": 120.5
+    }
+  ]
+}
+```
+
+`POST /api/v1/accounts/{id}/balances` (**device key**) with
+`{"date": "2026-10-15", "balance": 51230.5, "note": "statement"}` records
+an anchor (`date` defaults to today; a second anchor on the same day
+replaces the first) and answers `201` with the account and its new
+balance block. `DELETE /api/v1/accounts/{id}/balances/{anchorId}` removes
+one (`204`; `404` when the anchor is not that account's).
+
+### Equity and drawdown
+
+`GET /api/v1/equity` is the dashboard's equity tile and the analytics'
+drawdown in one object, for the same `filter=` as the stats routes
+(default: active accounts not excluded from stats) and an optional
+`from`/`to` (default: the whole history):
+
+```jsonc
+{
+  "asOf": "2026-10-15",
+  "equityNow": 83410.25,
+  "byType": [{"type": "live", "label": "Live", "total": 32180.0, "accounts": 1},
+             {"type": "prop_funded", "label": "Prop · Funded", "total": 51230.25, "accounts": 2}],
+  "included": 3, "excluded": 1,                       // accounts with and without an anchor
+  "series": [{"date": "2026-09-01", "equity": 80000}, {"date": "2026-09-02", "equity": 80410.5}],
+  "drawdown": {"maxDrawdown": 1840.0, "maxDrawdownPeakAt": "2026-09-22T19:58:00Z", "maxDrawdownTroughAt": "2026-09-25T20:10:00Z",
+               "maxDrawdownRecoverAt": null, "maxDrawdownDays": 15, "currentDrawdown": 320.0, "underwater": true, "peakAt": "2026-09-22T19:58:00Z"},
+  "dayChange": 120.5
+}
+```
+
+`series` is the per-day running equity across the included accounts;
+`drawdown` walks the cumulative net of the closed trades in the range
+(money, not equity: an account without an anchor still counts). For one
+account's drawdown use `filter=acc:N`; `/analytics/summary` carries the
+same block.
 
 ### Trade chart image (PNG)
 

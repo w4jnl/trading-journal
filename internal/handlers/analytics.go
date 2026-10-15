@@ -278,7 +278,9 @@ func (h *Handlers) balanceSeriesForFilter(ctx context.Context, af accountFilter,
 		}
 	}
 	startDay := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, tz)
-	priorDay := startDay.AddDate(0, 0, -1)
+	// The balance the curve starts from is the one at the end of the day
+	// before startDay: everything exited before startDay, nothing since.
+	priorDay := startDay.Add(-time.Nanosecond)
 
 	// Resolve account set in the filter and capture each account's type slug
 	// so we can break the end-of-range equity down per type at the end.

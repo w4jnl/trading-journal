@@ -38,6 +38,23 @@ var allowedAttachmentMIMEs = map[string]string{
 // insert ![](url) at the cursor immediately. entry_id is left at 0 until the
 // entry is saved (rebound later by JournalSave on first write).
 func (h *Handlers) JournalAttachmentUpload(w http.ResponseWriter, r *http.Request) {
+	id, name, written, ok := h.storeAttachmentUpload(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"id":   id,
+		"url":  fmt.Sprintf("/journal/attachments/%d", id),
+		"name": name,
+		"size": written,
+	})
+}
+
+// storeAttachmentUpload reads the multipart "file" of the request, checks
+// its type and size, stores it under a random name and records it; false
+// when the response was written (an error). Shared by the web editor's
+// upload and the API's.
+func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request) (id int64, name string, written int64, ok bool) {
 	ctx := r.Context()
 
 	// Cap the request body so a hostile (or buggy) client can't OOM the
@@ -45,13 +62,13 @@ func (h *Handlers) JournalAttachmentUpload(w http.ResponseWriter, r *http.Reques
 	r.Body = http.MaxBytesReader(w, r.Body, maxAttachmentBytes+512)
 	if err := r.ParseMultipartForm(maxAttachmentBytes + 512); err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("upload too large or malformed: %v", err))
-		return
+		return 0, "", 0, false
 	}
 
 	file, header, err := r.FormFile("file")
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "missing file field")
-		return
+		return 0, "", 0, false
 	}
 	defer file.Close()
 
@@ -77,12 +94,12 @@ func (h *Handlers) JournalAttachmentUpload(w http.ResponseWriter, r *http.Reques
 	}
 	if !ok {
 		writeJSONError(w, http.StatusUnsupportedMediaType, "only PNG, JPEG, GIF, and WebP images are allowed")
-		return
+		return 0, "", 0, false
 	}
 
 	if err := os.MkdirAll(h.AttachmentsDir, 0o755); err != nil {
 		h.serverError(w, fmt.Errorf("mkdir attachments: %w", err))
-		return
+		return 0, "", 0, false
 	}
 
 	// 16 random bytes → 32 hex chars. Avoids collisions and keeps user-
@@ -90,28 +107,28 @@ func (h *Handlers) JournalAttachmentUpload(w http.ResponseWriter, r *http.Reques
 	var rnd [16]byte
 	if _, err := rand.Read(rnd[:]); err != nil {
 		h.serverError(w, fmt.Errorf("rand: %w", err))
-		return
+		return 0, "", 0, false
 	}
-	name := hex.EncodeToString(rnd[:]) + ext
-	relPath := name
-	absPath := filepath.Join(h.AttachmentsDir, name)
+	fileName := hex.EncodeToString(rnd[:]) + ext
+	relPath := fileName
+	absPath := filepath.Join(h.AttachmentsDir, fileName)
 
 	out, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
 	if err != nil {
 		h.serverError(w, fmt.Errorf("create attachment: %w", err))
-		return
+		return 0, "", 0, false
 	}
-	written, err := io.Copy(out, file)
+	written, err = io.Copy(out, file)
 	cerr := out.Close()
 	if err != nil {
 		_ = os.Remove(absPath)
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("write: %v", err))
-		return
+		return 0, "", 0, false
 	}
 	if cerr != nil {
 		_ = os.Remove(absPath)
 		h.serverError(w, fmt.Errorf("close attachment: %w", cerr))
-		return
+		return 0, "", 0, false
 	}
 
 	scope := strings.TrimSpace(r.FormValue("scope"))
@@ -132,16 +149,10 @@ func (h *Handlers) JournalAttachmentUpload(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		_ = os.Remove(absPath)
 		h.serverError(w, fmt.Errorf("insert attachment: %w", err))
-		return
+		return 0, "", 0, false
 	}
-	id, _ := res.LastInsertId()
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"id":   id,
-		"url":  fmt.Sprintf("/journal/attachments/%d", id),
-		"name": header.Filename,
-		"size": written,
-	})
+	id, _ = res.LastInsertId()
+	return id, header.Filename, written, true
 }
 
 // JournalAttachmentServe handles GET /journal/attachments/{id} — streams the

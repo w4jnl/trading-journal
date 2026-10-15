@@ -106,10 +106,13 @@ func (h *Handlers) loadBalances(ctx context.Context, today time.Time) (map[int64
 		for _, td := range deltasByAccount[accountID] {
 			if forward {
 				// Sum every closed trade whose exit happened after the
-				// anchor's stored moment. Timestamp comparison only - no
+				// anchor's stored moment and not after the asked moment:
+				// the balance "as of" a day in the past must not carry
+				// the trades since (the equity curve starts from it and
+				// adds those days itself). Timestamp comparison only - no
 				// dayStart() round-trip, so the result is the same whether
 				// the viewer's tz is Chicago, Amsterdam, or UTC.
-				if td.ExitTime.After(anchor.AnchorDate) {
+				if td.ExitTime.After(anchor.AnchorDate) && !td.ExitTime.After(today) {
 					delta += td.NetPnL
 				}
 			} else {
