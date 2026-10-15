@@ -1,10 +1,16 @@
 # HTTP API
 
-A small, read-plus-append HTTP API over your own strategies, journal
-entries, trades and daily P&L / trade stats, authenticated by a **per-user
-API key**. It's designed to be LLM-friendly: a discovery index, a
-machine-readable OpenAPI 3.1 spec, stable camelCase JSON, and append-only
-note writes that can never destroy what you've already written.
+An HTTP API over your own strategies, journal entries, trades, open
+positions, accounts and daily P&L / trade stats, authenticated by a
+**per-user API key**. It's designed to be LLM-friendly: a discovery index, a
+machine-readable OpenAPI 3.1 spec and stable camelCase JSON.
+
+There are two kinds of key (see *Pairing a phone*). An **agent key**, made
+with *Generate key* under Settings, writes additively only: it can create
+entries and append notes, but can never edit or delete what you've already
+written. A **device key**, made by pairing your phone, is you: it may also
+edit and delete journal entries, keep balance anchors, change settings and
+register for push. Routes marked *device key* answer `403` to an agent key.
 
 Everything is scoped to the key's user. There is no anonymous access -
 every endpoint, including the index and the OpenAPI spec, requires a key.
@@ -1405,10 +1411,15 @@ curl -s -X POST -H "Authorization: Bearer $KEY" -H "Content-Type: application/js
 
 ## Notes & limits (v1)
 
-- Keys are **full-access** to their user's data (no per-key scopes yet).
-- Writes are **create an entry** and **append a note** - both additive. The API
-  never overwrites or deletes: it can't edit an existing entry's tag/mood/
-  strategy, delete entries, or create/modify trades.
+- Keys are **full-access** to their user's data (no per-key scopes yet);
+  the one distinction is the key's kind. An **agent key** writes additively
+  only (create an entry, append a note, set a tag or strategy only if
+  unset, save a plan as `api`): it never edits or deletes. A **device key**
+  (a paired phone) may also edit and delete journal entries, add and
+  delete balance anchors, change settings and manage push devices, and its
+  plan and journal writes count as the trader's own.
+- Nothing can create or modify trades, executions or accounts: those come
+  from the imports and the live sync.
 - Trades are read-only and the list is page-based (fixed page size 50).
 - No rate limiting (intended for a private network / trusted agents).
 - The PNG is a single panel; the JSON `chart` field carries every panel.
