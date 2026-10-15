@@ -204,6 +204,10 @@ surface:
 | `GET`  | `/api/v1/trades` | List trades (filtered, paged) |
 | `GET`  | `/api/v1/trades/{id}` | One trade (fills + chart) |
 | `GET`  | `/api/v1/trades/{id}/chart.png` | Server-rendered trade chart image |
+| `GET`  | `/api/v1/accounts` | Accounts with their running balance and today's net |
+| `POST` | `/api/v1/accounts/{id}/balances` | Record a balance anchor (device key) |
+| `DELETE` | `/api/v1/accounts/{id}/balances/{anchorId}` | Remove a balance anchor (device key) |
+| `GET`  | `/api/v1/equity` | Equity now by type, the per-day curve, the drawdown, today's change |
 | `GET`  | `/api/v1/attachments/{id}` | Fetch an embedded image |
 
 ### Strategies
@@ -738,6 +742,8 @@ Query parameters (all optional):
 | `to` | same | inclusive upper bound |
 | `account_id` | integer | one account (`filter=acc:<id>` / `filter=type:<slug>` also work) |
 | `page` | integer | 1-based; default `1` |
+| `sort` | `entry` \| `exit` \| `account` \| `symbol` \| `dir` \| `duration` \| `qty` \| `entryp` \| `exitp` \| `gross` \| `comm` \| `net` \| `r` | order of the list; default newest entry first |
+| `dir` | `asc` \| `desc` | with `sort`; each column has its natural default |
 | `show_retired` | `1` | include trades on retired accounts |
 | `refresh` | `1` | pull the latest broker fills first and wait for them (~15 s max) before listing |
 
@@ -827,6 +833,64 @@ position's sheet shows it dashed until the trader saves it, the same way
 a tag or label written through the API is marked. The MCP tools
 `list_positions` and `set_position_plan` are the same calls. Write only
 what the trader stated; a stop they did not give is not a plan.
+
+### Accounts and balances
+
+`GET /api/v1/accounts` lists your accounts (`?show_retired=1` includes
+retired ones) with the **running balance** each has, computed as the
+`/accounts` page does: the latest balance anchor at or before today plus
+the net of the trades closed after it. `balance` is `null` for an account
+with no anchor; `dayNet` is today's net from the daily stats, `null` on a
+day without trades.
+
+```jsonc
+{
+  "items": [
+    {
+      "id": 7, "name": "APEX-100001-28", "firm": "apex", "type": "prop_funded", "typeLabel": "Prop · Funded",
+      "currency": "USD", "active": true, "retired": false, "excludedFromStats": false, "needsSetup": false,
+      "copyGroup": "apex", "importSource": "motivewave_csv",
+      "balance": {"balance": 51230.5, "asOf": "2026-10-15", "anchorDate": "2026-10-01", "unchangedSinceAnchor": false,
+                  "anchors": [{"id": 3, "date": "2026-10-01", "balance": 50000, "note": "payout reset"}]},
+      "dayNet": 120.5
+    }
+  ]
+}
+```
+
+`POST /api/v1/accounts/{id}/balances` (**device key**) with
+`{"date": "2026-10-15", "balance": 51230.5, "note": "statement"}` records
+an anchor (`date` defaults to today; a second anchor on the same day
+replaces the first) and answers `201` with the account and its new
+balance block. `DELETE /api/v1/accounts/{id}/balances/{anchorId}` removes
+one (`204`; `404` when the anchor is not that account's).
+
+### Equity and drawdown
+
+`GET /api/v1/equity` is the dashboard's equity tile and the analytics'
+drawdown in one object, for the same `filter=` as the stats routes
+(default: active accounts not excluded from stats) and an optional
+`from`/`to` (default: the whole history):
+
+```jsonc
+{
+  "asOf": "2026-10-15",
+  "equityNow": 83410.25,
+  "byType": [{"type": "live", "label": "Live", "total": 32180.0, "accounts": 1},
+             {"type": "prop_funded", "label": "Prop · Funded", "total": 51230.25, "accounts": 2}],
+  "included": 3, "excluded": 1,                       // accounts with and without an anchor
+  "series": [{"date": "2026-09-01", "equity": 80000}, {"date": "2026-09-02", "equity": 80410.5}],
+  "drawdown": {"maxDrawdown": 1840.0, "maxDrawdownPeakAt": "2026-09-22T19:58:00Z", "maxDrawdownTroughAt": "2026-09-25T20:10:00Z",
+               "maxDrawdownRecoverAt": null, "maxDrawdownDays": 15, "currentDrawdown": 320.0, "underwater": true, "peakAt": "2026-09-22T19:58:00Z"},
+  "dayChange": 120.5
+}
+```
+
+`series` is the per-day running equity across the included accounts;
+`drawdown` walks the cumulative net of the closed trades in the range
+(money, not equity: an account without an anchor still counts). For one
+account's drawdown use `filter=acc:N`; `/analytics/summary` carries the
+same block.
 
 ### Trade chart image (PNG)
 

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
+	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -52,6 +53,27 @@ type apiPosition struct {
 	SetLegs []int64 `json:"setLegs"`
 	Stale   bool    `json:"stale"`
 	Plan    string  `json:"planUrl"`
+	// The instrument's tick (0 on a stub instrument), so a client can
+	// mirror risk from a stop: risk = |avgEntry - stop| x pointValue x qty.
+	TickSize   float64 `json:"tickSize"`
+	TickValue  float64 `json:"tickValue"`
+	PointValue float64 `json:"pointValue"`
+	// RewardRisk is the target distance over the stop distance, nil
+	// without both levels.
+	RewardRisk *float64 `json:"rewardRisk"`
+	// The cycle's fills (the opening fill first) and the scale-ins among
+	// them: fills adding to the position after the one that opened it.
+	CycleFills []apiCycleFill `json:"cycleFills"`
+	OpenPrice  float64        `json:"openPrice"`
+	AddedFills int            `json:"addedFills"`
+	AddedQty   float64        `json:"addedQty"`
+}
+
+type apiCycleFill struct {
+	Time  time.Time `json:"time"`
+	Side  string    `json:"side"`
+	Qty   float64   `json:"qty"`
+	Price float64   `json:"price"`
 }
 
 func apiPositionFrom(v positionView) apiPosition {
@@ -71,6 +93,19 @@ func apiPositionFrom(v positionView) apiPosition {
 	for _, l := range v.Legs {
 		p.SetLegs = append(p.SetLegs, l.AccountID)
 	}
+	p.TickSize, p.PointValue, p.TickValue = v.TickSize, v.PointValue, v.PointValue*v.TickSize
+	if v.AvgEntry != nil && v.Stop != nil && v.Target != nil && *v.AvgEntry != *v.Stop {
+		rr := (*v.Target - *v.AvgEntry) / (*v.AvgEntry - *v.Stop)
+		if rr < 0 {
+			rr = -rr
+		}
+		p.RewardRisk = &rr
+	}
+	p.CycleFills = make([]apiCycleFill, 0, len(v.CycleFills))
+	for _, f := range v.CycleFills {
+		p.CycleFills = append(p.CycleFills, apiCycleFill{Time: f.ExecTime, Side: f.Side, Qty: f.Qty, Price: f.Price})
+	}
+	p.OpenPrice, p.AddedFills, p.AddedQty = v.OpenPrice, v.AddedFills, v.AddedQty
 	return p
 }
 
@@ -168,7 +203,13 @@ func (h *Handlers) APIPositionPlanSave(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
 		return
 	}
-	item, code, err := h.applyPositionPlan(r.Context(), accountID, r.PathValue("symbol"), in, "api")
+	// The trader's own phone writes as the trader; an agent's key as 'api'
+	// (shown dashed until the trader confirms).
+	source := "api"
+	if auth.IsDeviceKey(r.Context()) {
+		source = "trader"
+	}
+	item, code, err := h.applyPositionPlan(r.Context(), accountID, r.PathValue("symbol"), in, source)
 	if err != nil {
 		if code >= 500 {
 			h.logger().Error("api position plan", "err", err)

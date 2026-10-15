@@ -1501,6 +1501,49 @@
      },
      "planUrl": {
       "type": "string"
+     },
+     "tickSize": {
+      "type": "number"
+     },
+     "tickValue": {
+      "type": "number"
+     },
+     "pointValue": {
+      "type": "number"
+     },
+     "rewardRisk": {
+      "type": "number",
+      "nullable": true
+     },
+     "cycleFills": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "time": {
+         "type": "string",
+         "format": "date-time"
+        },
+        "side": {
+         "type": "string"
+        },
+        "qty": {
+         "type": "number"
+        },
+        "price": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "openPrice": {
+      "type": "number"
+     },
+     "addedFills": {
+      "type": "integer"
+     },
+     "addedQty": {
+      "type": "number"
      }
     }
    },
@@ -1781,6 +1824,214 @@
      "markdown": {
       "type": "string",
       "description": "The image line to put in a body"
+     }
+    }
+   },
+   "BalanceAnchor": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "date": {
+      "type": "string"
+     },
+     "balance": {
+      "type": "number"
+     },
+     "note": {
+      "type": "string"
+     }
+    }
+   },
+   "AccountBalance": {
+    "type": "object",
+    "description": "The running balance: the latest anchor at or before today plus the net of the trades closed after it.",
+    "properties": {
+     "balance": {
+      "type": "number"
+     },
+     "asOf": {
+      "type": "string"
+     },
+     "anchorDate": {
+      "type": "string"
+     },
+     "unchangedSinceAnchor": {
+      "type": "boolean"
+     },
+     "anchors": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/BalanceAnchor"
+      }
+     }
+    }
+   },
+   "Account": {
+    "type": "object",
+    "properties": {
+     "id": {
+      "type": "integer"
+     },
+     "name": {
+      "type": "string"
+     },
+     "firm": {
+      "type": "string",
+      "nullable": true
+     },
+     "type": {
+      "type": "string",
+      "nullable": true,
+      "description": "live, prop_live, prop_funded, prop_eval, paper"
+     },
+     "typeLabel": {
+      "type": "string"
+     },
+     "currency": {
+      "type": "string"
+     },
+     "active": {
+      "type": "boolean"
+     },
+     "retired": {
+      "type": "boolean"
+     },
+     "excludedFromStats": {
+      "type": "boolean"
+     },
+     "needsSetup": {
+      "type": "boolean"
+     },
+     "copyGroup": {
+      "type": "string",
+      "nullable": true
+     },
+     "importSource": {
+      "type": "string"
+     },
+     "balance": {
+      "$ref": "#/components/schemas/AccountBalance",
+      "nullable": true
+     },
+     "dayNet": {
+      "type": "number",
+      "nullable": true
+     }
+    }
+   },
+   "BalanceAnchorInput": {
+    "type": "object",
+    "required": [
+     "balance"
+    ],
+    "properties": {
+     "date": {
+      "type": "string",
+      "description": "YYYY-MM-DD or today; default today"
+     },
+     "balance": {
+      "type": "number"
+     },
+     "note": {
+      "type": "string"
+     }
+    }
+   },
+   "Drawdown": {
+    "type": "object",
+    "properties": {
+     "maxDrawdown": {
+      "type": "number"
+     },
+     "maxDrawdownPeakAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "maxDrawdownTroughAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "maxDrawdownRecoverAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     },
+     "maxDrawdownDays": {
+      "type": "integer"
+     },
+     "currentDrawdown": {
+      "type": "number"
+     },
+     "underwater": {
+      "type": "boolean"
+     },
+     "peakAt": {
+      "type": "string",
+      "format": "date-time",
+      "nullable": true
+     }
+    }
+   },
+   "Equity": {
+    "type": "object",
+    "properties": {
+     "asOf": {
+      "type": "string"
+     },
+     "equityNow": {
+      "type": "number"
+     },
+     "byType": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "type": {
+         "type": "string"
+        },
+        "label": {
+         "type": "string"
+        },
+        "total": {
+         "type": "number"
+        },
+        "accounts": {
+         "type": "integer"
+        }
+       }
+      }
+     },
+     "included": {
+      "type": "integer",
+      "description": "accounts with an anchor"
+     },
+     "excluded": {
+      "type": "integer",
+      "description": "accounts without one, left out"
+     },
+     "series": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "date": {
+         "type": "string"
+        },
+        "equity": {
+         "type": "number"
+        }
+       }
+      }
+     },
+     "drawdown": {
+      "$ref": "#/components/schemas/Drawdown"
+     },
+     "dayChange": {
+      "type": "number"
      }
     }
    }
@@ -3346,6 +3597,40 @@
        "type": "boolean"
       },
       "description": "Pull the latest fills from the brokers first and wait for them (up to ~15s) before listing."
+     },
+     {
+      "name": "sort",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "entry",
+        "exit",
+        "account",
+        "symbol",
+        "dir",
+        "duration",
+        "qty",
+        "entryp",
+        "exitp",
+        "gross",
+        "comm",
+        "net",
+        "r"
+       ]
+      },
+      "description": "Order of the list; default newest entry first"
+     },
+     {
+      "name": "dir",
+      "in": "query",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "asc",
+        "desc"
+       ]
+      }
      }
     ],
     "responses": {
@@ -3785,6 +4070,215 @@
        "application/json": {
         "schema": {
          "$ref": "#/components/schemas/LabelVocabulary"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/accounts": {
+   "get": {
+    "operationId": "listAccounts",
+    "summary": "Accounts with their running balance and today's net",
+    "parameters": [
+     {
+      "name": "show_retired",
+      "in": "query",
+      "schema": {
+       "type": "boolean"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Accounts",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "items": {
+           "type": "array",
+           "items": {
+            "$ref": "#/components/schemas/Account"
+           }
+          }
+         }
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/accounts/{id}/balances": {
+   "post": {
+    "operationId": "addBalanceAnchor",
+    "summary": "Record the account's balance on a day (device key only)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "$ref": "#/components/schemas/BalanceAnchorInput"
+       }
+      }
+     }
+    },
+    "responses": {
+     "201": {
+      "description": "The account with its balance",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "account": {
+           "$ref": "#/components/schemas/Account"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Invalid field",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your account",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/accounts/{id}/balances/{anchorId}": {
+   "delete": {
+    "operationId": "deleteBalanceAnchor",
+    "summary": "Remove a balance anchor (device key only)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "anchorId",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Removed"
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Not your account, or not its anchor",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/equity": {
+   "get": {
+    "operationId": "equity",
+    "summary": "Equity now by account type, the per-day curve, the drawdown over the closed trades, today's change",
+    "parameters": [
+     {
+      "name": "filter",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      },
+      "description": "acc:N or type:slug, repeatable"
+     },
+     {
+      "name": "from",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "Equity",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Equity"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad date",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
         }
        }
       }
