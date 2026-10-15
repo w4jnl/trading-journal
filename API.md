@@ -1198,12 +1198,41 @@ the phone; `finishedAsNotification` keeps a closed trade a notification
 while the activity shows (otherwise it rides the activity as its alert);
 `quietOutsideRth` drops the closed-trade alerts outside regular hours.
 
+**What is pushed.** Three things, each filtered by the phone's settings:
+
+- A **nudge**, the moment the guardrail records it (`kind: "nudge"`):
+  title = the nudge's title, subtitle = the contract and "open" for a
+  position nudge or the day ("Wed 15 Oct") otherwise, body = the detail
+  with " — Your lesson: …" when the trader has one. Category `TJ_NUDGE`,
+  or `TJ_POSITION` when the nudge is about an open position;
+  `thread-id: nudges`, `collapse-id: nudge:<id>`, time-sensitive and the
+  `tj-nudge.caf` sound by default, `mutable-content`, badge = the unseen
+  count. Custom keys: `kind`, `id`, `key`, `route`, `day`, `lesson`.
+- A **closed trade**, on the tick after it closed (`kind: "trade"`; only
+  trades closed in the last twenty minutes, so an import of a finished
+  session announces nothing): title `MES short`, subtitle the account,
+  body `+71.00 · 14:29`; category `TJ_TRADE`, `thread-id: trades`,
+  passive and silent by default. Custom keys: `kind`, `tradeId`, `route`
+  (`trade/<id>`), `symbolRoot`, `direction`, `netPnl`, `accountId`.
+  Dropped outside regular hours when `quietOutsideRth` is set.
+- A **silent sync** after every change of the data (APNs `background`,
+  `content-available`, priority 5): `{"kind": "sync", "v": 138, "badge":
+  1, "unseen": [912]}`. The app removes its delivered nudge
+  notifications whose id is not in `unseen`, sets the badge and refreshes
+  what it shows. Each sync carries the whole waiting state, so a delayed
+  or merged sync loses nothing.
+- Once a trading day, between 08:15 and 08:30 Chicago, a phone that opted
+  into `planMissing` hears "No plan for today" (category `TJ_NUDGE`,
+  `route: plan`) when the guardrail is on and no plan is written.
+
+A server start announces nothing: the trades of the last minutes are
+taken as known. Every push a phone did not get is logged with why.
+
 **Live Activities.** The app reports its push-to-start token and every
 running activity with its update token, whole, after each change:
 `PUT /api/v1/devices/{token}/activity` with `{"startToken": "…",
 "activities": [{"id": "…", "token": "…", "kind": "session"}]}`. What the
-server pushes to them is described under *The Session activity* once the
-triggers are in place.
+server pushes to them is described under *The Session activity*.
 
 ### Data version (change detection)
 

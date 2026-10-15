@@ -1,7 +1,8 @@
--- name: InsertNudge :execrows
--- Said once per (user, day, key, ref): 0 rows = already said.
+-- name: InsertNudge :one
+-- Said once per (user, day, key, ref): no row back (sql.ErrNoRows) = already said.
 INSERT OR IGNORE INTO nudges (user_id, day, key, ref, severity, title, detail, lesson, href)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING *;
 
 -- name: ListUndeliveredNudges :many
 -- Nudges no page has shown yet, created since a moment (older ones are stale).

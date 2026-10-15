@@ -12,6 +12,7 @@ package guardrail
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -51,6 +52,9 @@ type Service struct {
 	// LastClose is the newest cached price of a root (never a fetch), for
 	// the "price through your stop" rule; nil leaves that rule off.
 	LastClose func(ctx context.Context, root string) (price float64, at time.Time, ok bool)
+	// OnNudges hears every nudge the moment it is recorded (the push to
+	// the phone); nil when nothing listens.
+	OnNudges func(ctx context.Context, uid int64, nudges []models.Nudge)
 
 	mu   sync.Mutex
 	seen map[int64]uint64 // the data version last read per user
@@ -210,14 +214,15 @@ func (s *Service) Check(ctx context.Context, uid int64, dataChanged bool) ([]mod
 		}
 		n := models.Nudge{UserID: uid, Day: key, Key: c.Key, Ref: c.Ref, Severity: c.Severity, Title: c.Title, Detail: c.Detail,
 			Lesson: lesson, Href: href}
-		added, err := q.InsertNudge(ctx, models.InsertNudgeParams{UserID: n.UserID, Day: n.Day, Key: n.Key, Ref: n.Ref,
+		row, err := q.InsertNudge(ctx, models.InsertNudgeParams{UserID: n.UserID, Day: n.Day, Key: n.Key, Ref: n.Ref,
 			Severity: n.Severity, Title: n.Title, Detail: n.Detail, Lesson: n.Lesson, Href: n.Href})
+		if errors.Is(err, sql.ErrNoRows) {
+			continue // said before
+		}
 		if err != nil {
 			return out, fmt.Errorf("record nudge: %w", err)
 		}
-		if added > 0 {
-			out = append(out, n)
-		}
+		out = append(out, row)
 	}
 	if len(out) > 0 {
 		s.log().Debug("guardrail nudges", "user", uid, "n", len(out))
@@ -227,6 +232,9 @@ func (s *Service) Check(ctx context.Context, uid int64, dataChanged bool) ([]mod
 			s.seen[uid] = s.Live.Version(uid)
 		}
 		s.mu.Unlock()
+		if s.OnNudges != nil {
+			s.OnNudges(ctx, uid, out)
+		}
 	}
 	return out, nil
 }

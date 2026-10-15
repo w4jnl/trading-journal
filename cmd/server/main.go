@@ -732,7 +732,8 @@ func run() error {
 		if err != nil {
 			return err
 		}
-		pushSvc = &push.Service{DB: conn, Q: queries, APNs: client, Log: slog.Default()}
+		pushSvc = &push.Service{DB: conn, Q: queries, APNs: client, Log: slog.Default(), Live: liveData, TZ: tz}
+		guard.OnNudges = pushSvc.NudgeCreated
 		slog.Info("push enabled", "topic", cfg.APNS.Topic, "key_id", cfg.APNS.KeyID)
 	} else {
 		// Phones still register (and keep their settings) so push starts
@@ -1113,6 +1114,7 @@ func run() error {
 		go excursions.FillAll(ctx)
 	}
 	go guard.Run(ctx)
+	go pushSvc.Run(ctx) // nothing without an APNs key
 	if aiTasks != nil {
 		// Stop and target on new positions for the users who asked for it.
 		go h.RunAutoPlanner(ctx)
