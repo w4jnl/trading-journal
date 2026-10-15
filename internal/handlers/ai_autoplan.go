@@ -10,18 +10,53 @@ import (
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
-// ---- Automatic plans on new positions ---------------------------------------
+// ---- Automatic suggestions and plans on new positions -----------------------
 //
-// With "set the stop and target automatically" on (Settings > AI,
-// users.auto_plan), the planner looks at a user's open positions whenever
-// their data moves (a fill arrived, a plan changed) and, for every cycle
-// that has no plan and no suggestion yet, runs the suggestion the sheet's
-// button runs and writes it into the plan (source 'ai'), on every leg of a
-// copied decision at once. The plan then reads as taken from the AI, the
-// trader edits it like any other, and a plan they cleared stays cleared:
-// a cycle is judged once (the stored suggestion is the record of that),
-// and a failed attempt waits autoPlanRetry before the next. Carried
-// positions (open for days) are left alone, as everywhere else.
+// Settings > AI chooses what a new open position gets (users.auto_plan):
+// nothing (the suggestion stays a button on the sheet), the suggestion
+// made for it and waiting on the sheet (autoPlanSuggest), or the
+// suggestion written straight into the plan with source 'ai'
+// (autoPlanSet). The planner looks at a user's open positions whenever
+// their data moves (a fill arrived, a plan changed) and runs, for each
+// cycle not judged yet, the suggestion the sheet's button runs; a copied
+// decision is one run from its earliest leg, and a plan goes on every leg
+// at once. A cycle is judged once (the stored suggestion is the record of
+// that), so a plan the trader cleared stays cleared and a suggestion they
+// dismissed is not made again; a failed attempt waits autoPlanRetry before
+// the next. Carried positions (open for days) are left alone, as
+// everywhere else. In the plan mode a cycle the trader planned already is
+// left to them; in the suggest mode every new cycle gets its suggestion.
+
+// The users.auto_plan modes.
+const (
+	autoPlanOff     = 0
+	autoPlanSuggest = 1
+	autoPlanSet     = 2
+)
+
+// autoPlanModeName is the mode as the settings form and the views name it.
+func autoPlanModeName(mode int64) string {
+	switch mode {
+	case autoPlanSuggest:
+		return "suggest"
+	case autoPlanSet:
+		return "plan"
+	}
+	return "off"
+}
+
+// autoPlanModeOf is the inverse, false for an unknown name.
+func autoPlanModeOf(name string) (int64, bool) {
+	switch name {
+	case "off":
+		return autoPlanOff, true
+	case "suggest":
+		return autoPlanSuggest, true
+	case "plan":
+		return autoPlanSet, true
+	}
+	return 0, false
+}
 
 const (
 	// autoPlanEvery is how often the users with the setting are looked at.
@@ -77,14 +112,16 @@ func (h *Handlers) autoPlanTick(ctx context.Context) {
 	}
 }
 
-// autoPlanUser starts a suggestion-and-apply for each of the user's
-// unplanned open decisions and reports how many it started. The work runs
-// as the user (their provider, their language), like the sheet's button.
+// autoPlanUser starts a suggestion (and, in the plan mode, its apply) for
+// each of the user's open decisions not judged yet and reports how many it
+// started. The work runs as the user (their provider, their language),
+// like the sheet's button.
 func (h *Handlers) autoPlanUser(ctx context.Context, uid int64) int {
 	u, err := h.rq().GetUserByID(ctx, uid)
-	if err != nil || u.AutoPlan == 0 || u.IsActive == 0 {
+	if err != nil || u.AutoPlan == autoPlanOff || u.IsActive == 0 {
 		return 0
 	}
+	apply := u.AutoPlan == autoPlanSet
 	ctx = auth.WithUser(ctx, &auth.User{ID: u.ID, Username: u.Username, DisplayName: derefStr(u.DisplayName), Email: derefStr(u.Email), IsAdmin: u.IsAdmin != 0})
 	if h.AITasks == nil || !h.aiAvailable(ctx) {
 		return 0
@@ -97,7 +134,7 @@ func (h *Handlers) autoPlanUser(ctx context.Context, uid int64) int {
 	started := 0
 	now := time.Now()
 	for _, v := range h.openPositionRows(ctx, rows) {
-		if v.AvgEntry == nil || v.Qty == 0 || v.Stale || v.HasPlan() || !leadsDecision(v) {
+		if v.AvgEntry == nil || v.Qty == 0 || v.Stale || (apply && v.HasPlan()) || !leadsDecision(v, apply) {
 			continue
 		}
 		ref := aiLevelsRef(v.AccountID, v.Symbol, v.Opened.ID)
@@ -121,20 +158,20 @@ func (h *Handlers) autoPlanUser(ctx context.Context, uid int64) int {
 		h.autoPlan.mu.Unlock()
 		accountID, symbol := v.AccountID, v.Symbol
 		h.startTask(ctx, key, func(ctx context.Context) error {
-			return h.autoPlanPosition(ctx, accountID, symbol)
+			return h.autoPlanPosition(ctx, accountID, symbol, apply)
 		})
 		started++
 	}
 	return started
 }
 
-// leadsDecision reports whether the leg is the one to plan its decision
+// leadsDecision reports whether the leg is the one to judge its decision
 // from: a position on its own, or the earliest leg of a set (the one the
-// guardrail keys on too) while no leg has a plan - a set with a plan on
-// another leg is left to inheritance.
-func leadsDecision(v positionView) bool {
+// guardrail keys on too). When a plan is to be written, a set with a plan
+// on another leg is left to inheritance.
+func leadsDecision(v positionView, unplanned bool) bool {
 	for _, l := range v.Legs {
-		if l.HasPlan() {
+		if unplanned && l.HasPlan() {
 			return false
 		}
 		if l.OpenedAt.Before(v.OpenedAt) || (l.OpenedAt.Equal(v.OpenedAt) && l.AccountID < v.AccountID) {
@@ -144,11 +181,17 @@ func leadsDecision(v positionView) bool {
 	return true
 }
 
-// autoPlanPosition runs the suggestion and writes it into the plan, unless
-// the position closed or got a plan from the trader meanwhile.
-func (h *Handlers) autoPlanPosition(ctx context.Context, accountID int64, symbol string) error {
+// autoPlanPosition runs the suggestion and, when apply is set, writes it
+// into the plan, unless the position closed or got a plan from the trader
+// meanwhile. The suggestion alone bumps the user's version so an open
+// sheet shows it.
+func (h *Handlers) autoPlanPosition(ctx context.Context, accountID int64, symbol string, apply bool) error {
 	if err := h.suggestPositionLevels(ctx, accountID, symbol); err != nil {
 		return err
+	}
+	if !apply {
+		h.LiveData.Bump(userID(ctx))
+		return nil
 	}
 	pos, ok := h.openPosition(ctx, accountID, symbol)
 	if !ok || pos.HasPlan() {
@@ -167,10 +210,13 @@ func (h *Handlers) autoPlanPosition(ctx context.Context, accountID int64, symbol
 	return nil
 }
 
-// userAutoPlan reports whether the caller turned automatic plans on.
-func (h *Handlers) userAutoPlan(ctx context.Context) bool {
+// userAutoPlan is the caller's mode by name: "off", "suggest" or "plan".
+func (h *Handlers) userAutoPlan(ctx context.Context) string {
 	u, err := h.rq().GetUserByID(ctx, userID(ctx))
-	return err == nil && u.AutoPlan != 0
+	if err != nil {
+		return "off"
+	}
+	return autoPlanModeName(u.AutoPlan)
 }
 
 // derefStr reads an optional string.

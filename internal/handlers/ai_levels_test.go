@@ -227,7 +227,7 @@ func TestAutoPlan(t *testing.T) {
 	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 0 {
 		t.Fatalf("planned for a user without the setting: %d", n)
 	}
-	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: 1, ID: fx.uid}); err != nil {
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: autoPlanSet, ID: fx.uid}); err != nil {
 		t.Fatal(err)
 	}
 	fx.h.autoPlanTick(ctx)
@@ -285,7 +285,7 @@ func TestAutoPlan_Set(t *testing.T) {
 		Symbol: "MESM6", SymbolRoot: "MES", Side: "buy", Qty: 2, Price: 7250.5, ExecTime: fx.t0.Add(time.Second)}); err != nil {
 		t.Fatal(err)
 	}
-	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: 1, ID: fx.uid}); err != nil {
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: autoPlanSet, ID: fx.uid}); err != nil {
 		t.Fatal(err)
 	}
 	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 1 {
@@ -317,7 +317,7 @@ func TestAutoPlan_Set(t *testing.T) {
 func TestAutoPlan_Refused(t *testing.T) {
 	fx, fp := aiPositionFixture(t, `{"stop": 7290, "target": 7271, "summary": "wrong side"}`)
 	ctx := context.Background()
-	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: 1, ID: fx.uid}); err != nil {
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: autoPlanSet, ID: fx.uid}); err != nil {
 		t.Fatal(err)
 	}
 	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 1 {
@@ -341,22 +341,68 @@ func TestAutoPlan_Refused(t *testing.T) {
 	}
 }
 
-// The setting is a checkbox in Settings > AI.
+// In the suggest mode the suggestion is made and waits on the sheet;
+// nothing is written to the plan.
+func TestAutoPlan_SuggestOnly(t *testing.T) {
+	fx, fp := aiPositionFixture(t, `{"stop": 7241, "target": 7271, "trail": "none", "summary": "Only suggested."}`)
+	ctx := context.Background()
+	if err := fx.q.SetUserAutoPlan(ctx, models.SetUserAutoPlanParams{AutoPlan: autoPlanSuggest, ID: fx.uid}); err != nil {
+		t.Fatal(err)
+	}
+	before := fx.h.LiveData.Version(fx.uid)
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 1 {
+		t.Fatalf("started %d", n)
+	}
+	waitTasks(t, fx.h)
+	if plans, _ := fx.q.ListOpenPositionPlansForUser(ctx, fx.uid); len(plans) != 0 {
+		t.Fatalf("suggest mode wrote a plan: %+v", plans)
+	}
+	if fx.h.LiveData.Version(fx.uid) == before {
+		t.Errorf("an open sheet would not learn of the suggestion")
+	}
+	body := fx.sheet(t)
+	for _, want := range []string{"stop 7241", "Only suggested", "Use as plan", "you decide whether to use it"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("sheet lacks %q", want)
+		}
+	}
+	if n := fx.h.autoPlanUser(ctx, fx.uid); n != 0 {
+		t.Errorf("suggested twice")
+	}
+	fp.mu.Lock()
+	calls := fp.calls
+	fp.mu.Unlock()
+	if calls != 1 {
+		t.Errorf("model calls = %d", calls)
+	}
+}
+
+// The setting is a three-way choice in Settings > AI.
 func TestSettingsAIAutoPlanSave(t *testing.T) {
 	fx := newPositionFixture(t)
 	fx.h.AITasks = ai.NewTasks(nil, 1)
-	for _, on := range []string{"1", ""} {
-		form := url.Values{"auto_plan": {on}}
+	for _, c := range []struct {
+		name string
+		want int64
+	}{{"plan", autoPlanSet}, {"suggest", autoPlanSuggest}, {"off", autoPlanOff}} {
+		form := url.Values{"auto_plan": {c.name}}
 		req := httptest.NewRequest(http.MethodPost, "/settings/ai/autoplan", strings.NewReader(form.Encode())).WithContext(fx.ctx)
 		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		rec := httptest.NewRecorder()
 		fx.h.SettingsAIAutoPlanSave(rec, req)
 		if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "flash=auto-plan") {
-			t.Fatalf("save %q = %d %s", on, rec.Code, rec.Header().Get("Location"))
+			t.Fatalf("save %q = %d %s", c.name, rec.Code, rec.Header().Get("Location"))
 		}
 		u, _ := fx.q.GetUserByID(context.Background(), fx.uid)
-		if (u.AutoPlan == 1) != (on == "1") {
-			t.Errorf("auto_plan after %q = %d", on, u.AutoPlan)
+		if u.AutoPlan != c.want {
+			t.Errorf("auto_plan after %q = %d, want %d", c.name, u.AutoPlan, c.want)
 		}
+	}
+	req := httptest.NewRequest(http.MethodPost, "/settings/ai/autoplan", strings.NewReader("auto_plan=x")).WithContext(fx.ctx)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	rec := httptest.NewRecorder()
+	fx.h.SettingsAIAutoPlanSave(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("unknown mode = %d", rec.Code)
 	}
 }

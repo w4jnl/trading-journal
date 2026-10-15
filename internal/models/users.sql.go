@@ -127,10 +127,11 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 }
 
 const listAutoPlanUserIDs = `-- name: ListAutoPlanUserIDs :many
-SELECT id FROM users WHERE auto_plan = 1 AND is_active = 1 ORDER BY id
+SELECT id FROM users WHERE auto_plan > 0 AND is_active = 1 ORDER BY id
 `
 
-// The active users whose new open positions get an AI plan automatically.
+// The active users whose new open positions get an AI suggestion (1) or
+// plan (2) automatically.
 func (q *Queries) ListAutoPlanUserIDs(ctx context.Context) ([]int64, error) {
 	rows, err := q.db.QueryContext(ctx, listAutoPlanUserIDs)
 	if err != nil {

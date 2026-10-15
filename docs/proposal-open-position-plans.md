@@ -285,10 +285,11 @@ Not part of this proposal; the model above leaves room for it.
   built.
 - Phase 4: the AI suggestion at entry (stop, target, optional T2 and trail,
   checked and priced by the app; "Use as plan" with source 'ai'; frozen on
-  the trade sheet after the close). Automatic plans (Settings > AI, off by
-  default): the suggestion is made and applied as soon as a position
-  opens, once per decision, through the same checks; the framework for how
-  the levels are computed stays the model's for now. Not built: watch mode
+  the trade sheet after the close). Automatic suggestions (Settings > AI,
+  off by default, "suggest only" or "set the plan"): the suggestion is
+  made as soon as a position opens, once per decision, through the same
+  checks, and in the plan mode written into the plan; the framework for
+  how the levels are computed stays the model's for now. Not built: watch mode
   (needs the second "fast model" setting), the plan history timeline, the
   lab's "AI advice" axis, the MCP suggest tool.
 - Phase 5: the session for the model. `marketdata.ComputeSession` (prior

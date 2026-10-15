@@ -343,7 +343,7 @@ type positionAIView struct {
 	At       time.Time
 	Key      string // the task key for the poll
 	Outdated bool   // the position's size or entry changed since
-	Auto     bool   // the trader has new positions planned automatically
+	Auto     string // what new positions get without a click: "off", "suggest", "plan"
 }
 
 // positionSuggestion loads the sheet's view of the suggestion.

@@ -60,5 +60,6 @@ SELECT id FROM users WHERE guardrail = 1 ORDER BY id;
 UPDATE users SET auto_plan = ? WHERE id = ?;
 
 -- name: ListAutoPlanUserIDs :many
--- The active users whose new open positions get an AI plan automatically.
-SELECT id FROM users WHERE auto_plan = 1 AND is_active = 1 ORDER BY id;
+-- The active users whose new open positions get an AI suggestion (1) or
+-- plan (2) automatically.
+SELECT id FROM users WHERE auto_plan > 0 AND is_active = 1 ORDER BY id;
