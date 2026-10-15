@@ -996,6 +996,8 @@ func run() error {
 	// The one API route without a key: the phone's pairing-code exchange
 	// (throttled per address). A more specific pattern than "/api/".
 	root.Handle("POST /api/v1/pair", debugHTTP(http.HandlerFunc(h.APIPair)))
+	// The event stream outlives the write timeout, like /mcp.
+	root.Handle("GET /api/v1/events", noWriteDeadline(apiKeyAuth.Middleware(http.HandlerFunc(h.APIEvents))))
 	// MCP server for AI clients - same per-user key auth as /api, no CSRF/session.
 	if cfg.MCP.Enabled == nil || *cfg.MCP.Enabled {
 		// /mcp accepts tj_ API keys; with mcp.oauth on, MCPAuth also accepts

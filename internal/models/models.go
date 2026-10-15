@@ -249,6 +249,7 @@ type Nudge struct {
 	Href        string     `json:"href"`
 	CreatedAt   time.Time  `json:"created_at"`
 	DeliveredAt *time.Time `json:"delivered_at"`
+	SeenAt      *time.Time `json:"seen_at"`
 }
 
 type OauthAccessToken struct {
