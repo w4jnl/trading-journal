@@ -224,25 +224,19 @@ struct PositionRow: View {
 struct NudgeRow: View {
     let nudge: Nudge
     let tz: TimeZone
+    /// The screen showing the row; a nudge that points at it is not a link.
+    var here: Route? = nil
     @Environment(Client.self) private var client
 
     var body: some View {
         let n = nudge
-        NavigationLink(value: Route.of(n)) {
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline) {
-                    Circle().fill(n.isWarning ? Brand.warn : Brand.info).frame(width: 6, height: 6)
-                    Text(n.title).font(Brand.text(14, weight: n.unseen ? .semibold : .regular, relativeTo: .subheadline))
-                    Spacer()
-                    Text(Formatting.clock(n.createdAt, tz: tz)).font(Brand.mono(11)).foregroundStyle(Brand.fgSubtle)
-                }
-                Text(n.detail).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted).lineLimit(3)
-                if let l = n.lesson, !l.isEmpty {
-                    Text("Your lesson: \(l)").font(Brand.text(12, relativeTo: .caption)).italic().foregroundStyle(Brand.fgMuted).lineLimit(2)
-                }
+        let route = Route.of(n)
+        Group {
+            if route == here {
+                label
+            } else {
+                NavigationLink(value: route) { label }
             }
-            .padding(.vertical, 4)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .swipeActions(edge: .trailing) {
@@ -250,5 +244,23 @@ struct NudgeRow: View {
                 Button("Seen") { Task { try? await client.markSeen(n.id) } }.tint(Brand.accent)
             }
         }
+    }
+
+    private var label: some View {
+        let n = nudge
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline) {
+                Circle().fill(n.isWarning ? Brand.warn : Brand.info).frame(width: 6, height: 6)
+                Text(n.title).font(Brand.text(14, weight: n.unseen ? .semibold : .regular, relativeTo: .subheadline))
+                Spacer()
+                Text(Formatting.clock(n.createdAt, tz: tz)).font(Brand.mono(11)).foregroundStyle(Brand.fgSubtle)
+            }
+            Text(n.detail).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted).lineLimit(3)
+            if let l = n.lesson, !l.isEmpty {
+                Text("Your lesson: \(l)").font(Brand.text(12, relativeTo: .caption)).italic().foregroundStyle(Brand.fgMuted).lineLimit(2)
+            }
+        }
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
     }
 }

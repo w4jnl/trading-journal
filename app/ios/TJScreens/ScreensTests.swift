@@ -17,7 +17,13 @@ final class ScreensTests: XCTestCase {
         if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft } // the sidebar stays
         app.launchArguments = ["-serverURL", server, "-apiKey", key]
         app.launch()
-        XCTAssertTrue(app.staticTexts["TODAY"].waitForExistence(timeout: 20), "Today never rendered")
+        if !app.staticTexts["TODAY"].waitForExistence(timeout: 20) {
+            // The system can have woken the app (a Live Activity's tokens) just before the test
+            // launched it; the test then attaches to that process, which has no arguments.
+            app.terminate()
+            app.launch()
+            XCTAssertTrue(app.staticTexts["TODAY"].waitForExistence(timeout: 20), "Today never rendered")
+        }
         sleep(2)
         shot("today")
 
@@ -53,6 +59,44 @@ final class ScreensTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["EQUITY NOW"].waitForExistence(timeout: 20), "the accounts screen never rendered")
         sleep(2)
         shot("accounts")
+
+        // a screen never stacks on itself: a day's nudge naming the day is no link, and a note's
+        // trade that opened the note returns to it. TJ_DAY names a day with nudges.
+        if let day = env["TJ_DAY"], !day.isEmpty {
+            app.terminate()
+            app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "day/\(day)"]
+            app.launch()
+            XCTAssertTrue(app.navigationBars.buttons["Calendar"].waitForExistence(timeout: 20), "the day never rendered")
+            let time = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]{2}:[0-9]{2}$")).firstMatch // the first nudge's clock
+            if time.waitForExistence(timeout: 5) {
+                time.coordinate(withNormalizedOffset: CGVector(dx: -4, dy: 0.5)).tap() // into the row
+                sleep(2)
+                XCTAssertTrue(app.navigationBars.buttons["Calendar"].exists, "the day's nudge stacked the day again")
+                shot("day-nudge")
+            }
+            if let trade = tradeWithNote(server: server, key: key) {
+                app.terminate()
+                app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "trade/\(trade)"]
+                app.launch()
+                let phone = UIDevice.current.userInterfaceIdiom == .phone // an iPad shows the trade in its detail column, no back button
+                XCTAssertTrue(app.staticTexts["Journal note"].waitForExistence(timeout: 20), "the trade never rendered")
+                if phone { XCTAssertTrue(app.navigationBars.buttons["Trades"].exists, "the trade is not a push") }
+                let note = app.staticTexts["Journal note"]
+                if note.exists {
+                    note.tap()
+                    sleep(3)
+                    if phone { XCTAssertFalse(app.navigationBars.buttons["Trades"].exists, "the note did not open") }
+                    let row = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", "^[0-9]{2}:[0-9]{2}$")).firstMatch // the note's first trade
+                    if row.waitForExistence(timeout: 5) {
+                        row.tap()
+                        sleep(2)
+                        XCTAssertTrue(app.staticTexts["Journal note"].waitForExistence(timeout: 5), "the note's trade did not return to the trade")
+                        if phone { XCTAssertTrue(app.navigationBars.buttons["Trades"].exists, "the note's trade stacked a copy instead of returning") }
+                        shot("note-trade-back")
+                    }
+                }
+            }
+        }
 
         // the editors: a journal note, the position plan, the day plan
         if let entry = env["TJ_ENTRY"], !entry.isEmpty { // make passes an empty one when unset
@@ -140,6 +184,25 @@ final class ScreensTests: XCTestCase {
     /// Asks the script for a payload: it watches for the file and runs `simctl push`.
     private func ask(_ payload: String) {
         FileManager.default.createFile(atPath: shots + "/push-" + payload, contents: Data())
+    }
+
+    /// A trade that has a note, from the journal: the first trade-scoped entry's first trade.
+    private func tradeWithNote(server: String, key: String) -> Int? {
+        func get(_ path: String) -> [String: Any]? {
+            var req = URLRequest(url: URL(string: server + "/api/v1" + path)!)
+            req.setValue("Bearer " + key, forHTTPHeaderField: "Authorization")
+            let done = DispatchSemaphore(value: 0)
+            var out: [String: Any]?
+            URLSession.shared.dataTask(with: req) { data, _, _ in
+                out = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+                done.signal()
+            }.resume()
+            _ = done.wait(timeout: .now() + 10)
+            return out
+        }
+        guard let items = get("/journal?scope=trade&limit=1")?["items"] as? [[String: Any]], let id = items.first?["id"] as? Int,
+              let trades = get("/journal/\(id)")?["trades"] as? [[String: Any]] else { return nil }
+        return trades.first?["id"] as? Int
     }
 
     private func shot(_ name: String) {

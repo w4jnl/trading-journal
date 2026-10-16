@@ -178,3 +178,15 @@ struct SettingsTests {
         #expect(!s.isPaired && s.serverURL == "https://j.example.net", "sign out keeps the address for pairing again")
     }
 }
+
+struct NavigationPathTests {
+    /// A link to a screen already on the stack returns to it; anything else pushes as usual.
+    @Test func aRouteOnTheStackReturnsToIt() {
+        let day = Route.day("2026-10-14"), trade = Route.trade(5), note = Route.journal(9)
+        #expect(RootView.deduplicated([day, day], was: [day]) == [day], "a day's nudge naming the day")
+        #expect(RootView.deduplicated([trade, note, trade], was: [trade, note]) == [trade], "the note's trade that opened it")
+        #expect(RootView.deduplicated([trade, note], was: [trade]) == [trade, note], "a new screen pushes")
+        #expect(RootView.deduplicated([], was: [trade]) == [], "a pop is a pop")
+        #expect(RootView.deduplicated([note, trade], was: [trade, note, trade]) == [note, trade], "a programmatic path is taken as given")
+    }
+}
