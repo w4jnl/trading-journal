@@ -3,7 +3,10 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
-## Unreleased
+## 2.18.3, 2026-10-16
+
+The first public release: the repository is open source under the Apache License 2.0 at
+github.com/w4jnl/trading-journal. The app is unchanged and stays at 2.18.2.
 
 ### Server
 
@@ -11,6 +14,10 @@ built against it carries the same marketing version.
   changing its type now bumps the live version. Before, only a firm change did, so an open
   dashboard, calendar or phone screen kept the old aggregates until something else moved,
   while the phone's widgets, refreshed on their own clock, already showed the new ones.
+- Open source: `LICENSE` (Apache 2.0), the fonts' OFL notices next to the web fonts, the test
+  data and the iOS wire-test fixtures carry example accounts and placeholder text
+  (`app/ios/scripts/scrub-fixtures.py` rewrites a capture), the third-party ProjectX API spec
+  is gone.
 
 ## 2.18.2, 2026-10-16
 
