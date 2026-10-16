@@ -3,6 +3,15 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- Saving which accounts count in the stats (Settings > visibility), retiring an account or
+  changing its type now bumps the live version. Before, only a firm change did, so an open
+  dashboard, calendar or phone screen kept the old aggregates until something else moved,
+  while the phone's widgets, refreshed on their own clock, already showed the new ones.
+
 ## 2.18.2, 2026-10-16
 
 ### App (iOS), 2.18.2
