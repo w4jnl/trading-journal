@@ -51,7 +51,7 @@ targets:
     info:
       path: TradingJournal/Info.plist
       properties:
-        CFBundleDisplayName: Journal
+        CFBundleDisplayName: Trade Log
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
@@ -90,7 +90,7 @@ targets:
     info:
       path: TJNotificationService/Info.plist
       properties:
-        CFBundleDisplayName: Journal
+        CFBundleDisplayName: Trade Log
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         NSExtension:
@@ -114,7 +114,7 @@ targets:
     info:
       path: TJNotificationContent/Info.plist
       properties:
-        CFBundleDisplayName: Journal
+        CFBundleDisplayName: Trade Log
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIAppFonts: [Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf, JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]
@@ -139,6 +139,8 @@ targets:
       - path: Shared/Route.swift
       - path: Shared/Wire.swift
       - path: Shared/Markdown.swift
+      - path: Shared/API.swift
+      - path: Shared/Keychain.swift
       - path: Shared/Fonts
     settings:
       base:
@@ -148,7 +150,7 @@ targets:
     info:
       path: TJWidgets/Info.plist
       properties:
-        CFBundleDisplayName: Journal
+        CFBundleDisplayName: Trade Log
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UIAppFonts: [Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf, JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]

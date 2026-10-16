@@ -4,6 +4,7 @@
 // the App Group (Shared/TodayCache.swift). A tap opens the app on Today; a position row opens
 // that position.
 import ActivityKit
+import AppIntents
 import SwiftUI
 import WidgetKit
 
@@ -12,6 +13,7 @@ struct TJWidgets: WidgetBundle {
     var body: some Widget {
         SessionLiveActivity()
         TodayPnlWidget()
+        GuardrailControl()
     }
 }
 
@@ -122,7 +124,7 @@ struct TodayWidgetView: View {
     private func rectangular(_ t: TodayCache) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
-                Text("Journal").font(.system(size: 12, weight: .semibold))
+                Text("Trade Log").font(.system(size: 12, weight: .semibold))
                 Text(Formatting.moneyShort(t.total)).font(.system(size: 14, weight: .bold, design: .monospaced))
             }
             Text("\(t.trades) trades · \(t.openCount) open\(t.unseen > 0 ? " · \(t.unseen) nudge\(t.unseen == 1 ? "" : "s")" : "")").font(.system(size: 11))
@@ -190,6 +192,45 @@ struct TodayWidgetView: View {
             Text(value).font(Brand.mono(12, bold: true)).foregroundStyle(Brand.dark.fg)
             Text(label).font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted)
         }
+    }
+}
+
+// MARK: the guardrail switch in Control Center
+
+/// The guardrail on or off from Control Center or the Lock Screen: the one server-side switch
+/// the trader flips most, through PUT /settings with the key from the shared keychain.
+struct GuardrailControl: ControlWidget {
+    var body: some ControlWidgetConfiguration {
+        StaticControlConfiguration(kind: "nl.w4j.tradingjournal.guardrail", provider: GuardrailProvider()) { on in
+            ControlWidgetToggle("Guardrail", isOn: on, action: ToggleGuardrailIntent()) { on in
+                Label(on ? "On" : "Off", systemImage: on ? "shield.checkered" : "shield.slash")
+            }
+            .tint(Brand.dark.accent)
+        }
+        .displayName("Guardrail")
+        .description("The journal's guardrail: nudges on the day's plan and your lessons.")
+    }
+}
+
+struct GuardrailProvider: ControlValueProvider {
+    var previewValue: Bool { true }
+
+    func currentValue() async throws -> Bool {
+        guard let api = TJAPI.fromKeychain() else { return false }
+        return try await api.get(Me.self, "/me").settings.guardrail
+    }
+}
+
+struct ToggleGuardrailIntent: SetValueIntent {
+    static let title: LocalizedStringResource = "Guardrail"
+    static let isDiscoverable = false
+
+    @Parameter(title: "On") var value: Bool
+
+    func perform() async throws -> some IntentResult {
+        guard let api = TJAPI.fromKeychain() else { return .result() }
+        _ = try await api.send("PUT", "/settings", json: SettingsUpdate(guardrail: value, autoPlan: nil), as: SettingsSaved.self)
+        return .result()
     }
 }
 

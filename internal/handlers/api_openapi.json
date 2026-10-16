@@ -941,6 +941,13 @@
      "updatedAt": {
       "type": "string",
       "format": "date-time"
+     },
+     "suggestions": {
+      "type": "array",
+      "description": "The AI review's open suggestions (see POST /journal/{id}/suggestions)",
+      "items": {
+       "$ref": "#/components/schemas/Suggestion"
+      }
      }
     }
    },
@@ -2388,6 +2395,29 @@
      },
      "prefs": {
       "$ref": "#/components/schemas/DevicePrefs"
+     }
+    }
+   },
+   "Suggestion": {
+    "type": "object",
+    "description": "One open proposal of the in-app AI review: the tag, the strategy, or a label.",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "enum": [
+       "tag",
+       "strategy",
+       "mistake",
+       "emotion"
+      ]
+     },
+     "value": {
+      "type": "string",
+      "description": "The tag word, the strategy id, or the label key"
+     },
+     "name": {
+      "type": "string",
+      "description": "What to show: the strategy's or the label's name"
      }
     }
    }
@@ -5112,6 +5142,110 @@
      },
      "404": {
       "description": "Not your device",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/journal/{id}/suggestions": {
+   "post": {
+    "operationId": "journalSuggestion",
+    "summary": "Accept or dismiss one of the AI review's suggestions on the entry (device key only). Accept makes it the field, as the trader's own; dismiss keeps it dismissed so a later review does not propose it again.",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "kind",
+         "value",
+         "do"
+        ],
+        "properties": {
+         "kind": {
+          "type": "string",
+          "enum": [
+           "tag",
+           "strategy",
+           "mistake",
+           "emotion"
+          ]
+         },
+         "value": {
+          "type": "string"
+         },
+         "do": {
+          "type": "string",
+          "enum": [
+           "accept",
+           "dismiss"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "200": {
+      "description": "The entry after the change, as GET /journal/{id} returns it",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/JournalDetail"
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "do must be accept or dismiss, or an invalid value",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "No such open suggestion",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "An AI review is writing the note (reason review-pending)",
       "content": {
        "application/json": {
         "schema": {

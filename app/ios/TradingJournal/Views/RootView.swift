@@ -1,5 +1,6 @@
-// The shell: five tabs on an iPhone, a sidebar on an iPad or in a wide window (by the size
-// class, not the device), each section its own NavigationStack with a typed path. Every way
+// The shell: five tabs on an iPhone (in landscape too: its regular width is not room for a
+// sidebar), a sidebar on an iPad with the width for it, each section its own NavigationStack
+// with a typed path. Every way
 // in (a tap on a notification, a tj:// link, the -open launch argument) sets client.pendingRoute
 // and lands here.
 import SwiftUI
@@ -11,15 +12,37 @@ struct RootView: View {
     @State private var tab: Route.Tab = .today
     @State private var paths: [Route.Tab: [Route]] = [:]
     @State private var pairing: Route?
+    /// The iPad's third column: what the trades or journal list selected.
+    @State private var selected: Route?
+
+    /// An iPad with the width for columns; a phone keeps its tabs in landscape too.
+    private var wide: Bool { sizeClass == .regular && UIDevice.current.userInterfaceIdiom == .pad }
 
     var body: some View {
         Group {
-            if sizeClass == .regular {
+            if wide, tab == .trades || tab == .journal {
+                // three columns: the sections, the list, the thing
                 NavigationSplitView {
-                    List(Route.Tab.allCases, id: \.self, selection: Binding(get: { Optional(tab) }, set: { if let t = $0 { tab = t } })) { t in
-                        Label(t.title, systemImage: t.symbol)
+                    sidebar
+                } content: {
+                    NavigationStack(path: binding(tab)) {
+                        Group {
+                            if tab == .trades { TradesView(selection: $selected) } else { JournalView(selection: $selected) }
+                        }
+                        .navigationDestination(for: Route.self) { destination($0) }
                     }
-                    .navigationTitle("Journal")
+                } detail: {
+                    NavigationStack {
+                        if let selected {
+                            destination(selected).navigationDestination(for: Route.self) { destination($0) }
+                        } else {
+                            ContentUnavailableView(tab == .trades ? "Pick a trade" : "Pick a note", systemImage: tab.symbol)
+                        }
+                    }
+                }
+            } else if wide {
+                NavigationSplitView {
+                    sidebar
                 } detail: {
                     stack(tab)
                 }
@@ -62,6 +85,17 @@ struct RootView: View {
         }
     }
 
+    private var sidebar: some View {
+        List(Route.Tab.allCases, id: \.self, selection: Binding(get: { Optional(tab) }, set: { if let t = $0 { tab = t } })) { t in
+            Label(t.title, systemImage: t.symbol)
+        }
+        .navigationTitle("Trade Log")
+        .toolbar {
+            Button { Task { await client.refreshToday(refresh: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
+                .keyboardShortcut("r", modifiers: .command)
+        }
+    }
+
     private func stack(_ t: Route.Tab) -> some View {
         NavigationStack(path: binding(t)) {
             root(t).navigationDestination(for: Route.self) { destination($0) }
@@ -81,6 +115,9 @@ struct RootView: View {
         tab = r.tab
         switch r {
         case .today, .settings: paths[r.tab] = []
+        case .trade where wide, .journal where wide:
+            paths[r.tab] = []
+            selected = r
         default: paths[r.tab] = [r]
         }
     }
@@ -108,6 +145,7 @@ struct RootView: View {
         case .plan: PlanView()
         case .accounts: AccountsView()
         case .settings: SettingsView(pair: { pairing = .pair(server: settings.serverURL, code: nil) })
+        case .digest(let w): DigestView(week: w)
         case .pair: EmptyView()
         }
     }

@@ -1,3 +1,4 @@
+import UIKit
 import XCTest
 
 /// The screenshot walker and the one smoke path, not a test of behaviour: run against a journal
@@ -13,6 +14,7 @@ final class ScreensTests: XCTestCase {
         let server = try XCTUnwrap(env["TJ_SERVER"], "TJ_SERVER: the journal to show")
         let key = try XCTUnwrap(env["TJ_KEY"], "TJ_KEY: a device key for it")
         let app = XCUIApplication()
+        if UIDevice.current.userInterfaceIdiom == .pad { XCUIDevice.shared.orientation = .landscapeLeft } // the sidebar stays
         app.launchArguments = ["-serverURL", server, "-apiKey", key]
         app.launch()
         XCTAssertTrue(app.staticTexts["TODAY"].waitForExistence(timeout: 20), "Today never rendered")
@@ -20,11 +22,27 @@ final class ScreensTests: XCTestCase {
         shot("today")
 
         for (tab, title) in [("Trades", "trades"), ("Journal", "journal"), ("Calendar", "calendar"), ("Settings", "settings")] {
-            let button = app.tabBars.buttons[tab].exists ? app.tabBars.buttons[tab] : app.buttons[tab]
+            let button = app.tabBars.buttons[tab].exists ? app.tabBars.buttons[tab]
+                : app.buttons[tab].exists ? app.buttons[tab] : app.cells.staticTexts[tab].firstMatch // an iPad's sidebar row (its title says Journal too)
             if button.waitForExistence(timeout: 5) {
                 button.tap()
                 sleep(3)
                 shot(title)
+            }
+            // a row opens its detail: on a phone a push (the back button carries the list's name),
+            // on an iPad the detail column. The tap lands in the row's empty middle, not on a text.
+            if tab == "Trades" || tab == "Journal" {
+                let pattern = tab == "Trades" ? "^[0-9]{2}:[0-9]{2}$" : "^[A-Z][a-z]{2}, [0-9]{1,2} [A-Z][a-z]{2}$" // a fill time; a day label
+                let anchor = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", pattern)).firstMatch
+                if anchor.waitForExistence(timeout: 5) {
+                    anchor.coordinate(withNormalizedOffset: CGVector(dx: tab == "Trades" ? 5.5 : 1.8, dy: 0.5)).tap()
+                    sleep(2)
+                    if UIDevice.current.userInterfaceIdiom == .phone {
+                        XCTAssertTrue(app.navigationBars.buttons[tab].waitForExistence(timeout: 5), "\(tab): the row did not open")
+                    }
+                    shot(title + "-detail")
+                    if UIDevice.current.userInterfaceIdiom == .phone, app.navigationBars.buttons[tab].exists { app.navigationBars.buttons[tab].tap(); sleep(1) }
+                }
             }
         }
 
@@ -37,7 +55,7 @@ final class ScreensTests: XCTestCase {
         shot("accounts")
 
         // the editors: a journal note, the position plan, the day plan
-        if let entry = env["TJ_ENTRY"] {
+        if let entry = env["TJ_ENTRY"], !entry.isEmpty { // make passes an empty one when unset
             app.terminate()
             app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "journal/\(entry)"]
             app.launch()
@@ -51,7 +69,7 @@ final class ScreensTests: XCTestCase {
                 XCTFail("no Edit button; buttons: \(app.buttons.allElementsBoundByIndex.prefix(12).map(\.label))")
             }
         }
-        if let position = env["TJ_POSITION"] {
+        if let position = env["TJ_POSITION"], !position.isEmpty {
             app.terminate()
             app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "position/\(position)"]
             app.launch()
@@ -77,7 +95,7 @@ final class ScreensTests: XCTestCase {
         }
 
         // notifications: allowed, then pushes asked of the script by a file (only simctl reaches the simulator)
-        guard env["TJ_PUSH"] != nil else { return }
+        guard let push = env["TJ_PUSH"], !push.isEmpty else { return }
         app.terminate()
         app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "settings"]
         app.launch()

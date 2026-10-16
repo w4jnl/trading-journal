@@ -80,6 +80,7 @@ struct PositionDetailView: View {
                                         Text("\(Formatting.qty(leg.qty)) @ \(Formatting.price(leg.avgEntry, tickSize: leg.tickSize))").font(Brand.mono(12)).foregroundStyle(Brand.fgMuted)
                                         PnlChip(leg.unrealized, size: .sm)
                                     }
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                                 .disabled(leg.accountId == p.accountId)

@@ -64,26 +64,32 @@ struct CalendarView: View {
         if let m = cal.date(byAdding: .month, value: by, to: month) { month = m }
     }
 
+    /// Monday to Friday; the weekend columns come back only for a month that traded on one
+    /// (a Sunday evening Globex session booked to the Sunday).
     private func grid(_ s: DailyStats) -> some View {
         let byDay = Dictionary(uniqueKeysWithValues: s.items.map { ($0.date, $0) })
         let scale = s.items.map { abs($0.net) }.max() ?? 0
         let first = cal.date(from: cal.dateComponents([.year, .month], from: month))!
         let days = cal.range(of: .day, in: .month, for: first)!.count
-        let lead = (cal.component(.weekday, from: first) - cal.firstWeekday + 7) % 7
         let today = Formatting.day(.now, tz: client.tz)
-        let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: 7)
+        let dates = (1...days).map { cal.date(byAdding: .day, value: $0 - 1, to: first)! }
+        func column(_ d: Date) -> Int { (cal.component(.weekday, from: d) + 5) % 7 } // Monday 0 ... Sunday 6
+        let weekends = s.items.contains { column(Formatting.parseDay($0.date, tz: client.tz) ?? first) >= 5 }
+        let width = weekends ? 7 : 5
+        let shown = dates.filter { weekends || column($0) < 5 }
+        let lead = shown.first.map(column) ?? 0
+        let columns = Array(repeating: GridItem(.flexible(), spacing: 4), count: width)
         return VStack(spacing: 4) {
             HStack(spacing: 4) {
-                ForEach(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"], id: \.self) { Text($0).font(Brand.text(10, weight: .medium, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle).frame(maxWidth: .infinity) }
+                ForEach(["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"].prefix(width), id: \.self) { Text($0).font(Brand.text(10, weight: .medium, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle).frame(maxWidth: .infinity) }
             }
             LazyVGrid(columns: columns, spacing: 4) {
                 ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(minHeight: 48) }
-                ForEach(1...days, id: \.self) { d in
-                    let date = cal.date(byAdding: .day, value: d - 1, to: first)!
+                ForEach(shown, id: \.self) { date in
                     let key = Formatting.day(date, tz: client.tz)
                     let item = byDay[key]
                     NavigationLink(value: Route.day(key)) {
-                        HeatCell(day: d, net: item?.net, trades: item?.trades ?? 0, scale: scale, isToday: key == today)
+                        HeatCell(day: cal.component(.day, from: date), net: item?.net, trades: item?.trades ?? 0, scale: scale, isToday: key == today)
                     }
                     .buttonStyle(.plain)
                     .disabled(item == nil && key > today)

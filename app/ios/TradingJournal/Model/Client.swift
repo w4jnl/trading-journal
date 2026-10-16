@@ -289,6 +289,11 @@ final class Client {
         try await get(StrategyList.self, "/strategies").items
     }
 
+    /// The weekly edge digest; nil week: the week of the last trading day.
+    func digest(week: String? = nil) async throws -> Digest {
+        try await get(Digest.self, "/digest", query: week.map { [URLQueryItem(name: "week", value: $0)] } ?? [])
+    }
+
     func dailyStats(from: String, to: String) async throws -> DailyStats {
         try await get(DailyStats.self, "/stats/daily", query: [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)])
     }
@@ -374,6 +379,12 @@ final class Client {
     func upload(image: Data, name: String, mimeType: String) async throws -> AttachmentUpload {
         guard let api else { throw TJError.notConfigured }
         return try await journalWrite { try await api.upload("/journal/attachments", file: image, name: name, mimeType: mimeType, as: AttachmentUpload.self, session: session) }
+    }
+
+    /// Accepts or dismisses one of the AI review's suggestions; the result is the entry after.
+    func suggestion(_ entryId: Int, _ s: Suggestion, accept: Bool) async throws -> JournalDetail {
+        guard let api else { throw TJError.notConfigured }
+        return try await journalWrite { try await api.send("POST", "/journal/\(entryId)/suggestions", json: SuggestionAction(kind: s.kind, value: s.value, do: accept ? "accept" : "dismiss"), as: JournalDetail.self, session: session) }
     }
 
     /// Writes or amends a day's plan; nil when it ended up empty.

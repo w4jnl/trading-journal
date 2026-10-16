@@ -63,7 +63,7 @@ struct RouteTests {
     }
 
     @Test func roundTripsThroughItsURL() {
-        for r: Route in [.today, .day("2026-10-14"), .trade(5), .position(account: 6, symbol: "MESZ6"), .journal(3), .nudges, .plan, .accounts, .settings, .pair(server: "https://j.example.net", code: "AB")] {
+        for r: Route in [.today, .day("2026-10-14"), .trade(5), .position(account: 6, symbol: "MESZ6"), .journal(3), .nudges, .plan, .accounts, .settings, .digest(nil), .digest("2026-W41"), .pair(server: "https://j.example.net", code: "AB")] {
             #expect(Route.parse(r.url) == r, "\(r)")
         }
     }

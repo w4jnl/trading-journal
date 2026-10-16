@@ -3,11 +3,15 @@
 import SwiftUI
 
 struct JournalView: View {
+    /// On an iPad the list drives the detail column instead of pushing.
+    var selection: Binding<Route?>?
     @Environment(Client.self) private var client
     @State private var rows: [JournalRow] = []
     @State private var loading = false
     @State private var error: String?
     @State private var scope: ScopeFilter = .all
+    @State private var writing = false
+    @State private var opened: Route?
 
     enum ScopeFilter: String, CaseIterable, Identifiable {
         case all, day, week, trade, group
@@ -25,36 +29,62 @@ struct JournalView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                Picker("Scope", selection: $scope) {
-                    ForEach(ScopeFilter.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: scope) { _, _ in Task { await load() } }
-            }
-            .listRowBackground(Brand.bg)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            if let error {
-                ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
-            } else if rows.isEmpty && !loading {
-                ContentUnavailableView("No notes", systemImage: "book")
-            }
-            ForEach(rows) { r in
-                NavigationLink(value: Route.journal(r.id)) { JournalRowView(row: r, tz: client.tz) }
-            }
-            if rows.count >= 50 {
-                Button("More") { Task { await load(offset: rows.count) } }.font(Brand.text(13, relativeTo: .footnote))
-            }
+        Group {
+            // A phone's list pushes through its links; a selection binding would swallow the taps.
+            if let selection { List(selection: selection) { content } } else { List { content } }
         }
         .listStyle(.plain)
         .background(Brand.bg)
         .scrollContentBackground(.hidden)
         .navigationTitle("Journal")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink(value: Route.digest(nil)) { Label("Weekly digest", systemImage: "chart.bar.doc.horizontal") }
+                Button { writing = true } label: { Label("Day note", systemImage: "square.and.pencil") }
+                    .keyboardShortcut("n", modifiers: .command)
+            }
+        }
+        .sheet(isPresented: $writing) {
+            NewEntryView(scope: .day, date: client.today?.day ?? Formatting.day(.now, tz: client.tz), onCreated: { open(.journal($0.id)) }, onExists: { open(.journal($0)) })
+        }
+        .navigationDestination(item: $opened) { r in
+            if case .journal(let j) = r { JournalEntryView(id: j) }
+        }
         .refreshable { await load() }
         .task { if rows.isEmpty { await load() } }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+    }
+
+    @ViewBuilder private var content: some View {
+        Section {
+            Picker("Scope", selection: $scope) {
+                ForEach(ScopeFilter.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: scope) { _, _ in Task { await load() } }
+        }
+        .listRowBackground(Brand.bg)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        if let error {
+            ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
+        } else if rows.isEmpty && !loading {
+            ContentUnavailableView("No notes", systemImage: "book")
+        }
+        ForEach(rows) { r in
+            if selection != nil {
+                JournalRowView(row: r, tz: client.tz).tag(Route.journal(r.id))
+            } else {
+                NavigationLink(value: Route.journal(r.id)) { JournalRowView(row: r, tz: client.tz) }
+            }
+        }
+        if rows.count >= 50 {
+            Button("More") { Task { await load(offset: rows.count) } }.font(Brand.text(13, relativeTo: .footnote))
+        }
+    }
+
+    private func open(_ r: Route) {
+        if let selection { selection.wrappedValue = r } else { opened = r }
     }
 
     private func load(offset: Int = 0) async {
@@ -95,6 +125,7 @@ struct JournalRowView: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle()) // the whole row takes the tap, the gap in the middle too
     }
 }
 
@@ -119,6 +150,7 @@ struct JournalEntryView: View {
     @State private var error: String?
     @State private var editing = false
     @State private var appending = false
+    @State private var suggestionError: String?
 
     var body: some View {
         ScrollView {
@@ -152,6 +184,20 @@ struct JournalEntryView: View {
                             ])
                         }
                     }
+                    if !e.openSuggestions.isEmpty {
+                        Card(keyline: Brand.accent) {
+                            CardTitle("The review suggests", trailing: "\(e.openSuggestions.count)")
+                            ForEach(e.openSuggestions) { s in
+                                HStack(spacing: 8) {
+                                    Pill(s.title, .suggest)
+                                    Spacer()
+                                    Button("Accept") { Task { await act(s, accept: true) } }.font(Brand.text(13, weight: .medium, relativeTo: .footnote))
+                                    Button("Dismiss") { Task { await act(s, accept: false) } }.font(Brand.text(13, relativeTo: .footnote)).foregroundStyle(Brand.fgMuted)
+                                }
+                            }
+                            if let suggestionError { Text(suggestionError).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+                        }
+                    }
                     Card {
                         if e.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             Text("No note written yet.").font(Brand.text(14, relativeTo: .subheadline)).foregroundStyle(Brand.fgMuted)
@@ -183,6 +229,7 @@ struct JournalEntryView: View {
                                         Spacer()
                                         PnlChip(t.netPnl, size: .sm)
                                     }
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                             }
@@ -224,6 +271,17 @@ struct JournalEntryView: View {
         }
         .task(id: id) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+    }
+
+    private func act(_ s: Suggestion, accept: Bool) async {
+        do {
+            entry = try await client.suggestion(id, s, accept: accept)
+            suggestionError = nil
+        } catch Client.JournalSaveError.reviewPending {
+            suggestionError = "An AI review is writing this note; try again when it lands."
+        } catch {
+            suggestionError = error.localizedDescription
+        }
     }
 
     private func load() async {

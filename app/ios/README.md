@@ -114,14 +114,18 @@ activity still starts locally and follows the app, but no push reaches it.
 
 ## What is in this build
 
-Phases 1 to 4 of the plan: pairing, the read-only screens (Today, positions, trades, journal,
-calendar, accounts and equity, nudges, the day plan, settings), the writes from the phone
-(journal edit, delete, append and the first note on a trade or a day, photos as attachments, the
+All five phases of the plan: pairing, the read-only screens (Today, positions, trades, journal,
+calendar, accounts and equity, nudges, the day plan, the weekly digest with the lessons,
+settings), the writes from the phone (journal edit, delete, append and the first note on a
+trade or a day, photos as attachments, the AI review's suggestions accepted or dismissed, the
 day plan, the plan on an open position with the risk mirrored live, the trader's switches,
 balance anchors), push (registration, the three categories with their Lock Screen actions, the
 service and content extensions, the settings mirrored to the server, the badge and the silent
-sync), and the Session Live Activity with the Today widgets. A save that meets an AI review in
-progress offers to append instead; one that meets a changed entry offers to reload or overwrite.
+sync), the Session Live Activity with the Today widgets and the guardrail switch in Control
+Center, and the iPad: a sidebar, three columns for the trades and the journal, ⌘R refresh, ⌘N a
+day note, ⌘F the symbol filter.
 
 `SERVER=http://… KEY=tj_… make ios-test` also runs the live write tests against that
-journal (they put back what they change). iPad polish and TestFlight follow in the last phase.
+journal (they put back what they change). `IOS_SCREENS_SIM='platform=iOS Simulator,name=iPad
+Pro 11-inch (M5)' make ios-screens …` walks the iPad. `.github/workflows/ios.yml` runs the unit
+tests on a macOS runner when the app changes.
