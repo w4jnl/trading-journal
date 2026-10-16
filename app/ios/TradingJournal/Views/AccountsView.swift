@@ -168,11 +168,17 @@ struct NudgesView: View {
 struct PlanView: View {
     @Environment(Client.self) private var client
     @State private var editing = false
+    @State private var useDraft = false
+    @State private var aiBusy = false
+    @State private var aiError: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 if let t = client.today {
+                    if client.aiReady || t.plan.draft?.has == true {
+                        draftCard(t)
+                    }
                     if let p = t.plan.plan {
                         Card {
                             CardTitle("Plan for \(Formatting.dayLabel(p.day, tz: t.tz))", trailing: p.bias.label)
@@ -225,8 +231,59 @@ struct PlanView: View {
         .toolbar {
             if client.today?.plan.plan != nil { Button("Edit") { editing = true } }
         }
-        .sheet(isPresented: $editing) {
-            if let t = client.today { PlanEditView(day: t.day, plan: t.plan.plan) }
+        .sheet(isPresented: $editing, onDismiss: { useDraft = false }) {
+            if let t = client.today { PlanEditView(day: t.day, plan: t.plan.plan, draft: useDraft ? t.plan.draft : nil) }
         }
+    }
+
+    /// The model's draft of today's plan: asked for here, taken into the editor or discarded.
+    @ViewBuilder private func draftCard(_ t: Today) -> some View {
+        let d = t.plan.draft
+        Card(keyline: Brand.accent) {
+            CardTitle("AI draft", trailing: d?.model ?? "")
+            if let d, d.pending {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.small)
+                    Text("Drafting from your numbers and lessons…").font(Brand.text(13, relativeTo: .footnote)).foregroundStyle(Brand.fgMuted)
+                }
+            } else if let d, d.has {
+                StatStrip(stats: [
+                    .init(label: "max trades", value: d.maxTrades.map(String.init) ?? "—"),
+                    .init(label: "stop time", value: (d.stopTime ?? "").isEmpty ? "—" : d.stopTime!),
+                    .init(label: "max loss", value: Formatting.moneyShort(d.maxLoss.map { -$0 }), color: Brand.negText),
+                ])
+                if let l = d.levels, !l.isEmpty { Text(l).font(Brand.mono(13)) }
+                if let n = d.notes, !n.isEmpty { MarkdownView(source: n) }
+                if let r = d.reasons, !r.isEmpty {
+                    ForEach(r, id: \.self) { Text("· \($0)").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted) }
+                }
+                HStack(spacing: 14) {
+                    Button { useDraft = true; editing = true } label: { Label("Use this draft", systemImage: "checkmark") }.font(Brand.text(14, weight: .medium, relativeTo: .subheadline))
+                    Button { Task { await aiDo { try await client.discardDraft(t.day) } } } label: { Text("Discard") }.font(Brand.text(14, relativeTo: .subheadline)).foregroundStyle(Brand.fgMuted)
+                    Spacer()
+                }
+                .disabled(aiBusy)
+            } else {
+                Text("A plan drafted from your own numbers and open lessons, for you to edit and save.").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted)
+                Button { Task { await aiDo { try await client.draftPlan(t.day) } } } label: { Label(aiBusy ? "Asking…" : "Draft with the AI", systemImage: "sparkles") }.font(Brand.text(14, relativeTo: .subheadline)).disabled(aiBusy)
+                    .accessibilityIdentifier("draft-plan")
+            }
+            if let e = d?.error, !e.isEmpty { Text("The last attempt failed: \(e)").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+            if let aiError { Text(aiError).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+        }
+    }
+
+    private func aiDo(_ work: () async throws -> Void) async {
+        aiBusy = true
+        defer { aiBusy = false }
+        do {
+            try await work()
+            aiError = nil
+        } catch Client.AIError.off {
+            aiError = "No AI provider: add your key in the web app's Settings > AI."
+        } catch {
+            aiError = error.localizedDescription
+        }
+        await client.refreshToday()
     }
 }

@@ -22,6 +22,7 @@ struct SettingsView: View {
                 LabeledContent("Timezone", value: settings.server?.timezone ?? "—")
                 LabeledContent("Server version", value: settings.server?.version ?? "—")
                 LabeledContent("Connection") { ConnectionLine() }
+                LabeledContent("AI", value: settings.aiReady ? "ready" : "off")
                 if let me {
                     LabeledContent("This phone's key", value: "\(me.key.name) · \(me.key.kind)")
                 }

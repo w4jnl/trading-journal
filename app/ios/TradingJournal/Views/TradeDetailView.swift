@@ -9,6 +9,8 @@ struct TradeDetailView: View {
     @State private var error: String?
     @State private var writing = false
     @State private var opened: Route?
+    @State private var aiError: String?
+    @State private var starting = false
 
     var body: some View {
         ScrollView {
@@ -90,6 +92,21 @@ struct TradeDetailView: View {
                             }
                         }
                         .buttonStyle(.plain)
+                        if client.aiReady {
+                            // The review creates the note and lands in it; the note opens, shown as under review.
+                            Button { Task { await analyze() } } label: {
+                                Card {
+                                    HStack {
+                                        Label(starting ? "Starting the review…" : "Analyze with the AI", systemImage: "sparkles").font(Brand.text(14, weight: .medium, relativeTo: .subheadline)).foregroundStyle(Brand.accentText)
+                                        Spacer()
+                                    }
+                                    if let aiError { Text(aiError).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                            .disabled(starting)
+                            .accessibilityIdentifier("analyze-trade")
+                        }
                     }
                 }
                 .padding(16)
@@ -109,6 +126,22 @@ struct TradeDetailView: View {
         }
         .navigationDestination(item: $opened) { r in
             if case .journal(let j) = r { JournalEntryView(id: j) }
+        }
+    }
+
+    private func analyze() async {
+        starting = true
+        defer { starting = false }
+        do {
+            let entryId = try await client.startReview(.trade(id))
+            aiError = nil
+            opened = .journal(entryId)
+        } catch Client.AIError.reviewPending(let entryId) {
+            if let entryId { opened = .journal(entryId) }
+        } catch Client.AIError.off {
+            aiError = "No AI provider: add your key in the web app's Settings > AI."
+        } catch {
+            aiError = error.localizedDescription
         }
     }
 
