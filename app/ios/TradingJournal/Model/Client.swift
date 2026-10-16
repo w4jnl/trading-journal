@@ -206,10 +206,12 @@ final class Client {
         var to = ""
         var sort = ""
         var dir = ""
+        var accountId: Int?
         var page = 1
 
         var query: [URLQueryItem] {
             var q: [URLQueryItem] = [URLQueryItem(name: "page", value: String(page))]
+            if let accountId { q.append(URLQueryItem(name: "account_id", value: String(accountId))) }
             if !symbolRoot.isEmpty { q.append(URLQueryItem(name: "symbol_root", value: symbolRoot)) }
             if let direction, direction != .unknown { q.append(URLQueryItem(name: "direction", value: direction.rawValue)) }
             if !outcome.isEmpty { q.append(URLQueryItem(name: "outcome", value: outcome)) }
@@ -300,6 +302,103 @@ final class Client {
     }
 
     // MARK: actions
+
+    /// What a journal save can run into, for the editor to ask the trader about.
+    enum JournalSaveError: Error {
+        /// An AI review is writing the note: append instead, or wait.
+        case reviewPending
+        /// The entry changed since it was loaded; here is the current one.
+        case stale(JournalDetail)
+        /// A singleton entry already exists for this day, week or trade.
+        case exists(id: Int)
+    }
+
+    private func journalWrite<T: Decodable & Sendable>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch TJError.conflict(let reason, _, let body) {
+            let c = try? Wire.decoder.decode(JournalConflict.self, from: body)
+            if reason == "review-pending" { throw JournalSaveError.reviewPending }
+            if reason == "stale", let e = c?.entry { throw JournalSaveError.stale(e) }
+            if let id = c?.entryId { throw JournalSaveError.exists(id: id) }
+            throw TJError.conflict(reason: reason, message: c?.error ?? "", body: body)
+        } catch TJError.unauthorized {
+            connection = .unauthorized
+            throw TJError.unauthorized
+        }
+    }
+
+    /// Replaces an entry the way a page save does; the result is the entry after the save.
+    func saveJournal(_ id: Int, _ u: JournalUpdate) async throws -> JournalDetail {
+        guard let api else { throw TJError.notConfigured }
+        return try await journalWrite { try await api.send("PUT", "/journal/\(id)", json: u, as: JournalDetail.self, session: session) }
+    }
+
+    func deleteJournal(_ id: Int) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await journalWrite { try await api.send("DELETE", "/journal/\(id)", session: session) }
+    }
+
+    /// Creates an entry; a singleton that exists already comes back as JournalSaveError.exists.
+    func createJournal(_ c: JournalCreate) async throws -> JournalDetail {
+        guard let api else { throw TJError.notConfigured }
+        return try await journalWrite { try await api.send("POST", "/journal", json: c, as: JournalDetail.self, session: session) }
+    }
+
+    func appendNote(_ id: Int, _ note: String) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await journalWrite { try await api.send("POST", "/journal/\(id)/notes", json: ["note": note], as: NoteAppended.self, session: session) }
+    }
+
+    /// Stores an image and returns the markdown line to put in a note.
+    func upload(image: Data, name: String, mimeType: String) async throws -> AttachmentUpload {
+        guard let api else { throw TJError.notConfigured }
+        return try await journalWrite { try await api.upload("/journal/attachments", file: image, name: name, mimeType: mimeType, as: AttachmentUpload.self, session: session) }
+    }
+
+    /// Writes or amends a day's plan; nil when it ended up empty.
+    func savePlan(_ p: DayPlanSave) async throws -> DayPlan? {
+        guard let api else { throw TJError.notConfigured }
+        let saved = try await journalWrite { try await api.send("POST", "/plan", json: p, as: DayPlanSaved.self, session: session) }
+        await refreshToday()
+        return saved.plan
+    }
+
+    /// Records the plan on an open position; the server answers with the position.
+    func savePositionPlan(account: Int, symbol: String, _ p: PositionPlanSave) async throws -> Position {
+        guard let api else { throw TJError.notConfigured }
+        let saved = try await journalWrite { try await api.send("POST", "/positions/\(account)/\(symbol)/plan", json: p, as: PositionSaved.self, session: session) }
+        await refreshToday()
+        return saved.position
+    }
+
+    func updateSettings(_ u: SettingsUpdate) async throws -> UserSettings {
+        guard let api else { throw TJError.notConfigured }
+        return try await journalWrite { try await api.send("PUT", "/settings", json: u, as: SettingsSaved.self, session: session) }.settings
+    }
+
+    func addBalance(account: Int, _ b: BalanceAnchorAdd) async throws -> Account {
+        guard let api else { throw TJError.notConfigured }
+        return try await journalWrite { try await api.send("POST", "/accounts/\(account)/balances", json: b, as: AccountSaved.self, session: session) }.account
+    }
+
+    func deleteBalance(account: Int, anchor: Int) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await journalWrite { try await api.send("DELETE", "/accounts/\(account)/balances/\(anchor)", session: session) }
+    }
+
+    /// Marks several nudges seen in one call.
+    func markSeen(_ ids: [Int]) async throws {
+        guard let api, !ids.isEmpty else { return }
+        try await api.send("POST", "/nudges/seen", body: Wire.encoder.encode(NudgeIDs(ids: ids)), session: session)
+        if var t = today {
+            for i in t.nudges.items.indices where ids.contains(t.nudges.items[i].id) && t.nudges.items[i].seenAt == nil {
+                t.nudges.items[i].seenAt = .now
+                t.nudges.unseen = max(0, t.nudges.unseen - 1)
+            }
+            today = t
+        }
+    }
 
     /// Marks a nudge seen; Today follows over the stream.
     func markSeen(_ id: Int) async throws {

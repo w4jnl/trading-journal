@@ -4,7 +4,11 @@ import SwiftUI
 
 struct TradesView: View {
     @Environment(Client.self) private var client
-    @State private var filter = Client.TradeFilter()
+    @State private var filter: Client.TradeFilter
+
+    init(initial: Client.TradeFilter = .init()) {
+        _filter = State(initialValue: initial)
+    }
     @State private var rows: [TradeRow] = []
     @State private var page: PageInfo?
     @State private var loading = false

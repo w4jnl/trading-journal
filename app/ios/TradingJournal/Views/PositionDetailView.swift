@@ -6,6 +6,7 @@ struct PositionDetailView: View {
     let accountId: Int
     let symbol: String
     @Environment(Client.self) private var client
+    @State private var editing = false
 
     private var position: Position? {
         client.today?.positions.first { $0.accountId == accountId && $0.symbol == symbol }
@@ -47,11 +48,11 @@ struct PositionDetailView: View {
                                 Text("\(Formatting.ticks(ticks)) to the stop").font(Brand.text(13, relativeTo: .footnote)).foregroundStyle(Brand.fgMuted)
                             }
                             if !p.thesisText.isEmpty { Text(p.thesisText).font(Brand.text(14, relativeTo: .subheadline)) }
-                            if p.isSuggestion { Pill("suggestion: confirm it on the sheet", .suggest) }
+                            if p.isSuggestion { Pill("suggested: save it to make it yours", .suggest) }
                         } else {
                             Text("No stop on this position.").font(Brand.text(15, relativeTo: .body)).foregroundStyle(Brand.warnText)
-                            Text("Editing the plan from the phone comes with the next build; the web sheet takes it now.").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted)
                         }
+                        Button { editing = true } label: { Label(p.hasPlan ? "Edit the plan" : "Set stop and target", systemImage: "pencil") }.font(Brand.text(14, relativeTo: .subheadline))
                     }
                     Card {
                         CardTitle("Fills this cycle", trailing: p.addedFills > 0 ? "scaled in ×\(p.addedFills)" : "")
@@ -96,5 +97,8 @@ struct PositionDetailView: View {
         .background(Brand.bg)
         .navigationTitle(symbol)
         .navigationBarTitleDisplayMode(.inline)
+        .sheet(isPresented: $editing) {
+            if let p = position { PositionPlanEditView(position: p) }
+        }
     }
 }

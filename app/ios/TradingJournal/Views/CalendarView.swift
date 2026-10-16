@@ -113,6 +113,8 @@ struct DayView: View {
     @State private var entries: [JournalRow] = []
     @State private var nudges: [Nudge] = []
     @State private var error: String?
+    @State private var writing = false
+    @State private var opened: Route?
 
     var body: some View {
         ScrollView {
@@ -132,12 +134,13 @@ struct DayView: View {
                 } else if stats != nil {
                     Card { Text("No trades on this day.").font(Brand.text(14, relativeTo: .subheadline)).foregroundStyle(Brand.fgMuted) }
                 }
-                if !entries.isEmpty {
-                    Card {
-                        CardTitle("Notes", trailing: "\(entries.count)")
-                        ForEach(entries) { e in
-                            NavigationLink(value: Route.journal(e.id)) { JournalRowView(row: e, tz: client.tz) }.buttonStyle(.plain)
-                        }
+                Card {
+                    CardTitle("Notes", trailing: "\(entries.count)")
+                    ForEach(entries) { e in
+                        NavigationLink(value: Route.journal(e.id)) { JournalRowView(row: e, tz: client.tz) }.buttonStyle(.plain)
+                    }
+                    if stats != nil, !entries.contains(where: { $0.scope == .day }) {
+                        Button { writing = true } label: { Label("Write the day note", systemImage: "square.and.pencil") }.font(Brand.text(14, relativeTo: .subheadline))
                     }
                 }
                 if !nudges.isEmpty {
@@ -164,6 +167,12 @@ struct DayView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: day) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .sheet(isPresented: $writing) {
+            NewEntryView(scope: .day, date: day, onCreated: { opened = .journal($0.id) }, onExists: { opened = .journal($0) })
+        }
+        .navigationDestination(item: $opened) { r in
+            if case .journal(let j) = r { JournalEntryView(id: j) }
+        }
     }
 
     private func load() async {

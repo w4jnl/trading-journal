@@ -7,6 +7,8 @@ struct TradeDetailView: View {
     @Environment(Client.self) private var client
     @State private var trade: TradeDetail?
     @State private var error: String?
+    @State private var writing = false
+    @State private var opened: Route?
 
     var body: some View {
         ScrollView {
@@ -79,10 +81,15 @@ struct TradeDetailView: View {
                         }
                         .buttonStyle(.plain)
                     } else {
-                        Card {
-                            Text("No note on this trade yet.").font(Brand.text(13, relativeTo: .footnote)).foregroundStyle(Brand.fgMuted)
-                            Text("Writing one from the phone comes with the next build.").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgSubtle)
+                        Button { writing = true } label: {
+                            Card {
+                                HStack {
+                                    Label("Write a note", systemImage: "square.and.pencil").font(Brand.text(14, weight: .medium, relativeTo: .subheadline)).foregroundStyle(Brand.accentText)
+                                    Spacer()
+                                }
+                            }
                         }
+                        .buttonStyle(.plain)
                     }
                 }
                 .padding(16)
@@ -97,6 +104,12 @@ struct TradeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: id) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .sheet(isPresented: $writing) {
+            NewEntryView(scope: .trade, tradeId: id, onCreated: { opened = .journal($0.id) }, onExists: { opened = .journal($0) })
+        }
+        .navigationDestination(item: $opened) { r in
+            if case .journal(let j) = r { JournalEntryView(id: j) }
+        }
     }
 
     /// The tick for price formatting: the open position's if known, else a guess from the prices.

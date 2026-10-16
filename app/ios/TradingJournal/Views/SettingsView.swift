@@ -32,14 +32,20 @@ struct SettingsView: View {
             }
             Section {
                 if let me {
-                    LabeledContent("Guardrail", value: me.settings.guardrail ? "on" : "off")
-                    LabeledContent("Auto plan", value: ["off", "suggest only", "set the plan"][min(2, max(0, me.settings.autoPlan))])
+                    Toggle("Guardrail", isOn: Binding(get: { me.settings.guardrail }, set: { on in Task { await update(SettingsUpdate(guardrail: on)) } }))
+                        .tint(Brand.accent)
+                    Picker("Stop and target on a new position", selection: Binding(get: { me.settings.autoPlan }, set: { v in Task { await update(SettingsUpdate(autoPlan: v)) } })) {
+                        Text("Nothing automatic").tag(0)
+                        Text("Suggest only").tag(1)
+                        Text("Set the plan").tag(2)
+                    }
+                    .disabled(!me.server.features.ai)
                     LabeledContent("Features", value: features(me.server.features))
                 }
             } header: {
                 Text("Trader")
             } footer: {
-                Text("Changing these from the phone comes with the next build.")
+                Text("The guardrail watches the day against the plan and nudges you. The automatic plan needs AI on the server.")
             }
             Section {
                 Toggle("Session Live Activity", isOn: $settings.showsActivity)
@@ -72,6 +78,16 @@ struct SettingsView: View {
             } catch {
                 self.error = error.localizedDescription
             }
+        }
+    }
+
+    private func update(_ u: SettingsUpdate) async {
+        do {
+            let s = try await client.updateSettings(u)
+            me?.settings = s
+            error = nil
+        } catch {
+            self.error = error.localizedDescription
         }
     }
 

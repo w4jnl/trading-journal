@@ -34,6 +34,46 @@ final class ScreensTests: XCTestCase {
         XCTAssertTrue(app.staticTexts["EQUITY NOW"].waitForExistence(timeout: 20), "the accounts screen never rendered")
         sleep(2)
         shot("accounts")
+
+        // the editors: a journal note, the position plan, the day plan
+        if let entry = env["TJ_ENTRY"] {
+            app.terminate()
+            app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "journal/\(entry)"]
+            app.launch()
+            _ = app.buttons["Edit"].waitForExistence(timeout: 20)
+            shot("journal-entry")
+            if app.buttons["Edit"].exists {
+                app.buttons["Edit"].tap()
+                sleep(3)
+                shot("journal-edit")
+            } else {
+                XCTFail("no Edit button; buttons: \(app.buttons.allElementsBoundByIndex.prefix(12).map(\.label))")
+            }
+        }
+        if let position = env["TJ_POSITION"] {
+            app.terminate()
+            app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "position/\(position)"]
+            app.launch()
+            let edit = app.buttons.matching(NSPredicate(format: "label CONTAINS 'the plan' OR label CONTAINS 'stop and target'")).firstMatch
+            _ = edit.waitForExistence(timeout: 20)
+            shot("position")
+            if edit.exists {
+                edit.tap()
+                sleep(3)
+                shot("position-plan")
+            } else {
+                XCTFail("no plan button; buttons: \(app.buttons.allElementsBoundByIndex.prefix(12).map(\.label))")
+            }
+        }
+        app.terminate()
+        app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "plan"]
+        app.launch()
+        let write = app.buttons.matching(NSPredicate(format: "label == 'Write the plan' OR label == 'Edit'")).firstMatch
+        if write.waitForExistence(timeout: 20) {
+            write.tap()
+            sleep(3)
+            shot("plan-edit")
+        }
     }
 
     private func shot(_ name: String) {

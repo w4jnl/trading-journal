@@ -114,8 +114,11 @@ struct MoodDots: View {
 struct JournalEntryView: View {
     let id: Int
     @Environment(Client.self) private var client
+    @Environment(\.dismiss) private var dismiss
     @State private var entry: JournalDetail?
     @State private var error: String?
+    @State private var editing = false
+    @State private var appending = false
 
     var body: some View {
         ScrollView {
@@ -191,7 +194,7 @@ struct JournalEntryView: View {
                             AuthImage(href: png, maxHeight: 320)
                         }
                     }
-                    Text("Updated \(Formatting.clock(e.updatedAt, tz: client.tz)) · editing from the phone comes with the next build").font(Brand.text(11, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle)
+                    Text("Updated \(Formatting.dayLabel(Formatting.day(e.updatedAt, tz: client.tz), tz: client.tz)) \(Formatting.clock(e.updatedAt, tz: client.tz))").font(Brand.text(11, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle)
                 }
                 .padding(16)
             } else if let error {
@@ -203,6 +206,22 @@ struct JournalEntryView: View {
         .background(Brand.bg)
         .navigationTitle(entry.map { Formatting.dayLabel($0.date, tz: client.tz) } ?? "Note")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if entry != nil {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { appending = true } label: { Label("Append", systemImage: "text.append") }
+                    Button("Edit") { editing = true }
+                }
+            }
+        }
+        .sheet(isPresented: $editing) {
+            if let e = entry {
+                JournalEditView(entry: e, onSaved: { entry = $0 }, onDeleted: { dismiss() })
+            }
+        }
+        .sheet(isPresented: $appending) {
+            AppendNoteView(entryId: id) { Task { await load() } }
+        }
         .task(id: id) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
     }
@@ -211,6 +230,8 @@ struct JournalEntryView: View {
         do {
             entry = try await client.entry(id)
             error = nil
+        } catch TJError.http(404, _) {
+            if entry != nil { dismiss() } else { self.error = "This note is gone." }
         } catch {
             if entry == nil { self.error = error.localizedDescription }
         }

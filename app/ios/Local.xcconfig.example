@@ -2,9 +2,15 @@
 // id signs device and TestFlight builds (the simulator needs none): Xcode → Settings → Accounts,
 // or Membership in the developer account.
 TJ_TEAM_ID = ABCDE12345
-// The push, App Group and keychain entitlements. Keep it for a paid developer account; a free
-// Apple ID's personal team cannot sign it: make it empty (the app then works while open, without
-// pushes or widgets).
+// Which entitlements to sign with.
+//   TradingJournal/TradingJournal.entitlements        push, time-sensitive alerts, the App Group and the
+//                                                      keychain group: needs the App Group and "Time
+//                                                      Sensitive Notifications" registered on the App ID in
+//                                                      the developer portal once (README: On a phone).
+//   TradingJournal/TradingJournal.basic.entitlements  push and the keychain group only: what xcodebuild can
+//                                                      register by itself with the API key below; no
+//                                                      widgets, no time-sensitive break-through.
+//   (empty)                                           a free Apple ID's personal team: works while open.
 TJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements
 // Optional: an App Store Connect API key (Users and Access → Integrations → App Store Connect
 // API, role Admin), so make ios-testflight and ios-device sign in with it instead of Xcode's

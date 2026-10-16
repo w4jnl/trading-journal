@@ -40,11 +40,19 @@ in the app forgets it on the phone.
 
 ## On a phone
 
-1. Copy `Local.xcconfig.example` to `Local.xcconfig` and put your Apple team id in it. A free
-   Apple ID installs on your own phone from Xcode (set `TJ_ENTITLEMENTS =` empty: its personal
-   team cannot sign push); the Developer Program adds push, widgets and TestFlight.
-2. `make ios-device` with the phone unlocked on a cable.
-3. `make ios-testflight` archives and uploads (the app record `nl.w4j.tradingjournal` must exist
+1. Copy `Local.xcconfig.example` to `Local.xcconfig` and put your Apple team id in it, plus an
+   App Store Connect API key (role Admin) so the command line signs in without Xcode's account.
+   A free Apple ID installs on your own phone from Xcode (set `TJ_ENTITLEMENTS =` empty: its
+   personal team cannot sign push); the Developer Program adds push, widgets and TestFlight.
+2. The first build registers the App ID `nl.w4j.tradingjournal` with Push Notifications and App
+   Groups by itself. Two things the API cannot register, done once in the developer portal
+   (Certificates, Identifiers & Profiles): under **Identifiers → App Groups** register
+   `group.nl.w4j.tradingjournal`; under **Identifiers → App IDs → nl.w4j.tradingjournal** tick
+   **Time Sensitive Notifications** and, next to App Groups, *Configure* and tick the group.
+   Until then sign with `TradingJournal.basic.entitlements` (see `Local.xcconfig.example`):
+   push and the keychain group, no widgets.
+3. `make ios-device` with the phone unlocked on a cable.
+4. `make ios-testflight` archives and uploads (the app record `nl.w4j.tradingjournal` must exist
    in App Store Connect). The marketing version follows the server's release.
 
 ## Layout
@@ -61,7 +69,13 @@ in the app forgets it on the phone.
 
 ## What is in this build
 
-Phase 1 of the plan: pairing and the read-only screens (Today, positions, trades, journal,
-calendar, accounts and equity, nudges, the day plan, settings). Writes from the phone (journal
-edits, plans, balance anchors), push notifications, the Session Live Activity and the widgets
-follow in the next phases; the server already serves all of it.
+Phases 1 and 2 of the plan: pairing, the read-only screens (Today, positions, trades,
+journal, calendar, accounts and equity, nudges, the day plan, settings), and the writes from
+the phone: journal edit, delete, append and the first note on a trade or a day, photos as
+attachments, the day plan, the plan on an open position with the risk mirrored live, the
+trader's switches, balance anchors. A save that meets an AI review in progress offers to
+append instead; one that meets a changed entry offers to reload or overwrite.
+
+`SERVER=http://… KEY=tj_… make ios-test` also runs the live write tests against that
+journal (they put back what they change). Push notifications, the Session Live Activity and
+the widgets follow in the next phases; the server already serves all of it.
