@@ -14,6 +14,8 @@ struct RootView: View {
     @State private var pairing: Route?
     /// The iPad's third column: what the trades or journal list selected.
     @State private var selected: Route?
+    /// What the detail column pushed on top of the selection; a new selection starts clean.
+    @State private var detailPath: [Route] = []
 
     /// An iPad with the width for columns; a phone keeps its tabs in landscape too.
     private var wide: Bool { sizeClass == .regular && UIDevice.current.userInterfaceIdiom == .pad }
@@ -32,7 +34,7 @@ struct RootView: View {
                         .navigationDestination(for: Route.self) { destination($0) }
                     }
                 } detail: {
-                    NavigationStack {
+                    NavigationStack(path: Binding(get: { detailPath }, set: { detailPath = Self.deduplicated($0, was: detailPath) })) {
                         if let selected {
                             destination(selected).navigationDestination(for: Route.self) { destination($0) }
                         } else {
@@ -77,6 +79,7 @@ struct RootView: View {
             client.pendingRoute = nil
             open(r)
         }
+        .onChange(of: selected) { _, _ in detailPath = [] }
         .onChange(of: client.connection) { _, c in
             if c == .unauthorized, pairing == nil { pairing = .pair(server: settings.serverURL, code: nil) }
         }
@@ -102,8 +105,15 @@ struct RootView: View {
         }
     }
 
+    /// The tab's path. A link to a screen already on the stack returns to it instead of
+    /// stacking a copy: a day's nudge that names the day, a note's trade that opened the note.
     private func binding(_ t: Route.Tab) -> Binding<[Route]> {
-        Binding(get: { paths[t] ?? [] }, set: { paths[t] = $0 })
+        Binding(get: { paths[t] ?? [] }, set: { paths[t] = Self.deduplicated($0, was: paths[t] ?? []) })
+    }
+
+    nonisolated static func deduplicated(_ new: [Route], was old: [Route]) -> [Route] {
+        guard new.count == old.count + 1, let last = new.last, let i = old.firstIndex(of: last) else { return new }
+        return Array(old[...i])
     }
 
     private func open(_ r: Route) {
