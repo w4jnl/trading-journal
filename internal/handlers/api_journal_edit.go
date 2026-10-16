@@ -225,13 +225,13 @@ func (h *Handlers) APIJournalAttachmentUpload(w http.ResponseWriter, r *http.Req
 }
 
 // APIJournalLabels: GET /api/v1/journal/labels - the fixed vocabulary with
-// display names, for pickers.
+// display names and a description of each label's evidence, for pickers.
 func (h *Handlers) APIJournalLabels(w http.ResponseWriter, r *http.Request) {
 	out := map[string]any{}
 	for _, kind := range []string{journal.KindMistake, journal.KindEmotion} {
 		list := make([]map[string]string, 0)
 		for _, l := range journal.LabelOptions(kind) {
-			list = append(list, map[string]string{"key": l.Key, "name": l.Name})
+			list = append(list, map[string]string{"key": l.Key, "name": l.Name, "description": l.Desc})
 		}
 		out[kind+"s"] = list
 	}

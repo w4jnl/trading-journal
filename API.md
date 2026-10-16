@@ -454,8 +454,10 @@ image's id, its API URL and the markdown line to put in a body:
 {"id": 88, "url": "/api/v1/attachments/88", "name": "IMG_0412.jpg", "size": 182311, "markdown": "![IMG_0412.jpg](/api/v1/attachments/88)"}
 ```
 
-`GET /api/v1/journal/labels` lists the vocabulary with display names for
-pickers: `{"mistakes": [{"key": "chased", "name": "Chased the entry"}, ...], "emotions": [...]}`.
+`GET /api/v1/journal/labels` lists the vocabulary with display names and a
+`description` of what each label's evidence looks like, for pickers:
+`{"mistakes": [{"key": "chased", "name": "Chased the entry", "description": "Entered after the move had run: ..."}, ...], "emotions": [...]}`.
+The AI review reads the same descriptions when it suggests labels.
 
 ### The AI review's suggestions (device key)
 

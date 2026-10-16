@@ -3,6 +3,19 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS), 2.18.2
+
+- The first note on a day or a trade takes the strategy, the mistakes and the emotions, as the
+  web app's note does; before, only a saved note's Edit screen had them.
+
+### Server
+
+- `DCA` joins the mistakes vocabulary, and every label carries a description of what its
+  evidence looks like: the AI review reads them when it suggests labels, and
+  `GET /journal/labels` returns them.
+
 ## 2.18.1, 2026-10-16
 
 ### App (iOS), 2.18.1

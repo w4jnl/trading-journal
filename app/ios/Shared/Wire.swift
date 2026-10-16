@@ -737,8 +737,10 @@ struct JournalCreate: Encodable, Sendable, Hashable {
     var week: String?
     var tradeId: Int?
     var tradeIds: [Int]?
+    var mistakes: [String] = [] // labels from the vocabulary, any scope
+    var emotions: [String] = []
 
-    enum CodingKeys: String, CodingKey { case scope, body, tag, mood, strategyId, date, week, tradeId, tradeIds }
+    enum CodingKeys: String, CodingKey { case scope, body, tag, mood, strategyId, date, week, tradeId, tradeIds, mistakes, emotions }
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -751,6 +753,8 @@ struct JournalCreate: Encodable, Sendable, Hashable {
         try c.encodeIfPresent(week, forKey: .week)
         try c.encodeIfPresent(tradeId, forKey: .tradeId)
         try c.encodeIfPresent(tradeIds, forKey: .tradeIds)
+        if !mistakes.isEmpty { try c.encode(mistakes, forKey: .mistakes) }
+        if !emotions.isEmpty { try c.encode(emotions, forKey: .emotions) }
     }
 }
 

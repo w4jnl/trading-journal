@@ -35,6 +35,14 @@ final class ScreensTests: XCTestCase {
                 sleep(3)
                 shot(title)
             }
+            // the first-note sheet: the labels the web app offers are here too
+            if tab == "Journal", app.buttons["Day note"].waitForExistence(timeout: 3) {
+                app.buttons["Day note"].tap()
+                XCTAssertTrue(app.buttons["Chased the entry"].waitForExistence(timeout: 10), "the note sheet has no mistake chips") // a chip is a button
+                shot("new-note")
+                app.buttons["Cancel"].tap()
+                sleep(1)
+            }
             // a row opens its detail: on a phone a push (the back button carries the list's name),
             // on an iPad the detail column. The tap lands in the row's empty middle, not on a text.
             if tab == "Trades" || tab == "Journal" {

@@ -26,6 +26,17 @@ struct WriteBodyTests {
         #expect(trade["tradeId"] as? Int == 5 && trade["tag"] == nil)
     }
 
+    @Test func aJournalCreateCarriesTheLabelsOnlyWhenChosen() throws {
+        var make = JournalCreate(scope: .trade, body: "x", tradeId: 5)
+        let bare = try JSONSerialization.jsonObject(with: Wire.encoder.encode(make)) as! [String: Any]
+        #expect(bare["mistakes"] == nil && bare["emotions"] == nil && bare["strategyId"] == nil)
+        make.mistakes = ["dca", "oversized"]
+        make.emotions = ["rushed"]
+        make.strategyId = 12
+        let full = try JSONSerialization.jsonObject(with: Wire.encoder.encode(make)) as! [String: Any]
+        #expect(full["mistakes"] as? [String] == ["dca", "oversized"] && full["emotions"] as? [String] == ["rushed"] && full["strategyId"] as? Int == 12)
+    }
+
     @Test func aDayPlanSaveClearsWithZeroAndEmpty() throws {
         var p = DayPlanSave(day: "today", plan: nil)
         #expect(p.bias == .none && p.maxTrades == 0 && p.stopTime.isEmpty)

@@ -95,7 +95,7 @@ const aiVerdictDecision = `End with EXACTLY one final line - a machine-readable 
 <!-- tj-ai:verdict tag=<good|neutral|bad|none> strategy=<id|none> mistakes=<keys|none> emotions=<keys|none> -->
 - tag: your honest read of the process - good / neutral / bad. Use none ONLY when no such read applies.
 - strategy: identify the SINGLE best-fitting entry from "availableStrategies" and give its id or exact name. Weigh the trade (structure, direction, timing) AND the trader's own notes - a note like "3bar" points to a "Three-Bar Reversal". When the trader has not tagged one, choosing the fit is YOUR job: do not answer none just because nothing was tagged or you are not fully certain. Use none only when nothing in the list is plausibly related. Use only an id or name from that list; never invent one.
-- mistakes: comma-separated keys from labelVocabulary.mistakes for the mistakes the evidence shows (the numbers, coachChecks or the notes), at most 3; none when the trade was clean or the evidence is thin.
+- mistakes: comma-separated keys from labelVocabulary.mistakes for the mistakes the evidence shows (the numbers, coachChecks or the notes), at most 3; none when the trade was clean or the evidence is thin. Each label's description says what its evidence looks like: name a label only when the context shows that.
 - emotions: comma-separated keys from labelVocabulary.emotions ONLY when the trader's notes express that state or coachChecks show it unmistakably (a revenge re-entry right after a loss); never infer an emotion from the P&L alone; at most 2; otherwise none.
 Use only keys from labelVocabulary. Labels the trader already set are kept either way.`
 
@@ -448,7 +448,7 @@ func aiLabelVocabulary() map[string]any {
 	kind := func(k string) []map[string]string {
 		var out []map[string]string
 		for _, l := range journal.ObservableOptions(k) {
-			out = append(out, map[string]string{"key": l.Key, "name": l.Name})
+			out = append(out, map[string]string{"key": l.Key, "name": l.Name, "description": l.Desc})
 		}
 		return out
 	}

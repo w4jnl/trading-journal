@@ -307,6 +307,11 @@ struct NewEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var tag: JournalTag?
+    @State private var strategyId: Int?
+    @State private var mistakes: [String] = []
+    @State private var emotions: [String] = []
+    @State private var labels: LabelVocabulary?
+    @State private var strategies: [Strategy] = []
     @State private var busy = false
     @State private var error: String?
 
@@ -324,6 +329,17 @@ struct NewEntryView: View {
                         Text("bad").tag(JournalTag?.some(.bad))
                     }
                     .pickerStyle(.segmented)
+                    if !strategies.isEmpty {
+                        Picker("Strategy", selection: $strategyId) {
+                            Text("none").tag(Int?.none)
+                            ForEach(strategies) { Text($0.name).tag(Int?.some($0.id)) }
+                        }
+                    }
+                }
+                // The same labels the web app offers on every note, day or trade.
+                if let labels {
+                    Section("Mistakes") { LabelChips(options: labels.mistakes, selected: $mistakes, kind: .error) }
+                    Section("Emotions") { LabelChips(options: labels.emotions, selected: $emotions, kind: .info) }
                 }
                 if let error { Text(error).font(Brand.text(13, relativeTo: .footnote)).foregroundStyle(Brand.negText) }
             }
@@ -335,6 +351,12 @@ struct NewEntryView: View {
                     Button(busy ? "Saving…" : "Save") { Task { await create() } }.disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .task {
+                async let l = client.labels()
+                async let s = client.strategies()
+                labels = try? await l
+                strategies = (try? await s) ?? []
+            }
         }
     }
 
@@ -342,7 +364,11 @@ struct NewEntryView: View {
         busy = true
         defer { busy = false }
         do {
-            let e = try await client.createJournal(JournalCreate(scope: scope, body: text, tag: tag, date: date, tradeId: tradeId))
+            var make = JournalCreate(scope: scope, body: text, tag: tag, date: date, tradeId: tradeId)
+            make.strategyId = strategyId
+            make.mistakes = mistakes
+            make.emotions = emotions
+            let e = try await client.createJournal(make)
             onCreated(e)
             dismiss()
         } catch Client.JournalSaveError.exists(let id) {
