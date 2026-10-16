@@ -89,7 +89,7 @@ struct RootView: View {
         List(Route.Tab.allCases, id: \.self, selection: Binding(get: { Optional(tab) }, set: { if let t = $0 { tab = t } })) { t in
             Label(t.title, systemImage: t.symbol)
         }
-        .navigationTitle("Journal")
+        .navigationTitle("Trade Log")
         .toolbar {
             Button { Task { await client.refreshToday(refresh: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                 .keyboardShortcut("r", modifiers: .command)

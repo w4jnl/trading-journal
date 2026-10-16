@@ -124,7 +124,7 @@ struct TodayWidgetView: View {
     private func rectangular(_ t: TodayCache) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
-                Text("Journal").font(.system(size: 12, weight: .semibold))
+                Text("Trade Log").font(.system(size: 12, weight: .semibold))
                 Text(Formatting.moneyShort(t.total)).font(.system(size: 14, weight: .bold, design: .monospaced))
             }
             Text("\(t.trades) trades · \(t.openCount) open\(t.unseen > 0 ? " · \(t.unseen) nudge\(t.unseen == 1 ? "" : "s")" : "")").font(.system(size: 11))
