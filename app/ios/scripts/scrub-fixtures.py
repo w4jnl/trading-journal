@@ -21,7 +21,7 @@ NOTES = (
     "- **Exit:** the target was hit on the first push; the stop never came into play.\n"
     "- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n"
 )
-SNIPPET = "---  _Note added 2026-10-14 21:16 CEST_  ### AI review — 2026-10-14 *example-model* - **Setup & entry:** a reclaim of the overnight high taken with the plan's size."
+SNIPPET = NOTES  # the list's snippet is the note's head: block structure matters to Markdown.snippet
 LESSON = "Close the platform at the stop time and log the day; the next review should show no entries after it."
 THESIS = "Reclaim of the overnight high; stop under the pullback low."
 
