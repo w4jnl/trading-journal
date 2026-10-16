@@ -290,7 +290,7 @@ func (h *Handlers) todayJSON(r *http.Request) (map[string]any, error) {
 		"v":        h.LiveData.Version(userID(ctx)),
 		"asOf":     now.UTC(),
 		"session": map[string]any{
-			"rthStart": rthStart.UTC(), "rthEnd": rthEnd.UTC(),
+			"rthStart": rthStart.UTC(), "rthEnd": rthEnd.UTC(), "exchangeTz": chicago.String(),
 			"inGlobex": markethours.InGlobexHours(now, chicago),
 			"inRth":    markethours.InRTHWindow(now, chicago, 8*60+30, 15*60),
 		},

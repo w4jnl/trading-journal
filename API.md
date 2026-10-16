@@ -1107,7 +1107,7 @@ pulls the latest broker fills first):
 ```jsonc
 {
   "day": "2026-10-15", "timezone": "America/Chicago", "v": 137, "asOf": "2026-10-15T14:31:00Z",
-  "session": {"rthStart": "2026-10-15T13:30:00Z", "rthEnd": "2026-10-15T20:00:00Z", "inGlobex": true, "inRth": true},
+  "session": {"rthStart": "2026-10-15T13:30:00Z", "rthEnd": "2026-10-15T20:00:00Z", "exchangeTz": "America/Chicago", "inGlobex": true, "inRth": true},
   "stats": {"trades": 4, "wins": 3, "losses": 1, "net": 120.5, "gross": 138.5, "commission": 18.0, "winRate": 0.75, "winDays": 1, "lossDays": 0, "bestDay": 120.5, "worstDay": 120.5, "largestWin": 71.0, "largestLoss": -33.3},
   "unrealized": {"total": 13.75, "stale": false, "priced": 1, "unpriced": 0},
   "positions": [ /* as GET /positions */ ],
@@ -1259,8 +1259,9 @@ running activity with its update token, whole, after each change:
 server pushes to them is described next.
 
 **The Session activity.** One Live Activity per trading day (attributes
-type `SessionActivityAttributes`: `{"day", "tz", "rthStart", "rthEnd"}`
-as unix seconds), pushed as ActivityKit payloads (APNs `liveactivity`,
+type `SessionActivityAttributes`: `{"day", "tz", "rthStart", "rthEnd", "exchangeTz"}`,
+the hours as unix seconds and `exchangeTz` the exchange's zone, so a face can show
+the session in exchange time and the phone's), pushed as ActivityKit payloads (APNs `liveactivity`,
 topic `<bundle id>.push-type.liveactivity`) with this content state,
 every field always present, at most three positions, under 4 KB:
 

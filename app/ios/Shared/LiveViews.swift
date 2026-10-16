@@ -126,11 +126,8 @@ struct SessionLockScreen: View {
                 Spacer()
                 if isStale {
                     Text("no news since \(Formatting.clock(state.updatedDate, tz: attributes.timeZone))").font(Brand.text(11)).foregroundStyle(Brand.dark.fgMuted)
-                } else if Date.now < attributes.rthRange.upperBound {
-                    Text(timerInterval: attributes.rthRange, countsDown: true, showsHours: true).font(Brand.mono(11)).monospacedDigit().foregroundStyle(Brand.dark.fgMuted)
-                        .multilineTextAlignment(.trailing).frame(maxWidth: 70)
                 } else {
-                    Text("closed").font(Brand.text(11)).foregroundStyle(Brand.dark.fgMuted)
+                    SessionClock(attributes: attributes)
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
@@ -157,6 +154,47 @@ struct SessionLockScreen: View {
         }
         .padding(14)
         .environment(\.colorScheme, .dark)
+    }
+}
+
+/// The session's hours in the exchange's time and the phone's, and while the session runs the
+/// countdown to its close. Before the open nothing counts down: a frozen countdown showing the
+/// session's length read like a clock in a zone the trader does not live in.
+struct SessionClock: View {
+    let attributes: SessionActivityAttributes
+    var now: Date = .now
+    var local: TimeZone = .current
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 1) {
+            if attributes.rthRange.contains(now) {
+                HStack(spacing: 3) {
+                    Text("closes in").font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted)
+                    Text(timerInterval: attributes.rthRange, countsDown: true, showsHours: true).font(Brand.mono(11)).monospacedDigit().foregroundStyle(Brand.dark.fg)
+                        .multilineTextAlignment(.trailing).frame(maxWidth: 64)
+                }
+            } else if now > attributes.rthRange.upperBound {
+                Text("closed").font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted)
+            }
+            ForEach(Self.hours(attributes, local: local), id: \.self) { Text($0).font(Brand.mono(10)).foregroundStyle(Brand.dark.fgMuted) }
+        }
+        .lineLimit(1)
+    }
+
+    /// "08:30–15:00 Chicago", then "15:30–22:00 Amsterdam" when the phone keeps another time.
+    nonisolated static func hours(_ a: SessionActivityAttributes, local: TimeZone) -> [String] {
+        let start = a.rthRange.lowerBound, end = a.rthRange.upperBound
+        func line(_ tz: TimeZone) -> String {
+            "\(Formatting.clock(start, tz: tz))–\(Formatting.clock(end, tz: tz)) \(city(tz))"
+        }
+        let exchange = a.exchangeZone
+        var out = [line(exchange)]
+        if local.secondsFromGMT(for: start) != exchange.secondsFromGMT(for: start) { out.append(line(local)) }
+        return out
+    }
+
+    nonisolated static func city(_ tz: TimeZone) -> String {
+        tz.identifier.split(separator: "/").last.map { $0.replacingOccurrences(of: "_", with: " ") } ?? tz.identifier
     }
 }
 
@@ -189,10 +227,7 @@ struct SessionExpandedBottom: View {
                 Text("realised \(Formatting.money(state.realized))").font(Brand.mono(11)).foregroundStyle(Brand.dark.fgMuted)
                 if state.openCount > 0 { Text("open \(Formatting.money(state.unrealized))").font(Brand.mono(11)).foregroundStyle(SessionStyle.pnl(state.unrealized)) }
                 Spacer()
-                if Date.now < attributes.rthRange.upperBound {
-                    Text(timerInterval: attributes.rthRange, countsDown: true, showsHours: true).font(Brand.mono(11)).monospacedDigit().foregroundStyle(Brand.dark.fgMuted)
-                        .multilineTextAlignment(.trailing).frame(maxWidth: 70)
-                }
+                SessionClock(attributes: attributes)
             }
             SessionProgress(attributes: attributes, state: state, compact: true)
             if state.nudges > 0 {

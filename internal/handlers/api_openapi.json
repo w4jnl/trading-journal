@@ -2122,6 +2122,10 @@
         "type": "string",
         "format": "date-time"
        },
+       "exchangeTz": {
+        "type": "string",
+        "description": "The exchange's IANA zone, America/Chicago for CME futures."
+       },
        "inGlobex": {
         "type": "boolean"
        },
