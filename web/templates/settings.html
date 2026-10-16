@@ -1,11 +1,13 @@
 {{define "title"}}Settings - Trading Journal{{end}}
 
 {{define "content"}}
+{{/* data-keep-scroll: every card saves by a plain form and comes back to this page; keep_scroll.js restores where the trader was. */}}
+<div data-keep-scroll="settings">
 {{template "back_button" .}}
 <h1>Settings</h1>
 
 {{if .NewKey}}
-<div class="card" style="border: 1px solid var(--accent); margin-bottom: 16px;">
+<div class="card" style="border: 1px solid var(--accent); margin-bottom: 16px;" data-keep-scroll-show>
   <h3 style="margin-top: 0;">Your new API key</h3>
   <p class="muted" style="font-size: 12px;">Copy it now - it is shown only once and cannot be retrieved later. Send it as <code>Authorization: Bearer &lt;key&gt;</code>.</p>
   <pre style="user-select: all; padding: 10px; background: var(--bg-sunken); border-radius: 6px; overflow-x: auto;">{{.NewKey}}</pre>
@@ -633,5 +635,6 @@ curl -H "Authorization: Bearer tj_..." \
 # change detection: poll, refetch when the value differs
 curl -H "Authorization: Bearer tj_..." https://YOUR_HOST/api/v1/version</pre>
   </details>
+</div>
 </div>
 {{end}}
