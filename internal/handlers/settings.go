@@ -285,6 +285,7 @@ func (h *Handlers) SettingsAccountVisibilitySave(w http.ResponseWriter, r *http.
 		return
 	}
 	uid := userID(ctx)
+	changed := 0
 	for _, a := range accounts {
 		if a.Active != 1 {
 			continue // retired accounts aren't in the selector; leave their flag alone
@@ -302,6 +303,13 @@ func (h *Handlers) SettingsAccountVisibilitySave(w http.ResponseWriter, r *http.
 			h.serverError(w, fmt.Errorf("set account excluded: %w", err))
 			return
 		}
+		changed++
+	}
+	// The flag changes every default aggregate (dashboard, calendar, the
+	// phone's stats and widgets) without a trade moving: open pages learn of
+	// it only through the version.
+	if changed > 0 {
+		h.LiveData.Bump(uid)
 	}
 	http.Redirect(w, r, "/settings?flash=visibility", http.StatusSeeOther)
 }

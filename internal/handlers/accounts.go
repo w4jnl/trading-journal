@@ -388,6 +388,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 	}
 
 	firmChanged := map[int64]bool{}
+	saved := 0
 	var aliasRefs []string
 	for _, acc := range allAccounts {
 		ri, present := byID[acc.ID]
@@ -433,6 +434,7 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, fmt.Errorf("update account %d: %w", acc.ID, err))
 			return
 		}
+		saved++
 		if prevFirm != ri.Firm {
 			firmChanged[acc.ID] = true
 		}
@@ -450,7 +452,10 @@ func (h *Handlers) AccountsBulkSave(w http.ResponseWriter, r *http.Request) {
 				"account_id", id, "err", err)
 		}
 	}
-	if len(firmChanged) > 0 {
+	// Retiring an account or changing its type moves every aggregate that
+	// skips retired accounts or groups by type, trades or not: any saved row
+	// is news to the open pages and the phone.
+	if saved > 0 {
 		h.LiveData.Bump(userID(ctx))
 	}
 
@@ -912,9 +917,8 @@ func (h *Handlers) AccountUpdate(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.recomputeAffectedTradesAfterFirmChange(ctx, id); err != nil {
 		h.logger().Warn("recompute trades after account edit failed", "account_id", id, "err", err)
-	} else {
-		h.LiveData.Bump(userID(ctx))
 	}
+	h.LiveData.Bump(userID(ctx)) // the row changed whatever the recompute did
 
 	h.renderPartial(w, "_account_row.html", "account_row", map[string]any{
 		"Account":     updated,
