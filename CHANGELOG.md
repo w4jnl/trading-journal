@@ -3,7 +3,9 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
-## Unreleased
+## 2.18.4, 2026-10-16
+
+The app is unchanged and stays at 2.18.2.
 
 ### Server
 
