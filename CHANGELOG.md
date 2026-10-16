@@ -3,6 +3,14 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- Journal filters: picking a tag, strategy, mistake or emotion now also lists the entries where
+  the AI review suggests that value and the suggestion is still open (shown as the dashed chip).
+  Untagged, Unassigned and None logged keep their plain meaning. The REST journal list follows.
+
 ## 2.18.4, 2026-10-16
 
 The app is unchanged and stays at 2.18.2.

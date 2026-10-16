@@ -340,3 +340,81 @@ func TestJournalExportIncludesLabels(t *testing.T) {
 		t.Errorf("pdf export -> %d %s (%d bytes)", rec.Code, rec.Header().Get("Content-Type"), rec.Body.Len())
 	}
 }
+
+// A filter pick also lists the entries where the AI review suggests that
+// value and the suggestion is open: a tag only while the entry is untagged,
+// a strategy only while unassigned, a label unless already carried. A
+// dismissed suggestion does not count, and Untagged / Unassigned / None
+// logged keep their plain meaning. The REST list follows.
+func TestJournalFilterMatchesSuggestions(t *testing.T) {
+	conn := dbtest.Open(t, "boot")
+	uid := dbtest.BootstrapUserID(t, conn, "boot")
+	u := itoa64(uid)
+	for _, stmt := range []string{
+		`INSERT INTO strategies (id, user_id, name) VALUES (7, ` + u + `, 'Opening drive')`,
+		// 1: untagged, bad suggested. 2: tagged good, a stale bad suggestion.
+		// 3: bad dismissed. 4: tagged bad. 5: clean.
+		`INSERT INTO journal_entries (id, user_id, entry_date, body, scope, tag, strategy_id) VALUES
+			(1, ` + u + `, '2026-10-05', 'one', 'trade', NULL, NULL),
+			(2, ` + u + `, '2026-10-06', 'two', 'trade', 'good', 7),
+			(3, ` + u + `, '2026-10-07', 'three', 'trade', NULL, NULL),
+			(4, ` + u + `, '2026-10-08', 'four', 'trade', 'bad', NULL),
+			(5, ` + u + `, '2026-10-09', 'five', 'day', NULL, NULL)`,
+		`INSERT INTO journal_entry_labels (journal_entry_id, kind, label) VALUES (4, 'mistake', 'chased')`,
+		`INSERT INTO journal_suggestions (journal_entry_id, kind, value, status) VALUES
+			(1, 'tag', 'bad', 'open'), (1, 'strategy', '7', 'open'), (1, 'mistake', 'chased', 'open'), (1, 'emotion', 'tilted', 'open'),
+			(2, 'tag', 'bad', 'open'), (2, 'strategy', '7', 'open'),
+			(3, 'tag', 'bad', 'dismissed'), (3, 'mistake', 'chased', 'dismissed')`,
+	} {
+		if _, err := conn.Exec(stmt); err != nil {
+			t.Fatal(err)
+		}
+	}
+	h := &Handlers{DB: conn, Queries: models.New(conn), Templates: web.TemplatesFS, Timezone: time.UTC}
+	ctx := auth.WithUser(context.Background(), &auth.User{ID: uid, Username: "boot", DisplayName: "Boot"})
+	ids := func(qs string) string {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		h.APIJournalList(rec, httptest.NewRequest(http.MethodGet, "/api/v1/journal"+qs, nil).WithContext(ctx))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("list%s -> %d: %s", qs, rec.Code, rec.Body.String())
+		}
+		var out struct {
+			Items []struct {
+				ID int64 `json:"id"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+			t.Fatal(err)
+		}
+		var got []string
+		for _, it := range out.Items {
+			got = append(got, strconv.FormatInt(it.ID, 10))
+		}
+		return strings.Join(got, ",")
+	}
+	for qs, want := range map[string]string{
+		"?tag=bad":                "4,1",   // the tagged one and the untagged one with the open proposal; 2 holds good
+		"?tag=untagged":           "5,3,1", // a proposal is not a tag
+		"?tag=good":               "2",
+		"?strategy=7":             "2,1",
+		"?strategy=none":          "5,4,3,1",
+		"?mistake=chased":         "4,1",
+		"?mistake=none":           "5,3,2,1",
+		"?emotion=tilted":         "1",
+		"?mistake=chased&tag=bad": "4,1",
+		"?mistake=no-stop":        "",
+	} {
+		if got := ids(qs); got != want {
+			t.Errorf("%s = [%s], want [%s]", qs, got, want)
+		}
+	}
+
+	// The feed lists the suggested-only entry and shows the pick as a proposal.
+	rec := httptest.NewRecorder()
+	h.JournalFeed(rec, httptest.NewRequest(http.MethodGet, "/journal?tag=bad", nil).WithContext(ctx))
+	body := rec.Body.String()
+	if rec.Code != http.StatusOK || strings.Count(body, `class="entry-link"`) != 2 || !strings.Contains(body, ">one<") || !strings.Contains(body, "the AI review suggests it") {
+		t.Errorf("feed tag=bad -> %d, %d entries, has one=%v", rec.Code, strings.Count(body, `class="entry-link"`), strings.Contains(body, ">one<"))
+	}
+}

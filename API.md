@@ -260,10 +260,10 @@ Query parameters (all optional):
 | `scope` | `day` \| `week` \| `trade` \| `group` | Repeatable (e.g. `?scope=day&scope=week`) |
 | `from` | `YYYY-MM-DD` | Inclusive lower bound on entry date |
 | `to` | `YYYY-MM-DD` | Inclusive upper bound |
-| `tag` | `good` \| `neutral` \| `bad` \| `untagged` | |
-| `strategy` | strategy id, or `none` | Filter by assigned strategy |
-| `mistake` | label key, or `none` | Repeatable; entries carrying any of the picked mistakes (`none` = no mistake logged) |
-| `emotion` | label key | Repeatable; entries carrying any of the picked emotions |
+| `tag` | `good` \| `neutral` \| `bad` \| `untagged` | A tag also matches an untagged entry whose AI review suggests it |
+| `strategy` | strategy id, or `none` | Filter by assigned strategy; an id also matches an unassigned entry whose AI review suggests it |
+| `mistake` | label key, or `none` | Repeatable; entries carrying any of the picked mistakes or with one of them suggested (`none` = no mistake logged) |
+| `emotion` | label key | Repeatable; entries carrying any of the picked emotions or with one of them suggested |
 | `limit` | integer | Default `50`, max `200` |
 | `offset` | integer | Default `0` |
 
