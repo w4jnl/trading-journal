@@ -12,6 +12,9 @@ TJ_TEAM_ID = ABCDE12345
 //                                                      widgets, no time-sensitive break-through.
 //   (empty)                                           a free Apple ID's personal team: works while open.
 TJ_ENTITLEMENTS = TradingJournal/TradingJournal.entitlements
+// The widgets' App Group (needs the group assigned to the App ID nl.w4j.tradingjournal.Widgets in
+// the portal once, like the app's; empty: the widgets build but read nothing from the app).
+TJ_WIDGET_ENTITLEMENTS = TJWidgets/TJWidgets.entitlements
 // Optional: an App Store Connect API key (Users and Access → Integrations → App Store Connect
 // API, role Admin), so make ios-testflight and ios-device sign in with it instead of Xcode's
 // account, whose session expires. The .p8 goes to ~/.appstoreconnect/private_keys/AuthKey_<key id>.p8

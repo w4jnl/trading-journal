@@ -1,0 +1,10 @@
+{
+  "Simulator Target Bundle": "nl.w4j.tradingjournal",
+  "aps": {
+    "alert": {"title": "Price is through your stop on MESZ6", "subtitle": "MESZ6 · open", "body": "Last 7752.50 against the recorded stop 7757.25 on long 3. If the stop order filled, its fill arrives with the next sync; if not, this is the moment the plan was for. — Your lesson: only close early if a defined invalidation prints."},
+    "sound": "tj-nudge.caf", "badge": 1, "category": "TJ_POSITION", "thread-id": "nudges",
+    "interruption-level": "time-sensitive", "mutable-content": 1
+  },
+  "kind": "nudge", "id": 9, "key": "past-stop-live", "route": "position/25/MESZ6", "day": "2026-10-15",
+  "lesson": "only close early if a defined invalidation prints"
+}

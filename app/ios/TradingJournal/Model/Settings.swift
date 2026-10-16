@@ -18,10 +18,10 @@ final class Settings {
     var user: UserInfo? { didSet { defaults.set(try? JSONEncoder().encode(user), forKey: "user") } }
     /// "<server>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
-    /// The Session Live Activity may start on this phone.
-    var showsActivity: Bool { didSet { defaults.set(showsActivity, forKey: "showsActivity") } }
     /// Which trades view the user left: by trade or by set.
     var tradesBySet: Bool { didSet { defaults.set(tradesBySet, forKey: "tradesBySet") } }
+    /// What this phone wants pushed; Notifications.updatePrefs changes it and tells the server.
+    var notificationPrefs: DevicePrefs { didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") } }
 
     private let defaults = UserDefaults.standard
 
@@ -32,8 +32,8 @@ final class Settings {
         server = defaults.data(forKey: "server").flatMap { try? JSONDecoder().decode(ServerInfo.self, from: $0) }
         user = defaults.data(forKey: "user").flatMap { try? JSONDecoder().decode(UserInfo.self, from: $0) }
         registered = defaults.string(forKey: "registered")
-        showsActivity = defaults.object(forKey: "showsActivity") as? Bool ?? true // the activity is on until the user says otherwise
         tradesBySet = defaults.object(forKey: "tradesBySet") as? Bool ?? false
+        notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(DevicePrefs.self, from: $0) } ?? DevicePrefs()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and an extension finds the server even when only the key was in the keychain.
         Keychain.set(apiKey, for: "apiKey")
@@ -44,6 +44,16 @@ final class Settings {
     var api: TJAPI? { TJAPI(serverURL: serverURL, key: apiKey) }
     /// The trading timezone, the server's; the phone's until the server has said.
     var tz: TimeZone { server?.tz ?? .current }
+
+    /// The push token this phone registered with the current server, from the `registered` record.
+    var registeredToken: String? { Self.registeredToken(registered, serverURL: serverURL) }
+
+    nonisolated static func registeredToken(_ registered: String?, serverURL: String) -> String? {
+        guard let registered, let bar = registered.lastIndex(of: "|") else { return nil }
+        let url = String(registered[..<bar]), token = String(registered[registered.index(after: bar)...])
+        guard url == serverURL, !token.isEmpty else { return nil }
+        return token
+    }
 
     /// Forgets the pairing on this phone (the key stays valid on the server until unpaired there).
     func signOut() {

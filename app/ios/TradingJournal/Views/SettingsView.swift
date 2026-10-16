@@ -11,6 +11,7 @@ struct SettingsView: View {
     @State private var me: Me?
     @State private var error: String?
     @State private var confirmSignOut = false
+    @State private var notifications = Notifications.shared
 
     var body: some View {
         @Bindable var settings = settings
@@ -31,6 +32,31 @@ struct SettingsView: View {
                 Text("Paired with a device key made in the web app's Settings → Phone app. Unpair there to revoke it; Sign out here forgets it on this phone.")
             }
             Section {
+                LabeledContent("Permission", value: permissionLabel)
+                if notifications.authorization == .notDetermined {
+                    Button("Enable notifications") { Task { await notifications.enable() } }
+                } else if notifications.authorization == .denied {
+                    Text("Allow notifications for Journal in the Settings app.").font(Brand.text(13, relativeTo: .footnote)).foregroundStyle(Brand.fgMuted)
+                } else {
+                    LabeledContent("Registered with the journal", value: notifications.isRegistered ? "yes" : (notifications.apnsToken == nil ? "no APNs token yet" : "no"))
+                    if let can = notifications.serverCanPush ?? me?.server.features.push {
+                        LabeledContent("Server can push", value: can ? "yes" : "no key configured")
+                    }
+                    NavigationLink("Which pushes, sounds, Focus") { NotificationSettingsView() }
+                    Button("Register again") {
+                        settings.registered = nil
+                        Task { await notifications.registerIfNeeded() }
+                    }
+                }
+                if let e = notifications.lastError {
+                    Text(e).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.warnText)
+                }
+            } header: {
+                Text("Notifications")
+            } footer: {
+                Text("The journal pushes the guardrail's nudges the moment they happen, closed trades quietly, and keeps the badge at the unseen count. A build from Xcode registers a sandbox token; a TestFlight build a production one.")
+            }
+            Section {
                 if let me {
                     Toggle("Guardrail", isOn: Binding(get: { me.settings.guardrail }, set: { on in Task { await update(SettingsUpdate(guardrail: on)) } }))
                         .tint(Brand.accent)
@@ -48,12 +74,9 @@ struct SettingsView: View {
                 Text("The guardrail watches the day against the plan and nudges you. The automatic plan needs AI on the server.")
             }
             Section {
-                Toggle("Session Live Activity", isOn: $settings.showsActivity)
                 Toggle("Trades grouped by set", isOn: $settings.tradesBySet)
             } header: {
                 Text("This phone")
-            } footer: {
-                Text("The Live Activity follows the trading session in the Dynamic Island and on the Lock Screen once push is set up on the server.")
             }
             Section {
                 Button("Pair again") { pair() }
@@ -78,6 +101,17 @@ struct SettingsView: View {
             } catch {
                 self.error = error.localizedDescription
             }
+        }
+    }
+
+    private var permissionLabel: String {
+        switch notifications.authorization {
+        case .authorized: "allowed"
+        case .provisional: "provisional"
+        case .ephemeral: "ephemeral"
+        case .denied: "denied"
+        case .notDetermined: "not asked yet"
+        @unknown default: "?"
         }
     }
 
