@@ -1,0 +1,21 @@
+{{/* The read-only view of a day's plan: the bias and limits, the levels, the
+     notes, and the rules checked against the day once it has trades. Shared by
+     the day page's plan card and the dashboard's "Today's plan". Data: Plan
+     (*dayplan.Plan, nil shows nothing), Outcome (*coach.PlanOutcome or nil). */}}
+{{define "plan_readout"}}
+{{with .Plan}}
+<div class="plan-summary">
+  {{if .Bias}}<span class="pill plan-bias plan-bias--{{.Bias}}">{{biasName .Bias}}</span>{{end}}
+  {{if .MaxTrades}}<span>at most <b class="num">{{derefInt .MaxTrades}}</b> decision{{if ne (derefInt .MaxTrades) 1}}s{{end}}</span>{{end}}
+  {{if .StopTime}}<span>done by <b class="num">{{.StopTime}}</b></span>{{end}}
+  {{if .MaxLoss}}<span>stop at <b class="num">−{{printf "%.2f" (deref .MaxLoss)}}</b> per account</span>{{end}}
+</div>
+{{if .Levels}}<div class="plan-levels"><span class="label">Levels</span><pre>{{.Levels}}</pre></div>{{end}}
+{{if .Notes}}<div class="plan-notes markdown-preview">{{markdown .Notes}}</div>{{end}}
+{{end}}
+{{with .Outcome}}{{if .Checks}}
+<ul class="plan-checks">
+  {{range .Checks}}<li class="plan-check plan-check--{{if .Held}}held{{else}}broken{{end}}"><span class="plan-check__mark" aria-label="{{if .Held}}held{{else}}broken{{end}}">{{if .Held}}✓{{else}}✗{{end}}</span><span class="plan-check__rule">{{.Rule}}</span><span class="plan-check__actual">{{.Actual}}</span></li>{{end}}
+</ul>
+{{else}}<p class="muted plan-wait">No trades yet; each rule is checked as the day's trades close.</p>{{end}}{{end}}
+{{end}}

@@ -130,13 +130,14 @@ func TestDayPlanFlow(t *testing.T) {
 		t.Errorf("mcp get today = %s", txt)
 	}
 
-	// Dashboard: today's plan in one line.
+	// Dashboard: today's plan as its own card, with the levels; the "write it"
+	// line of the Today panel is gone once a plan exists.
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /dashboard", h.DashboardPage)
 	rec = httptest.NewRecorder()
 	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/dashboard", nil).WithContext(ctx))
-	if b := rec.Body.String(); !strings.Contains(b, `class="dash-plan"`) || !strings.Contains(b, `Short · done by 09:30 · stop at −250 →`) {
-		t.Errorf("dashboard plan line missing: %s", sheetSnippet(b, "dash-plan"))
+	if b := rec.Body.String(); !strings.Contains(b, `id="dash-plan"`) || !strings.Contains(b, `plan-bias--short`) || !strings.Contains(b, `done by <b class="num">09:30</b>`) || !strings.Contains(b, `7900 call wall`) || strings.Contains(b, `class="dash-plan"`) {
+		t.Errorf("dashboard plan card missing: %s", sheetSnippet(b, "dash-plan"))
 	}
 
 	// Delete from the page.

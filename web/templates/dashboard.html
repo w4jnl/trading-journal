@@ -26,6 +26,8 @@
     border-top: 1px solid var(--border);
   }
 
+  .dash-plan-card { margin-bottom: 24px; }
+
   /* Stat strip — 5 tiles auto-fitting to the row. Each tile is a compact
      card with a label, a primary value, and (when applicable) a sparkline. */
   .stat-strip {
@@ -135,11 +137,28 @@
       </div>
     {{end}}
     {{end}}
-    <a class="dash-plan" href="/journal/{{$.TodayDate}}?back=%2Fdashboard#day-plan" title="Today's pre-market plan">
-      {{if $.TodayPlan}}<span class="label">Plan</span> {{$.TodayPlan}} →{{else}}No plan for today yet · write it →{{end}}
-    </a>
+    {{if not $.TodayPlan}}
+    <a class="dash-plan" href="/journal/{{$.TodayDate}}?back=%2Fdashboard#day-plan" title="Today's pre-market plan">No plan for today yet · write it →</a>
+    {{end}}
   </section>
 </div>
+
+<!-- TODAY'S PLAN: the pre-market plan in full once it is written; its rules
+     are checked here as the day's trades close. Without a plan the Today
+     panel above carries the "write it" link instead. -------------------- -->
+{{with .TodayPlan}}
+<section class="card dash-plan-card" id="dash-plan">
+  <div class="card-title-row">
+    <span class="card-title">Today's plan
+      {{with .Outcome}}{{if .Checks}} · <span class="num">{{.Held}}</span>/<span class="num">{{len .Checks}}</span> rules held{{end}}
+        {{if .WrittenLate}}<span class="pill plan-late" title="The plan was saved after the day's first entry, so it records the day rather than planning it">written after the first trade</span>{{else if .EditedLate}}<span class="pill plan-late" title="The plan was changed after the day's first entry">edited after the first trade</span>{{end}}
+      {{end}}
+    </span>
+    <a class="card-title__action" href="/journal/{{$.TodayDate}}?back=%2Fdashboard#day-plan">Edit the plan →</a>
+  </div>
+  {{template "plan_readout" .}}
+</section>
+{{end}}
 
 <!-- STAT STRIP: 30-day trailing tiles with inline-SVG sparklines -------------- -->
 {{with .Trailing}}
