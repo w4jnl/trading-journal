@@ -10,7 +10,7 @@ import Testing
 struct LiveWritesTests {
     private static var client: Client? {
         let env = ProcessInfo.processInfo.environment
-        guard let server = env["TJ_SERVER"], let key = env["TJ_KEY"] else { return nil }
+        guard let server = env["TJ_SERVER"], !server.isEmpty, let key = env["TJ_KEY"], !key.isEmpty else { return nil } // make passes empty ones when unset
         let s = Settings()
         s.serverURL = server
         s.apiKey = key
