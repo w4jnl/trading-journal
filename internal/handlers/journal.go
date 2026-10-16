@@ -520,8 +520,26 @@ type feedRow struct {
 // listJournalFeedFiltered runs a raw SQL query so the dynamic WHERE clause
 // can include scope/tag IN (...) and the date range. Same join shape as the
 // sqlc ListJournalFeed query, minus a couple of columns the feed doesn't need.
+//
+// A pick of a tag, strategy, mistake or emotion also matches an entry whose
+// AI review proposed that value and still has the proposal open (the feed
+// shows it as a dashed chip), under the same rule as Suggestion.Applies: a
+// proposed tag or strategy counts only while the entry holds none. The
+// "untagged", "none" picks keep their plain meaning: a proposal is not the
+// trader's value.
 func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, limit int) ([]feedRow, error) {
 	w := whereUser(ownsJournalSQL, userID(ctx))
+	// suggested is the EXISTS clause for an open proposal of kind with one of
+	// the values; the values go into args as text, as the table holds them.
+	suggested := func(kind string, values []string, args *[]any) string {
+		ph := strings.Repeat("?,", len(values))
+		ph = ph[:len(ph)-1]
+		*args = append(*args, kind)
+		for _, v := range values {
+			*args = append(*args, v)
+		}
+		return "EXISTS (SELECT 1 FROM journal_suggestions sg WHERE sg.journal_entry_id = je.id AND sg.kind = ? AND sg.status = 'open' AND sg.value IN (" + ph + "))"
+	}
 	if f.from != nil {
 		w.and("je.entry_date >= ?", *f.from)
 	}
@@ -557,6 +575,7 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			for _, t := range real {
 				args = append(args, t)
 			}
+			parts = append(parts, "(je.tag IS NULL AND "+suggested(journal.SuggestTag, real, &args)+")")
 		}
 		if untagged {
 			parts = append(parts, "je.tag IS NULL")
@@ -572,9 +591,12 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			ph := strings.Repeat("?,", len(f.strategies))
 			ph = ph[:len(ph)-1]
 			parts = append(parts, "je.strategy_id IN ("+ph+")")
+			ids := make([]string, 0, len(f.strategies))
 			for _, id := range f.strategies {
 				args = append(args, id)
+				ids = append(ids, strconv.FormatInt(id, 10))
 			}
+			parts = append(parts, "(je.strategy_id IS NULL AND "+suggested(journal.SuggestStrategy, ids, &args)+")")
 		}
 		if f.strategyNone {
 			parts = append(parts, "je.strategy_id IS NULL")
@@ -582,7 +604,8 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 		w.and("("+strings.Join(parts, " OR ")+")", args...)
 	}
 	// Labels: an entry matches a kind when it carries any of the picked
-	// keys (or, for "none", carries no mistake at all).
+	// keys, or has one of them proposed (or, for "none", carries no mistake
+	// at all). A label the data cannot show is never proposed.
 	labelClause := func(kind string, keys []string, none bool) {
 		if len(keys) == 0 && !none {
 			return
@@ -594,8 +617,15 @@ func listJournalFeedFiltered(ctx context.Context, db *sql.DB, f journalFilters, 
 			ph = ph[:len(ph)-1]
 			parts = append(parts, "EXISTS (SELECT 1 FROM journal_entry_labels l WHERE l.journal_entry_id = je.id AND l.kind = ? AND l.label IN ("+ph+"))")
 			args = append(args, kind)
+			var proposable []string
 			for _, k := range keys {
 				args = append(args, k)
+				if journal.Observable(kind, k) {
+					proposable = append(proposable, k)
+				}
+			}
+			if len(proposable) > 0 {
+				parts = append(parts, suggested(kind, proposable, &args))
 			}
 		}
 		if none {
