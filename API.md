@@ -530,7 +530,8 @@ nothing to apply.
 drafts the plan from the trader's own numbers and lessons, `202`. `GET
 /api/v1/plan?day=` then carries `"draft": {"pending", "error"?, "maxTrades",
 "stopTime", "maxLoss", "levels", "notes", "reasons": [...], "model",
-"createdAt"}`; saving the plan with `POST /api/v1/plan` drops the draft, and
+"createdAt"}`, and `GET /api/v1/today` the same under `plan.draft` for today;
+saving the plan with `POST /api/v1/plan` drops the draft, and
 `DELETE /api/v1/plan/{date}/draft` discards it (`204`).
 
 ### Creating journal entries

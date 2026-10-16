@@ -205,6 +205,9 @@ func (h *Handlers) todayJSON(r *http.Request) (map[string]any, error) {
 	// the worst account's realised loss against maxLoss.
 	dayNet := h.dayNetByAccount(r, today)
 	planOut := map[string]any{"plan": nil, "outcome": nil, "tradesUsed": 0, "maxTrades": nil, "lossUsed": 0.0, "maxLoss": nil, "worstAccount": ""}
+	if d := h.apiPlanDraftFor(ctx, dayKey); d != nil {
+		planOut["draft"] = d // the model's draft of today's plan (api_ai.go), when the server runs AI
+	}
 	if rep := h.coachReport(ctx, today); rep != nil {
 		planOut["tradesUsed"] = rep.Decisions
 		if rep.Plan != nil {
