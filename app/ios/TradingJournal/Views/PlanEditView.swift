@@ -12,10 +12,19 @@ struct PlanEditView: View {
     @State private var busy = false
     @State private var error: String?
 
-    init(day: String, plan: DayPlan?) {
+    /// A model's draft, when given, fills the rules, levels and notes the plan does not have.
+    init(day: String, plan: DayPlan?, draft ai: PlanDraft? = nil) {
         self.day = day
         self.plan = plan
-        _draft = State(initialValue: DayPlanSave(day: day, plan: plan))
+        var d = DayPlanSave(day: day, plan: plan)
+        if let ai {
+            if let m = ai.maxTrades, m > 0 { d.maxTrades = m }
+            if let s = ai.stopTime, !s.isEmpty { d.stopTime = s }
+            if let l = ai.maxLoss, l > 0 { d.maxLoss = l }
+            if let l = ai.levels, !l.isEmpty { d.levels = l }
+            if let n = ai.notes, !n.isEmpty { d.notes = n }
+        }
+        _draft = State(initialValue: d)
     }
 
     var body: some View {

@@ -121,10 +121,16 @@ struct DayView: View {
     @State private var error: String?
     @State private var writing = false
     @State private var opened: Route?
+    @State private var run: DayRunStatus?
+    @State private var aiError: String?
+    @State private var aiBusy = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                if client.aiReady, stats != nil {
+                    DayRunCard(day: day, run: run, busy: aiBusy, error: aiError, start: { Task { await startRun() } }, cancel: { Task { await cancelRun() } })
+                }
                 if let s = stats?.items.first {
                     Card {
                         CardTitle("Day")
@@ -194,6 +200,70 @@ struct DayView: View {
             error = nil
         } catch {
             self.error = error.localizedDescription
+        }
+        if client.aiReady, let st = try? await client.dayRunStatus(), st.date == day || st.running || run != nil {
+            run = st
+        }
+    }
+
+    private func startRun() async {
+        aiBusy = true
+        defer { aiBusy = false }
+        do {
+            run = try await client.startDayRun(day)
+            aiError = nil
+        } catch Client.AIError.dayRun {
+            aiError = "A day run is going already; wait for it or cancel it."
+        } catch Client.AIError.off {
+            aiError = "No AI provider: add your key in the web app's Settings > AI."
+        } catch {
+            aiError = error.localizedDescription
+        }
+    }
+
+    private func cancelRun() async {
+        run = try? await client.cancelDayRun()
+    }
+}
+
+/// The AI day run on a day's page: start it, watch it, cancel it. Every note of the day
+/// is reviewed and the day's synthesis written; the notes list refreshes as each lands.
+struct DayRunCard: View {
+    let day: String
+    let run: DayRunStatus?
+    let busy: Bool
+    let error: String?
+    let start: () -> Void
+    let cancel: () -> Void
+
+    var body: some View {
+        Card(keyline: Brand.accent) {
+            CardTitle("AI", trailing: trailing)
+            if let r = run, r.running, r.date == day || r.date == "last" {
+                ProgressView(value: Double(r.done ?? 0), total: Double(max(r.total ?? 0, 1))).tint(Brand.accent)
+                HStack {
+                    Text("\(r.done ?? 0) of \(r.total ?? 0)\((r.current ?? "").isEmpty ? "" : " · \(r.current!)")").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted).lineLimit(1)
+                    Spacer()
+                    Button("Cancel", action: cancel).font(Brand.text(13, relativeTo: .footnote))
+                }
+            } else {
+                Text("Every note of the day reviewed, and the day's synthesis written to the day note.").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted)
+                Button(action: start) { Label(busy ? "Starting…" : "Analyze this day", systemImage: "sparkles") }.font(Brand.text(14, relativeTo: .subheadline)).disabled(busy || (run?.running ?? false))
+                    .accessibilityIdentifier("analyze-day")
+            }
+            if let e = run?.err, !e.isEmpty, run?.date == day { Text("The last run failed: \(e)").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+            if let error { Text(error).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+        }
+    }
+
+    private var trailing: String {
+        guard let r = run, r.date == day || r.running else { return "" }
+        switch r.state {
+        case "running": return "running"
+        case "done": return "done"
+        case "error": return "failed"
+        case "cancelled": return "cancelled"
+        default: return ""
         }
     }
 }

@@ -122,3 +122,26 @@ struct WireTests {
         #expect(SSE.parse(event: "version", data: "ping") == nil)
     }
 }
+
+/// The AI's shapes: what the server adds for a user with a provider, all optional for a server without.
+struct AIWireTests {
+    @Test func decodesTheAIStatesAndEncodesATarget() throws {
+        let pos = try Wire.decoder.decode(PositionAI.self, from: Data(#"{"pending":false,"levels":{"stop":7802.5,"target":7781,"target2":null,"scaleOut":null,"trail":"to break-even after 1R","reasons":{"stop":"above the 20:50 high"},"summary":"Fade the top.","risk":87.5,"r1":1.5,"r2":null,"entry":7794.25,"qty":1},"model":"claude","at":"2026-10-15T20:03:00Z","outdated":false,"auto":"off"}"#.utf8))
+        #expect(pos.levels?.stop == 7802.5 && pos.levels?.r1 == 1.5 && pos.model == "claude" && pos.outdated == false)
+        let draft = try Wire.decoder.decode(PlanDraft.self, from: Data(#"{"pending":false,"maxTrades":4,"stopTime":"11:00","maxLoss":300,"levels":"7800 / 7750","notes":"Sit out the open.","reasons":["two losers at the open last week"],"model":"claude","createdAt":"2026-10-16T07:00:00Z"}"#.utf8))
+        #expect(draft.has && draft.maxTrades == 4 && draft.reasons?.count == 1)
+        #expect(!(try Wire.decoder.decode(PlanDraft.self, from: Data(#"{"pending":true}"#.utf8))).has, "being written: no draft yet")
+        let run = try Wire.decoder.decode(DayRunResponse.self, from: Data(#"{"status":{"state":"running","date":"2026-10-14","done":2,"total":7,"current":"MESZ6 short 21:16","model":"claude","startedAt":"2026-10-16T07:00:00Z"}}"#.utf8)).status
+        #expect(run.running && run.done == 2 && run.total == 7)
+        #expect(!(try Wire.decoder.decode(DayRunResponse.self, from: Data(#"{"status":{"state":"idle","date":"","done":0,"total":0,"current":"","startedAt":"0001-01-01T00:00:00Z"}}"#.utf8)).status.running))
+        let me = try Fixtures.load(Me.self, "me")
+        #expect(me.ai == nil || me.ai?.ready != nil, "a fixture from before the field decodes")
+        let review = try Wire.decoder.decode(ReviewState.self, from: Data(#"{"pending":true}"#.utf8))
+        #expect(review.pending && review.error == nil)
+        // the target names one thing and nothing else
+        let t = try JSONSerialization.jsonObject(with: Wire.encoder.encode(ReviewTarget.trade(5))) as! [String: Any]
+        #expect(t["scope"] as? String == "trade" && t["tradeId"] as? Int == 5 && t["entryId"] == nil && t["date"] == nil)
+        let e = try JSONSerialization.jsonObject(with: Wire.encoder.encode(ReviewTarget.entry(9))) as! [String: Any]
+        #expect(e["entryId"] as? Int == 9 && e["scope"] == nil)
+    }
+}

@@ -20,6 +20,8 @@ final class Settings {
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
     /// Which trades view the user left: by trade or by set.
     var tradesBySet: Bool { didSet { defaults.set(tradesBySet, forKey: "tradesBySet") } }
+    /// Whether this user can run AI work; GET /me says, remembered for the next start.
+    var aiReady: Bool { didSet { defaults.set(aiReady, forKey: "aiReady") } }
     /// What this phone wants pushed; Notifications.updatePrefs changes it and tells the server.
     var notificationPrefs: DevicePrefs { didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") } }
 
@@ -33,6 +35,7 @@ final class Settings {
         user = defaults.data(forKey: "user").flatMap { try? JSONDecoder().decode(UserInfo.self, from: $0) }
         registered = defaults.string(forKey: "registered")
         tradesBySet = defaults.object(forKey: "tradesBySet") as? Bool ?? false
+        aiReady = defaults.object(forKey: "aiReady") as? Bool ?? false
         notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(DevicePrefs.self, from: $0) } ?? DevicePrefs()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and an extension finds the server even when only the key was in the keychain.

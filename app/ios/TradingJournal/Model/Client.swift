@@ -213,7 +213,95 @@ final class Client {
         let me = try await api.get(Me.self, "/me", session: session)
         settings.server = me.server
         settings.user = me.user
+        settings.aiReady = me.ai?.ready ?? false
         return me
+    }
+
+    /// Whether this user can run AI work, so the AI buttons show; the web hides them the same way.
+    var aiReady: Bool { settings.aiReady }
+
+    // MARK: AI from the phone
+    //
+    // Every call runs on the server with the user's own provider; the phone starts work and
+    // reads the result where it lands (the note, the position, the plan), refetched when the
+    // server's version moves.
+
+    enum AIError: Error {
+        /// No provider for this user: Settings > AI in the web app.
+        case off
+        /// A review of this note runs already.
+        case reviewPending(entryId: Int?)
+        /// The day run is going.
+        case dayRun
+    }
+
+    private func aiCall<T>(_ work: () async throws -> T) async throws -> T {
+        do {
+            return try await work()
+        } catch TJError.conflict(let reason, let message, let body) {
+            switch reason {
+            case "ai-off": throw AIError.off
+            case "review-pending": throw AIError.reviewPending(entryId: (try? Wire.decoder.decode(JournalConflict.self, from: body))?.entryId)
+            case "day-run": throw AIError.dayRun
+            default: throw TJError.conflict(reason: reason, message: message, body: body)
+            }
+        } catch TJError.unauthorized {
+            connection = .unauthorized
+            throw TJError.unauthorized
+        }
+    }
+
+    /// Reviews a note in the background; the review lands on the note. Returns the note's id,
+    /// the note created first for a trade, set, day or week without one.
+    func startReview(_ target: ReviewTarget) async throws -> Int {
+        guard let api else { throw TJError.notConfigured }
+        return try await aiCall { try await api.send("POST", "/ai/review", json: target, as: ReviewStarted.self, session: session) }.entryId
+    }
+
+    func dayRunStatus() async throws -> DayRunStatus {
+        guard let api else { throw TJError.notConfigured }
+        return try await api.get(DayRunResponse.self, "/ai/day", session: session).status
+    }
+
+    /// Starts the day run: every note of the day reviewed, the day's synthesis written.
+    func startDayRun(_ day: String, all: Bool = false) async throws -> DayRunStatus {
+        guard let api else { throw TJError.notConfigured }
+        return try await aiCall { try await api.send("POST", "/ai/day/\(day)", json: ["mode": all ? "all" : ""], as: DayRunResponse.self, session: session) }.status
+    }
+
+    func cancelDayRun() async throws -> DayRunStatus {
+        guard let api else { throw TJError.notConfigured }
+        let data = try await aiCall { try await api.send("DELETE", "/ai/day", session: session) }
+        return try Wire.decoder.decode(DayRunResponse.self, from: data).status
+    }
+
+    /// Asks for a stop and target on the open position; the position's ai shows the result.
+    func requestLevels(account: Int, symbol: String) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await aiCall { try await api.send("POST", "/positions/\(account)/\(symbol)/levels", session: session) }
+    }
+
+    /// Writes the proposal into the plan; the server answers with the position.
+    func applyLevels(account: Int, symbol: String) async throws -> Position {
+        guard let api else { throw TJError.notConfigured }
+        let data = try await aiCall { try await api.send("POST", "/positions/\(account)/\(symbol)/levels/apply", session: session) }
+        return try Wire.decoder.decode(Position.self, from: data)
+    }
+
+    func dismissLevels(account: Int, symbol: String) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await aiCall { try await api.send("DELETE", "/positions/\(account)/\(symbol)/levels", session: session) }
+    }
+
+    /// Drafts the day's plan; Today's plan.draft shows it to take over or discard.
+    func draftPlan(_ day: String) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await aiCall { try await api.send("POST", "/plan/\(day)/draft", session: session) }
+    }
+
+    func discardDraft(_ day: String) async throws {
+        guard let api else { throw TJError.notConfigured }
+        _ = try await aiCall { try await api.send("DELETE", "/plan/\(day)/draft", session: session) }
     }
 
     // MARK: reads for the other screens

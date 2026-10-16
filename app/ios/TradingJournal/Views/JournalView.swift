@@ -151,6 +151,10 @@ struct JournalEntryView: View {
     @State private var editing = false
     @State private var appending = false
     @State private var suggestionError: String?
+    @State private var aiError: String?
+    @State private var starting = false
+
+    private var reviewing: Bool { entry?.review?.pending == true }
 
     var body: some View {
         ScrollView {
@@ -161,6 +165,15 @@ struct JournalEntryView: View {
                             Text(Formatting.dayLabel(e.date, tz: client.tz, style: .long)).font(Brand.text(17, weight: .semibold, relativeTo: .title3))
                             Spacer()
                         }
+                        if reviewing {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("The AI is reviewing this note…").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted)
+                            }
+                            .accessibilityIdentifier("review-pending")
+                        }
+                        if let err = e.review?.error { Text("The AI review failed: \(err)").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
+                        if let aiError { Text(aiError).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.negText) }
                         HStack(spacing: 6) {
                             Pill(e.scope == .group ? "set" : e.scope.rawValue, e.scope == .group ? .group : .sunken)
                             if let p = Pill.tag(e.tag) { p }
@@ -256,8 +269,13 @@ struct JournalEntryView: View {
         .toolbar {
             if entry != nil {
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    if client.aiReady {
+                        Button { Task { await analyze() } } label: { Label("Analyze", systemImage: "sparkles") }
+                            .disabled(reviewing || starting)
+                            .accessibilityIdentifier("analyze")
+                    }
                     Button { appending = true } label: { Label("Append", systemImage: "text.append") }
-                    Button("Edit") { editing = true }
+                    Button("Edit") { editing = true }.disabled(reviewing)
                 }
             }
         }
@@ -271,6 +289,23 @@ struct JournalEntryView: View {
         }
         .task(id: id) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+    }
+
+    /// Starts the AI review of this note; the note shows it running until it lands.
+    private func analyze() async {
+        starting = true
+        defer { starting = false }
+        do {
+            _ = try await client.startReview(.entry(id))
+            aiError = nil
+        } catch Client.AIError.reviewPending {
+            aiError = nil
+        } catch Client.AIError.off {
+            aiError = "No AI provider: add your key in the web app's Settings > AI."
+        } catch {
+            aiError = error.localizedDescription
+        }
+        await load()
     }
 
     private func act(_ s: Suggestion, accept: Bool) async {

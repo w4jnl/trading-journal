@@ -123,7 +123,10 @@ balance anchors), push (registration, the three categories with their Lock Scree
 service and content extensions, the settings mirrored to the server, the badge and the silent
 sync), the Session Live Activity with the Today widgets and the guardrail switch in Control
 Center, and the iPad: a sidebar, three columns for the trades and the journal, ⌘R refresh, ⌘N a
-day note, ⌘F the symbol filter.
+day note, ⌘F the symbol filter. For a user with an AI provider in the web app's Settings
+(`GET /me` says `ai.ready`), the AI from the phone: Analyze on a note, on a trade without one
+and in the first-note sheet, the day run on a day's page, a stop and target for an open position, a draft of today's
+plan; every call runs on the server and the result arrives over the event stream.
 
 `SERVER=http://… KEY=tj_… make ios-test` also runs the live write tests against that
 journal (they put back what they change). `IOS_SCREENS_SIM='platform=iOS Simulator,name=iPad

@@ -137,6 +137,94 @@ struct Me: Codable, Sendable, Hashable {
     var server: ServerInfo
     var settings: UserSettings
     var key: KeyInfo
+    var ai: AIState? // absent from a server before 2.18.2
+}
+
+/// GET /me "ai": whether this user can run AI work (the server has AI, the user a provider).
+struct AIState: Codable, Sendable, Hashable {
+    var ready: Bool
+}
+
+/// A note's AI review: running, and the last failure, shown once.
+struct ReviewState: Codable, Sendable, Hashable {
+    var pending: Bool
+    var error: String?
+}
+
+/// The model's stop and target for an open position, made while it was open.
+struct AILevels: Codable, Sendable, Hashable {
+    var stop: Double
+    var target: Double
+    var target2: Double?
+    var scaleOut: Double?
+    var trail: String?
+    var reasons: [String: String]?
+    var summary: String?
+    var risk: Double?
+    var r1: Double?
+    var r2: Double?
+    var entry: Double
+    var qty: Double
+}
+
+/// A position's "ai": a proposal being made, or made.
+struct PositionAI: Codable, Sendable, Hashable {
+    var pending: Bool
+    var error: String?
+    var levels: AILevels?
+    var model: String?
+    var at: Date?
+    var outdated: Bool?
+    var auto: String?
+}
+
+/// The model's draft of a day plan, for today or a later day.
+struct PlanDraft: Codable, Sendable, Hashable {
+    var pending: Bool
+    var error: String?
+    var maxTrades: Int?
+    var stopTime: String?
+    var maxLoss: Double?
+    var levels: String?
+    var notes: String?
+    var reasons: [String]?
+    var model: String?
+    var createdAt: Date?
+
+    /// A draft exists (as opposed to one being written, or nothing).
+    var has: Bool { createdAt != nil }
+}
+
+/// The AI day run: every note of a day reviewed, the day's synthesis written.
+struct DayRunStatus: Codable, Sendable, Hashable {
+    var state: String // idle | running | done | error | cancelled
+    var date: String?
+    var done: Int?
+    var total: Int?
+    var current: String?
+    var err: String?
+    var model: String?
+
+    var running: Bool { state == "running" }
+}
+
+struct DayRunResponse: Codable, Sendable { var status: DayRunStatus }
+struct ReviewStarted: Codable, Sendable { var entryId: Int; var pending: Bool }
+
+/// POST /ai/review: the note to review, by id or by what it is about.
+struct ReviewTarget: Encodable, Sendable, Hashable {
+    var entryId: Int?
+    var scope: String?
+    var tradeId: Int?
+    var setId: Int?
+    var date: String?
+    var week: String?
+
+    static func entry(_ id: Int) -> ReviewTarget { .init(entryId: id) }
+    static func trade(_ id: Int) -> ReviewTarget { .init(scope: "trade", tradeId: id) }
+    static func set(_ id: Int) -> ReviewTarget { .init(scope: "set", setId: id) }
+    static func day(_ date: String) -> ReviewTarget { .init(scope: "day", date: date) }
+    static func week(_ week: String) -> ReviewTarget { .init(scope: "week", week: week) }
 }
 
 struct PairRequest: Encodable, Sendable {
@@ -239,6 +327,7 @@ struct Position: Codable, Sendable, Hashable, Identifiable {
     var cycleFills: [CycleFill]
     var openPrice: Double
     var addedFills: Int
+    var ai: PositionAI? // the model's proposal, when the server runs AI
     var addedQty: Double
 
     var id: String { "\(accountId):\(symbol)" }
@@ -291,6 +380,7 @@ struct TodayPlan: Codable, Sendable, Hashable {
     var lossUsed: Double
     var maxLoss: Double?
     var worstAccount: String
+    var draft: PlanDraft? // the model's draft of today's plan, when the server runs AI
 
     /// 0…1 of the max-loss budget used, nil without a budget.
     var lossFraction: Double? {
@@ -594,6 +684,7 @@ struct JournalDetail: Codable, Sendable, Hashable {
     var trades: [JournalTrade]
     var attachments: [Attachment]
     var suggestions: [Suggestion]?
+    var review: ReviewState? // absent from a server before 2.18.2
     var chartPng: String?
     var createdAt: Date
     var updatedAt: Date

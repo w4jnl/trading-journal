@@ -259,7 +259,10 @@ struct AppendNoteView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
     @State private var busy = false
+    @State private var analyzing = false
     @State private var error: String?
+
+    private var blank: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         NavigationStack {
@@ -297,6 +300,8 @@ struct AppendNoteView: View {
 }
 
 /// The first note on a trade or a day: creates the entry; one that exists already is opened.
+/// With AI ready it also starts the review from here: an empty sheet asks the server for the
+/// note and its review in one go, a written note is saved first and reviewed as it stands.
 struct NewEntryView: View {
     let scope: JournalScope
     var tradeId: Int?
@@ -313,13 +318,28 @@ struct NewEntryView: View {
     @State private var labels: LabelVocabulary?
     @State private var strategies: [Strategy] = []
     @State private var busy = false
+    @State private var analyzing = false
     @State private var error: String?
+
+    private var blank: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
-                    TextEditor(text: $text).font(Brand.text(15, relativeTo: .body)).frame(minHeight: 180).accessibilityLabel("Note")
+                    TextEditor(text: $text).font(Brand.text(15, relativeTo: .body)).frame(minHeight: 140).accessibilityLabel("Note")
+                }
+                if client.aiReady {
+                    Section {
+                        Button { Task { await analyze() } } label: {
+                            Label(analyzing ? "Starting the review…" : blank ? "Analyze with the AI" : "Save and analyze", systemImage: "sparkles")
+                                .font(Brand.text(15, weight: .medium, relativeTo: .body)).foregroundStyle(Brand.accentText)
+                        }
+                        .disabled(busy)
+                        .accessibilityIdentifier("analyze-new")
+                    } footer: {
+                        Text(blank ? "The AI writes the first note and its review lands on it as suggestions." : "Your note is saved first; the review lands on it as suggestions.")
+                    }
                 }
                 Section("Tag") {
                     Picker("Tag", selection: $tag) {
@@ -348,7 +368,7 @@ struct NewEntryView: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(busy ? "Saving…" : "Save") { Task { await create() } }.disabled(busy || text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    Button(busy && !analyzing ? "Saving…" : "Save") { Task { await create() } }.disabled(busy || blank)
                 }
             }
             .task {
@@ -364,16 +384,51 @@ struct NewEntryView: View {
         busy = true
         defer { busy = false }
         do {
-            var make = JournalCreate(scope: scope, body: text, tag: tag, date: date, tradeId: tradeId)
-            make.strategyId = strategyId
-            make.mistakes = mistakes
-            make.emotions = emotions
-            let e = try await client.createJournal(make)
+            let e = try await save()
             onCreated(e)
             dismiss()
         } catch Client.JournalSaveError.exists(let id) {
             onExists(id)
             dismiss()
+        } catch {
+            self.error = error.localizedDescription
+        }
+    }
+
+    private func save() async throws -> JournalDetail {
+        var make = JournalCreate(scope: scope, body: text, tag: tag, date: date, tradeId: tradeId)
+        make.strategyId = strategyId
+        make.mistakes = mistakes
+        make.emotions = emotions
+        return try await client.createJournal(make)
+    }
+
+    /// Starts the review and opens the note it lands on. Nothing written here: the server
+    /// creates the note for the day or trade. Something written: saved, then reviewed by id.
+    /// A note that exists already (written elsewhere meanwhile) is reviewed and opened.
+    private func analyze() async {
+        busy = true
+        analyzing = true
+        defer { busy = false; analyzing = false }
+        let target: ReviewTarget = scope == .day ? .day(date ?? "") : .trade(tradeId ?? 0)
+        do {
+            let id: Int
+            if blank {
+                id = try await client.startReview(target)
+            } else {
+                do {
+                    id = try await save().id
+                } catch Client.JournalSaveError.exists(let existing) {
+                    id = existing
+                }
+                _ = try await client.startReview(.entry(id))
+            }
+            onExists(id)
+            dismiss()
+        } catch Client.AIError.reviewPending(let id) {
+            if let id { onExists(id); dismiss() } else { error = "A review of this note is already running." }
+        } catch Client.AIError.off {
+            error = "No AI provider: add your key in the web app's Settings > AI."
         } catch {
             self.error = error.localizedDescription
         }
