@@ -1,0 +1,28 @@
+{
+  "key": {
+    "createdAt": "2026-10-15T18:18:27Z",
+    "kind": "device",
+    "name": "fixture phone"
+  },
+  "server": {
+    "features": {
+      "ai": true,
+      "charts": true,
+      "guardrail": true,
+      "push": false
+    },
+    "timezone": "Europe/Amsterdam",
+    "url": "http://127.0.0.1:18777",
+    "version": "bf980384f540 | 2026-10-15"
+  },
+  "settings": {
+    "autoPlan": 0,
+    "guardrail": true
+  },
+  "user": {
+    "displayName": "trader",
+    "email": "",
+    "id": 1,
+    "username": "trader"
+  }
+}

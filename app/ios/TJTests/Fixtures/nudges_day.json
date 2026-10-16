@@ -1,0 +1,36 @@
+{
+  "day": "2026-10-14",
+  "items": [
+    {
+      "createdAt": "2026-10-14T18:03:56Z",
+      "day": "2026-10-14",
+      "deliveredAt": "2026-10-14T18:04:23Z",
+      "detail": "MES short opened 1s after a -203.47 loss on the same market.",
+      "href": "/journal/2026-10-14",
+      "id": 7,
+      "key": "revenge-entry",
+      "lesson": null,
+      "ref": "2026-10-14T18:03:24Z",
+      "route": "day/2026-10-14",
+      "seenAt": null,
+      "severity": "warn",
+      "title": "Re-entry right after a loss"
+    },
+    {
+      "createdAt": "2026-10-14T17:59:36Z",
+      "day": "2026-10-14",
+      "deliveredAt": "2026-10-14T18:01:18Z",
+      "detail": "MES long was on for 17 min and lost -216.56; your winners are usually out in 3 min.",
+      "href": "/journal/2026-10-14",
+      "id": 6,
+      "key": "held-loser",
+      "lesson": null,
+      "ref": "2026-10-14T17:42:53Z",
+      "route": "day/2026-10-14",
+      "seenAt": null,
+      "severity": "warn",
+      "title": "Held a loser"
+    }
+  ],
+  "unseen": 2
+}

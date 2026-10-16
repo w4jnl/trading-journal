@@ -1,0 +1,54 @@
+{
+ "id": 368287,
+ "accountId": 25,
+ "account": "EXPRESS-V2-EXAMPLE-4",
+ "firm": "topstep",
+ "symbol": "MESZ6",
+ "symbolRoot": "MES",
+ "direction": "long",
+ "qty": 1,
+ "entryPrice": 7763.5,
+ "exitPrice": 7766,
+ "entryTime": "2026-10-14T19:43:10.910169Z",
+ "exitTime": "2026-10-14T19:57:43.154658Z",
+ "grossPnl": 12.5,
+ "commission": 1.22,
+ "netPnl": 11.28,
+ "plannedStop": null,
+ "plannedRisk": null,
+ "r": null,
+ "mae": 26.25,
+ "mfe": 30,
+ "maePoints": 5.25,
+ "mfePoints": 6,
+ "exitEfficiency": 0.4166666666666667,
+ "excursionBars": "1m",
+ "setId": 302,
+ "setSize": 5,
+ "status": "closed",
+ "brokerTradeId": null,
+ "hasJournal": false,
+ "journalEntryId": null,
+ "groupCount": 0,
+ "executions": [
+  {
+   "time": "2026-10-14T19:43:10.910169Z",
+   "side": "buy",
+   "role": "entry",
+   "qty": 1,
+   "price": 7763.5
+  },
+  {
+   "time": "2026-10-14T19:57:43.154658Z",
+   "side": "sell",
+   "role": "exit",
+   "qty": 1,
+   "price": 7766
+  }
+ ],
+ "chart": {
+  "status": "ok",
+  "panels": []
+ },
+ "chartPng": "/api/v1/trades/368287/chart.png"
+}

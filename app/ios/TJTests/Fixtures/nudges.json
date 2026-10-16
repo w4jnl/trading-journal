@@ -1,0 +1,36 @@
+{
+  "day": "2026-10-15",
+  "items": [
+    {
+      "createdAt": "2026-10-15T14:21:15Z",
+      "day": "2026-10-15",
+      "deliveredAt": "2026-10-15T14:21:51Z",
+      "detail": "Last 7752.50 against the recorded stop 7757.25 on long 3. If the stop order filled, its fill arrives with the next sync; if not, this is the moment the plan was for.",
+      "href": "/trades?sheet=pos%3A6%3AMESZ6&status=open",
+      "id": 9,
+      "key": "past-stop-live",
+      "lesson": null,
+      "ref": "19601",
+      "route": "position/6/MESZ6",
+      "seenAt": null,
+      "severity": "warn",
+      "title": "Price is through your stop on MESZ6"
+    },
+    {
+      "createdAt": "2026-10-15T14:21:15Z",
+      "day": "2026-10-15",
+      "deliveredAt": "2026-10-15T14:21:51Z",
+      "detail": "Last 7752.50 against the recorded stop 7757.25 on long 3. If the stop order filled, its fill arrives with the next sync; if not, this is the moment the plan was for.",
+      "href": "/trades?sheet=pos%3A25%3AMESZ6&status=open",
+      "id": 8,
+      "key": "past-stop-live",
+      "lesson": null,
+      "ref": "19599",
+      "route": "position/25/MESZ6",
+      "seenAt": null,
+      "severity": "warn",
+      "title": "Price is through your stop on MESZ6"
+    }
+  ],
+  "unseen": 2
+}

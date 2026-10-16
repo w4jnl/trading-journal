@@ -1,0 +1,186 @@
+{
+  "items": [
+    {
+      "accountId": 25,
+      "account": "EXPRESS-V2-EXAMPLE-4",
+      "firm": "topstep",
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "long",
+      "qty": 3,
+      "avgEntry": 7766.333333333333,
+      "openedAt": "2026-10-14T20:23:20Z",
+      "fills": 2,
+      "lastPrice": 7776.25,
+      "lastAt": "2026-10-15T18:08:26Z",
+      "priceSource": "Yahoo",
+      "unrealized": 148.75000000000455,
+      "stop": 7757.25,
+      "risk": 136.24999999999545,
+      "target": 7788.5,
+      "thesis": "Reclaim of the overnight high; stop under the pullback low.",
+      "planSource": "ai",
+      "setPlan": true,
+      "ticksToStop": 76,
+      "beyondStop": false,
+      "setLegs": [
+        6
+      ],
+      "stale": false,
+      "planUrl": "/api/v1/positions/25/MESZ6/plan",
+      "tickSize": 0.25,
+      "tickValue": 1.25,
+      "pointValue": 5,
+      "rewardRisk": 2.4403669724771793,
+      "cycleFills": [
+        {
+          "time": "2026-10-14T20:23:20Z",
+          "side": "buy",
+          "qty": 2,
+          "price": 7766
+        },
+        {
+          "time": "2026-10-14T20:23:20Z",
+          "side": "buy",
+          "qty": 1,
+          "price": 7767
+        }
+      ],
+      "openPrice": 7766,
+      "addedFills": 1,
+      "addedQty": 1
+    },
+    {
+      "accountId": 8,
+      "account": "LFF050-EXAMPLE-13",
+      "firm": "lucid",
+      "symbol": "ESZ6",
+      "symbolRoot": "ES",
+      "direction": "short",
+      "qty": 1,
+      "avgEntry": 6805,
+      "openedAt": "2026-10-15T13:55:19Z",
+      "fills": 1,
+      "lastPrice": 7776.25,
+      "lastAt": "2026-10-15T18:08:26Z",
+      "priceSource": "Yahoo",
+      "unrealized": -48562.5,
+      "stop": null,
+      "risk": null,
+      "target": null,
+      "setPlan": false,
+      "ticksToStop": null,
+      "beyondStop": false,
+      "setLegs": [],
+      "stale": false,
+      "planUrl": "/api/v1/positions/8/ESZ6/plan",
+      "tickSize": 0.25,
+      "tickValue": 12.5,
+      "pointValue": 50,
+      "rewardRisk": null,
+      "cycleFills": [
+        {
+          "time": "2026-10-15T13:55:19Z",
+          "side": "sell",
+          "qty": 1,
+          "price": 6805
+        }
+      ],
+      "openPrice": 6805,
+      "addedFills": 0,
+      "addedQty": 0
+    },
+    {
+      "accountId": 7,
+      "account": "LFF050-EXAMPLE-12",
+      "firm": "lucid",
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "long",
+      "qty": 1,
+      "avgEntry": 6801.75,
+      "openedAt": "2026-10-15T14:14:21Z",
+      "fills": 1,
+      "lastPrice": 7776.25,
+      "lastAt": "2026-10-15T18:08:26Z",
+      "priceSource": "Yahoo",
+      "unrealized": 4872.5,
+      "stop": 6795,
+      "risk": 33.75,
+      "target": 6815,
+      "thesis": "Reclaim of the overnight high; stop under the pullback low.",
+      "planSource": "set",
+      "setPlan": true,
+      "ticksToStop": 3925,
+      "beyondStop": false,
+      "setLegs": [],
+      "stale": false,
+      "planUrl": "/api/v1/positions/7/MESZ6/plan",
+      "tickSize": 0.25,
+      "tickValue": 1.25,
+      "pointValue": 5,
+      "rewardRisk": 1.962962962962963,
+      "cycleFills": [
+        {
+          "time": "2026-10-15T14:14:21Z",
+          "side": "buy",
+          "qty": 1,
+          "price": 6801.75
+        }
+      ],
+      "openPrice": 6801.75,
+      "addedFills": 0,
+      "addedQty": 0
+    },
+    {
+      "accountId": 6,
+      "account": "LFF050-EXAMPLE-11",
+      "firm": "lucid",
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "long",
+      "qty": 3,
+      "avgEntry": 7122.833333333333,
+      "openedAt": "2026-10-14T20:23:20Z",
+      "fills": 2,
+      "lastPrice": 7776.25,
+      "lastAt": "2026-10-15T18:08:26Z",
+      "priceSource": "Yahoo",
+      "unrealized": 9801.250000000004,
+      "stop": 7757.25,
+      "risk": 9516.250000000004,
+      "target": 7788.5,
+      "thesis": "Reclaim of the overnight high; stop under the pullback low.",
+      "planSource": "ai",
+      "setPlan": true,
+      "ticksToStop": 76,
+      "beyondStop": false,
+      "setLegs": [
+        25
+      ],
+      "stale": false,
+      "planUrl": "/api/v1/positions/6/MESZ6/plan",
+      "tickSize": 0.25,
+      "tickValue": 1.25,
+      "pointValue": 5,
+      "rewardRisk": 1.049257848417181,
+      "cycleFills": [
+        {
+          "time": "2026-10-14T20:23:20Z",
+          "side": "buy",
+          "qty": 1,
+          "price": 7766
+        },
+        {
+          "time": "2026-10-15T14:14:19Z",
+          "side": "buy",
+          "qty": 2,
+          "price": 6801.25
+        }
+      ],
+      "openPrice": 7766,
+      "addedFills": 1,
+      "addedQty": 2
+    }
+  ]
+}

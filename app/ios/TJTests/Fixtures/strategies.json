@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": 9,
+      "name": "Europe Open Liquidity Scalp",
+      "body": "# Europe Open Liquidity Scalp\n\nA playbook in three lines: the market, the trigger, the exit. Example text for the wire tests.\n",
+      "attachments": [],
+      "createdAt": "2026-05-29T12:15:30Z",
+      "updatedAt": "2026-05-29T12:24:03Z"
+    },
+    {
+      "id": 1,
+      "name": "ORB VWAP",
+      "body": "# ORB VWAP\n\nA playbook in three lines: the market, the trigger, the exit. Example text for the wire tests.\n",
+      "attachments": [],
+      "createdAt": "2026-05-29T08:57:59Z",
+      "updatedAt": "2026-05-29T12:25:25Z"
+    }
+  ]
+}

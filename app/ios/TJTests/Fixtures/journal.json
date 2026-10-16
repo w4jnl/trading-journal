@@ -1,0 +1,163 @@
+{
+  "items": [
+    {
+      "date": "2026-10-14",
+      "id": 328,
+      "labels": {
+        "emotions": [],
+        "mistakes": []
+      },
+      "links": {
+        "chartPng": "/api/v1/journal/328/chart.png",
+        "self": "/api/v1/journal/328"
+      },
+      "mood": null,
+      "scope": "group",
+      "snippet": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+      "strategy": null,
+      "summary": {
+        "trades": 5,
+        "net": 1327.4399999999998,
+        "gross": 1370,
+        "commission": 42.56,
+        "wins": 5,
+        "losses": 0
+      },
+      "tag": "good"
+    },
+    {
+      "date": "2026-10-13",
+      "id": 327,
+      "labels": {
+        "emotions": [],
+        "mistakes": []
+      },
+      "links": {
+        "chartPng": "/api/v1/journal/327/chart.png",
+        "self": "/api/v1/journal/327"
+      },
+      "mood": null,
+      "scope": "trade",
+      "snippet": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+      "strategy": null,
+      "summary": {
+        "trades": 1,
+        "net": 21.5,
+        "gross": 25,
+        "commission": 3.5,
+        "wins": 1,
+        "losses": 0
+      },
+      "tag": null
+    },
+    {
+      "date": "2026-10-13",
+      "id": 326,
+      "labels": {
+        "emotions": [],
+        "mistakes": []
+      },
+      "links": {
+        "chartPng": "/api/v1/journal/326/chart.png",
+        "self": "/api/v1/journal/326"
+      },
+      "mood": null,
+      "scope": "group",
+      "snippet": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+      "strategy": null,
+      "summary": {
+        "trades": 5,
+        "net": 25.65,
+        "gross": 56.25,
+        "commission": 30.6,
+        "wins": 5,
+        "losses": 0
+      },
+      "tag": null
+    },
+    {
+      "date": "2026-10-13",
+      "id": 325,
+      "labels": {
+        "emotions": [],
+        "mistakes": [
+          "against-plan"
+        ]
+      },
+      "links": {
+        "chartPng": "/api/v1/journal/325/chart.png",
+        "self": "/api/v1/journal/325"
+      },
+      "mood": null,
+      "scope": "group",
+      "snippet": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+      "strategy": "Post-Close Globex Fade",
+      "summary": {
+        "trades": 3,
+        "net": 64.5,
+        "gross": 75,
+        "commission": 10.5,
+        "wins": 3,
+        "losses": 0
+      },
+      "tag": "bad"
+    },
+    {
+      "date": "2026-10-12",
+      "id": 323,
+      "labels": {
+        "emotions": [],
+        "mistakes": []
+      },
+      "links": {
+        "chartPng": "/api/v1/journal/323/chart.png",
+        "self": "/api/v1/journal/323"
+      },
+      "mood": null,
+      "scope": "day",
+      "snippet": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+      "strategy": null,
+      "summary": {
+        "trades": 19,
+        "net": 135.36,
+        "gross": 162.5,
+        "commission": 27.139999999999997,
+        "wins": 19,
+        "losses": 0
+      },
+      "tag": "neutral"
+    },
+    {
+      "date": "2026-10-12",
+      "id": 296,
+      "labels": {
+        "emotions": [],
+        "mistakes": [
+          "against-plan"
+        ]
+      },
+      "links": {
+        "chartPng": "/api/v1/journal/296/chart.png",
+        "self": "/api/v1/journal/296"
+      },
+      "mood": null,
+      "scope": "group",
+      "snippet": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+      "strategy": "Power Hour Trend Scalp",
+      "summary": {
+        "trades": 10,
+        "net": 51.940000000000005,
+        "gross": 62.5,
+        "commission": 10.56,
+        "wins": 10,
+        "losses": 0
+      },
+      "tag": "neutral"
+    }
+  ],
+  "page": {
+    "count": 20,
+    "limit": 20,
+    "offset": 0
+  }
+}

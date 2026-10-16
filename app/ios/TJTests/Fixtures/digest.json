@@ -1,0 +1,169 @@
+{
+  "week": "2026-W42",
+  "from": "2026-10-12",
+  "to": "2026-10-18",
+  "tradingDays": 4,
+  "kpis": [
+    {
+      "key": "net",
+      "label": "Net P&L",
+      "value": 1595.7300000000184,
+      "previous": 490.1600000000919
+    },
+    {
+      "key": "decisions",
+      "label": "Decisions",
+      "value": 23,
+      "previous": 80
+    },
+    {
+      "key": "winRate",
+      "label": "Win rate",
+      "value": 0.9130434782608695,
+      "previous": 0.9
+    },
+    {
+      "key": "profitFactor",
+      "label": "Profit factor",
+      "value": 2.5943269922468417,
+      "previous": 1.1083537811968287
+    },
+    {
+      "key": "avgR",
+      "label": "Avg R",
+      "value": 0.6937574703557312,
+      "previous": 0.41027777777777774
+    },
+    {
+      "key": "exitKept",
+      "label": "Exit kept",
+      "value": 0.244943753700416,
+      "previous": 0.07071403932391085
+    }
+  ],
+  "bestDecision": {
+    "tradeId": 367165,
+    "day": "2026-10-14",
+    "symbolRoot": "MES",
+    "direction": "short",
+    "accounts": 5,
+    "net": 1327.4399999999998
+  },
+  "worstDecision": {
+    "tradeId": 352415,
+    "day": "2026-10-13",
+    "symbolRoot": "EP",
+    "direction": "short",
+    "accounts": 5,
+    "net": -768.9
+  },
+  "coach": [
+    {
+      "key": "held-loser",
+      "title": "Held a loser",
+      "severity": "warn",
+      "count": 2,
+      "days": 2,
+      "label": {
+        "kind": "mistake",
+        "key": "held-loser",
+        "name": "Held a loser"
+      }
+    },
+    {
+      "key": "left-on-table",
+      "title": "Winner cut short",
+      "severity": "info",
+      "count": 2,
+      "days": 1,
+      "label": {
+        "kind": "mistake",
+        "key": "early-exit",
+        "name": "Exited too early"
+      }
+    },
+    {
+      "key": "plan-stop-time",
+      "title": "Traded past the plan's stop time",
+      "severity": "warn",
+      "count": 1,
+      "days": 1,
+      "label": {
+        "kind": "mistake",
+        "key": "against-plan",
+        "name": "Against the plan"
+      }
+    },
+    {
+      "key": "revenge-entry",
+      "title": "Re-entry right after a loss",
+      "severity": "warn",
+      "count": 1,
+      "days": 1,
+      "label": {
+        "kind": "mistake",
+        "key": "revenge",
+        "name": "Revenge trade"
+      }
+    }
+  ],
+  "plan": {
+    "tradingDays": 4,
+    "planned": 2,
+    "writtenLate": 2,
+    "rules": [
+      {
+        "key": "max-trades",
+        "name": "decision cap",
+        "held": 2,
+        "total": 2
+      },
+      {
+        "key": "stop-time",
+        "name": "stop time",
+        "held": 1,
+        "total": 2
+      },
+      {
+        "key": "max-loss",
+        "name": "max loss",
+        "held": 2,
+        "total": 2
+      }
+    ]
+  },
+  "keep": [
+    "VWAP Bounce carried the week: +83.42 over 2 decision(s).",
+    "Entries in the 20:00 hour made +1707.01 over 5 decision(s).",
+    "Exits kept 24% of the move, up from 7%."
+  ],
+  "fix": [
+    "Held a loser came up on 2 of 4 trading days.",
+    "No day plan on 2 of 4 trading days.",
+    "The plan's stop time held on 1 of 2 planned days."
+  ],
+  "lessons": [
+    {
+      "mistake": "against-plan",
+      "mistakeName": "Against the plan",
+      "count": 3,
+      "open": 3,
+      "lesson": "Close the platform at the stop time and log the day; the next review should show no entries after it.",
+      "day": "2026-10-13"
+    },
+    {
+      "count": 1,
+      "open": 1,
+      "lesson": "Close the platform at the stop time and log the day; the next review should show no entries after it.",
+      "day": "2026-10-14"
+    },
+    {
+      "mistake": "early-exit",
+      "mistakeName": "Exited too early",
+      "count": 1,
+      "open": 1,
+      "lesson": "Close the platform at the stop time and log the day; the next review should show no entries after it.",
+      "day": "2026-10-13"
+    }
+  ]
+}

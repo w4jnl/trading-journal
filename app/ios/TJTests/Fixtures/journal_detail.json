@@ -1,0 +1,97 @@
+{
+  "attachments": [],
+  "chart": {
+    "status": "ok",
+    "panels": []
+  },
+  "chartPng": "/api/v1/journal/328/chart.png",
+  "checklist": null,
+  "createdAt": "2026-10-14T19:15:21Z",
+  "date": "2026-10-14",
+  "id": 328,
+  "labels": {
+    "emotions": [],
+    "mistakes": []
+  },
+  "mood": null,
+  "notes": "---\n\n_Note added 2026-10-14 21:16 CEST_\n\n### AI review — 2026-10-14\n*example-model via Example provider*\n\n- **Setup & entry:** a reclaim of the overnight high taken with the plan's size.\n- **Exit:** the target was hit on the first push; the stop never came into play.\n- **Lesson:** the same setup on a quieter day would deserve a smaller size.\n",
+  "scope": "group",
+  "strategy": null,
+  "summary": {
+    "trades": 5,
+    "net": 1327.4399999999998,
+    "gross": 1370,
+    "commission": 42.56,
+    "wins": 5,
+    "losses": 0
+  },
+  "tag": "good",
+  "trades": [
+    {
+      "id": 367165,
+      "symbol": "MESZ26",
+      "symbolRoot": "MES",
+      "direction": "short",
+      "qty": 8,
+      "account": "120017",
+      "entryTime": "2026-10-14T18:51:10Z",
+      "exitTime": "2026-10-14T19:01:54Z",
+      "grossPnl": 280,
+      "commission": 9.92,
+      "netPnl": 270.08
+    },
+    {
+      "id": 366700,
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "short",
+      "qty": 8,
+      "account": "PA-APEX-EXAMPLE-10",
+      "entryTime": "2026-10-14T18:51:10Z",
+      "exitTime": "2026-10-14T19:01:55Z",
+      "grossPnl": 270,
+      "commission": 8.16,
+      "netPnl": 261.84
+    },
+    {
+      "id": 366793,
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "short",
+      "qty": 8,
+      "account": "PA-APEX-EXAMPLE-8",
+      "entryTime": "2026-10-14T18:51:10Z",
+      "exitTime": "2026-10-14T19:01:55Z",
+      "grossPnl": 270,
+      "commission": 8.16,
+      "netPnl": 261.84
+    },
+    {
+      "id": 366511,
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "short",
+      "qty": 8,
+      "account": "PA-APEX-EXAMPLE-10",
+      "entryTime": "2026-10-14T18:51:10Z",
+      "exitTime": "2026-10-14T19:01:56Z",
+      "grossPnl": 270,
+      "commission": 8.16,
+      "netPnl": 261.84
+    },
+    {
+      "id": 366606,
+      "symbol": "MESZ6",
+      "symbolRoot": "MES",
+      "direction": "short",
+      "qty": 8,
+      "account": "PA-APEX-EXAMPLE-6",
+      "entryTime": "2026-10-14T18:51:10Z",
+      "exitTime": "2026-10-14T19:01:56Z",
+      "grossPnl": 280,
+      "commission": 8.16,
+      "netPnl": 271.84
+    }
+  ],
+  "updatedAt": "2026-10-14T19:16:43Z"
+}

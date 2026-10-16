@@ -1,0 +1,496 @@
+{
+  "items": [
+    {
+      "id": 20,
+      "name": "120017",
+      "firm": "amp",
+      "type": "live",
+      "typeLabel": "Live",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 480.86,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-13",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 7,
+            "date": "2026-05-13",
+            "balance": 395.81,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 50,
+      "name": "APEX-EXAMPLE-15",
+      "firm": "apex",
+      "type": "prop_eval",
+      "typeLabel": "Prop · Eval",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": true,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 41130.52,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-08-18",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 53,
+            "date": "2026-08-18",
+            "balance": 41070.0,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 53,
+      "name": "APEX-EXAMPLE-15",
+      "firm": "apex",
+      "type": "prop_eval",
+      "typeLabel": "Prop · Eval",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": true,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": null,
+      "dayNet": null
+    },
+    {
+      "id": 23,
+      "name": "EXPRESS-V2-EXAMPLE-4",
+      "firm": "topstep",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "topstepx_csv",
+      "balance": {
+        "balance": 178.12,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-15",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 25,
+            "date": "2026-05-15",
+            "balance": 89.55,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 24,
+      "name": "EXPRESS-V2-EXAMPLE-5",
+      "firm": "topstep",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "topstepx_csv",
+      "balance": {
+        "balance": 355.37,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-15",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 26,
+            "date": "2026-05-15",
+            "balance": 212.22,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 25,
+      "name": "EXPRESS-V2-EXAMPLE-4",
+      "firm": "topstep",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "topstepx_csv",
+      "balance": {
+        "balance": 300.8,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-15",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 27,
+            "date": "2026-05-15",
+            "balance": 212.22,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 26,
+      "name": "EXPRESS-V2-EXAMPLE-5",
+      "firm": "topstep",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "topstepx_csv",
+      "balance": {
+        "balance": 355.37,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-15",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 29,
+            "date": "2026-05-15",
+            "balance": 212.22,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 27,
+      "name": "EXPRESS-V2-EXAMPLE-1",
+      "firm": "topstep",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "topstepx_csv",
+      "balance": {
+        "balance": 300.8,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-15",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 28,
+            "date": "2026-05-15",
+            "balance": 212.22,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 8,
+      "name": "LFF050-EXAMPLE-13",
+      "firm": "lucid",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 229.82,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-13",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 20,
+            "date": "2026-05-13",
+            "balance": 188.07,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 7,
+      "name": "LFF050-EXAMPLE-12",
+      "firm": "lucid",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 267.02,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-13",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 21,
+            "date": "2026-05-13",
+            "balance": 191.86,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 6,
+      "name": "LFF050-EXAMPLE-11",
+      "firm": "lucid",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 362.48,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-13",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 22,
+            "date": "2026-05-13",
+            "balance": 289.68,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 28,
+      "name": "PA-APEX-EXAMPLE-7",
+      "firm": "apex",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 155.6,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-18",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 30,
+            "date": "2026-05-18",
+            "balance": 0.0,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 29,
+      "name": "PA-APEX-EXAMPLE-6",
+      "firm": "apex",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 208.59,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-18",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 31,
+            "date": "2026-05-18",
+            "balance": 0.0,
+            "note": ""
+          },
+          {
+            "id": 33,
+            "date": "2026-05-18",
+            "balance": 0.0,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 30,
+      "name": "PA-APEX-EXAMPLE-10",
+      "firm": "apex",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 241.72,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-18",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 32,
+            "date": "2026-05-18",
+            "balance": 0.0,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 43,
+      "name": "PA-APEX-EXAMPLE-8",
+      "firm": "apex",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 7034.67,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-07-26",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 47,
+            "date": "2026-07-26",
+            "balance": 6845.0,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 44,
+      "name": "PA-APEX-EXAMPLE-10",
+      "firm": "apex",
+      "type": "prop_funded",
+      "typeLabel": "Prop · Funded",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 7028.0,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-07-26",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 48,
+            "date": "2026-07-26",
+            "balance": 6845.0,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": null
+    },
+    {
+      "id": 16,
+      "name": "U00000016",
+      "firm": "ibkr",
+      "type": "live",
+      "typeLabel": "Live",
+      "currency": "USD",
+      "active": true,
+      "retired": false,
+      "excludedFromStats": false,
+      "needsSetup": false,
+      "copyGroup": null,
+      "importSource": "motivewave_csv",
+      "balance": {
+        "balance": 6387.56,
+        "asOf": "2026-10-15",
+        "anchorDate": "2026-05-28",
+        "unchangedSinceAnchor": false,
+        "anchors": [
+          {
+            "id": 23,
+            "date": "2026-05-13",
+            "balance": 5472.6,
+            "note": ""
+          },
+          {
+            "id": 34,
+            "date": "2026-05-28",
+            "balance": 5868.01,
+            "note": ""
+          }
+        ]
+      },
+      "dayNet": 10.03
+    }
+  ]
+}
