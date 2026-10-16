@@ -9,8 +9,10 @@ built against it carries the same marketing version.
 
 - The first note on a day or a trade takes the strategy, the mistakes and the emotions, as the
   web app's note does; before, only a saved note's Edit screen had them.
-- AI, for a user with a provider in the web app's Settings: Analyze on a note and on a trade
-  without one (the note shows the review running and its suggestions when it lands), the day
+- AI, for a user with a provider in the web app's Settings: Analyze on a note, on a trade
+  without one and in the first-note sheet itself (an empty sheet asks for the note and its
+  review in one go, a written one is saved first; the note shows the review running and its
+  suggestions when it lands), the day
   run on a day's page with its progress and cancel, a stop and target for an open position to
   apply to the plan, and a draft of today's plan to take into the editor. Results arrive over
   the event stream; nothing polls.
