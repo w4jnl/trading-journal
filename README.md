@@ -709,3 +709,8 @@ Restore:
   where CLAUDE.md overrides (notably the v1 scope decision to skip
   live broker APIs).
 - **[Docker/README.md](Docker/README.md)** — deployment.
+
+## License
+
+Apache License 2.0; see `LICENSE`. The bundled fonts, Inter and JetBrains Mono, are under
+the SIL Open Font License 1.1 (`web/static/fonts/*-OFL.txt`, `app/ios/Shared/Fonts/*-OFL.txt`).
