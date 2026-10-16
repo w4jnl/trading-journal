@@ -36,6 +36,8 @@ func TestGuardrailWeb(t *testing.T) {
 	}
 	if body := page(h.SettingsPage, "/settings"); !strings.Contains(body, `id="guardrail"`) || !strings.Contains(body, "data-notify-permission") {
 		t.Errorf("settings lacks the guardrail card")
+	} else if !strings.Contains(body, `data-keep-scroll="settings"`) || !strings.Contains(body, "/static/js/keep_scroll.js") {
+		t.Errorf("settings does not keep the scroll position across its saves")
 	}
 
 	req := httptest.NewRequest(http.MethodPost, "/settings/guardrail", strings.NewReader(url.Values{"on": {"1"}}.Encode())).WithContext(ctx)

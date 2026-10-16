@@ -12,6 +12,9 @@ built against it carries the same marketing version.
   on the phone with its unrealised P&L, the widgets and the Session activity, the AI
   position helpers and the open-position nudges. Before, the account's trades left the
   default lists but its open positions still showed and still added to the phone's open P&L.
+- Settings keeps your place: a save far down the page (the guardrail switch, pairing a phone,
+  an AI or broker setting) came back at the top of the page after every click. The page now
+  returns to where you were; a new API key, shown once, still scrolls into view.
 
 ## 2.18.3, 2026-10-16
 
