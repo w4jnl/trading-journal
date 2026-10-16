@@ -12,10 +12,10 @@ import (
 func TestCSPOrigin(t *testing.T) {
 	cases := map[string]string{
 		"https://auth.example.com/logout?rd=https%3A%2F%2Ftradingtest.example.com%2F": "https://auth.example.com",
-		"http://auth.local:9091/logout":                                     "http://auth.local:9091",
-		"":                                                                  "", // unset -> same-origin only
-		"/logout":                                                           "", // relative -> covered by 'self'
-		"not a url":                                                         "",
+		"http://auth.local:9091/logout":                                               "http://auth.local:9091",
+		"":                                                                            "", // unset -> same-origin only
+		"/logout":                                                                     "", // relative -> covered by 'self'
+		"not a url":                                                                   "",
 	}
 	for in, want := range cases {
 		if got := cspOrigin(in); got != want {
