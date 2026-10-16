@@ -477,6 +477,63 @@ propose it again. The answer is the entry as `GET` returns it (`404` for
 a suggestion that is not open, `409` with `reason: review-pending` while
 a review writes the note, `403` for an agent key).
 
+### AI from the phone (device key)
+
+Every AI call runs on the server with the user's own provider; a client only
+starts work and reads the result where it lands. `GET /api/v1/me` carries
+`"ai": {"ready": true|false}`: whether this user can run AI at all (the
+server has AI, the user a provider). Every start below needs a device key and
+answers `409` with `reason: ai-off` for a user without a provider, `404` when
+the server runs no AI. A start and its finish bump the data version, so a
+client on `GET /api/v1/events` refetches the object the result lands on.
+
+**Reviewing a note.** `POST /api/v1/ai/review` with `{"entryId": 12}` reviews
+an existing note; `{"scope": "trade", "tradeId": 5}`, `{"scope": "set",
+"setId": 3}`, `{"scope": "day", "date": "2026-10-14"}` or `{"scope": "week",
+"week": "2026-W42"}` review the note of that thing, created first when there
+is none. `202 {"entryId", "pending": true}`; `409` with `reason:
+review-pending` while a review of that note runs. `GET /api/v1/journal/{id}`
+shows `"review": {"pending": true|false, "error"?: "..."}`; the error is the
+last failure, shown once. While pending, page saves and deletes of the note
+answer `409 review-pending` (see above); appends are unaffected. The result is
+the review appended to the note plus its `suggestions`.
+
+**The day run.** `POST /api/v1/ai/day/{date}` (`YYYY-MM-DD` or `last`; body
+`{"mode": "all"}` re-reviews reviewed notes) reviews every note of the day
+and writes the day's synthesis: `202 {"status": {...}}`, `409` with `reason:
+day-run` while one runs. `GET /api/v1/ai/day` is the status: `{"status":
+{"state": "idle"|"running"|"done"|"error"|"cancelled", "date", "done", "total",
+"current", "err"?, "model", "startedAt"}}`. `DELETE /api/v1/ai/day` cancels;
+the notes reviewed so far keep their reviews.
+
+**Levels on an open position.** `POST /api/v1/positions/{account}/{symbol}/levels`
+asks for a stop and target on the open position, `202 {"pending": true}`. Each
+position of `GET /api/v1/positions` carries `"ai"` when the server runs AI:
+
+```jsonc
+"ai": {"pending": false, "error": "...",         // the last failure, shown once
+       "levels": {"stop": 7802.5, "target": 7781, "target2": null, "scaleOut": null,
+                  "trail": "...", "reasons": {"stop": "...", "target": "..."}, "summary": "...",
+                  "risk": 87.5, "r1": 1.5, "r2": null, "entry": 7794.25, "qty": 1},
+       "model": "claude-...", "at": "2026-10-15T20:03:00Z",
+       "outdated": false,                           // the size or entry changed since
+       "auto": "off"}                               // what a new position gets without asking: off, suggest, plan
+```
+
+`POST /api/v1/positions/{account}/{symbol}/levels/apply` writes the stop and
+first target into the plan (source `ai`, every leg of a copied decision),
+answering with the position; `DELETE /api/v1/positions/{account}/{symbol}/levels`
+forgets the proposal (`204`). `409` when the position is flat or there is
+nothing to apply.
+
+**A day plan draft.** `POST /api/v1/plan/{date}/draft` (today or later)
+drafts the plan from the trader's own numbers and lessons, `202`. `GET
+/api/v1/plan?day=` then carries `"draft": {"pending", "error"?, "maxTrades",
+"stopTime", "maxLoss", "levels", "notes", "reasons": [...], "model",
+"createdAt"}`, and `GET /api/v1/today` the same under `plan.draft` for today;
+saving the plan with `POST /api/v1/plan` drops the draft, and
+`DELETE /api/v1/plan/{date}/draft` discards it (`204`).
+
 ### Creating journal entries
 
 `POST /api/v1/journal` creates one entry. A single `scope` field selects the

@@ -142,6 +142,7 @@ type dayPlanView struct {
 	Day     string             `json:"day"`
 	Plan    *dayplan.Plan      `json:"plan"`
 	Outcome *coach.PlanOutcome `json:"outcome"`
+	Draft   *apiPlanDraft      `json:"draft,omitempty"` // the model's draft for today or later (api_ai.go)
 }
 
 func (h *Handlers) dayPlanView(ctx context.Context, dayArg string) (dayPlanView, error) {
@@ -160,6 +161,7 @@ func (h *Handlers) dayPlanView(ctx context.Context, dayArg string) (dayPlanView,
 			out.Outcome = rep.Plan
 		}
 	}
+	out.Draft = h.apiPlanDraftFor(ctx, out.Day)
 	return out, nil
 }
 

@@ -53,6 +53,9 @@ type apiPosition struct {
 	SetLegs []int64 `json:"setLegs"`
 	Stale   bool    `json:"stale"`
 	Plan    string  `json:"planUrl"`
+	// The model's proposal for the position (api_ai.go), when the server
+	// runs AI tasks: pending while one is made, then the levels.
+	AI *apiPositionAI `json:"ai,omitempty"`
 	// The instrument's tick (0 on a stub instrument), so a client can
 	// mirror risk from a stop: risk = |avgEntry - stop| x pointValue x qty.
 	TickSize   float64 `json:"tickSize"`
@@ -118,7 +121,11 @@ func (h *Handlers) openPositionsAPI(ctx context.Context) ([]apiPosition, error) 
 	views := h.openPositionRows(ctx, rows)
 	out := make([]apiPosition, 0, len(views))
 	for _, v := range views {
-		out = append(out, apiPositionFrom(v))
+		p := apiPositionFrom(v)
+		if h.AITasks != nil {
+			p.AI = h.apiPositionAIFrom(h.positionSuggestion(ctx, v))
+		}
+		out = append(out, p)
 	}
 	return out, nil
 }
