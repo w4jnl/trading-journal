@@ -56,7 +56,8 @@ ios-testflight: ios-project
 	cd app/ios && rm -rf build/TradingJournal.xcarchive build/export && \
 	$(XCB) -scheme TradingJournal -configuration Release -destination 'generic/platform=iOS' -archivePath build/TradingJournal.xcarchive -allowProvisioningUpdates $(ASC_AUTH) archive -quiet && \
 	xcodebuild -exportArchive -archivePath build/TradingJournal.xcarchive -exportOptionsPlist ExportOptions.plist -exportPath build/export -allowProvisioningUpdates $(ASC_AUTH)
-# Capture the test fixtures from a running journal: SERVER=http://… KEY=tj_… make ios-fixtures
+# Capture the test fixtures from a running journal and scrub them of the trader's identity and capital
+# (app/ios/scripts/scrub-fixtures.py): SERVER=http://… KEY=tj_… make ios-fixtures
 ios-fixtures:
 	@[ -n "$(SERVER)" ] && [ -n "$(KEY)" ] || { echo "ios-fixtures: SERVER=http://host:port KEY=tj_… make ios-fixtures"; exit 1; }
 	@F=app/ios/TJTests/Fixtures; H="Authorization: Bearer $(KEY)"; B="$(SERVER)/api/v1"; \
@@ -66,4 +67,5 @@ ios-fixtures:
 	get /accounts accounts.json && get /equity equity.json && get /journal/labels journal_labels.json && get /strategies strategies.json && get /version version.json && \
 	TID=$$(python3 -c "import json;print(json.load(open('$$F/trades.json'))['items'][0]['id'])") && get /trades/$$TID trade_detail.json && \
 	JID=$$(python3 -c "import json;d=json.load(open('$$F/journal.json'))['items'];print(d[0]['id'] if d else '')") && [ -n "$$JID" ] && get /journal/$$JID journal_detail.json; \
-	python3 -c "import json;[json.dump({**json.load(open('$$F/'+f+'.json')),'chart':{'status':None,'panels':[]}},open('$$F/'+f+'.json','w'),indent=1,ensure_ascii=False) for f in ('trade_detail','journal_detail')]"
+	python3 -c "import json;[json.dump({**json.load(open('$$F/'+f+'.json')),'chart':{'status':None,'panels':[]}},open('$$F/'+f+'.json','w'),indent=1,ensure_ascii=False) for f in ('trade_detail','journal_detail')]"; \
+	python3 app/ios/scripts/scrub-fixtures.py
