@@ -1,5 +1,6 @@
 // Decoding the server's real answers: the fixtures under Fixtures/ are captured from a running
-// journal (make ios-fixtures), so a field the server renames fails here before it blanks a screen.
+// journal (make ios-fixtures) and scrubbed of what identifies the trader (scripts/scrub-fixtures.py),
+// so a field the server renames fails here before it blanks a screen.
 import Foundation
 import Testing
 @testable import TradingJournal

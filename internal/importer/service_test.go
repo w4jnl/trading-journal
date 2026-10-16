@@ -3,10 +3,12 @@ package importer
 import (
 	"context"
 	"database/sql"
+	"encoding/csv"
 	"io"
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -96,10 +98,11 @@ func TestImportFile_MotiveWaveFixture(t *testing.T) {
 	assertExecCount(t, conn, 990)
 	assertSyncLogCount(t, conn, 1, "success")
 
-	// AMP account 120042 should have firm=amp from Source-based detection.
+	// The AMP account (a bare number in the CSV) gets firm=amp from the Source column.
+	refs := fixtureAccountRefs(t, motivewaveFixture)
 	var firm sql.NullString
-	if err := conn.QueryRow(`SELECT firm FROM accounts WHERE account_ref = '120042'`).Scan(&firm); err != nil {
-		t.Fatalf("query AMP account: %v", err)
+	if err := conn.QueryRow(`SELECT firm FROM accounts WHERE account_ref = ?`, refs.amp).Scan(&firm); err != nil {
+		t.Fatalf("query AMP account %s: %v", refs.amp, err)
 	}
 	if !firm.Valid || firm.String != "amp" {
 		t.Errorf("AMP account firm = %v, want 'amp'", firm)
@@ -110,12 +113,12 @@ func TestImportFile_MotiveWaveFixture(t *testing.T) {
 		t.Error("TradesCreated = 0, expected the builder to materialize closed trades from real fills")
 	}
 
-	// Spot-check the first APEX-100001-28 ES trade. From the raw CSV the first
-	// two fills for that account/symbol are sell 1 @ 7253 then buy 1 @ 7252.25
-	// — a short held for ~23 minutes that closed +0.75 points.
-	apexFirst := firstTradeForAccount(t, conn, "APEX-100001-28", "ESM6")
+	// Spot-check the first ES trade of the fixture's first APEX account. From the
+	// raw CSV the first two fills for that account/symbol are sell 1 @ 7253 then
+	// buy 1 @ 7252.25 — a short held for ~23 minutes that closed +0.75 points.
+	apexFirst := firstTradeForAccount(t, conn, refs.apex, "ESM6")
 	if apexFirst.Direction != "short" {
-		t.Errorf("APEX-100001-28 ES first trade direction = %q, want short", apexFirst.Direction)
+		t.Errorf("%s ES first trade direction = %q, want short", refs.apex, apexFirst.Direction)
 	}
 	if apexFirst.EntryPrice != 7253 {
 		t.Errorf("entry_price = %v, want 7253", apexFirst.EntryPrice)
@@ -322,13 +325,14 @@ func TestImportFile_MotiveWaveNotBlockedByStaleInlineFlag(t *testing.T) {
 	svc, conn, tmp, processed, _ := setupTestService(t)
 
 	// Simulate the migration-leak state: a MotiveWave account with the
-	// stale 'inline' flag. We use one of the account_refs that appears in
-	// the MotiveWave fixture so the importer resolves to this exact row
+	// stale 'inline' flag. We use an account_ref that appears in the
+	// MotiveWave fixture so the importer resolves to this exact row
 	// instead of creating a fresh one.
+	apex := fixtureAccountRefs(t, motivewaveFixture).apex
 	if _, err := conn.Exec(`
 		INSERT INTO accounts (user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source)
-		VALUES (?, 'APEX-100001-28', 'apex', 'motivewave_csv', 'APEX-100001-28', 'prop_eval', 'USD', 0, 'inline')
-	`, svc.UserID); err != nil {
+		VALUES (?, ?, 'apex', 'motivewave_csv', ?, 'prop_eval', 'USD', 0, 'inline')
+	`, svc.UserID, apex, apex); err != nil {
 		t.Fatalf("seed inline APEX account: %v", err)
 	}
 
@@ -350,13 +354,46 @@ func TestImportFile_MotiveWaveNotBlockedByStaleInlineFlag(t *testing.T) {
 	if err := conn.QueryRow(`
 		SELECT COUNT(*) FROM trades t
 		JOIN accounts a ON a.id = t.account_id
-		WHERE a.account_ref = 'APEX-100001-28'
-	`).Scan(&apexTrades); err != nil {
+		WHERE a.account_ref = ?
+	`, apex).Scan(&apexTrades); err != nil {
 		t.Fatalf("count APEX trades: %v", err)
 	}
 	if apexTrades == 0 {
-		t.Error("APEX-100001-28 has 0 trades after import, expected FIFO to run despite the stale inline flag")
+		t.Errorf("%s has 0 trades after import, expected FIFO to run despite the stale inline flag", apex)
 	}
+}
+
+// fixtureAccountRefs reads the private MotiveWave sample (skipping the test
+// without it) and names two of its accounts: the first APEX one and the AMP one,
+// whose Source column says AMP. The tests never spell a real account number.
+func fixtureAccountRefs(t *testing.T, path string) (refs struct{ apex, amp string }) {
+	t.Helper()
+	f, err := os.Open(path)
+	if err != nil {
+		t.Skipf("fixture missing: %v", err)
+	}
+	defer f.Close()
+	rows, err := csv.NewReader(f).ReadAll()
+	if err != nil || len(rows) < 2 {
+		t.Fatalf("read fixture %s: %v", path, err)
+	}
+	col := map[string]int{}
+	for i, h := range rows[0] {
+		col[h] = i
+	}
+	for _, r := range rows[1:] {
+		acct, source := r[col["Account"]], r[col["Source"]]
+		if refs.apex == "" && strings.HasPrefix(acct, "APEX-") {
+			refs.apex = acct
+		}
+		if refs.amp == "" && strings.Contains(source, "AMP") {
+			refs.amp = acct
+		}
+	}
+	if refs.apex == "" || refs.amp == "" {
+		t.Fatalf("fixture %s has no APEX or no AMP account", path)
+	}
+	return refs
 }
 
 func contains(haystack, needle string) bool {

@@ -44,6 +44,6 @@
 
   <!-- Bottom-right meta. -->
   <text x="1120" y="560" text-anchor="end" font-family="'JetBrains Mono', ui-monospace, Menlo, monospace" font-size="18" letter-spacing="1.2" fill="#4A5560">
-    example.com
+    trading journal
   </text>
 </svg>

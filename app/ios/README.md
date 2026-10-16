@@ -28,7 +28,7 @@ xcrun simctl launch booted nl.w4j.tradingjournal -serverURL http://127.0.0.1:187
 
 `SERVER=http://… KEY=tj_… SHOTS=/dir make ios-screens` walks the tabs and writes a PNG per
 screen (the `TJScreens` scheme, so `make ios-test` never runs it). `SERVER=… KEY=… make
-ios-fixtures` recaptures `TJTests/Fixtures/*.json` from a journal: the wire tests decode them.
+ios-fixtures` recaptures `TJTests/Fixtures/*.json` from a journal and scrubs them (`scripts/scrub-fixtures.py`: example account ids, scaled capital, placeholder text): the wire tests decode them.
 
 ## Pairing
 
