@@ -1,5 +1,6 @@
-// The shell: five tabs on an iPhone, a sidebar on an iPad or in a wide window (by the size
-// class, not the device), each section its own NavigationStack with a typed path. Every way
+// The shell: five tabs on an iPhone (in landscape too: its regular width is not room for a
+// sidebar), a sidebar on an iPad with the width for it, each section its own NavigationStack
+// with a typed path. Every way
 // in (a tap on a notification, a tj:// link, the -open launch argument) sets client.pendingRoute
 // and lands here.
 import SwiftUI
@@ -14,9 +15,12 @@ struct RootView: View {
     /// The iPad's third column: what the trades or journal list selected.
     @State private var selected: Route?
 
+    /// An iPad with the width for columns; a phone keeps its tabs in landscape too.
+    private var wide: Bool { sizeClass == .regular && UIDevice.current.userInterfaceIdiom == .pad }
+
     var body: some View {
         Group {
-            if sizeClass == .regular, tab == .trades || tab == .journal {
+            if wide, tab == .trades || tab == .journal {
                 // three columns: the sections, the list, the thing
                 NavigationSplitView {
                     sidebar
@@ -36,7 +40,7 @@ struct RootView: View {
                         }
                     }
                 }
-            } else if sizeClass == .regular {
+            } else if wide {
                 NavigationSplitView {
                     sidebar
                 } detail: {
@@ -111,7 +115,7 @@ struct RootView: View {
         tab = r.tab
         switch r {
         case .today, .settings: paths[r.tab] = []
-        case .trade where sizeClass == .regular, .journal where sizeClass == .regular:
+        case .trade where wide, .journal where wide:
             paths[r.tab] = []
             selected = r
         default: paths[r.tab] = [r]

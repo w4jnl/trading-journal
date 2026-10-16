@@ -19,7 +19,6 @@ struct TradesView: View {
     @State private var loading = false
     @State private var error: String?
     @State private var range = Range.all
-    @State private var unused: Route? // the selection a phone's list never uses
 
     enum Range: String, CaseIterable, Identifiable {
         case today, week, month, all
@@ -71,43 +70,9 @@ struct TradesView: View {
     }
 
     var body: some View {
-        List(selection: selection ?? $unused) {
-            Section {
-                filters
-            }
-            .listRowBackground(Brand.bg)
-            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
-            if let error {
-                ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
-            } else if rows.isEmpty && !loading {
-                ContentUnavailableView("No trades", systemImage: "list.bullet.rectangle", description: Text("Nothing matches these filters."))
-            }
-            ForEach(sections, id: \.day) { s in
-                Section {
-                    ForEach(s.rows) { r in
-                        if selection != nil {
-                            TradeRowView(trade: r, tz: client.tz, set: settings.tradesBySet).tag(Route.trade(r.id))
-                        } else {
-                            NavigationLink(value: Route.trade(r.id)) { TradeRowView(trade: r, tz: client.tz, set: settings.tradesBySet) }
-                        }
-                    }
-                } header: {
-                    HStack {
-                        Text(Formatting.dayLabel(s.day, tz: client.tz)).font(Brand.text(12, weight: .medium, relativeTo: .caption))
-                        Spacer()
-                        PnlChip(s.rows.compactMap(\.netPnl).reduce(0, +), size: .sm)
-                    }
-                }
-            }
-            if let page, page.page < page.pages {
-                Button {
-                    filter.page += 1
-                    Task { await load(append: true) }
-                } label: {
-                    HStack { Spacer(); Text(loading ? "Loading…" : "More (\(page.total - rows.count) left)").font(Brand.text(13, relativeTo: .footnote)); Spacer() }
-                }
-                .disabled(loading)
-            }
+        Group {
+            // A phone's list pushes through its links; a selection binding would swallow the taps.
+            if let selection { List(selection: selection) { content } } else { List { content } }
         }
         .listStyle(.plain)
         .background(Brand.bg)
@@ -125,6 +90,45 @@ struct TradesView: View {
         .refreshable { await load() }
         .task { if rows.isEmpty { await load() } }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+    }
+
+    @ViewBuilder private var content: some View {
+        Section {
+            filters
+        }
+        .listRowBackground(Brand.bg)
+        .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 4, trailing: 16))
+        if let error {
+            ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
+        } else if rows.isEmpty && !loading {
+            ContentUnavailableView("No trades", systemImage: "list.bullet.rectangle", description: Text("Nothing matches these filters."))
+        }
+        ForEach(sections, id: \.day) { s in
+            Section {
+                ForEach(s.rows) { r in
+                    if selection != nil {
+                        TradeRowView(trade: r, tz: client.tz, set: settings.tradesBySet).tag(Route.trade(r.id))
+                    } else {
+                        NavigationLink(value: Route.trade(r.id)) { TradeRowView(trade: r, tz: client.tz, set: settings.tradesBySet) }
+                    }
+                }
+            } header: {
+                HStack {
+                    Text(Formatting.dayLabel(s.day, tz: client.tz)).font(Brand.text(12, weight: .medium, relativeTo: .caption))
+                    Spacer()
+                    PnlChip(s.rows.compactMap(\.netPnl).reduce(0, +), size: .sm)
+                }
+            }
+        }
+        if let page, page.page < page.pages {
+            Button {
+                filter.page += 1
+                Task { await load(append: true) }
+            } label: {
+                HStack { Spacer(); Text(loading ? "Loading…" : "More (\(page.total - rows.count) left)").font(Brand.text(13, relativeTo: .footnote)); Spacer() }
+            }
+            .disabled(loading)
+        }
     }
 
     private var filters: some View {
@@ -234,6 +238,7 @@ struct TradeRowView: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle()) // the whole row takes the tap, the gap in the middle too
     }
 
     private var tagColor: Color {

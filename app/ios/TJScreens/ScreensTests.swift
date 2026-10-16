@@ -29,6 +29,21 @@ final class ScreensTests: XCTestCase {
                 sleep(3)
                 shot(title)
             }
+            // a row opens its detail: on a phone a push (the back button carries the list's name),
+            // on an iPad the detail column. The tap lands in the row's empty middle, not on a text.
+            if tab == "Trades" || tab == "Journal" {
+                let pattern = tab == "Trades" ? "^[0-9]{2}:[0-9]{2}$" : "^[A-Z][a-z]{2}, [0-9]{1,2} [A-Z][a-z]{2}$" // a fill time; a day label
+                let anchor = app.staticTexts.matching(NSPredicate(format: "label MATCHES %@", pattern)).firstMatch
+                if anchor.waitForExistence(timeout: 5) {
+                    anchor.coordinate(withNormalizedOffset: CGVector(dx: tab == "Trades" ? 5.5 : 1.8, dy: 0.5)).tap()
+                    sleep(2)
+                    if UIDevice.current.userInterfaceIdiom == .phone {
+                        XCTAssertTrue(app.navigationBars.buttons[tab].waitForExistence(timeout: 5), "\(tab): the row did not open")
+                    }
+                    shot(title + "-detail")
+                    if UIDevice.current.userInterfaceIdiom == .phone, app.navigationBars.buttons[tab].exists { app.navigationBars.buttons[tab].tap(); sleep(1) }
+                }
+            }
         }
 
         // a deep link straight to a screen
@@ -40,7 +55,7 @@ final class ScreensTests: XCTestCase {
         shot("accounts")
 
         // the editors: a journal note, the position plan, the day plan
-        if let entry = env["TJ_ENTRY"] {
+        if let entry = env["TJ_ENTRY"], !entry.isEmpty { // make passes an empty one when unset
             app.terminate()
             app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "journal/\(entry)"]
             app.launch()
@@ -54,7 +69,7 @@ final class ScreensTests: XCTestCase {
                 XCTFail("no Edit button; buttons: \(app.buttons.allElementsBoundByIndex.prefix(12).map(\.label))")
             }
         }
-        if let position = env["TJ_POSITION"] {
+        if let position = env["TJ_POSITION"], !position.isEmpty {
             app.terminate()
             app.launchArguments = ["-serverURL", server, "-apiKey", key, "-open", "position/\(position)"]
             app.launch()

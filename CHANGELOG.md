@@ -10,7 +10,7 @@ built against it carries the same marketing version.
 - Pairing by QR or code from the web app's Settings; a device key of its own.
 - Today live over the server's event stream: P&L, open positions, the day plan's budget, the
   nudges, the cumulative line, equity. Trades with filters, trade detail with the chart,
-  journal with markdown and images, calendar heat month and day view, accounts with the equity
+  journal with markdown and images, the calendar as a heat month of trading days and a day view, accounts with the equity
   curve and drawdown, the weekly digest with the lessons.
 - Writes: journal edit, delete, append and the first note on a trade or a day, photos as
   attachments, the AI review's suggestions accepted or dismissed, the day plan, the plan on an

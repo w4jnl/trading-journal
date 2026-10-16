@@ -12,7 +12,6 @@ struct JournalView: View {
     @State private var scope: ScopeFilter = .all
     @State private var writing = false
     @State private var opened: Route?
-    @State private var unused: Route? // the selection a phone's list never uses
 
     enum ScopeFilter: String, CaseIterable, Identifiable {
         case all, day, week, trade, group
@@ -30,31 +29,9 @@ struct JournalView: View {
     }
 
     var body: some View {
-        List(selection: selection ?? $unused) {
-            Section {
-                Picker("Scope", selection: $scope) {
-                    ForEach(ScopeFilter.allCases) { Text($0.title).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .onChange(of: scope) { _, _ in Task { await load() } }
-            }
-            .listRowBackground(Brand.bg)
-            .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
-            if let error {
-                ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
-            } else if rows.isEmpty && !loading {
-                ContentUnavailableView("No notes", systemImage: "book")
-            }
-            ForEach(rows) { r in
-                if selection != nil {
-                    JournalRowView(row: r, tz: client.tz).tag(Route.journal(r.id))
-                } else {
-                    NavigationLink(value: Route.journal(r.id)) { JournalRowView(row: r, tz: client.tz) }
-                }
-            }
-            if rows.count >= 50 {
-                Button("More") { Task { await load(offset: rows.count) } }.font(Brand.text(13, relativeTo: .footnote))
-            }
+        Group {
+            // A phone's list pushes through its links; a selection binding would swallow the taps.
+            if let selection { List(selection: selection) { content } } else { List { content } }
         }
         .listStyle(.plain)
         .background(Brand.bg)
@@ -77,6 +54,33 @@ struct JournalView: View {
         .refreshable { await load() }
         .task { if rows.isEmpty { await load() } }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+    }
+
+    @ViewBuilder private var content: some View {
+        Section {
+            Picker("Scope", selection: $scope) {
+                ForEach(ScopeFilter.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: scope) { _, _ in Task { await load() } }
+        }
+        .listRowBackground(Brand.bg)
+        .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+        if let error {
+            ContentUnavailableView(error, systemImage: "exclamationmark.triangle")
+        } else if rows.isEmpty && !loading {
+            ContentUnavailableView("No notes", systemImage: "book")
+        }
+        ForEach(rows) { r in
+            if selection != nil {
+                JournalRowView(row: r, tz: client.tz).tag(Route.journal(r.id))
+            } else {
+                NavigationLink(value: Route.journal(r.id)) { JournalRowView(row: r, tz: client.tz) }
+            }
+        }
+        if rows.count >= 50 {
+            Button("More") { Task { await load(offset: rows.count) } }.font(Brand.text(13, relativeTo: .footnote))
+        }
     }
 
     private func open(_ r: Route) {
@@ -121,6 +125,7 @@ struct JournalRowView: View {
             }
         }
         .padding(.vertical, 2)
+        .contentShape(Rectangle()) // the whole row takes the tap, the gap in the middle too
     }
 }
 
@@ -224,6 +229,7 @@ struct JournalEntryView: View {
                                         Spacer()
                                         PnlChip(t.netPnl, size: .sm)
                                     }
+                                    .contentShape(Rectangle())
                                 }
                                 .buttonStyle(.plain)
                             }

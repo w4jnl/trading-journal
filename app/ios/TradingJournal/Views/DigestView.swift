@@ -127,6 +127,7 @@ struct DigestView: View {
                 Spacer()
                 PnlChip(d.net, size: .md)
             }
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
     }

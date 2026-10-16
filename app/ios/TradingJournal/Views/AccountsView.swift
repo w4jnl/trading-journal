@@ -118,6 +118,7 @@ struct AccountRow: View {
             }
         }
         .padding(.vertical, 4)
+        .contentShape(Rectangle()) // the whole row takes the tap, the gap in the middle too
     }
 }
 
