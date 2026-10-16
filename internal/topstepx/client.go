@@ -31,7 +31,7 @@ var (
 	ErrSubscription = errors.New("topstepx: api subscription missing or disabled")
 )
 
-// loginKey error codes from the swagger enum (docs/projectx-openapi.json).
+// loginKey error codes from the ProjectX gateway swagger enum (https://gateway.docs.projectx.com).
 const (
 	loginErrInvalidCredentials  = 3
 	loginErrSubscriptionMissing = 9
