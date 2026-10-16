@@ -61,10 +61,11 @@ type SessionPosition struct {
 
 // SessionAttributes are the activity's static facts.
 type SessionAttributes struct {
-	Day      string `json:"day"`
-	TZ       string `json:"tz"`
-	RthStart int64  `json:"rthStart"`
-	RthEnd   int64  `json:"rthEnd"`
+	Day        string `json:"day"`
+	TZ         string `json:"tz"`
+	RthStart   int64  `json:"rthStart"`
+	RthEnd     int64  `json:"rthEnd"`
+	ExchangeTZ string `json:"exchangeTz"` // the exchange's zone, so a face shows the hours in it and the phone's
 }
 
 const (
@@ -135,7 +136,7 @@ func (s *Service) sessionAttributes(now time.Time) SessionAttributes {
 	ct := now.In(s.chicago())
 	start := time.Date(ct.Year(), ct.Month(), ct.Day(), 8, 30, 0, 0, s.chicago())
 	end := time.Date(ct.Year(), ct.Month(), ct.Day(), 15, 0, 0, 0, s.chicago())
-	return SessionAttributes{Day: s.today(), TZ: s.tz().String(), RthStart: start.Unix(), RthEnd: end.Unix()}
+	return SessionAttributes{Day: s.today(), TZ: s.tz().String(), RthStart: start.Unix(), RthEnd: end.Unix(), ExchangeTZ: s.chicago().String()}
 }
 
 // liveTick is the activity's look at a user: start, update or end.

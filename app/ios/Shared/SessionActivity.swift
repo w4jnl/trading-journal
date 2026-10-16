@@ -28,15 +28,18 @@ struct SessionActivityAttributes: ActivityAttributes {
     var tz: String
     var rthStart: Int64 // unix seconds
     var rthEnd: Int64
+    var exchangeTz: String? // absent from a payload before 2.18.1
 
     var timeZone: TimeZone { TimeZone(identifier: tz) ?? .current }
+    /// The exchange's zone: Chicago for CME futures unless the server says otherwise.
+    var exchangeZone: TimeZone { exchangeTz.flatMap(TimeZone.init(identifier:)) ?? TimeZone(identifier: "America/Chicago") ?? .current }
     var rthRange: ClosedRange<Date> {
         let a = Date(timeIntervalSince1970: TimeInterval(rthStart)), b = Date(timeIntervalSince1970: TimeInterval(rthEnd))
         return a...max(b, a.addingTimeInterval(60))
     }
 
     static func from(_ t: Today) -> SessionActivityAttributes {
-        SessionActivityAttributes(day: t.day, tz: t.timezone, rthStart: Int64(t.session.rthStart.timeIntervalSince1970), rthEnd: Int64(t.session.rthEnd.timeIntervalSince1970))
+        SessionActivityAttributes(day: t.day, tz: t.timezone, rthStart: Int64(t.session.rthStart.timeIntervalSince1970), rthEnd: Int64(t.session.rthEnd.timeIntervalSince1970), exchangeTz: t.session.exchangeTz)
     }
 
     static let preview = SessionActivityAttributes(day: "2026-10-15", tz: "Europe/Amsterdam", rthStart: 1_792_000_000, rthEnd: 1_792_023_400)

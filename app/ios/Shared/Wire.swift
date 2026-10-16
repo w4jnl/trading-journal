@@ -335,6 +335,7 @@ struct TodayNudges: Codable, Sendable, Hashable {
 struct TradingSession: Codable, Sendable, Hashable {
     var rthStart: Date
     var rthEnd: Date
+    var exchangeTz: String? // the exchange's zone, America/Chicago for CME futures
     var inGlobex: Bool
     var inRth: Bool
 }

@@ -3,6 +3,19 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS), 2.18.1
+
+- The Session activity's clock: the session's hours in exchange time and the phone's, and the
+  countdown to the close only while the session runs. Before the open it showed the session's
+  length frozen, which read like a clock in Central time.
+
+### Server
+
+- `GET /today` `session.exchangeTz` and the Session activity's attributes carry the exchange's
+  zone (`America/Chicago`).
+
 ## 2.18.0, 2026-10-16
 
 ### App (iOS), first build, 2.18.0

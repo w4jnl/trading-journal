@@ -19,6 +19,18 @@ struct LiveActivityTests {
         #expect(attrs.timeZone.identifier == "America/Chicago" && attrs.rthRange.upperBound.timeIntervalSince1970 == 1_760_558_400)
     }
 
+    /// The hours in exchange time and the phone's; one line when the phone keeps exchange time.
+    @Test func theClockShowsTheHoursInBothZones() {
+        // 2026-10-15 08:30-15:00 Chicago (CDT) = 13:30-20:00 UTC = 15:30-22:00 Amsterdam
+        let a = SessionActivityAttributes(day: "2026-10-15", tz: "Europe/Amsterdam", rthStart: 1_760_535_000, rthEnd: 1_760_558_400, exchangeTz: "America/Chicago")
+        #expect(SessionClock.hours(a, local: TimeZone(identifier: "Europe/Amsterdam")!) == ["08:30–15:00 Chicago", "15:30–22:00 Amsterdam"])
+        #expect(SessionClock.hours(a, local: TimeZone(identifier: "America/Chicago")!) == ["08:30–15:00 Chicago"])
+        #expect(SessionClock.hours(a, local: TimeZone(identifier: "America/New_York")!) == ["08:30–15:00 Chicago", "09:30–16:00 New York"])
+        var old = a
+        old.exchangeTz = nil
+        #expect(old.exchangeZone.identifier == "America/Chicago", "a payload from before the field")
+    }
+
     @Test func theKindIsTheGlance() {
         var st = SessionActivityAttributes.ContentState.quiet
         #expect(st.kind == .quiet)
@@ -86,6 +98,8 @@ struct LiveActivityTests {
         try save(SessionLockScreen(attributes: attrs, state: open), "lock-open.png", width: 370)
         try save(SessionLockScreen(attributes: attrs, state: warn), "lock-warn.png", width: 370)
         try save(SessionLockScreen(attributes: attrs, state: open, isStale: true), "lock-stale.png", width: 370)
+        let early = SessionActivityAttributes(day: "2026-10-15", tz: "Europe/Amsterdam", rthStart: now + 3600, rthEnd: now + 3600 + 23_400, exchangeTz: "America/Chicago")
+        try save(SessionLockScreen(attributes: early, state: .quiet), "lock-preopen.png", width: 370)
         try save(SessionExpandedBottom(attributes: attrs, state: warn).padding(12), "expanded.png", width: 370)
         try save(HStack { SessionCompactLeading(state: open); Spacer(); SessionCompactTrailing(state: open) }.padding(8), "compact.png", width: 200)
         try save(TodayWidgetPreview(cache: .preview, family: .systemMedium).frame(height: 158), "widget-medium.png", width: 338)
