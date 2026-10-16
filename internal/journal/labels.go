@@ -21,37 +21,41 @@ const (
 	KindEmotion = "emotion"
 )
 
-// Label is one vocabulary entry.
+// Label is one vocabulary entry: the key stored, the name shown, and what
+// the evidence of it looks like (the AI review reads the description, a
+// picker may show it).
 type Label struct {
 	Key  string
 	Name string
+	Desc string
 }
 
 var labelVocabulary = map[string][]Label{
 	KindMistake: {
-		{"chased", "Chased the entry"},
-		{"early-exit", "Exited too early"},
-		{"late-exit", "Exited too late"},
-		{"oversized", "Oversized"},
-		{"no-stop", "No stop"},
-		{"moved-stop", "Moved the stop"},
-		{"held-loser", "Held a loser"},
-		{"revenge", "Revenge trade"},
-		{"fomo", "FOMO"},
-		{"hesitated", "Hesitated"},
-		{"overtraded", "Overtraded"},
-		{"against-plan", "Against the plan"},
+		{"chased", "Chased the entry", "Entered after the move had run: the fill sits well past the trigger, often into a spike, and the trade starts with heat."},
+		{"early-exit", "Exited too early", "Left a winner well before the planned target or the end of the move: a low exit efficiency with little heat taken."},
+		{"late-exit", "Exited too late", "Held past the planned target and gave most of the open profit back: a large best open profit, a low exit efficiency."},
+		{"oversized", "Oversized", "Size well above the trader's norm or the plan, or risk far above what the day's max loss allows per trade."},
+		{"no-stop", "No stop", "No stop was in place. The trader sets this one: the fills cannot show a stop that was never hit."},
+		{"moved-stop", "Moved the stop", "The stop was widened after entry: the loss exceeds the planned risk, or the notes say so."},
+		{"held-loser", "Held a loser", "Stayed in a losing trade far longer than the trader's winners usually last while the heat kept growing."},
+		{"revenge", "Revenge trade", "Re-entered right after a loss on the same market, fast and often larger."},
+		{"fomo", "FOMO", "Entered late into an extended move for fear of missing it, without a setup of the trader's own."},
+		{"hesitated", "Hesitated", "Entered late or small on a valid setup, or skipped the planned entry; the notes say the trader waited."},
+		{"overtraded", "Overtraded", "Far more decisions than the trader's norm for a day, or churning the same market."},
+		{"against-plan", "Against the plan", "The trade broke the day plan: its bias, max trades, stop time, max loss or a rule it states."},
+		{"dca", "DCA", "Added to a losing position: scale-in fills at worse prices while the trade was underwater, averaging the entry down on a long or up on a short instead of taking the stop."},
 	},
 	KindEmotion: {
-		{"calm", "Calm"},
-		{"focused", "Focused"},
-		{"confident", "Confident"},
-		{"anxious", "Anxious"},
-		{"greedy", "Greedy"},
-		{"frustrated", "Frustrated"},
-		{"bored", "Bored"},
-		{"tilted", "Tilted"},
-		{"rushed", "Rushed"},
+		{"calm", "Calm", "Settled and deliberate: the notes read even and the trading matched the plan."},
+		{"focused", "Focused", "Attention on the setups: the notes are specific and the trades were selective."},
+		{"confident", "Confident", "Sure of the read: sized and held to plan, or the notes say so."},
+		{"anxious", "Anxious", "Worried about the position: early exits and tight management, or the notes say so."},
+		{"greedy", "Greedy", "Wanted more than the plan: held past the target, added to a winner late, or the notes say so."},
+		{"frustrated", "Frustrated", "Annoyed by the market or by own errors; the notes say so, often right before a revenge entry."},
+		{"bored", "Bored", "Trading for something to do: entries in quiet tape without a setup, or the notes say so."},
+		{"tilted", "Tilted", "Lost composure after losses: fast re-entries, size up, rules dropped."},
+		{"rushed", "Rushed", "Acted before the setup was complete: entries seconds after a trigger, or the notes say hurried."},
 	},
 }
 
