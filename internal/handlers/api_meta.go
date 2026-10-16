@@ -61,6 +61,15 @@ var apiIndexEndpoints = []map[string]string{
 	{"method": "GET", "path": "/api/v1/equity", "summary": "Equity now by account type, the per-day curve, the drawdown and today's change"},
 	{"method": "GET", "path": "/api/v1/positions", "summary": "Open positions with their plans"},
 	{"method": "POST", "path": "/api/v1/positions/{account}/{symbol}/plan", "summary": "Record the plan on an open position"},
+	{"method": "POST", "path": "/api/v1/ai/review", "summary": "Review a note with the AI in the background, by entry id or by its trade, set, day or week (device key; needs a provider)"},
+	{"method": "GET", "path": "/api/v1/ai/day", "summary": "The AI day run's status: state and progress"},
+	{"method": "POST", "path": "/api/v1/ai/day/{date}", "summary": "Start the AI day run: every note of the day reviewed and the day's synthesis written (device key)"},
+	{"method": "DELETE", "path": "/api/v1/ai/day", "summary": "Cancel the AI day run (device key)"},
+	{"method": "POST", "path": "/api/v1/positions/{account}/{symbol}/levels", "summary": "Ask the AI for a stop and target on the open position; the position's ai field shows the result (device key)"},
+	{"method": "POST", "path": "/api/v1/positions/{account}/{symbol}/levels/apply", "summary": "Write the AI's stop and target into the position's plan (device key)"},
+	{"method": "DELETE", "path": "/api/v1/positions/{account}/{symbol}/levels", "summary": "Forget the AI's proposal on the position (device key)"},
+	{"method": "POST", "path": "/api/v1/plan/{date}/draft", "summary": "Draft the day's plan with the AI; GET /plan shows it under draft (device key)"},
+	{"method": "DELETE", "path": "/api/v1/plan/{date}/draft", "summary": "Discard the AI's plan draft (device key)"},
 	{"method": "GET", "path": "/api/v1/attachments/{id}", "summary": "Fetch an embedded image"},
 }
 

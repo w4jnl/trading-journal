@@ -609,6 +609,9 @@
      "updatedAt": {
       "type": "string",
       "format": "date-time"
+     },
+     "draft": {
+      "$ref": "#/components/schemas/PlanDraft"
      }
     }
    },
@@ -947,6 +950,18 @@
       "description": "The AI review's open suggestions (see POST /journal/{id}/suggestions)",
       "items": {
        "$ref": "#/components/schemas/Suggestion"
+      }
+     },
+     "review": {
+      "type": "object",
+      "description": "Whether an AI review of the note runs, and the last failure shown once.",
+      "properties": {
+       "pending": {
+        "type": "boolean"
+       },
+       "error": {
+        "type": "string"
+       }
       }
      }
     }
@@ -1551,6 +1566,9 @@
      },
      "addedQty": {
       "type": "number"
+     },
+     "ai": {
+      "$ref": "#/components/schemas/PositionAI"
      }
     }
    },
@@ -1706,6 +1724,15 @@
        "createdAt": {
         "type": "string",
         "format": "date-time"
+       }
+      }
+     },
+     "ai": {
+      "type": "object",
+      "properties": {
+       "ready": {
+        "type": "boolean",
+        "description": "This user can run AI work: the server has AI and the user a provider"
        }
       }
      }
@@ -2422,6 +2449,167 @@
      "name": {
       "type": "string",
       "description": "What to show: the strategy's or the label's name"
+     }
+    }
+   },
+   "AIDayRun": {
+    "type": "object",
+    "description": "The AI day run of a user.",
+    "properties": {
+     "state": {
+      "type": "string",
+      "enum": [
+       "idle",
+       "running",
+       "done",
+       "error",
+       "cancelled"
+      ]
+     },
+     "date": {
+      "type": "string"
+     },
+     "done": {
+      "type": "integer"
+     },
+     "total": {
+      "type": "integer"
+     },
+     "current": {
+      "type": "string"
+     },
+     "err": {
+      "type": "string"
+     },
+     "model": {
+      "type": "string"
+     },
+     "startedAt": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "PositionAI": {
+    "type": "object",
+    "description": "The AI's proposal for an open position.",
+    "properties": {
+     "pending": {
+      "type": "boolean"
+     },
+     "error": {
+      "type": "string"
+     },
+     "levels": {
+      "type": "object",
+      "properties": {
+       "stop": {
+        "type": "number"
+       },
+       "target": {
+        "type": "number"
+       },
+       "target2": {
+        "type": "number",
+        "nullable": true
+       },
+       "scaleOut": {
+        "type": "number",
+        "nullable": true
+       },
+       "trail": {
+        "type": "string"
+       },
+       "reasons": {
+        "type": "object",
+        "additionalProperties": {
+         "type": "string"
+        }
+       },
+       "summary": {
+        "type": "string"
+       },
+       "risk": {
+        "type": "number",
+        "nullable": true
+       },
+       "r1": {
+        "type": "number",
+        "nullable": true
+       },
+       "r2": {
+        "type": "number",
+        "nullable": true
+       },
+       "entry": {
+        "type": "number"
+       },
+       "qty": {
+        "type": "number"
+       }
+      }
+     },
+     "model": {
+      "type": "string"
+     },
+     "at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "outdated": {
+      "type": "boolean",
+      "description": "The size or entry changed since"
+     },
+     "auto": {
+      "type": "string",
+      "enum": [
+       "off",
+       "suggest",
+       "plan"
+      ],
+      "description": "What a new position gets without asking"
+     }
+    }
+   },
+   "PlanDraft": {
+    "type": "object",
+    "description": "The AI's draft of a day plan, for today or a later day.",
+    "properties": {
+     "pending": {
+      "type": "boolean"
+     },
+     "error": {
+      "type": "string"
+     },
+     "maxTrades": {
+      "type": "integer",
+      "nullable": true
+     },
+     "stopTime": {
+      "type": "string"
+     },
+     "maxLoss": {
+      "type": "number",
+      "nullable": true
+     },
+     "levels": {
+      "type": "string"
+     },
+     "notes": {
+      "type": "string"
+     },
+     "reasons": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "model": {
+      "type": "string"
+     },
+     "createdAt": {
+      "type": "string",
+      "format": "date-time"
      }
     }
    }
@@ -5250,6 +5438,600 @@
      },
      "409": {
       "description": "An AI review is writing the note (reason review-pending)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/ai/review": {
+   "post": {
+    "operationId": "aiReviewStart",
+    "summary": "Review a note with the AI in the background (device key; needs a provider). Name the note by entryId, or by scope with tradeId, setId, date or week; a note that does not exist yet is created first. The review's result lands on the note; GET /journal/{id} shows review.pending meanwhile.",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "entryId": {
+          "type": "integer"
+         },
+         "scope": {
+          "type": "string",
+          "enum": [
+           "trade",
+           "set",
+           "day",
+           "week"
+          ]
+         },
+         "tradeId": {
+          "type": "integer"
+         },
+         "setId": {
+          "type": "integer"
+         },
+         "date": {
+          "type": "string",
+          "format": "date"
+         },
+         "week": {
+          "type": "string"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "The review started",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "entryId": {
+           "type": "integer"
+          },
+          "pending": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Nothing named, or a bad date, week or trade",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "The note, set or trade is not the caller's; or AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No provider (reason ai-off), or a review of this note runs (reason review-pending)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/ai/day": {
+   "get": {
+    "operationId": "aiDayRunStatus",
+    "summary": "The caller's AI day run: state idle, running, done, error or cancelled, with its progress.",
+    "responses": {
+     "200": {
+      "description": "The status",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "status": {
+           "$ref": "#/components/schemas/AIDayRun"
+          }
+         }
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "aiDayRunCancel",
+    "summary": "Cancel the AI day run (device key); the notes reviewed so far keep their reviews.",
+    "responses": {
+     "200": {
+      "description": "The status after the cancel",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "status": {
+           "$ref": "#/components/schemas/AIDayRun"
+          }
+         }
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/ai/day/{date}": {
+   "post": {
+    "operationId": "aiDayRunStart",
+    "summary": "Start the AI day run (device key; needs a provider): every note of the day reviewed, the day's synthesis written. date is YYYY-MM-DD or last. Body {\"mode\":\"all\"} re-reviews notes already reviewed.",
+    "parameters": [
+     {
+      "name": "date",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "mode": {
+          "type": "string",
+          "enum": [
+           "all"
+          ]
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "202": {
+      "description": "The run started",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "status": {
+           "$ref": "#/components/schemas/AIDayRun"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad date",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No provider (reason ai-off), or a run is going (reason day-run)",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "502": {
+      "description": "The provider could not be resolved",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/positions/{account}/{symbol}/levels": {
+   "post": {
+    "operationId": "positionLevelsStart",
+    "summary": "Ask the AI for a stop and target on the open position, in the background (device key; needs a provider). The position's ai field shows pending, then the levels.",
+    "parameters": [
+     {
+      "name": "account",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "symbol",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "The proposal is being made",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "pending": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad account id",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Account not found, or AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No provider (reason ai-off), or no open position here",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "positionLevelsDismiss",
+    "summary": "Forget the AI's proposal on the position (device key).",
+    "parameters": [
+     {
+      "name": "account",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "symbol",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Forgotten"
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Account not found",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No open position here",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/positions/{account}/{symbol}/levels/apply": {
+   "post": {
+    "operationId": "positionLevelsApply",
+    "summary": "Write the AI's stop and first target into the position's plan, source ai, on every leg of a copied decision (device key).",
+    "parameters": [
+     {
+      "name": "account",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "symbol",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "200": {
+      "description": "The position as GET /positions lists it",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Position"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "Account not found, or AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No open position here, or no proposal to apply",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   }
+  },
+  "/plan/{date}/draft": {
+   "post": {
+    "operationId": "planDraftStart",
+    "summary": "Draft the day's plan with the AI, in the background (device key; needs a provider); GET /plan shows it under draft, to take over or discard. Today or a later day.",
+    "parameters": [
+     {
+      "name": "date",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "202": {
+      "description": "The draft is being written",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object",
+         "properties": {
+          "pending": {
+           "type": "boolean"
+          }
+         }
+        }
+       }
+      }
+     },
+     "400": {
+      "description": "Bad date, or a past day",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "404": {
+      "description": "AI is off on this server",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "409": {
+      "description": "No provider for this user (reason ai-off), or the thing is not in a state for it",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     }
+    }
+   },
+   "delete": {
+    "operationId": "planDraftDiscard",
+    "summary": "Discard the AI's plan draft (device key).",
+    "parameters": [
+     {
+      "name": "date",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "204": {
+      "description": "Discarded"
+     },
+     "400": {
+      "description": "Bad date, or a past day",
+      "content": {
+       "application/json": {
+        "schema": {
+         "$ref": "#/components/schemas/Error"
+        }
+       }
+      }
+     },
+     "403": {
+      "description": "Not a device key",
       "content": {
        "application/json": {
         "schema": {

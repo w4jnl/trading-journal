@@ -223,6 +223,7 @@ func (h *Handlers) APIMe(w http.ResponseWriter, r *http.Request) {
 		"user":     apiUserInfo(u),
 		"server":   h.apiServerInfo(r),
 		"settings": apiUserSettings(u),
+		"ai":       h.apiAIState(r),
 	}
 	if k, ok := auth.APIKeyFrom(ctx); ok {
 		out["key"] = map[string]any{"kind": string(k.Kind), "name": k.Name, "createdAt": k.CreatedAt}

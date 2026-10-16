@@ -12,6 +12,12 @@ built against it carries the same marketing version.
 
 ### Server
 
+- AI from the phone: `POST /ai/review` (a note by id or by its trade, set, day or week),
+  the day run (`POST /ai/day/{date}`, `GET`/`DELETE /ai/day`), levels on an open position
+  (`POST`/`DELETE /positions/{account}/{symbol}/levels`, `.../levels/apply`) and the day
+  plan draft (`POST`/`DELETE /plan/{date}/draft`); `review` on the journal detail, `ai` on a
+  position, `draft` on the plan, `ai.ready` on `/me`. Device key; 409 `ai-off` without a
+  provider.
 - `DCA` joins the mistakes vocabulary, and every label carries a description of what its
   evidence looks like: the AI review reads them when it suggests labels, and
   `GET /journal/labels` returns them.
