@@ -15,7 +15,7 @@ SELECT COUNT(*) FROM (
     SELECT 1
     FROM executions e
     JOIN accounts a ON a.id = e.account_id
-    WHERE a.user_id = ? AND e.deleted_at IS NULL
+    WHERE a.user_id = ? AND e.deleted_at IS NULL AND a.excluded_from_stats = 0
     GROUP BY e.account_id, e.symbol
     HAVING SUM(CASE WHEN e.side = 'buy' THEN e.qty ELSE -e.qty END) <> 0
 )
@@ -533,7 +533,7 @@ SELECT a.id AS account_id, a.name AS account_name, a.account_ref, a.firm,
        MAX(e.exec_time) AS last_exec_time
 FROM executions e
 JOIN accounts a ON a.id = e.account_id
-WHERE a.user_id = ? AND e.deleted_at IS NULL
+WHERE a.user_id = ? AND e.deleted_at IS NULL AND a.excluded_from_stats = 0
 GROUP BY e.account_id, e.symbol
 HAVING SUM(CASE WHEN e.side = 'buy' THEN e.qty ELSE -e.qty END) <> 0
 ORDER BY a.name, e.symbol
@@ -553,7 +553,9 @@ type ListOpenPositionsRow struct {
 // Per (account, contract) net signed quantity, only where it does not net flat. A
 // nonzero net means an open (or carried, or data-gap) position. Soft-deleted fills are
 // excluded. Scoped to the user's own accounts. Inline (TopstepX) accounts net flat by
-// construction, so they never appear here.
+// construction, so they never appear here. Accounts hidden in Settings
+// (excluded_from_stats) are left out: their positions show nowhere, count nowhere
+// and get no nudge, like their trades leave every default list.
 func (q *Queries) ListOpenPositions(ctx context.Context, userID int64) ([]ListOpenPositionsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listOpenPositions, userID)
 	if err != nil {

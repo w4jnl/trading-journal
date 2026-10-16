@@ -3,6 +3,16 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- Open positions on accounts hidden in Settings (not counted in the stats) now stay out of
+  every view: the dashboard and trades-page cards, the sidebar badge, the positions API, Today
+  on the phone with its unrealised P&L, the widgets and the Session activity, the AI
+  position helpers and the open-position nudges. Before, the account's trades left the
+  default lists but its open positions still showed and still added to the phone's open P&L.
+
 ## 2.18.3, 2026-10-16
 
 The first public release: the repository is open source under the Apache License 2.0 at
