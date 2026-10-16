@@ -202,21 +202,7 @@
       {{if .WrittenLate}}<span class="pill plan-late" title="The plan was saved after the day's first entry, so it records the day rather than planning it">written after the first trade</span>{{else if .EditedLate}}<span class="pill plan-late" title="The plan was changed after the day's first entry">edited after the first trade</span>{{end}}
     {{end}}
   </div>
-  {{with .DayPlan}}
-  <div class="plan-summary">
-    {{if .Bias}}<span class="pill plan-bias plan-bias--{{.Bias}}">{{biasName .Bias}}</span>{{end}}
-    {{if .MaxTrades}}<span>at most <b class="num">{{derefInt .MaxTrades}}</b> decision{{if ne (derefInt .MaxTrades) 1}}s{{end}}</span>{{end}}
-    {{if .StopTime}}<span>done by <b class="num">{{.StopTime}}</b></span>{{end}}
-    {{if .MaxLoss}}<span>stop at <b class="num">−{{printf "%.2f" (deref .MaxLoss)}}</b> per account</span>{{end}}
-  </div>
-  {{if .Levels}}<div class="plan-levels"><span class="label">Levels</span><pre>{{.Levels}}</pre></div>{{end}}
-  {{if .Notes}}<div class="plan-notes markdown-preview">{{markdown .Notes}}</div>{{end}}
-  {{end}}
-  {{with .PlanOutcome}}{{if .Checks}}
-  <ul class="plan-checks">
-    {{range .Checks}}<li class="plan-check plan-check--{{if .Held}}held{{else}}broken{{end}}"><span class="plan-check__mark" aria-label="{{if .Held}}held{{else}}broken{{end}}">{{if .Held}}✓{{else}}✗{{end}}</span><span class="plan-check__rule">{{.Rule}}</span><span class="plan-check__actual">{{.Actual}}</span></li>{{end}}
-  </ul>
-  {{else}}<p class="muted plan-wait">No trades yet; each rule is checked as the day's trades close.</p>{{end}}{{end}}
+  {{template "plan_readout" (dict "Plan" .DayPlan "Outcome" .PlanOutcome)}}
   {{if not .DayPlan}}{{if not .PlanOpen}}<p class="muted plan-wait">No plan for this day.</p>{{end}}{{end}}
   {{if .PlanLessons}}
   <div class="plan-lessons">

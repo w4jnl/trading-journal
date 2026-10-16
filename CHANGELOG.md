@@ -25,6 +25,9 @@ built against it carries the same marketing version.
   plan draft (`POST`/`DELETE /plan/{date}/draft`); `review` on the journal detail, `ai` on a
   position, `draft` on the plan, `ai.ready` on `/me`. Device key; 409 `ai-off` without a
   provider.
+- The dashboard shows today's plan as its own card once it is written: the bias and limits,
+  the levels, the notes, and the rules held or broken as the day's trades close, with a link to
+  edit it. Before, the plan was one line under today's P&L, easy to miss before the first note.
 - `DCA` joins the mistakes vocabulary, and every label carries a description of what its
   evidence looks like: the AI review reads them when it suggests labels, and
   `GET /journal/labels` returns them.

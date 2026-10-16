@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -231,26 +230,23 @@ func (h *Handlers) mcpSetDayPlan(ctx context.Context, req mcpgo.CallToolRequest)
 	return mcpJSON(map[string]any{"plan": p})
 }
 
-// planSummary is the one-line form of a plan for the dashboard.
-func planSummary(p *dayplan.Plan) string {
-	if p == nil {
-		return ""
+// planReadout is the plan_readout partial's data: a day's plan and, once the
+// day has trades, the rules checked against them.
+type planReadout struct {
+	Plan    *dayplan.Plan
+	Outcome *coach.PlanOutcome
+}
+
+// planReadout is the day's plan for the dashboard, nil without one; the
+// outcome rides along so the rules show as held or broken as the day goes.
+func (h *Handlers) planReadout(ctx context.Context, day time.Time) *planReadout {
+	plan := h.dayPlan(ctx, day.Format("2006-01-02"))
+	if plan == nil {
+		return nil
 	}
-	var parts []string
-	if p.Bias != "" {
-		parts = append(parts, dayplan.BiasName(p.Bias))
+	out := &planReadout{Plan: plan}
+	if rep := h.coachReport(ctx, day); rep != nil {
+		out.Outcome = rep.Plan
 	}
-	if p.MaxTrades != nil {
-		parts = append(parts, fmt.Sprintf("max %d", *p.MaxTrades))
-	}
-	if p.StopTime != "" {
-		parts = append(parts, "done by "+p.StopTime)
-	}
-	if p.MaxLoss != nil {
-		parts = append(parts, fmt.Sprintf("stop at −%.0f", *p.MaxLoss))
-	}
-	if len(parts) == 0 {
-		return "levels and notes"
-	}
-	return strings.Join(parts, " · ")
+	return out
 }
