@@ -897,7 +897,10 @@ thesis - with `planSource` saying who set it (`trader`, `api`, `ai`, or
 `set` for a leg that inherited the copied decision's plan) and `setLegs`
 naming the other accounts of the same decision. A position is not a trade
 yet: it becomes one, carrying its plan, when it closes. `?refresh=1` pulls
-the latest broker fills first.
+the latest broker fills first. Positions on accounts hidden in Settings
+(`excludedFromStats` on `GET /accounts`) are not listed: they show nowhere,
+count nowhere and raise no nudge, like the account's trades leave every
+default list.
 
 ```jsonc
 {
@@ -1184,7 +1187,8 @@ pulls the latest broker fills first):
 `session` is the CME day in UTC instants (regular hours 08:30 to 15:00
 Chicago) with whether Globex and regular hours are trading now. `stats`
 are today's daily-stats totals. `unrealized` sums the priced open
-positions (`stale` when a price is older than five minutes). `plan`
+positions (`stale` when a price is older than five minutes); positions
+on hidden accounts are neither listed nor summed. `plan`
 carries the day plan with its outcome so far plus the two budgets:
 decisions made against `maxTrades`, and the worst account's realised
 loss against `maxLoss` (`lossUsed` is positive money). `nudges.unseen`
