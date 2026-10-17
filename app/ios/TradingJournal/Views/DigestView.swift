@@ -8,11 +8,13 @@ struct DigestView: View {
     @Environment(Client.self) private var client
     @State private var digest: Digest?
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var current: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                StaleBanner(asOf)
                 if let d = digest {
                     HStack {
                         Button { step(d, -1) } label: { Image(systemName: "chevron.left") }.accessibilityLabel("Previous week")
@@ -112,8 +114,10 @@ struct DigestView: View {
         .background(Brand.bg)
         .navigationTitle("Weekly digest")
         .navigationBarTitleDisplayMode(.inline)
+        .refreshable { await load(fresh: true) }
         .task(id: current ?? week ?? "") { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
     private func decision(_ d: DigestDecision, label: String) -> some View {
@@ -142,9 +146,11 @@ struct DigestView: View {
         current = String(format: "%04d-W%02d", c.yearForWeekOfYear ?? 0, c.weekOfYear ?? 0)
     }
 
-    private func load() async {
+    private func load(fresh: Bool = false) async {
         do {
-            digest = try await client.digest(week: current ?? week)
+            let l = try await client.digest(week: current ?? week, fresh: fresh)
+            digest = l.value
+            asOf = l.asOf
             error = nil
         } catch {
             if digest == nil { self.error = error.localizedDescription }

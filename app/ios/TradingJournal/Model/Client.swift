@@ -2,6 +2,11 @@
 // /api/v1/events, a version per change), one-off reads for the other screens, and every action
 // as a plain HTTP call. Everything runs on the main actor; the stream's awaits suspend, nothing
 // blocks. Connection state is part of the model and the UI says it honestly.
+//
+// Every read goes through the Store: a live answer is kept, and when the journal is out of
+// reach the kept one comes back with the time it arrived, so the screens show the last known
+// state instead of an error. While the stream is down the kept answer comes first, without a
+// wait on the network; the screens load again when the stream is back.
 import Foundation
 import Observation
 import OSLog
@@ -19,6 +24,14 @@ final class Client {
         case unauthorized
 
         var isLive: Bool { self == .live }
+        /// The journal is known to be out of reach (or not yet reached): a stored answer comes
+        /// first, without a wait on the network.
+        var isOffline: Bool {
+            switch self {
+            case .connecting, .down: true
+            case .off, .live, .unauthorized: false
+            }
+        }
     }
 
     static let shared = Client(settings: .shared)
@@ -31,6 +44,8 @@ final class Client {
     private(set) var version: Int = 0
     /// When /today last answered, to say "no news since 09:12" when the stream is down.
     private(set) var asOf: Date?
+    /// When `today` is the stored one: the time the server gave it. Nil while it is live.
+    private(set) var todayAsOf: Date?
     private(set) var lastError: String?
     /// Set by a notification tap, a deep link or a launch argument: RootView navigates there and clears it.
     var pendingRoute: Route?
@@ -44,16 +59,27 @@ final class Client {
     private var attempt = 0
     private var streamTask: Task<Void, Never>?
     private var refetch: Task<Void, Never>?
+    /// The stores of the current pairing, opened on first use and again when the pairing changes.
+    private let storeRoot: URL
+    private var stores: (scope: String, json: Store, images: Store)?
+    private var warmTask: Task<Void, Never>?
+    private var warmedVersion = -1
 
-    init(settings: Settings) {
+    /// `protocolClasses` lets a test answer the requests itself; `storeRoot` keeps a test's
+    /// store apart from the app's.
+    init(settings: Settings, storeRoot: URL = Store.defaultRoot, protocolClasses: [AnyClass] = []) {
         self.settings = settings
+        self.storeRoot = storeRoot
         let cfg = URLSessionConfiguration.default
         cfg.waitsForConnectivity = true
         cfg.timeoutIntervalForRequest = 20
+        cfg.timeoutIntervalForResource = 60 // waiting for connectivity ends here, not days later
+        if !protocolClasses.isEmpty { cfg.protocolClasses = protocolClasses }
         session = URLSession(configuration: cfg)
         let scfg = URLSessionConfiguration.default
         scfg.timeoutIntervalForRequest = 90 // the server pings every 25 s; silence longer than this is a dead stream
         scfg.timeoutIntervalForResource = .infinity
+        if !protocolClasses.isEmpty { scfg.protocolClasses = protocolClasses }
         streamSession = URLSession(configuration: scfg)
     }
 
@@ -72,6 +98,8 @@ final class Client {
         generation += 1
         let gen = generation
         connection = .connecting
+        let st = store()
+        Task(priority: .utility) { await st.json.sweep(); await st.images.sweep() }
         Task { await self.refreshToday() }
         streamTask = Task { await self.run(gen: gen) }
     }
@@ -83,6 +111,8 @@ final class Client {
         streamTask = nil
         refetch?.cancel()
         refetch = nil
+        warmTask?.cancel()
+        warmTask = nil
     }
 
     /// After pairing or signing out.
@@ -90,9 +120,45 @@ final class Client {
         stop()
         today = nil
         asOf = nil
+        todayAsOf = nil
         version = 0
+        warmedVersion = -1
         lastError = nil
         start()
+    }
+
+    // MARK: the store
+
+    /// The stores of the pairing as it is now; a change of server or key opens new ones and
+    /// removes every other pairing's answers.
+    private func store() -> (scope: String, json: Store, images: Store) {
+        let scope = Store.scope(serverURL: settings.serverURL, key: settings.apiKey)
+        if let stores, stores.scope == scope { return stores }
+        let opened = Store.open(root: storeRoot, scope: scope)
+        stores = (scope, opened.json, opened.images)
+        Store.wipeOthers(root: storeRoot, than: scope)
+        return stores!
+    }
+
+    /// How much the phone keeps, for Settings.
+    func storedBytes() async -> Int {
+        let st = store()
+        return await st.json.bytes + st.images.bytes
+    }
+
+    /// Forgets every stored answer; the screens fetch again.
+    func clearStore() async {
+        let st = store()
+        await st.json.wipe()
+        await st.images.wipe()
+        warmedVersion = -1
+    }
+
+    /// A failure to reach the journal, as against an answer from it: the stored answer stands in.
+    nonisolated static func isReachability(_ error: Error) -> Bool {
+        if error is URLError { return true }
+        if case TJError.http(let code, _) = error { return code == 502 || code == 503 || code == 504 }
+        return false
     }
 
     private func run(gen: Int) async {
@@ -169,15 +235,26 @@ final class Client {
 
     /// One fetch of Today (pull to refresh; the stream triggers the others).
     func refreshToday(refresh: Bool = false) async {
-        guard let api else { return }
+        guard api != nil else { return }
+        // The stored day shows at once; the live one replaces it when it comes.
+        if today == nil, let (data, at) = await store().json.get(Store.key("/today")), let t = try? Wire.decoder.decode(Today.self, from: data) {
+            today = t
+            todayAsOf = at
+        }
         do {
-            let t = try await api.get(Today.self, "/today", query: refresh ? [URLQueryItem(name: "refresh", value: "1")] : [], session: session)
-            asOf = .now
-            lastError = nil
-            log.debug("today v=\(t.v) trades=\(t.stats.trades) open=\(t.positions.count) unseen=\(t.nudges.unseen)")
+            let l = try await get(Today.self, "/today", query: refresh ? [URLQueryItem(name: "refresh", value: "1")] : [], fresh: true)
+            let t = l.value
             if t != today {
                 today = t
             }
+            if l.isStale {
+                todayAsOf = l.asOf
+                return
+            }
+            todayAsOf = nil
+            asOf = .now
+            lastError = nil
+            log.debug("today v=\(t.v) trades=\(t.stats.trades) open=\(t.positions.count) unseen=\(t.nudges.unseen)")
             if t.v > version { version = t.v }
             if settings.server?.timezone != t.timezone, var s = settings.server {
                 s.timezone = t.timezone
@@ -189,10 +266,47 @@ final class Client {
             TodayCache.from(t, days: recentDays).write()
             WidgetCenter.shared.reloadAllTimelines()
             LiveActivities.shared.ensureSession(t, allowed: settings.notificationPrefs.showsActivity)
+            warm(t)
         } catch TJError.unauthorized {
             connection = .unauthorized
         } catch {
             lastError = error.localizedDescription
+        }
+    }
+
+    /// Keeps what the other screens will want, once per data version, at a low priority: the
+    /// month's calendar, the first page of trades and of the journal, the notes and trades of
+    /// the last two weeks, the vocabularies, accounts, equity, the digest. So the phone has them
+    /// when the journal is out of reach, without the trader having opened every screen first.
+    private func warm(_ t: Today) {
+        guard t.v != warmedVersion, warmTask == nil else { return }
+        warmedVersion = t.v
+        warmTask = Task(priority: .utility) { [weak self] in
+            defer { Task { @MainActor [weak self] in self?.warmTask = nil } }
+            guard let self else { return }
+            let tz = t.tz
+            let from = Formatting.day(Date().addingTimeInterval(-14 * 86400), tz: tz)
+            let monthStart = String(t.day.prefix(7)) + "-01"
+            _ = try? await self.dailyStats(from: monthStart, to: t.day)
+            _ = try? await self.trades(.init())
+            _ = try? await self.journal(.init())
+            _ = try? await self.labels()
+            _ = try? await self.strategies()
+            _ = try? await self.accounts(showRetired: true)
+            _ = try? await self.equity()
+            _ = try? await self.nudges(day: "today")
+            _ = try? await self.digest()
+            guard !Task.isCancelled else { return }
+            if let recent = try? await self.journal(.init(from: from, to: t.day)) {
+                for row in recent.value.prefix(30) where !Task.isCancelled {
+                    _ = try? await self.entry(row.id)
+                }
+            }
+            if let recent = try? await self.trades(.init(from: from, to: t.day)) {
+                for row in recent.value.items.prefix(30) where !Task.isCancelled {
+                    _ = try? await self.trade(row.id)
+                }
+            }
         }
     }
 
@@ -331,16 +445,16 @@ final class Client {
         }
     }
 
-    func trades(_ f: TradeFilter) async throws -> TradeList {
-        try await get(TradeList.self, "/trades", query: f.query)
+    func trades(_ f: TradeFilter, fresh: Bool = false) async throws -> Loaded<TradeList> {
+        try await get(TradeList.self, "/trades", query: f.query, fresh: fresh)
     }
 
-    func trade(_ id: Int) async throws -> TradeDetail {
-        try await get(TradeDetail.self, "/trades/\(id)")
+    func trade(_ id: Int, fresh: Bool = false) async throws -> Loaded<TradeDetail> {
+        try await get(TradeDetail.self, "/trades/\(id)", fresh: fresh)
     }
 
-    func positions() async throws -> [Position] {
-        try await get(PositionList.self, "/positions").items
+    func positions() async throws -> Loaded<[Position]> {
+        try await get(PositionList.self, "/positions").map(\.items)
     }
 
     struct JournalFilter: Hashable, Sendable {
@@ -361,57 +475,95 @@ final class Client {
         }
     }
 
-    func journal(_ f: JournalFilter) async throws -> [JournalRow] {
-        try await get(JournalList.self, "/journal", query: f.query).items
+    func journal(_ f: JournalFilter, fresh: Bool = false) async throws -> Loaded<[JournalRow]> {
+        try await get(JournalList.self, "/journal", query: f.query, fresh: fresh).map(\.items)
     }
 
-    func entry(_ id: Int) async throws -> JournalDetail {
-        try await get(JournalDetail.self, "/journal/\(id)")
+    func entry(_ id: Int, fresh: Bool = false) async throws -> Loaded<JournalDetail> {
+        try await get(JournalDetail.self, "/journal/\(id)", fresh: fresh)
     }
 
-    func labels() async throws -> LabelVocabulary {
+    func labels() async throws -> Loaded<LabelVocabulary> {
         try await get(LabelVocabulary.self, "/journal/labels")
     }
 
-    func strategies() async throws -> [Strategy] {
-        try await get(StrategyList.self, "/strategies").items
+    func strategies() async throws -> Loaded<[Strategy]> {
+        try await get(StrategyList.self, "/strategies").map(\.items)
     }
 
     /// The weekly edge digest; nil week: the week of the last trading day.
-    func digest(week: String? = nil) async throws -> Digest {
-        try await get(Digest.self, "/digest", query: week.map { [URLQueryItem(name: "week", value: $0)] } ?? [])
+    func digest(week: String? = nil, fresh: Bool = false) async throws -> Loaded<Digest> {
+        try await get(Digest.self, "/digest", query: week.map { [URLQueryItem(name: "week", value: $0)] } ?? [], fresh: fresh)
     }
 
-    func dailyStats(from: String, to: String) async throws -> DailyStats {
-        try await get(DailyStats.self, "/stats/daily", query: [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)])
+    func dailyStats(from: String, to: String, fresh: Bool = false) async throws -> Loaded<DailyStats> {
+        try await get(DailyStats.self, "/stats/daily", query: [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)], fresh: fresh)
     }
 
-    func nudges(day: String) async throws -> NudgeList {
-        try await get(NudgeList.self, "/nudges", query: [URLQueryItem(name: "day", value: day)])
+    func nudges(day: String, fresh: Bool = false) async throws -> Loaded<NudgeList> {
+        try await get(NudgeList.self, "/nudges", query: [URLQueryItem(name: "day", value: day)], fresh: fresh)
     }
 
-    func accounts(showRetired: Bool = false) async throws -> [Account] {
-        try await get(AccountList.self, "/accounts", query: showRetired ? [URLQueryItem(name: "show_retired", value: "1")] : []).items
+    func accounts(showRetired: Bool = false, fresh: Bool = false) async throws -> Loaded<[Account]> {
+        try await get(AccountList.self, "/accounts", query: showRetired ? [URLQueryItem(name: "show_retired", value: "1")] : [], fresh: fresh).map(\.items)
     }
 
-    func equity(filter: String = "") async throws -> Equity {
-        try await get(Equity.self, "/equity", query: filter.isEmpty ? [] : [URLQueryItem(name: "filter", value: filter)])
+    func equity(filter: String = "", fresh: Bool = false) async throws -> Loaded<Equity> {
+        try await get(Equity.self, "/equity", query: filter.isEmpty ? [] : [URLQueryItem(name: "filter", value: filter)], fresh: fresh)
     }
 
-    /// An image the API serves (a chart PNG, an attachment), by its server-relative href.
+    /// An image the API serves (a chart PNG, an attachment), by its server-relative href. Kept
+    /// on the phone: a kept image younger than a few hours (or any kept one while the journal
+    /// is out of reach) is used as it is; a chart of an open trade is drawn again after that.
     func image(_ href: String) async throws -> Data {
         guard let api else { throw TJError.notConfigured }
-        return try await api.image(href, session: session)
+        let st = store().images
+        let kept = await st.get(href)
+        if let (data, at) = kept, connection.isOffline || Date.now.timeIntervalSince(at) < 6 * 3600 {
+            return data
+        }
+        do {
+            let data = try await api.image(href, session: session)
+            await st.put(href, data)
+            return data
+        } catch let error where Self.isReachability(error) {
+            if let (data, _) = kept { return data }
+            throw error
+        }
     }
 
-    private func get<T: Decodable & Sendable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = []) async throws -> T {
+    /// GET through the store. The live answer is kept and returned; when the journal cannot be
+    /// reached, the kept one comes back with its time. While the stream is down the kept one
+    /// comes first, without a wait on the network, unless `fresh` (a pull to refresh) insists.
+    private func get<T: Decodable & Sendable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = [], fresh: Bool = false) async throws -> Loaded<T> {
         guard let api else { throw TJError.notConfigured }
+        let key = Store.key(path, query: query)
+        let st = store().json
+        if !fresh, connection.isOffline, let kept = await stored(T.self, key, in: st) {
+            return kept
+        }
         do {
-            return try await api.get(T.self, path, query: query, session: session)
+            let data = try await api.send("GET", path, query: query, session: session)
+            let v: T
+            do {
+                v = try Wire.decoder.decode(T.self, from: data)
+            } catch {
+                throw TJError.decoding(String(describing: error).prefix(200).description)
+            }
+            await st.put(key, data)
+            return Loaded(value: v)
         } catch TJError.unauthorized {
             connection = .unauthorized
             throw TJError.unauthorized
+        } catch let error where Self.isReachability(error) {
+            if let kept = await stored(T.self, key, in: st) { return kept }
+            throw error
         }
+    }
+
+    private func stored<T: Decodable & Sendable>(_ type: T.Type, _ key: String, in st: Store) async -> Loaded<T>? {
+        guard let (data, at) = await st.get(key), let v = try? Wire.decoder.decode(T.self, from: data) else { return nil }
+        return Loaded(value: v, asOf: at)
     }
 
     // MARK: actions
@@ -590,6 +742,9 @@ final class Client {
 
     func signOut() {
         Task { await deleteDevice() }
+        if let stores {
+            Task { await stores.json.wipe(); await stores.images.wipe() }
+        }
         settings.signOut()
         reset()
     }

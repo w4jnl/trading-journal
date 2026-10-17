@@ -7,6 +7,7 @@ struct TradeDetailView: View {
     @Environment(Client.self) private var client
     @State private var trade: TradeDetail?
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var writing = false
     @State private var opened: Route?
     @State private var aiError: String?
@@ -16,6 +17,7 @@ struct TradeDetailView: View {
         ScrollView {
             if let t = trade {
                 VStack(alignment: .leading, spacing: 12) {
+                    StaleBanner(asOf)
                     Card {
                         HStack {
                             Text(t.symbol).font(Brand.text(22, weight: .semibold, relativeTo: .title2))
@@ -121,6 +123,7 @@ struct TradeDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: id) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
         .sheet(isPresented: $writing) {
             NewEntryView(scope: .trade, tradeId: id, onCreated: { opened = .journal($0.id) }, onExists: { opened = .journal($0) })
         }
@@ -154,7 +157,9 @@ struct TradeDetailView: View {
 
     private func load() async {
         do {
-            trade = try await client.trade(id)
+            let l = try await client.trade(id)
+            trade = l.value
+            asOf = l.asOf
             error = nil
         } catch {
             if trade == nil { self.error = error.localizedDescription }

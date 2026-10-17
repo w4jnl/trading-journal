@@ -6,12 +6,14 @@ struct AccountDetailView: View {
     @Environment(Client.self) private var client
     @State private var account: Account?
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var adding = false
     @State private var deleting: BalanceAnchor?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                StaleBanner(asOf)
                 if let a = account {
                     Card {
                         HStack(spacing: 6) {
@@ -74,6 +76,7 @@ struct AccountDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: accountId) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
         .sheet(isPresented: $adding) {
             if let a = account {
                 BalanceAddView(account: a) { saved in account = saved }
@@ -92,7 +95,8 @@ struct AccountDetailView: View {
     private func load() async {
         do {
             let all = try await client.accounts(showRetired: true)
-            account = all.first { $0.id == accountId }
+            account = all.value.first { $0.id == accountId }
+            asOf = all.asOf
             error = account == nil ? "Not your account" : nil
         } catch {
             if account == nil { self.error = error.localizedDescription }

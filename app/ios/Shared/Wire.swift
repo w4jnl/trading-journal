@@ -780,7 +780,7 @@ struct Equity: Codable, Sendable, Hashable {
 // MARK: writes (device key)
 
 /// PUT /journal/{id}: the whole entry; an absent field clears it (nil tag removes the tag).
-struct JournalUpdate: Encodable, Sendable, Hashable {
+struct JournalUpdate: Codable, Sendable, Hashable {
     var body: String
     var tag: JournalTag?
     var mood: Int?
@@ -815,6 +815,19 @@ struct JournalUpdate: Encodable, Sendable, Hashable {
         checks = e.checklist?.items.filter(\.checked).map(\.id) ?? []
         updatedAt = e.updatedAt
     }
+
+    /// A draft kept on the phone, as encoded above.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        body = try c.decode(String.self, forKey: .body)
+        tag = try c.decodeIfPresent(JournalTag.self, forKey: .tag)
+        mood = try c.decodeIfPresent(Int.self, forKey: .mood)
+        strategyId = try c.decodeIfPresent(Int.self, forKey: .strategyId)
+        mistakes = try c.decodeIfPresent([String].self, forKey: .mistakes) ?? []
+        emotions = try c.decodeIfPresent([String].self, forKey: .emotions) ?? []
+        checks = try c.decodeIfPresent([Int].self, forKey: .checks) ?? []
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+    }
 }
 
 /// POST /journal: one scope's fields.
@@ -846,6 +859,25 @@ struct JournalCreate: Encodable, Sendable, Hashable {
         try c.encodeIfPresent(tradeIds, forKey: .tradeIds)
         if !mistakes.isEmpty { try c.encode(mistakes, forKey: .mistakes) }
         if !emotions.isEmpty { try c.encode(emotions, forKey: .emotions) }
+    }
+}
+
+// In an extension, so the memberwise init stays.
+extension JournalCreate: Decodable {
+    /// A draft kept on the phone, as encoded above.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        scope = try c.decode(JournalScope.self, forKey: .scope)
+        body = try c.decode(String.self, forKey: .body)
+        tag = try c.decodeIfPresent(JournalTag.self, forKey: .tag)
+        mood = try c.decodeIfPresent(Int.self, forKey: .mood)
+        strategyId = try c.decodeIfPresent(Int.self, forKey: .strategyId)
+        date = try c.decodeIfPresent(String.self, forKey: .date)
+        week = try c.decodeIfPresent(String.self, forKey: .week)
+        tradeId = try c.decodeIfPresent(Int.self, forKey: .tradeId)
+        tradeIds = try c.decodeIfPresent([Int].self, forKey: .tradeIds)
+        mistakes = try c.decodeIfPresent([String].self, forKey: .mistakes) ?? []
+        emotions = try c.decodeIfPresent([String].self, forKey: .emotions) ?? []
     }
 }
 

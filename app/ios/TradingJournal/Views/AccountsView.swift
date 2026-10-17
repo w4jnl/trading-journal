@@ -8,11 +8,13 @@ struct AccountsView: View {
     @State private var accounts: [Account] = []
     @State private var equity: Equity?
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var showRetired = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                StaleBanner(asOf)
                 if let e = equity {
                     Card {
                         CardTitle("Equity now", trailing: e.excluded > 0 ? "\(e.excluded) without an anchor" : "")
@@ -75,17 +77,20 @@ struct AccountsView: View {
         .background(Brand.bg)
         .navigationTitle("Accounts")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
+        .refreshable { await load(fresh: true) }
         .task { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
-    private func load() async {
-        async let a = client.accounts(showRetired: showRetired)
-        async let e = client.equity()
+    private func load(fresh: Bool = false) async {
+        async let a = client.accounts(showRetired: showRetired, fresh: fresh)
+        async let e = client.equity(fresh: fresh)
         do {
-            accounts = try await a
-            equity = try await e
+            accounts = try await a.value
+            let el = try await e
+            equity = el.value
+            asOf = el.asOf
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -127,9 +132,11 @@ struct NudgesView: View {
     @Environment(Client.self) private var client
     @State private var list: NudgeList?
     @State private var error: String?
+    @State private var asOf: Date?
 
     var body: some View {
         List {
+            StaleBanner(asOf)
             if let l = list {
                 if l.items.isEmpty {
                     ContentUnavailableView("No nudges today", systemImage: "bell.slash", description: Text("The guardrail had nothing to say."))
@@ -149,14 +156,17 @@ struct NudgesView: View {
                 Button("All seen") { Task { try? await client.markSeen(l.items.filter(\.unseen).map(\.id)); await load() } }
             }
         }
-        .refreshable { await load() }
+        .refreshable { await load(fresh: true) }
         .task { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
-    private func load() async {
+    private func load(fresh: Bool = false) async {
         do {
-            list = try await client.nudges(day: "today")
+            let l = try await client.nudges(day: "today", fresh: fresh)
+            list = l.value
+            asOf = l.asOf
             error = nil
         } catch {
             self.error = error.localizedDescription

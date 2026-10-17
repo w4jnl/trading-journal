@@ -9,6 +9,7 @@ struct SettingsView: View {
     @Environment(Client.self) private var client
     @Environment(Settings.self) private var settings
     @State private var me: Me?
+    @State private var stored: Int?
     @State private var error: String?
     @State private var confirmSignOut = false
     @State private var notifications = Notifications.shared
@@ -76,8 +77,13 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Trades grouped by set", isOn: $settings.tradesBySet)
+                LabeledContent("Kept for offline", value: stored.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "…")
+                Button("Clear what is kept") { Task { await client.clearStore(); stored = await client.storedBytes() } }
+                    .disabled((stored ?? 0) == 0)
             } header: {
                 Text("This phone")
+            } footer: {
+                Text("The journal's answers, kept so the screens show the last known state when it is out of reach, and the images. At most 150 MB; answers older than a month leave.")
             }
             Section {
                 Button("Pair again") { pair() }
@@ -94,6 +100,7 @@ struct SettingsView: View {
         }
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
+        .task { stored = await client.storedBytes() }
         .task {
             guard settings.isPaired else { return }
             do {
