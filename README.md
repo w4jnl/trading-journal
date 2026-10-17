@@ -175,7 +175,6 @@ Not planned:
 - Stocks, options or crypto; P&L is a futures tick calculation throughout.
 - Order entry or anything that talks to a broker in the trade's direction.
 - A JavaScript single-page app; the UI is server-rendered with HTMX partials.
-- Hosting; run it on your own machine or server.
 
 The journal is at 2.18.5 (2026-10-17). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in
 every release, newest first, for the server and the app; the same text is on each GitHub

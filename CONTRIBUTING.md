@@ -2,7 +2,7 @@
 
 The trading journal is a personal tool, published because the approach may be useful to others.
 Read [Scope and status](README.md#scope-and-status) first: features are the ones my own trading
-needs, and requests that do not fit (other asset classes, order entry, hosting, a single-page
+needs, and requests that do not fit (other asset classes, order entry, a single-page
 app) will probably be declined, politely.
 
 What is welcome:
