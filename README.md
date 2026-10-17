@@ -30,7 +30,7 @@ because the approach may be useful to others.
 
 ## Setup
 
-Current version: 2.18.5 · [release notes](CHANGELOG.md). Linux and macOS on amd64 and arm64 run
+Current version: 2.18.6 · [release notes](CHANGELOG.md). Linux and macOS on amd64 and arm64 run
 the server; the phone app needs iOS 18 and is built from source with your own Apple team.
 
 1. Run it. With Docker, from the `Docker/` folder of a checkout:
@@ -176,7 +176,7 @@ Not planned:
 - Order entry or anything that talks to a broker in the trade's direction.
 - A JavaScript single-page app; the UI is server-rendered with HTMX partials.
 
-The journal is at 2.18.5 (2026-10-17). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in
+The journal is at 2.18.6 (2026-10-17). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in
 every release, newest first, for the server and the app; the same text is on each GitHub
 release.
 

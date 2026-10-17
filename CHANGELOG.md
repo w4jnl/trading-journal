@@ -3,6 +3,27 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## 2.18.6, 2026-10-17
+
+Documentation release; the server's behaviour is unchanged. The app is rebuilt as 2.18.6 with
+no code change.
+
+### Repository
+
+- The README follows the shape of the author's other repositories: a hero banner, screenshots
+  and a recording of a synthetic instance, Setup in five steps, why this journal and what it is
+  not, a Features list that links into `docs/`, Scope and status, How it works with a diagram of
+  the parts inside the binary and one of the tools around the journal (MotiveWave studies,
+  mwrelay, gex-engine, oi-dashboard). The feature prose moved to `docs/features.md`,
+  `data-sources.md`, `auth.md`, `ai.md`, `deploy.md` and `development.md`, corrected where it
+  had gone stale.
+- `scripts/demo/` boots a throwaway journal with twelve weeks of invented fills, notes and
+  plans and takes the README images with Playwright, so they can be remade without anyone's
+  real trades. `assets/brand/` holds the mark, the hero and the GitHub social preview with
+  their HTML sources.
+- CONTRIBUTING.md, SECURITY.md and an issue form; `API.md` lists all 21 MCP tools; the Docker
+  image label says Apache-2.0.
+
 ## 2.18.5, 2026-10-17
 
 ### Server
