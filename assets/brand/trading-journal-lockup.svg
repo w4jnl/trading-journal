@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 340 52" width="1088" height="166">
+<title>trading-journal: lockup</title>
+<g transform="translate(0 4) scale(0.171875)" fill="#12999D">
+  <rect x="14" y="14" width="140" height="140" rx="28"/>
+  <rect x="166" y="60" width="76" height="76" rx="16"/>
+  <rect x="118" y="170" width="36" height="36" rx="8"/>
+  <rect x="166" y="166" width="44" height="44" rx="9"/>
+</g>
+<text x="56" y="35" font-family="JetBrains Mono, ui-monospace, monospace" font-weight="700" font-size="28" letter-spacing="-1" fill="#F2F5F5">trading-journal</text>
+</svg>

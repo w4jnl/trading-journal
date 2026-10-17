@@ -87,10 +87,10 @@ cd trading-journal/Docker
 cp config.example.yaml config.yaml
 $EDITOR config.yaml                       # adjust timezone, port if needed
 
-mkdir -p data imports/{inbox,processed,failed,uploads}
+mkdir -p data imports/{inbox,processed,failed,uploads} oi_dashboard
 
 # nonroot uid 65532 inside the container needs to own these dirs
-sudo chown -R 65532:65532 data imports
+sudo chown -R 65532:65532 data imports oi_dashboard
 
 # Pull the published multi-arch image (Docker picks the right platform)
 docker compose pull
@@ -122,7 +122,7 @@ host directories must be writable by that uid.
 The cleanest one-shot:
 
 ```bash
-sudo chown -R 65532:65532 data imports
+sudo chown -R 65532:65532 data imports oi_dashboard
 ```
 
 If you'd rather the container run as a different uid (e.g., to match

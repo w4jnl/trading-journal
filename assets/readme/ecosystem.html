@@ -1,0 +1,112 @@
+<!doctype html>
+<!-- assets/readme/render.sh renders this to ecosystem-dark.png and ecosystem-light.png
+     (1200x724 css px at 2x): the tools around the journal, for the README. Dashed boxes are
+     the author's tools that are not yet published. -->
+<html><head><meta charset="utf-8"><script src="theme.js"></script><link rel="stylesheet" href="diagram.css">
+<style>html,body{height:724px}
+.hub{border-color:var(--accent);background:var(--panel)}
+.hub h3{font-size:16px}
+.hub ul{margin:6px 0 0;padding-left:16px;color:var(--mute);font-size:11.5px;line-height:1.5}
+</style></head><body>
+
+<div class="title"><span>[trading-journal]</span> around the journal</div>
+<div class="sub">the tools on the desk and the services they talk to; dashed boxes are not yet published</div>
+
+<!-- MotiveWave -->
+<div class="panel" style="left:40px;top:100px;width:300px;height:256px"><div class="ptitle">MotiveWave · the charting platform</div></div>
+<div class="box soon" style="left:56px;top:124px;width:268px;height:118px"><span class="tag">soon</span>
+  <h3>w4j-mw-extensions</h3>
+  <p>Java studies and strategies for the MotiveWave SDK: <code>DailyAtrLevels</code>, <code>VwapBands</code>, <code>GexLevels</code>, which draws gex-engine's levels and reports the futures price back</p>
+</div>
+<div class="box" style="left:56px;top:254px;width:268px;height:86px">
+  <h3>charts and orders</h3>
+  <p>Rithmic and CQG accounts (Apex, Lucid, AMP), IBKR; exports fills as CSV, mails each fill</p>
+</div>
+
+<!-- mwrelay -->
+<div class="box soon" style="left:40px;top:400px;width:300px;height:156px"><span class="tag">soon</span>
+  <h3>mwrelay</h3>
+  <p>store-and-forward SMTP relay on the trading Mac: takes MotiveWave's fill e-mails, keeps them in SQLite, delivers each to every journal at least once, over SMTP or an SSH tunnel. <b class="m">mwrelay-bar</b> shows the queue and the day's P&amp;L in the menu bar.</p>
+</div>
+
+<!-- brokers -->
+<div class="box" style="left:40px;top:586px;width:300px;height:110px">
+  <h3>brokers with an API</h3>
+  <p><b class="m">TopstepX / ProjectX</b>: trades, fees and exact-contract bars. <b class="m">IBKR Client Portal Gateway</b>: executions. Both synced on a schedule by the journal itself.</p>
+</div>
+
+<!-- the journal -->
+<div class="box hub" style="left:440px;top:290px;width:320px;height:190px">
+  <h3><svg class="mark" viewBox="0 0 256 256" fill="var(--accent)"><rect x="14" y="14" width="140" height="140" rx="28"/><rect x="166" y="60" width="76" height="76" rx="16"/><rect x="118" y="170" width="36" height="36" rx="8"/><rect x="166" y="166" width="44" height="44" rx="9"/></svg>trading-journal</h3>
+  <p>this repository · Go, SQLite, one binary</p>
+  <ul>
+    <li>imports fills, builds trades and copy sets</li>
+    <li>journal, day plan, guardrail nudges, coach</li>
+    <li>analytics, lab, digest, equity, calendar</li>
+    <li>REST and MCP, the phone's server</li>
+    <li>the GEX and OI pages</li>
+  </ul>
+</div>
+
+<!-- gex-engine -->
+<div class="box soon" style="left:860px;top:100px;width:300px;height:170px"><span class="tag">soon</span>
+  <h3>gex-engine <span class="m">· gamma-exposure</span></h3>
+  <p>dealer gamma exposure for ES and NQ from the SPX, SPY, NDX and QQQ option chains (CBOE, 15 min delayed) and SOFR from FRED: call wall, put wall, flip, regime, expected move, in index and futures points. Python, FastAPI <code>:8420</code>, its own dashboard.</p>
+</div>
+
+<!-- phone -->
+<div class="box" style="left:860px;top:330px;width:300px;height:104px">
+  <h3>Trade Log <span class="m">· the phone app</span></h3>
+  <p>in this repository, <code>app/ios</code>: Today, trades, journal, plans and notes offline, nudges by push, the Session Live Activity, widgets</p>
+</div>
+
+<!-- AI -->
+<div class="box" style="left:860px;top:470px;width:300px;height:80px">
+  <h3>AI assistants</h3>
+  <p>Claude Code, claude.ai, ChatGPT: review and write the journal through MCP</p>
+</div>
+
+<!-- OI dashboard -->
+<div class="box soon" style="left:440px;top:580px;width:320px;height:116px"><span class="tag">soon</span>
+  <h3>oi-dashboard</h3>
+  <p>a daily open-interest report for ES, NQ and CL (and GC, SI, ZN) from Databento, the IBKR gateway and CFTC's COT, as HTML and PDF; runs pre-market, Python</p>
+</div>
+
+<!-- wires -->
+<svg class="wires" width="1200" height="740" viewBox="0 0 1200 740">
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker>
+    <marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+  </defs>
+  <!-- GexLevels <-> gex-engine, across the top -->
+  <path d="M342 176 L858 176" marker-end="url(#m)" marker-start="url(#m)"/>
+  <!-- MotiveWave -> journal: CSV -->
+  <path class="a" d="M342 296 C400 296, 420 330, 438 330" marker-end="url(#ma)"/>
+  <!-- MotiveWave -> mwrelay: fill e-mails -->
+  <path d="M190 358 L190 398" marker-end="url(#m)"/>
+  <!-- mwrelay -> journal: SMTP -->
+  <path class="a" d="M342 420 L438 420" marker-end="url(#ma)"/>
+  <!-- journal -> mwrelay-bar: stats -->
+  <path d="M438 462 L342 462" marker-end="url(#m)"/>
+  <!-- brokers -> journal -->
+  <path class="a" d="M342 640 C400 640, 470 560, 480 482" marker-end="url(#ma)"/>
+  <!-- journal <-> gex-engine -->
+  <path d="M762 310 C800 310, 820 240, 858 240" marker-end="url(#m)" marker-start="url(#m)"/>
+  <!-- journal <-> phone -->
+  <path class="a" d="M762 382 L858 382" marker-end="url(#ma)" marker-start="url(#ma)"/>
+  <!-- journal <-> AI -->
+  <path d="M762 450 C800 450, 820 510, 858 510" marker-end="url(#m)" marker-start="url(#m)"/>
+  <!-- oi-dashboard -> journal -->
+  <path d="M600 578 L600 482" marker-end="url(#m)"/>
+</svg>
+<div class="lab" style="left:440px;top:156px"><code>POST /v1/marks</code> (futures price) → · ← <code>GET /v1/levels</code></div>
+<div class="lab" style="left:352px;top:252px">CSV export → <code>imports/inbox/</code></div>
+<div class="lab" style="left:198px;top:368px">fill e-mails · SMTP :2525</div>
+<div class="lab" style="left:350px;top:400px">SMTP or SSH</div>
+<div class="lab" style="left:350px;top:466px;text-align:center"><code>stats/daily</code><br>→ menu bar</div>
+<div class="lab" style="left:352px;top:556px">trades, fees, bars · REST</div>
+<div class="lab" style="left:784px;top:272px;text-align:center"><code>GET /v1/snapshots</code><br><code>/v1/profile</code></div>
+<div class="lab" style="left:778px;top:346px;text-align:center">API + SSE<br>APNs</div>
+<div class="lab" style="left:796px;top:468px">MCP</div>
+<div class="lab" style="left:470px;top:516px;text-align:center"><code>dashboard-YYYY-MM-DD.{html,pdf}</code><br>→ <code>/oi</code></div>
+</body></html>

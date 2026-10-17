@@ -1,0 +1,35 @@
+<!doctype html>
+<!-- assets/brand/render.sh renders this to trading-journal-social.png (1280x640), the GitHub
+     social preview (repository Settings > Social preview). flok's layout: ground, the 6 px bar,
+     mark and wordmark, the repo line, a two-line tagline, a legend of the journal's states. -->
+<html><head><meta charset="utf-8">
+<style>
+  @font-face{font-family:"JetBrains Mono";src:url("../../web/static/fonts/JetBrainsMono-Variable.woff2") format("woff2");font-weight:100 800}
+  @font-face{font-family:"Inter";src:url("../../web/static/fonts/Inter-Variable.woff2") format("woff2");font-weight:100 900}
+  html,body{margin:0;width:1280px;height:640px;overflow:hidden;background:#14181A;color:#F2F5F5;font-family:"JetBrains Mono",ui-monospace,monospace}
+  .bar{position:absolute;left:0;top:0;width:6px;height:640px;background:#12999D}
+  .mark{position:absolute;left:104px;top:184px;width:124px;height:124px}
+  .word{position:absolute;left:272px;top:168px;font-size:88px;font-weight:700;letter-spacing:-.04em;line-height:1}
+  .repo{position:absolute;left:280px;top:300px;font-size:22px;color:#8A999C;letter-spacing:.01em}
+  .repo span{margin:0 22px}
+  .tag{position:absolute;left:96px;top:404px;font-family:Inter,system-ui,sans-serif;font-weight:600;font-size:42px;line-height:1.26;letter-spacing:-.015em}
+  .legend{position:absolute;left:96px;top:544px;font-size:20px;display:flex;gap:40px}
+  .legend i{display:inline-block;width:11px;height:11px;border-radius:50%;margin-right:10px;vertical-align:1px}
+</style></head><body><div class="bar"></div>
+<svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" fill="#12999D">
+  <rect x="14" y="14" width="140" height="140" rx="28"/>
+  <rect x="166" y="60" width="76" height="76" rx="16"/>
+  <rect x="118" y="170" width="36" height="36" rx="8"/>
+  <rect x="166" y="166" width="44" height="44" rx="9"/>
+</svg>
+<div class="word">trading-journal</div>
+<div class="repo">w4jnl/trading-journal<span>·</span>Go<span>·</span>Swift<span>·</span>Apache-2.0</div>
+<div class="tag">Every fill becomes a trade.<br>Every trade gets its note.</div>
+<div class="legend">
+  <span style="color:#22c55e"><i style="background:#22c55e"></i>win</span>
+  <span style="color:#ef4444"><i style="background:#ef4444"></i>loss</span>
+  <span style="color:#60a5fa"><i style="background:#60a5fa"></i>open position</span>
+  <span style="color:#f59e0b"><i style="background:#f59e0b"></i>nudge</span>
+  <span style="color:#2EBABE"><i style="background:#2EBABE"></i>plan</span>
+</div>
+</body></html>

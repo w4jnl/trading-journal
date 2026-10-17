@@ -1,6 +1,6 @@
 # Using the trading-journal analyst in ChatGPT
 
-Same workflow as [SKILL.md](SKILL.md), same 14 MCP tools, same names. ChatGPT reaches the
+Same workflow as [SKILL.md](SKILL.md), same MCP tools, same names. ChatGPT reaches the
 journal through an **MCP connector (ChatGPT calls it a plugin) that signs in with OAuth** —
 there is no key to generate, copy or store anywhere. The server-side prerequisite is
 `mcp.oauth` enabled on the journal (one-time, see `docs/mcp-oauth-setup.md`).

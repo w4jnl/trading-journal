@@ -1,716 +1,289 @@
-# Trading Journal
-
-A single-user, self-hosted trading journal for futures traders. Imports
-fills from MotiveWave and TopstepX CSV exports, builds trades via a FIFO
-position builder, and gives you a place to write about them.
-
-Server-rendered Go app, SQLite storage, HTMX for the dynamic bits. No
-JavaScript framework, no broker API integration, no cloud — drop a CSV
-into a folder (or upload one) and the rest of the app comes to life
-around it.
-
-## What it does
-
-- **Imports** MotiveWave CSV exports (covers Apex / Lucid / IBKR / AMP-CQG
-  via one parser) and TopstepX exports through a second one. Drop a file
-  into `imports/inbox/` or upload it at `/import`; the watcher handles
-  the rest. Format is auto-detected from the header row.
-- **Trades** are derived from fills by a FIFO position builder: partial
-  closes, long→short flips, and commission allocation all handled per
-  account per symbol. Copies of one decision fanned across accounts by a
-  copytrader (same underlying, same direction, entries within two
-  seconds, two or more accounts) form a **copy set**: `/trades` can list
-  by set with the accounts folded underneath, the set's sheet compares
-  the fills, and analytics can count per decision.
-- **Open positions** are not trades yet (a trade is written when the
-  cycle closes), but they are where the plan belongs: `/trades` opens
-  with an "Open now" strip above the table (a `Status` filter shows open,
-  closed or both) and the dashboard card lists them; a click opens the
-  position's sheet with its fills, average entry, last price and
-  unrealised P&L, and a plan row - stop, risk, target and a one-line
-  thesis - that works like the trade sheet's (a stop sets the risk at the
-  current size, a risk sets the stop). The plan is anchored on the fill
-  that opened the position, so it survives rebuilds and the CSV replacing
-  an e-mail fill, follows a scale-in (risk recomputed, stop kept) and
-  moves onto the trade the moment the position closes. A position with no
-  plan shows a dashed "set plan" chip; one held for days is marked
-  "carried?", since that usually means missing fills. Open legs of one
-  copied decision cluster like closed sets: the sheet lists the other
-  legs, and a plan saved with "all legs" puts the stop price on every leg
-  with each leg's risk from its own entry and size. A leg that lands
-  later (an IBKR fill on the next poll, a TopstepX trade that arrives
-  flat) inherits the set's plan, marked "from set" until the trader
-  saves it. Accounts a copier drives together can be given the same
-  **copy group** on `/accounts`, which lets their legs count as one
-  decision up to thirty seconds apart instead of two; in the sets view the
-  open strip folds such a decision into one row (size, risk and unrealized
-  summed, the entry averaged with the spread, the shared stop and target)
-  with the legs under a chevron, like a closed set. The guardrail, when
-  on, says once when a position has been open for a few minutes with no
-  stop recorded and when the stops on what is open risk more than the day
-  plan's max loss still allows; the API and MCP list positions and record
-  plans (`GET /api/v1/positions`, `set_position_plan`), marked as set
-  through the API until the trader saves them. On the sheet, **AI stop &
-  target** asks the trader's own model where the levels belong, from the
-  bars ending now (the chart image too, when the user sends charts), the
-  day plan and what its max loss still allows, the lab's best distances
-  for the instrument, the strategies and recent lessons: it answers with
-  a stop, a target (a second one optional), the reasons and a trail rule,
-  which the app checks (right side of the entry, within the bars, snapped
-  to tick) and prices itself. It is shown dashed; "Use as plan" writes it
-  with source `ai`, nothing else touches the plan, and after the close the
-  suggestion stays on the trade sheet next to what the trader chose, made
-  before the outcome existed. Settings > AI chooses what a **new open
-  position** gets without a click (nothing, by default): the suggestion
-  made for it and waiting on its sheet, or the suggestion written straight
-  into the plan, a copied decision once for all its legs; the plan then
-  reads as `ai` and the trader edits or clears it like any other. Each
-  position is judged once (a dismissed suggestion or a cleared plan is not
-  made again) and a carried position (open for days) is left alone. A
-  scale-in (a fill adding to the open position) is the same cycle: the
-  sheet says so and shows how the average moved, the stop and target set
-  on the first fill stay until the trader changes them, nothing moves them
-  automatically, and only the money at risk follows the size. The model does not get a bare slice of bars:
-  it gets the **session** as a trader reads it, computed from the cached
-  one-minute bars as of the moment (prior RTH range and close, overnight
-  range, opening range, session extremes, VWAP, ATR, the last swing highs
-  and lows, and the structural levels nearest the last price) plus a
-  multi-timeframe window (15m over the last sessions, 5m over the last
-  hours, 1m over the last minutes). The trade review gets the same, as it
-  stood at the entry. A **session warm-up** keeps today's one-minute bars
-  fresh for every root with a fill in the last days (every two minutes
-  while Globex trades, `session_warmup_min`) and the two previous days
-  complete, which is also what makes the sheet's distance to the stop and
-  the guardrail's "price is through your stop" current. Trade charts load
-  the trade's whole trading day at the finest cached size (one minute is
-  the finest the cache holds) and open on the stretch around the trade
-  at the bar size the trade reads best at; **Day** and **Trade** switch
-  the view, the bar-size selector rolls the same bars up, and the chart
-  image sent to the API and the AI keeps the stretch around the trade.
-  With a TopstepX connection the shared cache takes the **exchange feed**
-  first for the recent days of the roots you trade: the exact contract,
-  no delay, true volume (the day's source is noted under the chart, and
-  the basis note goes away). The same feed fetches **one-second bars**
-  around every trade shorter than ten minutes, once, padded two minutes
-  each side: the chart offers 1, 5 and 15 second sizes over them in the
-  Trade view, the excursions (heat, best seen, exit kept) are measured
-  from them, and the chart image of such a trade is drawn at five
-  seconds. The cache is one for all users; the feed borrows the session
-  of any user with credentials.
-- **Journal** entries attach to any of four scopes — a single trade, a
-  whole day, an ISO week, or a freely-assembled group of trades. Each
-  view shows the same shape: tag picker, mistake and emotion labels from
-  a fixed vocabulary (so analytics can tell you what "moved the stop"
-  costs), rich markdown editor (paste screenshots, drag-drop images,
-  apply built-in templates, recall prior entries), and the related
-  trades panel. The day view opens with the **plan**: a pre-market plan
-  (bias, levels, a cap on decisions, a stop time, a max loss per account,
-  notes) written before the session and read rule by rule against the
-  day's trades, flagged when it was written after the first trade; the
-  dashboard nudges when today has none. For today or a later day the card
-  lists your open lessons and **✨ Draft the plan** has the AI draft the cap,
-  stop time, max loss, levels and focus from your norms, the last trading
-  days' coach findings and plan checks, what an account usually loses on a
-  losing day, your open lessons and the gamma map; the draft prefills the
-  form for you to change and save (the bias stays yours). With the
-  **guardrail** on (Settings), the server re-reads the day as fills arrive
-  and nudges you once - a toast, and a browser notification while the tab
-  is in the background - when the coach flags a trade that just closed
-  (a re-entry right after a loss, a size-up after a loss, a stop run
-  through, trading against the plan), when the plan's decision cap is
-  reached, when an account nears or hits its max loss and at the plan's
-  stop time; each nudge quotes your own open lesson about it, no AI model
-  involved, and the day page lists them. Then the **coach**: rule-based checks
-  over the day's trades (re-entry after a loss, size-up after a loss, a
-  stop run through, a winner cut short, a loser held, overtrading,
-  late entries) with the numbers and a one-click label; the same checks
-  reach the AI reviewer and the API. A strategy can carry a **playbook
-  checklist** (its rules, one per line, edited in the Library); trade and
-  group notes that use the strategy tick the rules, the note shows the
-  score and the misses, and analytics reports compliance per strategy
-  with the net of complete versus incomplete trades. In the Library the AI
-  **drafts a strategy's playbook and checklist from your own trades** (the
-  numbers measured by the app, your notes, where you trade differently from
-  what you wrote) and **finds strategies in your untagged trades**
-  (grouped by instrument, time of day and holding time, named and judged
-  keep / fix / drop); nothing changes until you apply a draft or create
-  the strategy.
-- **Dashboard** leads with a 60-day cumulative P&L curve, a Today panel
-  with the day's net P&L as a hero number, and a five-tile stat strip
-  with inline-SVG sparklines for trades / win rate / R-multiple /
-  streak.
-- **Analytics** auto-surfaces findings (best/worst day-of-week + hour,
-  most-traded vs most-profitable symbol, profit-factor and R-multiple
-  flags), measures every trade's path from cached bars (max heat, best
-  seen, how much of it the exit kept), and lets you drill into `/trades`
-  from breakdown rows by symbol or direction.
-- **Stop & target lab** (`/analytics/lab`, linked from Analytics and each
-  strategy) replays your past decisions on the cached 1-minute bars under a
-  grid of fixed stops and targets - the axes from how much heat your
-  winners took and how far they ran - with an optional time stop: the
-  average result per decision with its 90% bootstrap range and win rate
-  per cell, against what your own exits made, plus the heat-against-best
-  scatter of winners and losers. "Explain this grid" has the AI recommend a
-  rule and say how far to trust it.
-- **Digest** reads one ISO week per decision against the week before:
-  the headline numbers, one-sentence keep and fix lists derived from
-  them, the best and worst decision, the coach's findings tallied across
-  the days, how the day plans held and the week's review lessons; downloadable as markdown, served
-  to the API and MCP, and the basis of the AI's week review.
-- **AI reviews** in the app: ✨ Analyze on any note (a trade, a copy set,
-  a group, a day or a week, also one not written yet; once reviewed it
-  reads Re-analyze and adds a fresh review below) or on a whole day
-  writes a review into the journal, briefed for what it reviews (a trade's
-  entry, risk and exit against its plan, its price path and the bars
-  around it - optionally the chart image too, for vision models; a copy set's
-  consistency across accounts; a day against its plan; a week from the
-  digest) and headed by the model that wrote it. It never writes your tag,
-  strategy or labels: what it proposes shows on the note as dashed pills
-  to accept or dismiss (a dismissed one is not proposed again); the
-  same pills, tinted by kind, mark the note's row in the journal feed
-  until you do, and the editor marks them dashed in its pickers. It
-  proposes only what the data can show: the app holds the fills, never
-  the working orders, so "No stop" is yours to set, never its guess. Values
-  written through the API or MCP are marked until you save the note, and
-  analytics can count only what you set or confirmed ("Confirmed by me").
-  Each review also names **one lesson**, kept in a ledger
-  (`/journal/lessons`): lessons about the same mistake are counted while
-  open, the next reviews are told your recent ones and say whether a trade
-  repeated or applied them, and you mark a lesson learned once it stops
-  coming back. A review runs in the
-  background: it carries on when you close the sheet or leave the page,
-  the note shows a spinner wherever it is listed (trades, sets, the
-  journal feed) and cannot be edited until the review lands. A whole-day
-  run locks only the notes it is writing; the rest of the journal stays
-  open, and single notes can be analyzed alongside it. Each user runs it on **their own
-  provider key** (Settings → AI: OpenAI, Anthropic, Google Gemini,
-  Mistral, OpenRouter), or on a server-wide default such as a local
-  model. See [In-app AI reviews](#in-app-ai-reviews).
-- **Calendar** is the at-a-glance month view with per-day P&L heat and
-  weekly summaries — clicking a day pivots to the trades on it.
-- **Exports** to Markdown and PDF, filterable by the same controls as
-  the on-screen feed. Each entry carries its summary line + up to five
-  underlying trades.
-- **HTTP API** with per-user API keys: agent keys get read + append-only
-  access to strategies and journal entries (LLM/agent-friendly: discovery
-  index + OpenAPI spec); a paired phone's device key may also edit the
-  journal, keep balances and receive push. See **[API.md](API.md)**.
-- **⌘K command palette** for fast navigation, recent pages, symbol
-  jumps (type `MNQ` → `/trades?symbol_root=MNQ`), and date keywords
-  (`today`, `last week`, …).
-- **Themes** light + dark, persisted; full keyboard story across the
-  app (`j`/`k` to walk trades, `g`/`n`/`b` to tag, `⌘S` to save, `⌘D`
-  to journal a multi-trade selection, `⌘P` to toggle live preview).
-
-## Quick start (local)
-
-```bash
-# 1) Build (Go 1.26+, no CGO needed — modernc.org/sqlite is pure Go)
-go build -o trading-journal ./cmd/server
-
-# 2) Configure
-cp config.example.yaml config.yaml
-$EDITOR config.yaml        # set port, timezone, paths if you want
-
-# 3) Run
-./trading-journal -config config.yaml
-```
-
-By default the server binds on `:8080`, writes `./data/trading.db`, and
-watches `./imports/inbox/` for CSV drops.
-
-On first start the app creates a single user (default name `admin`,
-configurable via `auth.bootstrap_user`) and assigns every existing
-account / trade / journal entry to that user. Set its password and
-sign in:
-
-```bash
-./trading-journal users reset admin   # interactive password prompt
-./trading-journal                     # start the server
-# open http://localhost:8080/  — login at /login
-```
-
-Then either upload your first export at `/import` or drop a `.csv`
-into `imports/inbox/` and watch the dashboard light up.
-
-The schema lives in `internal/db/migrations/*.sql` (dbmate format) and
-is applied automatically on startup from the embedded files. No
-external migration tool required.
-
-## Authentication & users
-
-The app is multi-user. Every request resolves to a row in the `users`
-table; data isolation is enforced at the query layer so two users on
-the same DB never see each other's accounts, trades, journal entries,
-balances, or sync log.
-
-**Auth modes** are picked by `auth.mode` in `config.yaml`:
-
-- `local` (default) -- built-in login page at `/login`, bcrypt
-  passwords, sqlite-backed sessions, HMAC-bound CSRF tokens on every
-  mutating request. Cookie is `HttpOnly + SameSite=Lax` and `Secure`
-  by default (drop `auth.cookie_secure: false` if you're running plain
-  HTTP behind a trusted VPN).
-- `proxy` -- trusts identity headers (`Remote-User`, `Remote-Email`,
-  `Remote-Groups`) from an upstream reverse proxy like Authelia,
-  oauth2-proxy, or Caddy `forward_auth`. See the [Proxy
-  mode](#proxy-mode) section below.
-
-See **[config.example.yaml](config.example.yaml)** for every auth
-knob, with comments. `auth.session_secret` is the HMAC key for CSRF
-tokens, session-id binding, and the act-as cookie -- set it to any
-32+ byte string (or `base64:<random>`) so tokens survive restarts.
-For deployments where the config file is checked in, the secret can
-also be supplied at runtime via the `TJ_SESSION_SECRET` environment
-variable (Docker secrets, systemd `EnvironmentFile`, etc.); the
-env value overrides whatever is in the YAML. Likewise
-`secrets.encryption_key` (`TJ_ENCRYPTION_KEY`), the key users' stored
-AI provider keys and TopstepX credentials are encrypted under: generate
-it with `openssl rand -hex 32` and back it up with the config, since
-losing it means every user re-enters their keys.
-
-### Managing users
-
-Two surfaces are available, both backed by the same code path. Pick
-whichever fits the task at hand.
-
-**Web UI:** `/admin/users` (admins only; non-admins get 403). Inline
-actions for create / reset password / promote-demote / deactivate-
-activate / delete / act-as. Linked from the sidebar's **Admin →
-Users** entry whenever the signed-in user has the admin flag.
-
-**CLI:** the binary doubles as a user-management tool. Useful for
-bootstrapping the first admin (no UI is reachable before then) and
-for scripted maintenance:
-
-```bash
-./trading-journal users -h            # full subcommand help
-
-# Create / reset
-./trading-journal users add bob              # prompts for password (x2)
-./trading-journal users add jane --admin --email=jane@example.com
-./trading-journal users reset bob            # also destroys bob's sessions
-
-# Inspect
-./trading-journal users list                 # id, username, admin, active, email
-
-# Toggle state
-./trading-journal users promote bob          # grant admin
-./trading-journal users demote bob           # revoke admin
-./trading-journal users deactivate bob       # disable login + kill sessions
-./trading-journal users activate bob
-
-# Permanent removal
-./trading-journal users delete bob           # interactive: retype username
-./trading-journal users delete bob --yes     # skip the retype prompt
-```
-
-`delete` is destructive. It removes everything that belongs to the
-user, in one transaction with an end-of-tx `foreign_key_check`:
-
-- DB rows: accounts, trades, executions, journal entries (every
-  scope), `journal_entry_trades`, `journal_attachments` rows,
-  balance anchors, daily stats, custom journal templates, sessions.
-  `sync_log` rows have their `user_id` set to NULL so the import
-  audit history survives anonymized.
-- Files: journal attachment files referenced by the deleted entries,
-  the user's `imports/inbox/<name>/`, `imports/processed/<name>/`,
-  `imports/failed/<name>/`, and `imports/uploads/<id>/` directories.
-
-Both the CLI and the web UI refuse to delete the last active admin
-(promote another user first) and refuse to let an admin delete the
-account they're signed in as.
-
-### Admin act-as
-
-Admins can browse the app as another user without learning their
-password. From `/admin/users`, click **Act as** on the target row;
-a signed cookie carries the target id, every page renders a
-red-tinted "Acting as ALICE -- signed in as ADMIN" banner with a
-**Return** button. The cookie is HMAC-signed (any tampering invalidates
-it) and the target's `is_active` is re-checked on every request, so
-a deactivated target can't be impersonated even if a stale cookie
-survives. POST `/admin/act-as/clear` (or the banner button) drops
-the cookie. Audit: every act-as session uses the *target's* user_id
-end-to-end (queries, sync_log, importer attribution) -- the admin's
-identity stays in the cookie for the banner only.
-
-### Proxy mode
-
-Set `auth.mode: "proxy"` to delegate authentication to a reverse
-proxy. The app trusts identity from configurable headers (default
-`Remote-User`, `Remote-Email`, `Remote-Groups`) but only when the
-request originates from an allowlisted CIDR -- this is the only thing
-between the public internet and impersonation, so it has to be set:
-
-```yaml
-auth:
-  mode: "proxy"
-  bootstrap_user: "admin"             # still required (owns flat-inbox drops)
-  proxy:
-    user_header: "Remote-User"
-    email_header: "Remote-Email"
-    display_name_header: "Remote-Name"
-    groups_header: "Remote-Groups"
-    admin_group: "admin"              # comma-list match grants is_admin
-    trusted_proxies:                  # CIDR allowlist for r.RemoteAddr
-      - "172.20.0.0/16"
-      - "127.0.0.1"
-    auto_provision: false             # create users on first sight?
-    logout_url: ""                    # where /logout sends the browser
-```
-
-On every request the proxy authenticator:
-
-1. Verifies `r.RemoteAddr` falls inside `trusted_proxies`. If not,
-   the headers are ignored and the request reads as unauthenticated.
-2. Reads `user_header`; empty -> unauthenticated.
-3. Looks up the username. If absent and `auto_provision: true`,
-   creates the row with no password (proxy users never log in
-   locally). Otherwise refuses.
-4. Refreshes `email` / `display_name` / `is_admin` on the existing
-   row so changes in the upstream SSO propagate. `is_admin` comes
-   from an exact comma-separated match of `admin_group` inside
-   `groups_header`.
-
-`/login` redirects to `/`; `/logout` redirects to `logout_url` if
-set, else returns a stub page asking the user to sign out via the
-SSO.
-
-A minimal Authelia setup pointing at the app uses
-`forwarded_headers` with `Remote-User` / `Remote-Email` /
-`Remote-Groups` and a per-rule access policy that grants `admin`
-group membership to whoever should administer the trading journal.
-oauth2-proxy and Caddy `forward_auth` work the same way; whichever
-proxy you use, double-check that it strips client-supplied
-`Remote-*` headers before forwarding -- otherwise the CIDR
-allowlist is the only thing standing between a curious client and
-impersonation.
-
-## HTTP API
-
-Beyond the web UI, the app exposes a small **HTTP API** for external
-clients and AI agents: read your strategies and journal entries (trades
-overview, detailed trade list, tags, assigned strategy, chart data + a
-server-rendered PNG, embedded images), and append dated notes to an entry
-(append-only — an agent key never overwrites existing content). Consumer
-apps get daily P&L / trade stats (`GET /api/v1/stats/daily` — the
-Calendar's numbers), a data version to poll for changes
-(`GET /api/v1/version`) or a server-sent event stream (`GET /api/v1/events`).
-A paired phone holds a **device key**, which may also edit and delete
-journal entries, keep balance anchors, change settings and register for
-push notifications and the Session Live Activity (`POST /api/v1/pair`,
-`/today`, `/accounts`, `/equity`, `/nudges`, `/devices`).
-
-Access is by **per-user API key**, generated under **Settings**
-(`/settings`) and sent as `Authorization: Bearer tj_...` (or `X-API-Key`).
-The surface is LLM-friendly: a discovery index at `GET /api/v1` and an
-OpenAPI 3.1 spec at `GET /api/v1/openapi.json`, both behind the key.
-
-Full reference — authentication, every endpoint, JSON shapes, and a
-worked example — lives in **[API.md](API.md)**, rendered in-app under
-**Settings → API docs**. A contract-first brief for building a consumer
-app on the stats endpoint is in
-[docs/api-handoff-001-daily-stats.md](docs/api-handoff-001-daily-stats.md).
-
-For AI agents the app also speaks **MCP** (Model Context Protocol) at
-`/mcp`. Claude Code, the Claude app and ChatGPT connect by **signing in
-with OAuth** — the journal is its own authorization server: point the
-client at `/mcp`, log in, click Allow, and revoke it any time under
-Settings → Connected apps (setup in
-[docs/mcp-oauth-setup.md](docs/mcp-oauth-setup.md)). No key is copied
-into any connector; the per-user API keys remain for scripts and the REST
-API. A ready-made
-analysis workflow ships as the **`trading-journal-analyst`** skill
-(`.claude/skills/trading-journal-analyst/`): it reviews a trading day,
-groups copytrader fan-out, writes the per-trade/group analysis once, and
-synthesizes the daily journal. See **[API.md](API.md)** for the MCP tool
-list and setup.
-
-### In-app AI reviews
-
-The ✨ Analyze buttons call an AI provider from the server. Two sources,
-usable together:
-
-- **Each user's own key** (Settings → AI). Pick OpenAI, Anthropic
-  (Claude), Google Gemini, Mistral or OpenRouter, paste an API key and a
-  model (**Load models** lists the ones the key can use). Saving makes
-  a one-word test call first and stores the key AES-256-GCM encrypted;
-  a user's own provider wins over the server default. Admins can also
-  enter any OpenAI-compatible URL (a local model server, Groq, ...);
-  regular users get the fixed hosted endpoints only, so nobody can point
-  the server at an internal host. This needs `secrets.encryption_key`
-  (or an existing `topstepx.encryption_key`, which serves both) and is on
-  by default once one is set; `ai.user_keys: false` turns it off.
-- **A server-wide default** (`ai.enabled` with an OpenAI-compatible
-  `ai.base_url`, e.g. a local MLX server) for every user without a key.
-
-With neither, a user sees no AI buttons. A ChatGPT or Claude
-subscription does not include API access: the providers bill API keys
-per use, separately from the subscription (a review is a few thousand
-tokens). Those subscriptions instead reach the journal the other way
-round, through the MCP connector above.
-
-## Quick start (Docker)
-
-A container-based deployment is in `Docker/`:
-
-```bash
-cd Docker
-cp config.example.yaml config.yaml      # adjust timezone if needed
-mkdir -p data imports/{inbox,processed,failed,uploads}
-sudo chown -R 65532:65532 data imports  # for the nonroot container user
-docker compose pull
-docker compose up -d
-```
-
-See **[Docker/README.md](Docker/README.md)** for the multi-arch
-build+push flow against `ghcr.io/w4jnl/trading-journal`, the buildx bootstrap, and
-the chown step explained in detail.
-
-## Stack
-
-- Go 1.26, stdlib `net/http` with `http.ServeMux` (method-based routing,
-  no chi).
-- [`modernc.org/sqlite`](https://pkg.go.dev/modernc.org/sqlite) — pure
-  Go SQLite, CGO-free.
-- [`sqlc`](https://sqlc.dev) for type-safe queries from raw SQL.
-- `dbmate`-format migrations, embedded via `embed.FS` and applied by a
-  small runtime runner.
-- `html/template` server-rendering, [HTMX](https://htmx.org) for the
-  partial swaps (trade detail modal, journal preview), inline SVG for
-  sparklines, [uPlot](https://github.com/leeoniya/uPlot) loaded from
-  CDN for the few real charts (dashboard equity curve, trades
-  cumulative, analytics daily series).
-- A single CSS file (`web/static/css/app.css`) carries the design system
-  — tokens, light/dark themes, journal editor, trade modal, calendar
-  heat, etc. No build step; the file ships as-is.
-- Inter + JetBrains Mono web fonts served locally from
-  `web/static/fonts/`.
-
-## Project layout
-
-```
-cmd/server/             — main()
-internal/
-  config/               — YAML config loader
-  db/                   — sqlite open + migrations runner
-  db/migrations/        — *.sql migration files (dbmate format)
-  db/queries/           — *.sql files for sqlc
-  models/               — sqlc output (Queries struct, row types)
-  importer/             — CSV parsers (MotiveWave, TopstepX),
-                          ImportService, inbox watcher
-  positions/            — FIFO position builder
-  handlers/             — HTTP layer (one file per page + a few helpers)
-web/
-  templates/            — html/template tree, embedded into the binary
-  static/css/app.css    — design system
-  static/js/            — toast, journal editor, trade sheet, command palette
-  static/fonts/         — Inter + JetBrains Mono woff2
-Docker/                 — Dockerfile, docker-compose, deployment README
-exportData/             — sample CSVs used to verify the importers
-```
-
-## Data sources (v1)
-
-The app intentionally avoids broker APIs in v1 — the trader already
-runs MotiveWave on every brokered account, so one MotiveWave CSV
-importer covers Apex / Lucid / IBKR / AMP-CQG. TopstepX gets its own
-importer because it isn't a MotiveWave-supported broker.
-
-Two entry points, same code path:
-
-1. **UI upload** at `/import` (drag-drop or file picker).
-2. **Watch folder** — `fsnotify` on `imports/inbox/`. Drop a file there
-   and it auto-imports.
-
-After processing, files move out of `inbox/`:
-- success → `imports/processed/<username>/<timestamp>_<filename>`
-- failure → `imports/failed/<username>/<filename>` plus a sibling
-  `<filename>.error.txt`
-
-No file is silently lost.
-
-### Per-user inbox subdirectories
-
-The watcher recognizes `imports/inbox/<username>/` subdirs and routes
-each one's drops to that user. Subdir name must match a `users.username`
-in the DB and the user must be active (`is_active = 1`); subdirs that
-don't resolve are logged at startup and ignored. So:
-
-```
-imports/
-  inbox/
-    alice/   foo.csv          ← alice's account
-    bob/     bar.csv          ← bob's account
-    leftover.csv              ← still works → bootstrap user
-  processed/
-    alice/   2026-…_foo.csv
-    bob/     2026-…_bar.csv
-    2026-…_leftover.csv       ← flat path for flat drops
-  failed/    … (mirrors processed/<username>/ …)
-```
-
-Files dropped directly into `inbox/` (no subdir) still work for
-single-user compatibility — they get attributed to the bootstrap user
-and use the flat `processed/` / `failed/` paths. The UI upload at
-`/import` always uses the request's logged-in user, regardless of
-where the staged file ends up.
-
-### MotiveWave email capture + live ingest
-
-MotiveWave can send an email on every order fill
-(**Preferences → Orders → Send Email On Filled Order**). The app acts as
-MW's SMTP server so those notifications land here instead of a real mail
-provider — near-real-time fills for the accounts that have no API
-connector (Rithmic props, AMP/CQG). Verified against live captures: the
-notification carries the account id, order id, symbol, side, cumulative
-filled quantity, and average fill price, and copier-target fills are
-emailed individually per account.
-
-Two layers, both on by default when `mw_email.enabled`:
-
-- **Capture** — every message is archived verbatim as `.eml` under
-  `mw_email.archive_dir` (default `data/mw-raw/`). Duplicate deliveries
-  (SMTP retries) are dropped by content hash, surviving restarts; parse
-  or storage problems are logged, never bounced back to MW.
-- **Ingest** (`mw_email.ingest`, default true) — complete fill
-  notifications become **provisional executions** immediately: trades
-  and stats update in near-real-time. MW emails *cumulative* order
-  snapshots (a 3-lot filling 1+2 sends "Quantity: 1" then
-  "Quantity: 3"), so provisional rows are upserted per
-  (account, order id), never appended per email.
-
-At every startup the archive is **replayed** through the same ingest
-path (oldest first, in the background), so fills whose live ingest was
-missed — a crash between archive and ingest, a capture-only period, a
-transient DB error — still land. Each captured message is attempted
-**once, ever**: terminal outcomes (ingested or skipped, including
-unparseable) are recorded in `<archive_dir>/replay-state.log` and never
-re-attempted on later boots; only transient errors retry. Delete that
-file to force a full re-pass — useful after an app upgrade whose
-improved parser could recover messages previously recorded as
-unparseable. A fill already recorded by a manual process (a
-hand-entered row or an old-format CSV without order ids) is detected by
-(symbol, side, qty, price, time) and left alone.
-
-**User attribution:** an email carries no user identity, only the
-broker account ref, so a fill is booked under whichever journal user
-*already owns* that account — resolved across all users. Refs no user
-owns are deliberately **not** auto-created from email: the fill stays
-archive-only (with a warning in the log) until the account's first CSV
-import creates it under the right user — and that CSV contains those
-very fills, so nothing is lost; the account simply isn't real-time
-until then.
-
-**AMP/CQG account id in emails:** the CQG connection's emails report
-the CQG-internal account id (e.g. `1234567`) while the CSV export
-carries the AMP account number (e.g. `120042`) — Rithmic and IBKR use
-the same id in both. For such accounts, set the **acct id in emails**
-field on `/accounts` (shown under Source/Ref for MotiveWave accounts,
-in Edit mode) to the id the emails carry; fills addressed to it then
-resolve to the account. An exact account-ref match always beats an
-alias match.
-
-Admins see a warning card on `/accounts` when captured email fills
-could not be attributed to any account (unknown or ambiguous id). It
-is recomputed from the capture archive on every load and clears itself
-once the id resolves and the affected orders exist in the journal (via
-CSV import or the alias).
-
-**The MotiveWave CSV export stays authoritative.** The Executions-view
-export carries the same `Order ID` as the emails, so importing it
-replaces the matching provisional rows exactly — an end-of-day
-re-import (full or partial, once or repeatedly) never double-counts.
-`/admin/transactions` shows each row's import method in the *Via*
-column; provisional rows carry an `email · provisional` badge until a
-CSV import supersedes them. Accounts live-synced via a broker API
-(IBKR) skip email ingest automatically — their fills arrive through the
-API; the email copy is archive-only.
-
-**Reconcile by fills or by trades.** `/admin/transactions` has two modes.
-*Fills* (default) edits, soft-deletes and restores individual executions.
-*Trades* lists the closed trades the FIFO builder matched, each with its
-fills, and deletes a whole trade in one action: every fill of the trade is
-tombstoned and the contract is rebuilt, so neighbouring trades keep their
-entry times and journal links. The fills of one such delete are grouped, and
-with the *Deleted* filter set to *include* or *only* the Trades view lists
-them in place, dimmed, with a one-click Restore (the same filter shows
-tombstoned fills in the Fills view). The Trades view also filters by
-outcome: winners, losers or breakeven by net P&L. A trade that shares a fill with a neighbour (a
-position flip) is flagged `flip-linked`: deleting it removes the shared fill
-and the neighbour is rebuilt from what remains. Trades-CSV (TopstepX)
-accounts are read-only in both modes, and open lots are only visible in the
-Fills view since open positions never materialise as trades.
-
-Setup:
-
-1. Enable the `mw_email:` section in `config.yaml` (see
-   `config.example.yaml`) and restart the app. LAN/VPN only — never
-   expose the listener publicly.
-2. MW **Preferences → Email**: SMTP host = journal host's LAN IP; port
-   per your `tls_mode` (MW infers encryption from the port: 25 = plain,
-   465 = implicit TLS, 587 = STARTTLS; a nonstandard port like 2525 is
-   treated as plain); username/password = your configured AUTH creds;
-   any from/to addresses. **MW applies mail settings only after a full
-   restart** — Apply → OK → restart MW → Send Test Email.
-3. MW **Preferences → Orders**: enable *Send Email On Filled Order*.
-
-Inspect any captured message (and what the parser makes of it) with:
-
-```
-./trading-journal mwmail parse data/mw-raw/<file>.eml
-```
-
-## Backup and restore
-
-Everything mutable lives in two places:
-
-- `data/` — the SQLite database and journal attachments (chart
-  screenshots).
-- `imports/` — CSV history; `processed/` keeps a record of every
-  successful import.
-
-With `backup.enabled: true` the server writes `backups/backup-YYYY-MM-DD.tar.gz`
-once per day (at `backup.hour`, plus once at startup if today's is missing).
-Each archive holds a consistent `VACUUM INTO` snapshot of the database
-(`trading.db`), `attachments/`, `imports/processed/` and `imports/failed/`,
-and the `config.yaml` in force. Archives are created mode 0600 because the
-config carries secrets; keep the backup directory off the database's disk
-(rsync it elsewhere). Retention keeps the ten newest daily archives plus one
-per month. Before any schema migration runs, the server also writes
-`backups/pre-migrate-YYYY-MM-DD-<version>.tar.gz` (the three newest are
-kept), so a release can be rolled back to the exact pre-upgrade state.
-
-Restore:
-
-1. Stop the server (or the container).
-2. Unpack the archive somewhere: `mkdir restore && tar xzf backups/backup-YYYY-MM-DD.tar.gz -C restore`.
-3. Check the snapshot: `sqlite3 restore/trading.db "PRAGMA integrity_check"` must print `ok`.
-4. Move the live files aside and put the snapshot in place: `trading.db`
-   (delete any stale `trading.db-wal` / `trading.db-shm` next to it),
-   `data/attachments/`, and `config.yaml` if you need the old one.
-5. Start the server. It applies any migrations newer than the snapshot on
-   boot; a binary OLDER than the snapshot's schema refuses to start with
-   "database schema is ahead of this binary" — roll the binary forward
-   instead. The sidebar footer shows the running version.
-
-## Further reading
-
-- **[API.md](API.md)** — the HTTP API: per-user key auth, the full
-  endpoint reference, JSON shapes, and an agent-oriented worked example.
-- **[CLAUDE.md](CLAUDE.md)** — repository-wide rules and design
-  decisions that are easy to violate by accident (TZ handling, the
-  `executions → trades` derivation, instrument stub auto-creation,
-  firm-guessing for new accounts, sqlc-vs-raw-SQL trade-offs). Read
-  this before scaffolding new features.
-- **[trading-journal-design.md](trading-journal-design.md)** — the
-  original design spec. Schema and architecture still apply except
-  where CLAUDE.md overrides (notably the v1 scope decision to skip
-  live broker APIs).
-- **[Docker/README.md](Docker/README.md)** — deployment.
-
-## License
-
-Apache License 2.0; see `LICENSE`. The bundled fonts, Inter and JetBrains Mono, are under
-the SIL Open Font License 1.1 (`web/static/fonts/*-OFL.txt`, `app/ios/Shared/Fonts/*-OFL.txt`).
+<p align="center"><img src="assets/brand/trading-journal-hero.png" alt="trading-journal: self-hosted journal for futures traders" width="800"></p>
+
+[![ci](https://github.com/w4jnl/trading-journal/actions/workflows/ci.yml/badge.svg)](https://github.com/w4jnl/trading-journal/actions/workflows/ci.yml)
+
+A self-hosted trading journal for futures traders. Fills arrive from MotiveWave, TopstepX and
+Interactive Brokers, a FIFO builder turns them into trades, and the journal is where you plan
+the day, write about the trades and get told, in your own words, when you are about to repeat
+a mistake. One Go binary with SQLite, an iPhone app, and an API that AI assistants can use.
+
+The web app is server-rendered with HTMX, so there is no JavaScript build and nothing leaves
+your network unless you configure a broker, a model provider or the phone's push. Prop-firm
+accounts driven by a copytrader, several accounts per decision, day plans with a max loss, a
+guardrail that nudges while you trade, AI reviews that suggest but never decide: the features
+are the ones a discretionary ES and NQ day trader needs, built for one trader and published
+because the approach may be useful to others.
+
+<p align="center"><img src="assets/readme/dashboard-dark.png" alt="The dashboard in the dark theme: two open ES positions with their stop, target and risk, a 60-day cumulative P&L curve, the day's net P&L as a hero number with its best and worst trade, a 30-day stat strip with sparklines, and equity by account type" width="900"></p>
+
+<p align="center">
+<img src="assets/readme/trades-sheet-dark.png" alt="The trade log with a trade sheet open over it: an ES short on a prop account with quantity, entry, exit, gross, commission and net, the R and excursion row, the plan inputs for stop, risk and target, and the journal note tagged good and calm with its strategy card" width="440">
+<img src="assets/readme/journal-light.png" alt="The journal feed in the light theme: the pattern counts of the labels used, then trade, group and day notes with their mistake and emotion pills, the strategy, the net P&L and the good, neutral or bad tag" width="440">
+</p>
+
+<p align="center">
+<img src="assets/readme/calendar-light.png" alt="The calendar in the light theme: October as a grid of per-day P&L heat with the month's net, trade count and winning days above it and a total per week" width="440">
+<img src="assets/readme/day-dark.png" alt="A journal day page in the dark theme: the day note with its mood and labels, the plan card with the bias, decision cap, stop time and max loss read rule by rule against the day's trades (one of three rules held), the coach's two findings with one-click labels, and the day's totals" width="440">
+</p>
+
+<p align="center"><img src="assets/readme/demo.gif" alt="A 24-second recording in the dark theme: the dashboard, the trade log, a trade sheet opening on a noted ES short, a line typed into the note editor, and the calendar" width="880"></p>
+
+## Setup
+
+Current version: 2.18.5 · [release notes](CHANGELOG.md). Linux and macOS on amd64 and arm64 run
+the server; the phone app needs iOS 18 and is built from source with your own Apple team.
+
+1. Run it. With Docker, from the `Docker/` folder of a checkout:
+   ```sh
+   cp config.example.yaml config.yaml
+   mkdir -p data imports/{inbox,processed,failed,uploads} oi_dashboard
+   sudo chown -R 65532:65532 data imports oi_dashboard     # the image runs as uid 65532
+   docker compose pull && docker compose up -d
+   ```
+   Or from source, with Go 1.26 or newer and no cgo:
+   ```sh
+   go build -o trading-journal ./cmd/server
+   cp config.example.yaml config.yaml
+   ./trading-journal -config config.yaml     # listens on :8080, writes ./data/trading.db
+   ```
+2. Set the first password. The first start creates the user `admin` (`auth.bootstrap_user`):
+   ```sh
+   ./trading-journal users reset admin       # asks for the password; with Docker:
+   # docker compose run --rm trading-journal users reset admin --config=/etc/trading-journal/config.yaml
+   ```
+   Open http://localhost:8080 and sign in.
+3. Bring the first fills. Export the Executions view from MotiveWave (or the orders export from
+   TopstepX) and drop the CSV into `imports/inbox/`, or upload it at `/import`. Accounts and
+   instruments are created as they appear; trades, the calendar and the dashboard follow.
+4. Connect what you trade live, under Settings: a TopstepX API key, an IBKR Client Portal
+   Gateway, or MotiveWave's fill e-mails pointed at the journal's SMTP listener
+   (`mw_email` in the config). [docs/data-sources.md](docs/data-sources.md) has every path.
+5. Set `auth.session_secret` and `secrets.encryption_key` in the config (or the `TJ_SESSION_SECRET`
+   and `TJ_ENCRYPTION_KEY` environment variables) before anyone pastes an AI or broker key;
+   `openssl rand -hex 32` makes either.
+
+`curl -f http://localhost:8080/healthz` prints `ok` once the server is up.
+
+### More install options
+
+- Multi-arch image `ghcr.io/w4jnl/trading-journal` (`vX.Y.Z`, `vX.Y`, `vX`, `latest`), built
+  from distroless `static` on every release; `Docker/docker-compose.yml` is the recipe,
+  [docs/deploy.md](docs/deploy.md) the guide: reverse proxies, secrets, backups and restore.
+- Proxy mode (`auth.mode: proxy`) behind Authelia, oauth2-proxy or Caddy `forward_auth` for
+  sign-in through the SSO you already run; [docs/auth.md](docs/auth.md).
+- The phone app: `brew install xcodegen`, `make ios-project`, open the project with your team,
+  then pair it from Settings > Phone app; [app/ios/README.md](app/ios/README.md).
+- A development instance with twelve weeks of synthetic trades: `scripts/demo/seed.sh up`
+  ([scripts/demo/README.md](scripts/demo/README.md)).
+
+## Why this journal
+
+The problem:
+
+- Brokers and platforms deliver executions, not trades, and a copytrader fans one decision out
+  over several accounts. A spreadsheet or a hosted journal sees five trades where there was one
+  decision.
+- Discipline fails in the minutes after a loss, not in the evening review. A journal read the
+  next day cannot say "you are doing it again" while it happens.
+- Hosted journals want your broker credentials and your fills on their servers, and their AI
+  features write the review for you and move on.
+
+What this journal does about it:
+
+- One import pipeline for every source (CSV exports, fill e-mails, the TopstepX and IBKR APIs),
+  a FIFO position builder that handles partial closes, scale-ins and flips, and **copy sets**
+  that fold the legs of one decision across accounts into one row and one review.
+- A **day plan** written before the open (bias, levels, a cap on decisions, a stop time, a max
+  loss per account), a **guardrail** that re-reads the day as fills arrive and nudges once, on the
+  page and on the phone, quoting your own lesson about the mistake, and a **coach** of plain
+  rules (re-entry after a loss, size-up, stop run through, winner cut short) with the numbers.
+- AI that **suggests and never decides**: reviews, stop and target, plan drafts and strategy
+  drafts come as dashed suggestions you accept or dismiss, each review names one lesson for a
+  ledger, and the model only ever gets the app's own measurements. Bring your own provider key,
+  run a local model, or let Claude or ChatGPT read the journal over MCP instead.
+- Your network, your SQLite file, your fonts: nothing calls home.
+
+Compared with:
+
+- [TradesViz](https://www.tradesviz.com), [Tradervue](https://www.tradervue.com) and
+  [TraderSync](https://tradersync.com) are hosted, cover every asset class and import from many
+  brokers; they have no copy-set notion, no intraday guardrail and keep your data on their side.
+- [TradeNote](https://github.com/Eleven-Trading/TradeNote) is the closest open-source
+  neighbour: a self-hosted journal with broker imports, built as a JavaScript single-page app
+  on Parse and MongoDB.
+
+When not to use it: stocks, options or crypto (P&L is computed through futures tick values),
+brokers it has no importer for, a team of traders sharing one book, or a journal you want to
+fill in by hand without an export.
+
+## Features
+
+- **Trades**: fills from every source into one FIFO builder, partial closes, scale-ins and
+  flips, commissions per side by firm, copy sets and copy groups, a trade sheet with the fills,
+  the plan block (stop, risk, target, MAE, MFE, exit efficiency), a chart of the trading day
+  down to one-second bars with a TopstepX feed, `j`/`k` to walk and `g`/`n`/`b` to tag.
+  [Features](docs/features.md#trades)
+- **Open positions**: an "Open now" strip and sheet with average entry, last price and
+  unrealised P&L, a plan row anchored on the opening fill that survives scale-ins and moves onto
+  the trade at the close, "all legs" for a copied decision, and an AI stop and target briefed
+  with the session as a trader reads it. [Features](docs/features.md#open-positions)
+- **Journal**: notes on a trade, a day, an ISO week or a group of trades, tags, moods, mistake
+  and emotion labels from a fixed vocabulary, strategies with playbook checklists scored per
+  note, a markdown editor with pasted images and templates, Markdown and PDF export, and a
+  record of who set each value: you, the API or an accepted suggestion.
+  [Features](docs/features.md#journal)
+- **The day**: a pre-market plan read rule by rule against the trades, a guardrail that nudges
+  on the page and on the phone, a rule-based coach, and an AI draft of the plan from your norms
+  and open lessons. [Features](docs/features.md#the-day-plan-guardrail-coach)
+- **Analytics**: findings by weekday, hour and symbol, breakdowns by strategy, label and
+  account, path metrics from cached bars, equity and drawdown from balance anchors, a stop and
+  target lab that replays your decisions under a grid, and a weekly digest.
+  [Features](docs/features.md#analytics-lab-digest)
+- **AI**: reviews of a trade, a set, a day or a week in the background, suggestions and one
+  lesson per review, strategy drafts from your own trades, your own provider key (OpenAI,
+  Anthropic, Gemini, Mistral, OpenRouter) or a local model, and an MCP server with OAuth
+  sign-in for Claude and ChatGPT. [AI](docs/ai.md)
+- **Live**: every change bumps a data version; open pages swap only the changed region, the
+  phone follows over a server-sent event stream, and the TopstepX and IBKR syncs run on the CME
+  clock. [Data sources](docs/data-sources.md)
+- **Phone**: Today with live P&L and positions, the trade log, the journal with editing, the
+  calendar, equity and drawdown, time-sensitive pushes for the nudges, a Session Live Activity
+  in the Dynamic Island, widgets, and every answer kept for when the server is out of reach.
+  [app/ios](app/ios/README.md)
+- **Market context**: dealer gamma (regime, flip, walls) for ES and NQ from a gex-engine
+  instance, attached to trades at review time, and a page for the daily open-interest
+  dashboards. [Features](docs/features.md#market-pages)
+- **Operations**: one binary, one SQLite file, migrations at start, daily backups with
+  pre-migration snapshots, multi-user with local or proxy sign-in, per-user API keys, a
+  `/healthz`, Docker image for amd64 and arm64. [Deployment](docs/deploy.md)
+
+## Scope and status
+
+This is a personal tool. It runs my own trading (ES and NQ futures through prop firms, AMP and
+IBKR, all on MotiveWave) and is published because the approach, fills to trades to a guarded
+day, may be useful to others. Features are the ones that trading needs, and support is best
+effort; read [CONTRIBUTING.md](CONTRIBUTING.md) before opening a feature request.
+
+Not yet:
+
+- Rithmic or CQG connections; those accounts arrive through MotiveWave's export and e-mails.
+- An Android app; the API is there.
+- Release binaries; today it is the Docker image or `go build`.
+
+Not planned:
+
+- Stocks, options or crypto; P&L is a futures tick calculation throughout.
+- Order entry or anything that talks to a broker in the trade's direction.
+- A JavaScript single-page app; the UI is server-rendered with HTMX partials.
+
+The journal is at 2.18.5 (2026-10-17). [`CHANGELOG.md`](CHANGELOG.md) lists what changed in
+every release, newest first, for the server and the app; the same text is on each GitHub
+release.
+
+## How it works
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/architecture-dark.png">
+  <img src="assets/readme/architecture-light.png" alt="How the parts connect: browsers, the phone and AI assistants on the left talk to one Go binary over HTML with HTMX, the JSON API with a server-sent event stream, and MCP; inside it the importer, the FIFO position builder, the journal write path, the plan, guardrail and coach, the AI runners, the market-data cache and the push service share one SQLite database; fills come in from MotiveWave exports and e-mails, the TopstepX API and the IBKR gateway; bars, model providers, gex-engine and Apple's push service are the outbound calls" width="900">
+</picture>
+
+Fills land in `executions` through one import service, whatever the path: a CSV dropped in the
+inbox, a MotiveWave fill e-mail on the embedded SMTP listener, a TopstepX or IBKR poll. The
+position builder rebuilds `trades`, the daily stats and the copy sets from the executions of the
+touched accounts, the journal keeps its notes linked to trades by id, and a per-user data version
+goes up after every commit. Browsers poll that version and swap the changed region of the page;
+the phone hears it on a server-sent event stream; the guardrail re-reads the day on it; the push
+service turns what changed into a nudge, a silent sync or a Live Activity update.
+
+Everything is one process: the HTTP routes, the importer and its watcher, the sync schedulers
+on the CME clock, the market-data warm-up, the AI runners and the daily backup. The state is one
+SQLite file plus the attachments directory. [docs/development.md](docs/development.md) has the
+package map.
+
+### Around the journal
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="assets/readme/ecosystem-dark.png">
+  <img src="assets/readme/ecosystem-light.png" alt="The tools around the journal: MotiveWave with the w4j studies in the top left sends fill e-mails to mwrelay and CSV exports to the journal; mwrelay forwards the e-mails over SMTP or SSH and shows the day's P&L from the journal's API in the menu bar; gex-engine receives futures marks from the GexLevels study and serves gamma levels to the study and snapshots to the journal; oi-dashboard drops its daily HTML and PDF into the journal's folder; TopstepX and IBKR connect as brokers; the phone and AI assistants are the journal's clients" width="900">
+</picture>
+
+The journal is the hub of a small family of tools, each its own repository and each to be
+published in turn:
+
+- **w4j-mw-extensions**, MotiveWave studies and strategies: daily ATR levels, VWAP bands, and
+  GexLevels, which draws gex-engine's gamma levels on the chart and sends the engine the futures
+  price it needs.
+- **mwrelay**, a store-and-forward SMTP relay on the trading machine for MotiveWave's fill
+  e-mails, forwarding to one or more journals directly or over SSH, with a macOS menu bar item
+  that shows the day's P&L from the journal's API.
+- **gex-engine**, dealer gamma-exposure analytics for ES and NQ from CBOE option chains, serving
+  levels, profiles and as-of snapshots; the journal's Gamma page and the gamma block on reviewed
+  trades read from it.
+- **oi-dashboard**, a daily open-interest report for ES, NQ and CL from Databento, IBKR and CFTC
+  data, written as HTML and PDF into the folder the journal serves at `/oi`.
+
+Nothing in the journal depends on them: each is a config block that is off by default.
+
+### Data sources
+
+| Source | How it arrives | Covers |
+| --- | --- | --- |
+| MotiveWave CSV | `imports/inbox/` or upload, any time, re-import safe | Apex, Lucid, AMP/CQG, IBKR, anything MotiveWave trades |
+| MotiveWave fill e-mail | SMTP listener, seconds after the fill, provisional until the CSV lands | the same accounts, live |
+| TopstepX API | the trader's key in Settings, every 15 min in RTH and hourly in Globex | TopstepX |
+| IBKR Client Portal Gateway | a gateway URL per IB login, same cadence | Interactive Brokers |
+| TopstepX CSV | orders or trades export | TopstepX history |
+
+[docs/data-sources.md](docs/data-sources.md) has the formats, the per-user inboxes, the e-mail
+replay and the reconciliation page.
+
+### API and MCP
+
+`/api/v1` is a JSON API behind per-user keys: a discovery index at `GET /api/v1`, an OpenAPI 3.1
+document, trades, positions and their plans, journal entries with attachments, strategies, daily
+stats, the day plan, nudges, the digest, equity, a data version and a server-sent event stream.
+An agent key reads and appends; a paired phone's device key edits. The same server speaks MCP at
+`/mcp` with the key or with a built-in OAuth 2.1 sign-in, so Claude Code, the Claude apps and
+ChatGPT connect without a copied secret. [API.md](API.md) is the reference, rendered in-app under
+Settings > API docs; [docs/ai.md](docs/ai.md) covers the providers and the connectors.
+
+### Configuration
+
+`config.example.yaml` lists every key with a comment: server, database and import paths, backups,
+market data, MCP and OAuth, the AI default, gex-engine, secrets, APNs, TopstepX, IBKR, the
+MotiveWave e-mail listener, the trading timezone, housekeeping and authentication. Secrets can
+come from `TJ_*` environment variables instead of the file.
+
+### Security
+
+Sign-in is local (bcrypt, SQLite sessions, CSRF tokens bound to the session) or delegated to a
+reverse proxy trusted by CIDR. Users' provider keys and broker credentials are encrypted at rest
+under a key you hold; API keys are stored hashed. Every page carries a Content Security Policy
+with no inline scripts. The SMTP listener and broker gateways are meant for a LAN or VPN; the
+AI and gex calls go only to the hosts configured. Report a vulnerability privately;
+[SECURITY.md](SECURITY.md) has the surface and the policy.
+
+## Documentation
+
+- [Features](docs/features.md): every page and rule in detail.
+- [Data sources](docs/data-sources.md): CSV formats, the inbox, MotiveWave e-mails, the
+  TopstepX and IBKR syncs, market data, reconciling.
+- [Users and sign-in](docs/auth.md): auth modes, the users CLI, act-as, proxy mode, API keys.
+- [AI](docs/ai.md): in-app reviews, providers, MCP, the analyst skill;
+  [MCP OAuth setup](docs/mcp-oauth-setup.md) for the connectors.
+- [Deployment](docs/deploy.md): Docker, binary, reverse proxy, secrets, push, backup and restore.
+- [Development](docs/development.md): layout, make targets, database, tests, releasing, images.
+- [API.md](API.md): the HTTP API and MCP reference; [the phone app](app/ios/README.md).
+- [Release notes](CHANGELOG.md), newest first.
+
+## Credits and license
+
+Apache License 2.0; see `LICENSE`. The bundled fonts, [Inter](https://rsms.me/inter/) and
+[JetBrains Mono](https://github.com/JetBrains/JetBrainsMono), are under the SIL Open Font License
+1.1 (`web/static/fonts/*-OFL.txt`, `app/ios/Shared/Fonts/*-OFL.txt`). The web UI vendors
+[htmx](https://htmx.org), [uPlot](https://github.com/leeoniya/uPlot) and
+[Lightweight Charts](https://github.com/tradingview/lightweight-charts); the server uses
+[modernc.org/sqlite](https://gitlab.com/cznic/sqlite), [sqlc](https://sqlc.dev)-generated
+queries, [fsnotify](https://github.com/fsnotify/fsnotify) and [go-smtp](https://github.com/emersion/go-smtp);
+`go mod graph` lists the rest. The gamma context comes from gex-engine, the fills from the
+platforms named above; none of them is affiliated with this project.

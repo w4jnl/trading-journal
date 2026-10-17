@@ -71,3 +71,6 @@ coverage.html
 exportData
 oi_dashboard
 /tj
+
+# demo screenshot tooling (scripts/demo/README.md)
+scripts/demo/node_modules/
