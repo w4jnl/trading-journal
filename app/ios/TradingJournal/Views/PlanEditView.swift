@@ -11,13 +11,21 @@ struct PlanEditView: View {
     @State private var maxLoss = ""
     @State private var busy = false
     @State private var error: String?
+    /// When the fields opened from a draft kept on this phone: the time it was kept.
+    @State private var keptAt: Date?
+
+    private var draftKey: String { Drafts.key(plan: day) }
 
     /// A model's draft, when given, fills the rules, levels and notes the plan does not have.
+    /// A draft kept on this phone (a save that met no answer) comes before both.
     init(day: String, plan: DayPlan?, draft ai: PlanDraft? = nil) {
         self.day = day
         self.plan = plan
         var d = DayPlanSave(day: day, plan: plan)
-        if let ai {
+        if let kept = Drafts.load(DayPlanSave.self, Drafts.key(plan: day)) {
+            d = kept.value
+            _keptAt = State(initialValue: kept.at)
+        } else if let ai {
             if let m = ai.maxTrades, m > 0 { d.maxTrades = m }
             if let s = ai.stopTime, !s.isEmpty { d.stopTime = s }
             if let l = ai.maxLoss, l > 0 { d.maxLoss = l }
@@ -51,7 +59,20 @@ struct PlanEditView: View {
                 } header: {
                     Text("Rules for \(Formatting.dayLabel(day, tz: client.tz))")
                 } footer: {
-                    Text("The guardrail measures the day against these: a trade over the max, a fill after the stop time, a loss past the budget. Empty clears a rule.")
+                    if let keptAt {
+                        HStack {
+                            Text("A draft kept on this phone at \(StaleBanner.when(keptAt, tz: client.tz)); not saved to the journal yet.")
+                            Button("Discard it") {
+                                draft = DayPlanSave(day: day, plan: plan)
+                                maxTrades = draft.maxTrades > 0 ? String(draft.maxTrades) : ""
+                                maxLoss = draft.maxLoss > 0 ? String(format: "%g", draft.maxLoss) : ""
+                                Drafts.clear(draftKey)
+                                self.keptAt = nil
+                            }
+                        }
+                    } else {
+                        Text("The guardrail measures the day against these: a trade over the max, a fill after the stop time, a loss past the budget. Empty clears a rule.")
+                    }
                 }
                 Section("Levels") {
                     TextEditor(text: $draft.levels).font(Brand.mono(13)).frame(minHeight: 70).accessibilityLabel("Levels")
@@ -81,9 +102,16 @@ struct PlanEditView: View {
         defer { busy = false }
         do {
             _ = try await client.savePlan(draft)
+            Drafts.clear(draftKey)
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            if Client.isReachability(error) {
+                Drafts.save(draft, draftKey)
+                keptAt = .now
+                self.error = "The journal is out of reach. Your plan is kept on this phone; save again when it answers."
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 }
@@ -124,9 +152,13 @@ struct PositionPlanEditView: View {
     @State private var allLegs = true
     @State private var busy = false
     @State private var error: String?
+    /// When the fields opened from a draft kept on this phone: the time it was kept.
+    @State private var keptAt: Date?
 
     private var stopValue: Double? { PlanMath.parse(stop) }
     private var targetValue: Double? { PlanMath.parse(target) }
+    private var draftKey: String { Drafts.key(positionPlan: position.accountId, symbol: position.symbol) }
+    private var planBody: PositionPlanSave { PositionPlanSave(stop: stopValue, risk: nil, target: targetValue, thesis: thesis, allLegs: allLegs) }
 
     var body: some View {
         let p = position
@@ -151,7 +183,14 @@ struct PositionPlanEditView: View {
                 } header: {
                     Text("\(p.symbol) \(p.headline)")
                 } footer: {
-                    Text("Risk is |entry − stop| × \(Formatting.qty(p.pointValue)) a point × \(Formatting.qty(p.qty)). The server snaps the stop to the \(Formatting.price(p.tickSize, tickSize: p.tickSize)) tick.")
+                    if let keptAt {
+                        HStack {
+                            Text("A draft kept on this phone at \(StaleBanner.when(keptAt, tz: client.tz)); not saved to the journal yet.")
+                            Button("Discard it") { fromPosition(); Drafts.clear(draftKey); self.keptAt = nil }
+                        }
+                    } else {
+                        Text("Risk is |entry − stop| × \(Formatting.qty(p.pointValue)) a point × \(Formatting.qty(p.qty)). The server snaps the stop to the \(Formatting.price(p.tickSize, tickSize: p.tickSize)) tick.")
+                    }
                 }
                 Section("Thesis") {
                     TextEditor(text: $thesis).font(Brand.text(15, relativeTo: .body)).frame(minHeight: 80).accessibilityLabel("Thesis")
@@ -180,22 +219,43 @@ struct PositionPlanEditView: View {
                 }
             }
             .onAppear {
-                stop = p.stop.map { Formatting.price($0, tickSize: p.tickSize) } ?? ""
-                target = p.target.map { Formatting.price($0, tickSize: p.tickSize) } ?? ""
-                thesis = p.thesisText
+                if let kept = Drafts.load(PositionPlanSave.self, draftKey) {
+                    stop = kept.value.stop.map { Formatting.price($0, tickSize: p.tickSize) } ?? ""
+                    target = kept.value.target.map { Formatting.price($0, tickSize: p.tickSize) } ?? ""
+                    thesis = kept.value.thesis
+                    allLegs = kept.value.allLegs
+                    keptAt = kept.at
+                } else {
+                    fromPosition()
+                }
             }
         }
+    }
+
+    /// The fields as the position's plan stands.
+    private func fromPosition() {
+        let p = position
+        stop = p.stop.map { Formatting.price($0, tickSize: p.tickSize) } ?? ""
+        target = p.target.map { Formatting.price($0, tickSize: p.tickSize) } ?? ""
+        thesis = p.thesisText
+        allLegs = true
     }
 
     private func save() async {
         busy = true
         defer { busy = false }
         do {
-            _ = try await client.savePositionPlan(account: position.accountId, symbol: position.symbol,
-                                                  PositionPlanSave(stop: stopValue, risk: nil, target: targetValue, thesis: thesis, allLegs: allLegs))
+            _ = try await client.savePositionPlan(account: position.accountId, symbol: position.symbol, planBody)
+            Drafts.clear(draftKey)
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            if Client.isReachability(error) {
+                Drafts.save(planBody, draftKey)
+                keptAt = .now
+                self.error = "The journal is out of reach. Your plan is kept on this phone; save again when it answers."
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 }

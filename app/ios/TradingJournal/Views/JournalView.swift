@@ -9,6 +9,7 @@ struct JournalView: View {
     @State private var rows: [JournalRow] = []
     @State private var loading = false
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var scope: ScopeFilter = .all
     @State private var writing = false
     @State private var opened: Route?
@@ -51,13 +52,15 @@ struct JournalView: View {
         .navigationDestination(item: $opened) { r in
             if case .journal(let j) = r { JournalEntryView(id: j) }
         }
-        .refreshable { await load() }
+        .refreshable { await load(fresh: true) }
         .task { if rows.isEmpty { await load() } }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
     @ViewBuilder private var content: some View {
         Section {
+            StaleBanner(asOf)
             Picker("Scope", selection: $scope) {
                 ForEach(ScopeFilter.allCases) { Text($0.title).tag($0) }
             }
@@ -87,12 +90,13 @@ struct JournalView: View {
         if let selection { selection.wrappedValue = r } else { opened = r }
     }
 
-    private func load(offset: Int = 0) async {
+    private func load(offset: Int = 0, fresh: Bool = false) async {
         loading = true
         defer { loading = false }
         do {
-            let items = try await client.journal(.init(scopes: scope.scopes, offset: offset))
-            rows = offset == 0 ? items : rows + items
+            let items = try await client.journal(.init(scopes: scope.scopes, offset: offset), fresh: fresh)
+            rows = offset == 0 ? items.value : rows + items.value
+            asOf = items.asOf
             error = nil
         } catch {
             self.error = error.localizedDescription
@@ -148,6 +152,7 @@ struct JournalEntryView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var entry: JournalDetail?
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var editing = false
     @State private var appending = false
     @State private var suggestionError: String?
@@ -160,6 +165,7 @@ struct JournalEntryView: View {
         ScrollView {
             if let e = entry {
                 VStack(alignment: .leading, spacing: 12) {
+                    StaleBanner(asOf)
                     Card {
                         HStack(spacing: 6) {
                             Text(Formatting.dayLabel(e.date, tz: client.tz, style: .long)).font(Brand.text(17, weight: .semibold, relativeTo: .title3))
@@ -289,6 +295,7 @@ struct JournalEntryView: View {
         }
         .task(id: id) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
     /// Starts the AI review of this note; the note shows it running until it lands.
@@ -321,7 +328,9 @@ struct JournalEntryView: View {
 
     private func load() async {
         do {
-            entry = try await client.entry(id)
+            let l = try await client.entry(id)
+            entry = l.value
+            asOf = l.asOf
             error = nil
         } catch TJError.http(404, _) {
             if entry != nil { dismiss() } else { self.error = "This note is gone." }

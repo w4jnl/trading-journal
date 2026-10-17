@@ -11,6 +11,7 @@ struct TodayView: View {
         ScrollView {
             if let t = client.today {
                 VStack(alignment: .leading, spacing: 12) {
+                    StaleBanner(client.todayAsOf)
                     hero(t)
                     if !t.positions.isEmpty { positions(t) }
                     plan(t)

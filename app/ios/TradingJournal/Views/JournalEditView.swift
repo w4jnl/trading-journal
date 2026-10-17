@@ -21,15 +21,24 @@ struct JournalEditView: View {
     @State private var confirmDelete = false
     @State private var confirmDiscard = false
     @State private var append = false
+    /// When the draft opened from one kept on this phone: the time it was kept.
+    @State private var keptAt: Date?
 
     init(entry: JournalDetail, onSaved: @escaping (JournalDetail) -> Void = { _ in }, onDeleted: @escaping () -> Void = {}) {
         self.entry = entry
         self.onSaved = onSaved
         self.onDeleted = onDeleted
-        _draft = State(initialValue: JournalUpdate(entry))
+        // A save that met no answer left its words here; the editor opens on them.
+        if let kept = Drafts.load(JournalUpdate.self, Drafts.key(entry: entry.id)) {
+            _draft = State(initialValue: kept.value)
+            _keptAt = State(initialValue: kept.at)
+        } else {
+            _draft = State(initialValue: JournalUpdate(entry))
+        }
     }
 
     private var dirty: Bool { draft != JournalUpdate(entry) }
+    private var draftKey: String { Drafts.key(entry: entry.id) }
 
     var body: some View {
         NavigationStack {
@@ -47,6 +56,13 @@ struct JournalEditView: View {
                     }
                 } header: {
                     Text(Formatting.dayLabel(entry.date, tz: client.tz, style: .long))
+                } footer: {
+                    if let keptAt {
+                        HStack {
+                            Text("A draft kept on this phone at \(StaleBanner.when(keptAt, tz: client.tz)); not saved to the journal yet.")
+                            Button("Discard it") { draft = JournalUpdate(entry); Drafts.clear(draftKey); self.keptAt = nil }
+                        }
+                    }
                 }
                 Section("Tag") {
                     Picker("Tag", selection: $draft.tag) {
@@ -102,7 +118,7 @@ struct JournalEditView: View {
             }
             .interactiveDismissDisabled(dirty)
             .confirmationDialog("Discard the changes?", isPresented: $confirmDiscard, titleVisibility: .visible) {
-                Button("Discard", role: .destructive) { dismiss() }
+                Button("Discard", role: .destructive) { Drafts.clear(draftKey); dismiss() }
             }
             .alert("An AI review is writing this note", isPresented: $reviewPending) {
                 Button("Append a note instead") { append = true }
@@ -130,8 +146,8 @@ struct JournalEditView: View {
             .task {
                 async let l = client.labels()
                 async let s = client.strategies()
-                labels = try? await l
-                strategies = (try? await s) ?? []
+                labels = (try? await l)?.value
+                strategies = (try? await s)?.value ?? []
             }
         }
     }
@@ -142,6 +158,7 @@ struct JournalEditView: View {
         do {
             let saved = try await client.saveJournal(entry.id, draft)
             error = nil
+            Drafts.clear(draftKey)
             onSaved(saved)
             dismiss()
         } catch Client.JournalSaveError.reviewPending {
@@ -149,7 +166,14 @@ struct JournalEditView: View {
         } catch Client.JournalSaveError.stale(let current) {
             stale = current
         } catch {
-            self.error = error.localizedDescription
+            // The journal did not take it: the words stay on this phone for the next try.
+            if Client.isReachability(error) {
+                Drafts.save(draft, draftKey)
+                keptAt = .now
+                self.error = "The journal is out of reach. Your draft is kept on this phone; save again when it answers."
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 
@@ -158,6 +182,7 @@ struct JournalEditView: View {
         defer { busy = false }
         do {
             try await client.deleteJournal(entry.id)
+            Drafts.clear(draftKey)
             onDeleted()
             dismiss()
         } catch Client.JournalSaveError.reviewPending {
@@ -320,14 +345,24 @@ struct NewEntryView: View {
     @State private var busy = false
     @State private var analyzing = false
     @State private var error: String?
+    /// When the fields opened from a draft kept on this phone: the time it was kept.
+    @State private var keptAt: Date?
 
     private var blank: Bool { text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    private var draftKey: String { Drafts.key(new: scope, date: date, tradeId: tradeId) }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section {
                     TextEditor(text: $text).font(Brand.text(15, relativeTo: .body)).frame(minHeight: 140).accessibilityLabel("Note")
+                } footer: {
+                    if let keptAt {
+                        HStack {
+                            Text("A draft kept on this phone at \(StaleBanner.when(keptAt, tz: client.tz)); not saved to the journal yet.")
+                            Button("Discard it") { text = ""; tag = nil; strategyId = nil; mistakes = []; emotions = []; Drafts.clear(draftKey); self.keptAt = nil }
+                        }
+                    }
                 }
                 if client.aiReady {
                     Section {
@@ -372,10 +407,18 @@ struct NewEntryView: View {
                 }
             }
             .task {
+                if let kept = Drafts.load(JournalCreate.self, draftKey) {
+                    text = kept.value.body
+                    tag = kept.value.tag
+                    strategyId = kept.value.strategyId
+                    mistakes = kept.value.mistakes
+                    emotions = kept.value.emotions
+                    keptAt = kept.at
+                }
                 async let l = client.labels()
                 async let s = client.strategies()
-                labels = try? await l
-                strategies = (try? await s) ?? []
+                labels = (try? await l)?.value
+                strategies = (try? await s)?.value ?? []
             }
         }
     }
@@ -385,22 +428,35 @@ struct NewEntryView: View {
         defer { busy = false }
         do {
             let e = try await save()
+            Drafts.clear(draftKey)
             onCreated(e)
             dismiss()
         } catch Client.JournalSaveError.exists(let id) {
+            Drafts.clear(draftKey)
             onExists(id)
             dismiss()
         } catch {
-            self.error = error.localizedDescription
+            if Client.isReachability(error) {
+                Drafts.save(makeBody(), draftKey)
+                keptAt = .now
+                self.error = "The journal is out of reach. Your draft is kept on this phone; save again when it answers."
+            } else {
+                self.error = error.localizedDescription
+            }
         }
     }
 
     private func save() async throws -> JournalDetail {
+        try await client.createJournal(makeBody())
+    }
+
+    /// The note as the fields stand.
+    private func makeBody() -> JournalCreate {
         var make = JournalCreate(scope: scope, body: text, tag: tag, date: date, tradeId: tradeId)
         make.strategyId = strategyId
         make.mistakes = mistakes
         make.emotions = emotions
-        return try await client.createJournal(make)
+        return make
     }
 
     /// Starts the review and opens the note it lands on. Nothing written here: the server

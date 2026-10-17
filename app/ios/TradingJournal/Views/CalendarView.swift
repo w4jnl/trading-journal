@@ -7,6 +7,7 @@ struct CalendarView: View {
     @State private var month: Date = .now
     @State private var stats: DailyStats?
     @State private var error: String?
+    @State private var asOf: Date?
 
     private var cal: Calendar {
         var c = Calendar(identifier: .gregorian)
@@ -26,6 +27,7 @@ struct CalendarView: View {
                     Button { shift(1) } label: { Image(systemName: "chevron.right") }.accessibilityLabel("Next month").disabled(isCurrentMonth)
                 }
                 .padding(.horizontal, 4)
+                StaleBanner(asOf)
                 if let s = stats {
                     grid(s)
                     Card {
@@ -53,9 +55,10 @@ struct CalendarView: View {
         .background(Brand.bg)
         .navigationTitle("Calendar")
         .navigationBarTitleDisplayMode(.inline)
-        .refreshable { await load() }
+        .refreshable { await load(fresh: true) }
         .task(id: Formatting.day(month, tz: client.tz).prefix(7)) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
     private var isCurrentMonth: Bool { cal.isDate(month, equalTo: .now, toGranularity: .month) }
@@ -98,11 +101,13 @@ struct CalendarView: View {
         }
     }
 
-    private func load() async {
+    private func load(fresh: Bool = false) async {
         let first = cal.date(from: cal.dateComponents([.year, .month], from: month))!
         let last = cal.date(byAdding: DateComponents(month: 1, day: -1), to: first)!
         do {
-            stats = try await client.dailyStats(from: Formatting.day(first, tz: client.tz), to: Formatting.day(min(last, .now), tz: client.tz))
+            let l = try await client.dailyStats(from: Formatting.day(first, tz: client.tz), to: Formatting.day(min(last, .now), tz: client.tz), fresh: fresh)
+            stats = l.value
+            asOf = l.asOf
             error = nil
         } catch {
             if stats == nil { self.error = error.localizedDescription }
@@ -119,6 +124,7 @@ struct DayView: View {
     @State private var entries: [JournalRow] = []
     @State private var nudges: [Nudge] = []
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var writing = false
     @State private var opened: Route?
     @State private var run: DayRunStatus?
@@ -128,6 +134,7 @@ struct DayView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                StaleBanner(asOf)
                 if client.aiReady, stats != nil {
                     DayRunCard(day: day, run: run, busy: aiBusy, error: aiError, start: { Task { await startRun() } }, cancel: { Task { await cancelRun() } })
                 }
@@ -179,6 +186,7 @@ struct DayView: View {
         .navigationBarTitleDisplayMode(.inline)
         .task(id: day) { await load() }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
         .sheet(isPresented: $writing) {
             NewEntryView(scope: .day, date: day, onCreated: { opened = .journal($0.id) }, onExists: { opened = .journal($0) })
         }
@@ -193,9 +201,11 @@ struct DayView: View {
         async let j = client.journal(.init(from: day, to: day))
         async let n = client.nudges(day: day)
         do {
-            stats = try await s
+            let sl = try await s
+            stats = sl.value
+            asOf = sl.asOf
             trades = try await t.items
-            entries = try await j
+            entries = try await j.value
             nudges = try await n.items
             error = nil
         } catch {

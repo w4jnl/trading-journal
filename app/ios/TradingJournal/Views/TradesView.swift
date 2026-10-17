@@ -18,6 +18,7 @@ struct TradesView: View {
     @State private var page: PageInfo?
     @State private var loading = false
     @State private var error: String?
+    @State private var asOf: Date?
     @State private var range = Range.all
 
     enum Range: String, CaseIterable, Identifiable {
@@ -87,13 +88,15 @@ struct TradesView: View {
                 } label: { Label("View", systemImage: "square.grid.2x2") }
             }
         }
-        .refreshable { await load() }
+        .refreshable { await load(fresh: true) }
         .task { if rows.isEmpty { await load() } }
         .onChange(of: client.version) { _, _ in Task { await load() } }
+        .reloadsWhenLive(asOf != nil) { await load() }
     }
 
     @ViewBuilder private var content: some View {
         Section {
+            StaleBanner(asOf)
             filters
         }
         .listRowBackground(Brand.bg)
@@ -194,14 +197,15 @@ struct TradesView: View {
         return parts.isEmpty ? "Filter" : parts.joined(separator: " · ")
     }
 
-    private func load(append: Bool = false) async {
+    private func load(append: Bool = false, fresh: Bool = false) async {
         if !append { filter.page = 1 }
         loading = true
         defer { loading = false }
         do {
-            let list = try await client.trades(filter)
+            let list = try await client.trades(filter, fresh: fresh)
             rows = append ? rows + list.items : list.items
             page = list.page
+            asOf = list.asOf
             error = nil
         } catch {
             self.error = error.localizedDescription

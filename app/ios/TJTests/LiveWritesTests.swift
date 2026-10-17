@@ -24,7 +24,7 @@ struct LiveWritesTests {
         let before = try await c.entry(id)
 
         // a stale save answers with the current entry
-        var stale = JournalUpdate(before)
+        var stale = JournalUpdate(before.value)
         stale.updatedAt = before.updatedAt.addingTimeInterval(-60)
         await #expect(throws: Client.JournalSaveError.self) { try await c.saveJournal(id, stale) }
         do {
@@ -34,7 +34,7 @@ struct LiveWritesTests {
         }
 
         // a real edit, then the entry put back
-        var edit = JournalUpdate(before)
+        var edit = JournalUpdate(before.value)
         edit.body = before.notes + "\n\nphone edit"
         edit.emotions = ["calm"]
         let after = try await c.saveJournal(id, edit)
@@ -44,7 +44,7 @@ struct LiveWritesTests {
         let appended = try await c.entry(id)
         #expect(appended.notes.contains("appended from the phone") && appended.notes.contains("Note added"))
 
-        var restore = JournalUpdate(before)
+        var restore = JournalUpdate(before.value)
         restore.updatedAt = appended.updatedAt
         let restored = try await c.saveJournal(id, restore)
         #expect(restored.labels == before.labels && restored.tag == before.tag)
@@ -128,7 +128,7 @@ struct LiveWritesTests {
         let anchor = try #require(added.balance?.anchors.first { $0.note == "phone" })
         #expect(anchor.balance == 1234.5)
         try await c.deleteBalance(account: a.id, anchor: anchor.id)
-        let after = try #require(try await c.accounts().first { $0.id == a.id })
+        let after = try #require(try await c.accounts().value.first { $0.id == a.id })
         #expect(after.balance?.anchors.contains { $0.id == anchor.id } != true)
     }
 }

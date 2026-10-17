@@ -326,6 +326,57 @@ struct ConnectionLine: View {
     }
 }
 
+/// What a screen says over a stored answer: when the journal last gave it. Nothing when the
+/// answer is live. A screen puts it first, over the content it qualifies.
+struct StaleBanner: View {
+    let asOf: Date?
+    @Environment(Client.self) private var client
+
+    init(_ asOf: Date?) { self.asOf = asOf }
+
+    var body: some View {
+        if let asOf {
+            HStack(spacing: 6) {
+                Image(systemName: "clock.arrow.circlepath")
+                Text("Last known \(Self.when(asOf, tz: client.tz)): the journal is out of reach")
+            }
+            .font(Brand.text(12, relativeTo: .caption))
+            .foregroundStyle(Brand.warnText)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityIdentifier("stale")
+        }
+    }
+
+    /// The clock alone on the same day, the day with it otherwise.
+    nonisolated static func when(_ d: Date, tz: TimeZone, now: Date = .now) -> String {
+        let clock = Formatting.clock(d, tz: tz)
+        let day = Formatting.day(d, tz: tz)
+        return day == Formatting.day(now, tz: tz) ? clock : "\(Formatting.dayLabel(day, tz: tz)) \(clock)"
+    }
+}
+
+/// Loads again when the journal comes back within reach, so a screen on a stored answer gets
+/// the live one (the version event does that only when something changed meanwhile). It follows
+/// the stream's openings, which a read's failure also provokes, so a flap the socket missed
+/// still ends in a reload.
+struct ReloadWhenLive: ViewModifier {
+    let stale: Bool
+    let action: () async -> Void
+    @Environment(Client.self) private var client
+
+    func body(content: Content) -> some View {
+        content.onChange(of: client.reconnects) { _, _ in
+            if client.connection.isLive, stale { Task { await action() } }
+        }
+    }
+}
+
+extension View {
+    func reloadsWhenLive(_ stale: Bool, _ action: @escaping () async -> Void) -> some View {
+        modifier(ReloadWhenLive(stale: stale, action: action))
+    }
+}
+
 /// A line of markdown blocks.
 struct MarkdownView: View {
     let source: String

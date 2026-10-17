@@ -11,6 +11,24 @@ built against it carries the same marketing version.
   the AI review suggests that value and the suggestion is still open (shown as the dashed chip).
   Untagged, Unassigned and None logged keep their plain meaning. The REST journal list follows.
 
+### App (iOS)
+
+- The phone keeps the journal's answers. When the server is out of reach (or the app starts
+  without it), Today, Trades, Journal, Calendar, Accounts, the digest and every detail show the
+  last known state with "Last known 09:12" over it instead of an error, and load again the
+  moment the stream is back: the app notices the loss of reach on the first read that fails,
+  not only when the stream's socket times out, and tries again the moment the network returns.
+  Pull to refresh still asks the server. After each change of the
+  data version the app quietly keeps what the screens will want: the month's calendar, the
+  first page of trades and of the journal, the notes and trades of the last two weeks, the
+  vocabularies, accounts, equity and the digest. Images (charts, attachments) are kept too.
+  At most 150 MB on the phone, answers older than a month leave; Settings shows the size and
+  clears it. Signing out forgets everything.
+- A note, a day plan or a position plan whose save meets no answer is kept on the phone as a
+  draft; the editor opens on it next time, says when it was kept, and offers to discard it.
+  Nothing is replayed on its own: the save stays the trader's, with the journal's conflict
+  checks.
+
 ## 2.18.4, 2026-10-16
 
 The app is unchanged and stays at 2.18.2.
