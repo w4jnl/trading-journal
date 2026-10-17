@@ -8,6 +8,7 @@
 // state instead of an error. While the stream is down the kept answer comes first, without a
 // wait on the network; the screens load again when the stream is back.
 import Foundation
+import Network
 import Observation
 import OSLog
 import UIKit
@@ -46,6 +47,8 @@ final class Client {
     private(set) var asOf: Date?
     /// When `today` is the stored one: the time the server gave it. Nil while it is live.
     private(set) var todayAsOf: Date?
+    /// Counts the stream's openings: a screen on a stored answer loads again when it moves.
+    private(set) var reconnects = 0
     private(set) var lastError: String?
     /// Set by a notification tap, a deep link or a launch argument: RootView navigates there and clears it.
     var pendingRoute: Route?
@@ -64,6 +67,9 @@ final class Client {
     private var stores: (scope: String, json: Store, images: Store)?
     private var warmTask: Task<Void, Never>?
     private var warmedVersion = -1
+    /// The network's state: when it comes back the stream is tried at once, not after the backoff.
+    private let path = NWPathMonitor()
+    private var networkUp = true
 
     /// `protocolClasses` lets a test answer the requests itself; `storeRoot` keeps a test's
     /// store apart from the app's.
@@ -81,6 +87,41 @@ final class Client {
         scfg.timeoutIntervalForResource = .infinity
         if !protocolClasses.isEmpty { scfg.protocolClasses = protocolClasses }
         streamSession = URLSession(configuration: scfg)
+        path.pathUpdateHandler = { [weak self] p in
+            let up = p.status == .satisfied
+            Task { @MainActor [weak self] in self?.network(up: up) }
+        }
+        path.start(queue: DispatchQueue(label: "nl.w4j.tradingjournal.path", qos: .utility))
+    }
+
+    /// The network came or went. Back after being gone, with the stream down: try it now.
+    private func network(up: Bool) {
+        let was = networkUp
+        networkUp = up
+        if up, !was, connection.isOffline, streamTask != nil {
+            log.info("network back: reconnecting")
+            reconnectNow()
+        }
+    }
+
+    /// Drops the current stream attempt (and its backoff) and connects again at once.
+    private func reconnectNow() {
+        guard settings.isPaired else { return }
+        generation += 1
+        let gen = generation
+        streamTask?.cancel()
+        attempt = 0
+        connection = .connecting
+        streamTask = Task { await self.run(gen: gen) }
+    }
+
+    /// A read could not reach the journal while the stream seemed live: the stream's socket
+    /// has not noticed yet (it would, after 90 s of silence). Say so now and probe again, so
+    /// the screens learn of the return as soon as it comes.
+    private func lostReach() {
+        guard connection.isLive else { return }
+        connection = .down(since: .now)
+        reconnectNow()
     }
 
     var api: TJAPI? { settings.api }
@@ -180,6 +221,10 @@ final class Client {
                 log.info("stream open")
                 connection = .live
                 attempt = 0
+                reconnects += 1
+                // The day shown may be the stored one; the version event alone would leave it
+                // so when nothing changed meanwhile.
+                if todayAsOf != nil { Task { await self.refreshToday() } }
                 var event = ""
                 // The server's events are one data line each, so an event is complete at its
                 // data line; AsyncLineSequence is not relied on to deliver the blank line after it.
@@ -527,6 +572,7 @@ final class Client {
             await st.put(href, data)
             return data
         } catch let error where Self.isReachability(error) {
+            lostReach()
             if let (data, _) = kept { return data }
             throw error
         }
@@ -556,6 +602,7 @@ final class Client {
             connection = .unauthorized
             throw TJError.unauthorized
         } catch let error where Self.isReachability(error) {
+            lostReach()
             if let kept = await stored(T.self, key, in: st) { return kept }
             throw error
         }

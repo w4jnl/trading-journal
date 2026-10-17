@@ -928,6 +928,22 @@ struct DayPlanSave: Encodable, Sendable, Hashable {
 
 struct DayPlanSaved: Codable, Sendable { var plan: DayPlan? }
 
+// In an extension, so the memberwise init stays.
+extension DayPlanSave: Decodable {
+    /// A draft kept on the phone, as encoded above (an empty bias is none).
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        day = try c.decode(String.self, forKey: .day)
+        let b = try c.decodeIfPresent(String.self, forKey: .bias) ?? ""
+        bias = b.isEmpty ? .none : (Bias(rawValue: b) ?? .none)
+        levels = try c.decodeIfPresent(String.self, forKey: .levels) ?? ""
+        maxTrades = try c.decodeIfPresent(Int.self, forKey: .maxTrades) ?? 0
+        stopTime = try c.decodeIfPresent(String.self, forKey: .stopTime) ?? ""
+        maxLoss = try c.decodeIfPresent(Double.self, forKey: .maxLoss) ?? 0
+        notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
+    }
+}
+
 /// POST /positions/{account}/{symbol}/plan: the whole plan; a null stop clears it.
 struct PositionPlanSave: Encodable, Sendable, Hashable {
     var stop: Double?
@@ -945,6 +961,19 @@ struct PositionPlanSave: Encodable, Sendable, Hashable {
         try c.encode(target, forKey: .target)
         try c.encode(thesis, forKey: .thesis)
         try c.encode(allLegs, forKey: .allLegs)
+    }
+}
+
+// In an extension, so the memberwise init stays.
+extension PositionPlanSave: Decodable {
+    /// A draft kept on the phone, as encoded above.
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        stop = try c.decodeIfPresent(Double.self, forKey: .stop)
+        risk = try c.decodeIfPresent(Double.self, forKey: .risk)
+        target = try c.decodeIfPresent(Double.self, forKey: .target)
+        thesis = try c.decodeIfPresent(String.self, forKey: .thesis) ?? ""
+        allLegs = try c.decodeIfPresent(Bool.self, forKey: .allLegs) ?? true
     }
 }
 

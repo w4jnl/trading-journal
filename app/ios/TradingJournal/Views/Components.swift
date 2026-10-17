@@ -356,15 +356,17 @@ struct StaleBanner: View {
 }
 
 /// Loads again when the journal comes back within reach, so a screen on a stored answer gets
-/// the live one (the version event does that only when something changed meanwhile).
+/// the live one (the version event does that only when something changed meanwhile). It follows
+/// the stream's openings, which a read's failure also provokes, so a flap the socket missed
+/// still ends in a reload.
 struct ReloadWhenLive: ViewModifier {
     let stale: Bool
     let action: () async -> Void
     @Environment(Client.self) private var client
 
     func body(content: Content) -> some View {
-        content.onChange(of: client.connection.isLive) { _, live in
-            if live, stale { Task { await action() } }
+        content.onChange(of: client.reconnects) { _, _ in
+            if client.connection.isLive, stale { Task { await action() } }
         }
     }
 }

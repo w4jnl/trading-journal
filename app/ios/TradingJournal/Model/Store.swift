@@ -198,8 +198,8 @@ actor Store {
 }
 
 /// The words a trader typed that the journal has not taken yet: a save that met no answer keeps
-/// its draft here, by entry (or by what the new note is for), and the editor opens on it next
-/// time. UserDefaults: a draft is small and there are few.
+/// its draft here, by entry (or by what the new note is for), by plan day, by position, and
+/// the editor opens on it next time. UserDefaults: a draft is small and there are few.
 enum Drafts {
     struct Draft<T: Codable & Sendable>: Codable, Sendable {
         var value: T
@@ -208,6 +208,8 @@ enum Drafts {
 
     nonisolated static func key(entry id: Int) -> String { "draft:entry:\(id)" }
     nonisolated static func key(new scope: JournalScope, date: String?, tradeId: Int?) -> String { "draft:new:\(scope.rawValue):\(date ?? ""):\(tradeId.map(String.init) ?? "")" }
+    nonisolated static func key(plan day: String) -> String { "draft:plan:\(day)" }
+    nonisolated static func key(positionPlan account: Int, symbol: String) -> String { "draft:position:\(account):\(symbol)" }
 
     nonisolated static func load<T: Codable & Sendable>(_ type: T.Type, _ key: String, defaults: UserDefaults = .standard) -> Draft<T>? {
         guard let data = defaults.data(forKey: key) else { return nil }
