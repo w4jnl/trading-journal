@@ -1,0 +1,161 @@
+<!doctype html>
+<!-- assets/readme/render.sh renders this to architecture-dark.png and architecture-light.png
+     (1200x834 css px at 2x): how the journal's parts connect, for the README. -->
+<html><head><meta charset="utf-8"><script src="theme.js"></script><link rel="stylesheet" href="diagram.css">
+<style>html,body{height:834px}</style></head><body>
+
+<div class="title"><span>[trading-journal]</span> how the parts connect</div>
+<div class="sub">one Go binary and one SQLite file; everything else is a client of it or a feed into it</div>
+
+<!-- clients -->
+<div class="panel" style="left:24px;top:92px;width:272px;height:710px"><div class="ptitle">clients</div></div>
+<div class="box" style="left:40px;top:116px;width:240px;height:118px">
+  <h3>browser</h3>
+  <p>server-rendered pages, <code>html/template</code> + HTMX partials; polls <code>/data/version</code> every 10 s and swaps the live regions in place</p>
+</div>
+<div class="box" style="left:40px;top:250px;width:240px;height:150px">
+  <h3>iPhone and iPad app</h3>
+  <p>SwiftUI, in <code>app/ios</code>: <code>/api/v1</code> with a device key and the SSE stream; nudges and the Session Live Activity arrive by push; the last answers are kept for offline</p>
+</div>
+<div class="box" style="left:40px;top:416px;width:240px;height:150px">
+  <h3>AI assistants</h3>
+  <p>Claude Code, claude.ai, ChatGPT over MCP at <code>/mcp</code>: 21 tools to read trades and stats and to write notes, tags and plans; an API key or OAuth 2.1</p>
+</div>
+<div class="box" style="left:40px;top:582px;width:240px;height:92px">
+  <h3>scripts and other tools</h3>
+  <p>REST <code>/api/v1</code> with a <code>tj_</code> key; OpenAPI at <code>/api/v1/openapi.json</code></p>
+</div>
+<div class="box" style="left:40px;top:690px;width:240px;height:96px;border-style:dashed">
+  <h3 class="m" style="font-size:12.5px">who is who</h3>
+  <p>local sign-in with sessions, or a reverse proxy's headers; keys and devices per user; several users, one instance</p>
+</div>
+
+<!-- the binary -->
+<div class="panel" style="left:336px;top:92px;width:528px;height:710px"><div class="ptitle">one Go binary · <span style="text-transform:none">cmd/server</span></div></div>
+<div class="box" style="left:352px;top:116px;width:496px;height:74px">
+  <h3>internal/handlers</h3>
+  <p>pages and HTMX partials · <code>/api/v1</code> JSON with the SSE <code>/events</code> · <code>/mcp</code> and the OAuth 2.1 server · settings, admin, pairing</p>
+</div>
+
+<div class="box" style="left:352px;top:206px;width:160px;height:104px">
+  <h3>journal</h3>
+  <p>one write path for notes: pages, API, MCP and the AI reviewer</p>
+</div>
+<div class="box" style="left:520px;top:206px;width:160px;height:104px">
+  <h3>positions</h3>
+  <p>FIFO builder: fills become trades; flips, partial closes, commissions</p>
+</div>
+<div class="box" style="left:688px;top:206px;width:160px;height:104px">
+  <h3>importer</h3>
+  <p>CSV watch folder and upload, MW e-mail; <code>topstepx</code> and <code>ibkr</code> sync</p>
+</div>
+
+<div class="box" style="left:352px;top:320px;width:160px;height:104px">
+  <h3>copyset, dayplan</h3>
+  <p>one decision across accounts; the plan before the open</p>
+</div>
+<div class="box" style="left:520px;top:320px;width:160px;height:104px">
+  <h3>guardrail · push</h3>
+  <p>coach rules and nudges as fills arrive, pushed to the phone</p>
+</div>
+<div class="box" style="left:688px;top:320px;width:160px;height:104px">
+  <h3>ai</h3>
+  <p>note reviews, day runs, plan and level drafts</p>
+</div>
+
+<div class="box" style="left:352px;top:434px;width:160px;height:104px">
+  <h3>marketdata</h3>
+  <p>bars, chart PNGs, MFE/MAE, the stop &amp; target lab</p>
+</div>
+<div class="box" style="left:520px;top:434px;width:160px;height:104px">
+  <h3>gex · gexview</h3>
+  <p>gamma regime, flip and walls on trades and the GEX pages</p>
+</div>
+<div class="box" style="left:688px;top:434px;width:160px;height:104px">
+  <h3>livedata, backup</h3>
+  <p>a change version per user for poll and SSE; nightly tar.gz</p>
+</div>
+
+<div class="box" style="left:352px;top:554px;width:328px;height:96px">
+  <h3>SQLite · <code class="m">data/trading.db</code></h3>
+  <p><code>modernc.org/sqlite</code>, pure Go, no CGO; migrations embedded and applied at boot; sqlc-typed queries. Executions are the record, trades and daily stats derive.</p>
+</div>
+<div class="box" style="left:688px;top:554px;width:160px;height:96px">
+  <h3>files</h3>
+  <p><code>data/attachments</code>, <code>imports/processed</code>, <code>backups/*.tar.gz</code></p>
+</div>
+<div class="box" style="left:352px;top:666px;width:496px;height:120px;border-style:dashed">
+  <h3 class="m" style="font-size:12.5px">pages</h3>
+  <p>dashboard · trades and copy sets · open positions with their plans · journal, day plan, lessons, digest · calendar · analytics and the stop &amp; target lab · accounts and equity · GEX · OI · import · settings</p>
+</div>
+
+<!-- feeds in -->
+<div class="panel" style="left:904px;top:92px;width:272px;height:360px"><div class="ptitle">fills come in</div></div>
+<div class="box" style="left:920px;top:116px;width:240px;height:72px">
+  <h3>MotiveWave CSV export</h3>
+  <p><code>imports/inbox/</code> or upload; Apex, Lucid, AMP, IBKR</p>
+</div>
+<div class="box" style="left:920px;top:196px;width:240px;height:72px">
+  <h3>MotiveWave fill e-mail</h3>
+  <p>SMTP <code>:2525</code>, direct or via mwrelay; until the CSV lands</p>
+</div>
+<div class="box" style="left:920px;top:276px;width:240px;height:72px">
+  <h3>TopstepX / ProjectX API</h3>
+  <p>trades and fees on a schedule; exact-contract bars</p>
+</div>
+<div class="box" style="left:920px;top:356px;width:240px;height:72px">
+  <h3>IBKR Client Portal Gateway</h3>
+  <p>executions over a rolling seven-day window</p>
+</div>
+
+<!-- services out -->
+<div class="panel" style="left:904px;top:476px;width:272px;height:326px"><div class="ptitle">services out</div></div>
+<div class="box" style="left:920px;top:500px;width:240px;height:68px">
+  <h3>Yahoo Finance</h3>
+  <p>continuous-futures bars for the charts</p>
+</div>
+<div class="box" style="left:920px;top:572px;width:240px;height:68px">
+  <h3>AI providers</h3>
+  <p>OpenAI, Anthropic, Gemini, Mistral, OpenRouter, local</p>
+</div>
+<div class="box" style="left:920px;top:644px;width:240px;height:68px">
+  <h3>gex-engine <span class="m">:8420</span></h3>
+  <p>gamma snapshots and strike profiles for ES and NQ</p>
+</div>
+<div class="box" style="left:920px;top:716px;width:240px;height:68px">
+  <h3>Apple APNs</h3>
+  <p>nudges, closed trades, the Live Activity, to the phone</p>
+</div>
+
+<!-- wires -->
+<svg class="wires" width="1200" height="834" viewBox="0 0 1200 834">
+  <defs>
+    <marker id="m" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--arrow)"/></marker>
+    <marker id="ma" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--accent)"/></marker>
+  </defs>
+  <path class="a" d="M282 175 L350 175" marker-end="url(#ma)" marker-start="url(#ma)"/>
+  <path class="a" d="M282 325 L350 325" marker-end="url(#ma)" marker-start="url(#ma)"/>
+  <path class="a" d="M282 491 L350 491" marker-end="url(#ma)" marker-start="url(#ma)"/>
+  <path class="a" d="M282 628 L350 628" marker-end="url(#ma)"/>
+  <path d="M918 152 L866 152" marker-end="url(#m)"/>
+  <path d="M918 232 L866 232" marker-end="url(#m)"/>
+  <path d="M918 312 L866 312" marker-end="url(#m)" marker-start="url(#m)"/>
+  <path d="M918 392 L866 392" marker-end="url(#m)" marker-start="url(#m)"/>
+  <path d="M866 534 L918 534" marker-end="url(#m)" marker-start="url(#m)"/>
+  <path d="M866 606 L918 606" marker-end="url(#m)" marker-start="url(#m)"/>
+  <path d="M866 678 L918 678" marker-end="url(#m)" marker-start="url(#m)"/>
+  <path d="M866 750 L918 750" marker-end="url(#m)"/>
+</svg>
+<div class="lab" style="left:298px;top:155px">HTMX</div>
+<div class="lab" style="left:286px;top:305px">JSON+SSE</div>
+<div class="lab" style="left:302px;top:471px">MCP</div>
+<div class="lab" style="left:298px;top:608px">REST</div>
+<div class="lab" style="left:872px;top:132px">files</div>
+<div class="lab" style="left:874px;top:212px">SMTP</div>
+<div class="lab" style="left:870px;top:292px">HTTPS</div>
+<div class="lab" style="left:870px;top:372px">HTTPS</div>
+<div class="lab" style="left:870px;top:514px">HTTPS</div>
+<div class="lab" style="left:870px;top:586px">HTTPS</div>
+<div class="lab" style="left:874px;top:658px">HTTP</div>
+<div class="lab" style="left:868px;top:730px">HTTP/2</div>
+</body></html>

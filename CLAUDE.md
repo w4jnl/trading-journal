@@ -4,35 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Repository state
 
-Greenfield project. The committed files are:
+A released, public project (github.com/w4jnl/trading-journal, Apache-2.0): a Go server (`cmd/server`, `internal/`, `web/`), an iOS app (`app/ios`), Docker packaging (`Docker/`), the API reference (`API.md`) and user docs (`README.md`, `docs/`). `trading-journal-design.md` is the original design spec; its schema and page set still apply where this file does not override them, but its sync modules (Rithmic, CQG watcher) were never built. `exportData/` holds real export samples and is untracked: never commit, print or screenshot its contents, and never write to the real `./data/trading.db` (read it with `sqlite3 "file:data/trading.db?immutable=1"` when you must). The user's own dev server runs on port 8080: scratch servers go on another port with a fresh database.
 
-- `trading-journal-design.md` — original design spec (numbered §1–§12). Architecture, schema, and feature scope still apply unless overridden below.
-- `exportData/MotivewaveExport.csv`, `exportData/TopstepxExport.csv` — real samples of the v1 data sources. Build and test importers against these.
+The server and the app share one version (`CHANGELOG.md`, tag `vX.Y.Z`, `MARKETING_VERSION` in `app/ios/project.yml`). Before a release: `go vet ./...`, `go test -race ./...`, `make smoke` (`RESULT: ALL PASS`). Never merge a PR or cut a release without the user's explicit go-ahead in the same conversation.
 
-No Go code, migrations, templates, or `go.mod` exist yet. Read the design doc and these export samples before scaffolding.
+## Scope decisions
 
-## v1 scope decisions (override the design doc)
-
-The design doc proposes live broker APIs (Rithmic, IBKR Client Portal, CQG watcher) as Phases 3–4. **v1 ignores all of that** — the user already runs MotiveWave on every brokered account, so a single MotiveWave CSV importer covers Apex / Lucid / IBKR / AMP-CQG. TopStepX is handled by a second importer because it's not a MotiveWave-supported broker.
-
-- **Data sources in v1:** CSV import only. MotiveWave export + TopStepX export. Two entry points, same `ImportService` code path:
-  1. **UI upload** at `/import` (drag-drop or file picker).
-  2. **Watch folder** — `fsnotify` on `imports/inbox/`. Drop a file there and it auto-imports.
-  Format is auto-detected from the CSV header row (`Account,Ticket,…` → MotiveWave, `Id,AccountName,…` → TopstepX). After processing, files always move out of `inbox/`: success → `imports/processed/<timestamp>_<filename>`, failure → `imports/failed/<filename>` with a sibling `<filename>.error.txt`. No live polling, no broker credentials, no encrypted-at-rest secrets, no IBKR Gateway dependency, no Rithmic R|Protocol risk.
-- **Live sync (§5.1, §5.2):** deferred to a later phase, gated on whether the manual flow becomes painful. When/if added, IBKR Client Portal first (gateway already runs at `ibgw.example.internal:4005`).
+- **Data sources:** CSV import (MotiveWave, TopstepX orders and trades exports), MotiveWave fill e-mails on the embedded SMTP listener (`internal/mwmail`, provisional executions the CSV supersedes), the TopstepX/ProjectX API (`internal/topstepx`) and IBKR Client Portal Gateways (`internal/ibkr`). All four end in `ImportService`; two entry points for files, the upload at `/import` and the fsnotify watcher on `imports/inbox/[<user>/]`. Format is auto-detected from the CSV header row (`Account,Ticket,…` → MotiveWave, `Id,AccountName,…` → TopstepX). After processing, files always move out of `inbox/`: success → `imports/processed/<user>/<timestamp>_<filename>`, failure → `imports/failed/<user>/<filename>` with a sibling `<filename>.error.txt`. Rithmic and CQG have no connector and arrive through MotiveWave.
 - **Refresh model:** near-real-time via version polling (superseding the original end-of-day design once live sources landed). Every mutation path bumps the per-user `internal/livedata` notifier POST-COMMIT; dashboard/calendar/trades/journal-day/analytics poll `GET /data/version` every 10s (`web/static/js/live_refresh.js`); on change they re-fetch the SAME URL with `fragment=1`, and the handler returns an hx-swap-oob bundle of the page's live region(s) plus a refreshed marker (shared named templates, `renderPageFragment` in internal/handlers/livedata.go) - no full reload. The client fetches the bundle first and diffs it: rows (`tr[data-trade-id]`) that merely changed are swapped in place with a brief flash even while the trade sheet is open; rows added/removed/reordered while the page is busy (open sheet, selection, open picker), or a region holding the trader's input (focus, unsaved edits, in-flight request), defer to a single click-to-refresh toast. Scripts inside live regions re-execute per swap: chart builders must register via `uplotHelpers.rebuildKey` (idempotent), never bare `onRebuild`. New mutation paths MUST bump the notifier after commit (via `ImportService.Versions` or `Handlers.LiveData`) or open pages will not learn about them - and the intraday guardrail (`internal/guardrail`), which re-reads a user's day only when their version moves, will not nudge on them either. The notifier is transport-agnostic: a future SSE upgrade replaces only the endpoint + JS, never the bump sites.
-- **Auth:** none. Private network / VPN. Don't add OAuth or basic auth.
-- **Deployment:** no Docker initially. Plain `go build` + `./trading-journal`. Containerization is a later concern.
+- **Auth:** multi-user. `auth.mode: local` (bcrypt, SQLite sessions, CSRF) or `proxy` (trusted headers from `trusted_proxies`). Per-user API keys (`tj_`, kinds `agent` and `device`) for `/api/v1` and `/mcp`; a built-in OAuth 2.1 server for MCP connectors (`internal/oauth`). No other auth scheme.
+- **Deployment:** `go build` or the multi-arch image `ghcr.io/w4jnl/trading-journal` (`Docker/`, published by `.github/workflows/docker.yml` on a release).
 
 ## Stack choices
 
-- Go, stdlib `net/http` with `http.ServeMux` (Go 1.22+ method-based routing). **No chi.**
+- Go, stdlib `net/http` with `http.ServeMux` (method-based routing). **No chi.**
 - `modernc.org/sqlite` (pure Go, CGO-free).
-- `dbmate` for migrations. **Not** golang-migrate or goose — the design doc was inconsistent; dbmate wins.
-- `sqlc` for type-safe queries from raw SQL in `internal/db/queries/`.
-- `html/template` + HTMX, server-rendered. Charts: uPlot from CDN. No SPA framework.
-- Tailwind CSS, prebuilt output committed to `web/static/css/`.
+- `dbmate`-format migrations in `internal/db/migrations/`, embedded and applied at start. **Not** golang-migrate or goose.
+- `sqlc` for type-safe queries from raw SQL in `internal/db/queries/` (CI runs `sqlc diff`).
+- `html/template` + HTMX, server-rendered. Charts: uPlot and Lightweight Charts, vendored under `web/static/vendor/`. No SPA framework, no CDN.
+- One hand-written stylesheet, `web/static/css/app.css`, holds the design system (tokens, light and dark themes). No Tailwind, no build step.
 - Templates and static assets embedded via `embed.FS` so the binary is self-contained.
+- iOS: SwiftUI, Swift 6 strict concurrency, XcodeGen, no packages; `/Volumes/data/work/claude/ios-design-and-solution-guide.md` is the guide.
 - Go style guide: `~/.claude/go-style.md`.
 
 ## Schema additions beyond §4
@@ -84,26 +76,23 @@ CQG (and the AMP-CQG MotiveWave feed) uses `EP` for the E-mini S&P 500; everywhe
 - **No commission column.**
 - TopStepX has its own API (not Rithmic-backed despite the prop firm using Rithmic for some plans). Future automation would use the TopstepX API directly.
 
-## Project layout (revised from §8)
+## Project layout
 
-Replace `internal/sync/{rithmic,ibkr,cqg}/` with:
+`docs/development.md` has the package map. The parts that matter most when changing data flow:
 
 ```
-internal/importer/
-    types.go            -- Fill struct, Format const, firm-guessing rules
-    service.go          -- ImportService: detect, dedup, account/instrument upsert, file-move
-    watcher.go          -- fsnotify watcher on imports/inbox/, debounced, single-flight
-    motivewave.go       -- ParseMotiveWave(io.Reader) ([]Fill, error)
-    topstepx.go         -- ParseTopstepX(io.Reader) ([]Fill, error)
-internal/positions/
-    builder.go          -- FIFO fill-grouping into trades, commission allocation, position flips
+internal/importer/      flat package: Fill types + firm guessing (types.go), parsers (motivewave.go,
+                        topstepx.go, topstepx_trades.go), e-mail ingest (email.go), ImportService
+                        (service.go: detect, dedup, account/instrument upsert, file move), the
+                        fsnotify watcher (watcher.go: boot sweep, debounce, single-flight)
+internal/positions/     FIFO fill grouping into trades, commission allocation, flips
+internal/journal/       the single write path for entries; every surface (pages, API, MCP, AI) uses it
+internal/handlers/      all HTTP routes, including api_*.go, mcp.go and the GEX pages
 ```
 
-Importer is a flat package — sub-packages would force a `Fill`-types-only base package to avoid an import cycle, which is overkill at this scope.
+Importer is a flat package: sub-packages would force a `Fill`-types-only base package to avoid an import cycle. File-move semantics live in `ImportService` via a deferred outcome inspector: never silently lose a dropped file.
 
-The watcher runs a boot-time sweep of `imports/inbox/` on startup so files left from a previous run get processed before normal watching begins. File-move semantics (success → `processed/`, failure → `failed/` + `.error.txt`) live in `ImportService` via a deferred outcome inspector — never silently lose a dropped file.
-
-Position builder is correctness-critical: partial closes, position flips (long → short in one fill produces two trades), per-account per-symbol FIFO queues. Test against the real export samples before wiring it into the import flow.
+Position builder is correctness-critical: partial closes, position flips (long → short in one fill produces two trades), per-account per-symbol FIFO queues. `internal/positions` tests cover them; add a case there before changing the builder.
 
 ## Architectural constraints to preserve
 

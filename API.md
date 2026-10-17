@@ -1377,13 +1377,16 @@ The same per-user API keys (`Authorization: Bearer tj_...`) are also accepted on
 `mcp.enabled` (default true) and the sign-in flow with `mcp.oauth` in
 `config.yaml`.
 
-Tools: `prepare_day` (cluster a day's copytrader fan-out + create the journal
-entries to analyze - the daily-review entry point), `server_info`, `list_trades`,
-`get_trade`, `list_journal`, `get_journal_entry`, `list_strategies`,
-`get_strategy`, `get_chart_image` (returns the rendered PNG as image content),
+Tools, 21 in all. Reading: `server_info`, `list_trades`, `get_trade`, `list_positions`,
+`list_journal`, `get_journal_entry`, `list_strategies`, `get_strategy`,
+`get_chart_image` (the rendered PNG as image content), `get_daily_stats` (the daily
+P&L / trade stats above), `get_analytics_summary`, `get_coach_checks`, `get_day_plan`
+and `get_weekly_digest`. Writing: `prepare_day` (cluster a day's copytrader fan-out +
+create the journal entries to analyze - the daily-review entry point),
 `create_journal_entry`, `append_note`, `assign_strategy` and `set_tag` (both
-only-if-unset, never overwrite), and `get_daily_stats` (the daily P&L / trade
-stats above).
+only-if-unset, never overwrite), `set_day_plan` and `set_position_plan` (recorded
+with source `api` until the trader saves). Every tool mirrors a REST endpoint
+documented above; the `/mcp` tool list carries the schemas.
 
 Connect (all three sign in through the browser; nothing to paste):
 

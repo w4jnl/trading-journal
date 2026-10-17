@@ -70,7 +70,7 @@ EXPOSE 8080
 LABEL org.opencontainers.image.title="Trading Journal" \
       org.opencontainers.image.description="Server-rendered trading journal app (Go + HTMX + SQLite)." \
       org.opencontainers.image.source="https://github.com/w4jnl/trading-journal" \
-      org.opencontainers.image.licenses="MIT"
+      org.opencontainers.image.licenses="Apache-2.0"
 
 USER nonroot:nonroot
 ENTRYPOINT ["/app/trading-journal"]

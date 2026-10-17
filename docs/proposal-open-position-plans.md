@@ -1,6 +1,7 @@
 # Proposal: plan, stop, target and risk on an open position
 
-Status: proposal, no implementation. 2026-10-14.
+Status: historical. Written 2026-10-14 as a proposal; shipped in 2.17.x and later as described in
+[features.md](features.md#open-positions). Kept for the reasoning.
 
 ## Why it does not work today
 
