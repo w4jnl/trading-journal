@@ -17,7 +17,8 @@ after which everything is recomputed.
 
 **Copy sets.** One decision fanned across accounts by a copytrader (same underlying, same
 direction, entries within two seconds, two or more accounts) forms a set. `/trades` can list by
-set with the accounts folded underneath, the set's sheet compares the fills leg by leg, and
+set with the accounts folded underneath and the set's R and price path (heat, best seen and
+the exit, averaged over the legs) on the row, the set's sheet compares the fills leg by leg, and
 analytics can count per decision instead of per account. Accounts a copier drives together can
 share a **copy group** on `/accounts`, which lets their legs count as one decision up to thirty
 seconds apart.

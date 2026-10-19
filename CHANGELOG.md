@@ -5,6 +5,11 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+### Web
+
+- The sets view of the trade log draws the price path glyph (heat, best seen, the exit) on the
+  set's row too, averaged over the measured legs with the money summed; the tooltip says when
+  some legs are not measured yet.
 ### App (iOS)
 
 - An app lock, off by default: Settings > Privacy > Require Face ID (Touch ID, or the passcode

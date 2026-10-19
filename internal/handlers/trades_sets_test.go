@@ -211,3 +211,33 @@ func TestCollapseSetsAndSummaryUnit(t *testing.T) {
 		t.Errorf("detail set fields: %+v %v", d.SetID, err)
 	}
 }
+
+// The set row's path glyph averages the measured legs in points, sums the
+// money, and says when legs are missing.
+func TestSetRowPath(t *testing.T) {
+	f := func(v float64) *float64 { return &v }
+	tf := "1m"
+	leg := func(entry, exit, mae, mfe float64, maePnl, mfePnl *float64) tradeRow {
+		return tradeRow{Direction: "short", EntryPrice: entry, ExitPrice: f(exit), MaePoints: f(mae), MfePoints: f(mfe), MaePnl: maePnl, MfePnl: mfePnl, ExcursionTf: &tf}
+	}
+	// Two shorts out 1 pt in profit, heat 0.5, best seen 2: scale 2, heat 13%,
+	// gain 50%, exit 50 + 25 = 75%.
+	s := setRow{Members: []tradeRow{leg(7863.25, 7862.25, 0.5, 2, f(5), f(20)), leg(7863, 7862, 0.5, 2, f(5), f(20))}}
+	p := s.Path()
+	if p == nil || p.HeatPct != 13 || p.GainPct != 50 || p.ExitPct != 75 || p.Sign != "pnl-pos" || p.Title != "Heat −10.00 · best seen +40.00 · exit kept 50% (1m bars)" {
+		t.Errorf("set path = %+v", p)
+	}
+	// An unmeasured leg is left out and named.
+	s.Members = append(s.Members, tradeRow{Direction: "short", EntryPrice: 7863, ExitPrice: f(7862)})
+	if p := s.Path(); p == nil || p.ExitPct != 75 || !strings.HasSuffix(p.Title, " (1m bars) · 2 of 3 legs measured") {
+		t.Errorf("set path with an unmeasured leg = %+v", p)
+	}
+	// A measured leg without money (stub instrument) drops the tooltip to points.
+	s.Members[1].MaePnl = nil
+	if p := s.Path(); p == nil || !strings.HasPrefix(p.Title, "Heat 0.5 pts · best seen 2 pts") {
+		t.Errorf("set path with an unpriced leg = %+v", p)
+	}
+	if (setRow{Members: []tradeRow{{Direction: "long", EntryPrice: 1}}}).Path() != nil {
+		t.Error("a set with no measured leg should have no path")
+	}
+}
