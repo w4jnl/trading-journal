@@ -52,9 +52,10 @@ struct LiveActivityTests {
     @Test func theLocalStateFollowsTodayAndFitsTheLimit() throws {
         let t = try Fixtures.load(Today.self, "today")
         let st = SessionActivityAttributes.ContentState.from(t, now: Date(timeIntervalSince1970: 1_760_600_000))
-        #expect(st.positions.count == 3, "at most three of the four, by |unrealised|")
-        #expect(abs(st.positions[0].u) >= abs(st.positions[1].u) && abs(st.positions[1].u) >= abs(st.positions[2].u))
-        #expect(st.openCount == 4 && st.nudges == 2 && st.realized == t.stats.net && st.stale == t.unrealized.stale)
+        // Four legs in three decisions (accounts 6 and 25 share a set): all kept, the decision
+        // with the most at stake first, a set's legs together with the largest first.
+        #expect(st.positions.count == 4 && st.positions.map(\.a) == [8, 6, 25, 7], "\(st.positions.map(\.a))")
+        #expect(st.openCount == 4 && st.openSets == 3 && st.nudges == 2 && st.realized == t.stats.net && st.stale == t.unrealized.stale)
         #expect(st.maxTrades == 0 && st.maxLoss == 0, "no plan: no cap, no budget")
         #expect(st.updated == 1_760_600_000 && st.lastFillDate != nil)
         let attrs = SessionActivityAttributes.from(t)
