@@ -2,6 +2,7 @@ package guardrail
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -183,5 +184,49 @@ func TestOpenPositionNudges_ThroughStop(t *testing.T) {
 		if n.Key == "past-stop-live" {
 			t.Errorf("stale price nudged: %+v", n)
 		}
+	}
+}
+
+// Two copied legs through the same stop are one nudge, on the first leg,
+// naming the accounts; a leg with a stop of its own is said separately.
+func TestOpenPositionNudges_ThroughStopSet(t *testing.T) {
+	s, conn, uid := guardFixture(t)
+	ctx := context.Background()
+	q := models.New(conn)
+	if _, err := conn.Exec(`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (2, ?, 'beta', 'motivewave_csv', 'B'), (3, ?, 'gamma', 'motivewave_csv', 'C')`, uid, uid); err != nil {
+		t.Fatal(err)
+	}
+	opened := at(14, 5, 0)
+	stops := map[int64]float64{1: 6997, 2: 6997, 3: 6998}
+	for _, acct := range []int64{1, 2, 3} {
+		id := "L" + strconv.FormatInt(acct, 10)
+		if _, err := q.InsertExecution(ctx, models.InsertExecutionParams{AccountID: acct, BrokerExecID: id, ImportMethod: "motivewave_csv",
+			Symbol: "ESZ6", SymbolRoot: "ES", Side: "buy", Qty: 1, Price: 7000, ExecTime: opened.Add(time.Duration(acct) * time.Second)}); err != nil {
+			t.Fatal(err)
+		}
+		e, _ := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{AccountID: acct, BrokerExecID: id})
+		stop := stops[acct]
+		if _, err := q.CreatePositionPlan(ctx, models.CreatePositionPlanParams{AccountID: acct, Symbol: "ESZ6", OpenExecID: e.ID, OpenedAt: e.ExecTime, Stop: &stop, Source: "trader"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	first, _ := q.GetExecutionByBrokerID(ctx, models.GetExecutionByBrokerIDParams{AccountID: 1, BrokerExecID: "L1"})
+	s.LastClose = func(context.Context, string) (float64, time.Time, bool) { return 6996.5, at(14, 6, 0), true }
+	s.Now = func() time.Time { return at(14, 6, 30) }
+	got, _ := s.Check(ctx, uid, false)
+	var hits []models.Nudge
+	for _, n := range got {
+		if n.Key == "past-stop-live" {
+			hits = append(hits, n)
+		}
+	}
+	if len(hits) != 2 {
+		t.Fatalf("through-stop nudges = %d, want one for the shared stop and one for gamma: %+v", len(hits), hits)
+	}
+	if hits[0].Ref != strconv.FormatInt(first.ID, 10) || !strings.Contains(hits[0].Detail, "stop 6997 on long on 2 accounts") || !strings.Contains(hits[0].Href, "sheet=pos%3A1%3AESZ6") {
+		t.Errorf("shared-stop nudge = %+v", hits[0])
+	}
+	if !strings.Contains(hits[1].Detail, "stop 6998 on long 1") || !strings.Contains(hits[1].Href, "sheet=pos%3A3%3AESZ6") {
+		t.Errorf("own-stop nudge = %+v", hits[1])
 	}
 }

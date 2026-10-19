@@ -5,6 +5,17 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+<<<<<<< HEAD
+### Server
+
+- Push: a copied exit is one notification, not one per account. The closed-trade alert folds
+  the legs of a copy set into the decision (`MES short ×5`, `5 accounts`, the summed net); a
+  leg that lands a tick later re-tells the decision under the same collapse id, so the banner
+  is replaced rather than stacked. The Session activity's trade alert folds the same way.
+- Guardrail: "price is through your stop" is said once for the legs of a decision that share
+  the stop, naming the accounts; a leg with a stop of its own is still said on its own
+  ("no stop recorded" already spoke per decision).
+=======
 ### Web
 
 - Trades, sets view: the entry spread of a decision is shown to the cent. A leg's entry is a
@@ -33,6 +44,7 @@ built against it carries the same marketing version.
   guards the unlocked phone in someone else's hand, nothing more.
 - "Hide amounts until unlocked": money in the widgets, the Session Live Activity and the
   notification cards is redacted until the phone itself is unlocked. No prompt of its own.
+>>>>>>> origin/main
 
 ## 2.18.6, 2026-10-17
 

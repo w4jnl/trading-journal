@@ -3,6 +3,7 @@ package push
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -131,18 +132,106 @@ type closedTrade struct {
 	Account    string
 	AccountID  int64
 	Symbol     string
+	SetID      *int64 // the copy set the trade belongs to, nil for a lone trade
 }
 
 func (t closedTrade) key() string {
 	return fmt.Sprintf("%d|%s|%s|%g|%d", t.AccountID, t.Symbol, t.Direction, t.Qty, t.ExitTime.Unix())
 }
 
+// closedDecision is what one alert says: a copy set's legs folded into
+// one, or a lone trade. A copied exit closes one trade per account within
+// the same second; announcing each would stack five banners for one
+// decision.
+type closedDecision struct {
+	lead closedTrade // the earliest exit: the id, the contract and the time
+	legs []closedTrade
+	net  float64
+	qty  float64
+}
+
+// title is the contract and side, with the legs when more than one.
+func (d closedDecision) title() string {
+	t := d.lead.SymbolRoot + " " + d.lead.Direction
+	if len(d.legs) > 1 {
+		t += fmt.Sprintf(" ×%d", len(d.legs))
+	}
+	return t
+}
+
+// where is the account, or how many accounts the decision ran on.
+func (d closedDecision) where() string {
+	if len(d.legs) == 1 {
+		return d.lead.Account
+	}
+	return fmt.Sprintf("%d accounts", len(d.legs))
+}
+
+// collapseID names the decision by its earliest leg, which is stable
+// across set rebuilds (set ids are not): a leg that lands a tick later
+// re-sends the whole decision and replaces the banner instead of
+// stacking under it.
+func (d closedDecision) collapseID() string { return "trade:" + d.lead.key() }
+
+func (d closedDecision) data() map[string]any {
+	m := map[string]any{"kind": "trade", "tradeId": d.lead.ID, "route": "trade/" + fmt.Sprint(d.lead.ID), "symbolRoot": d.lead.SymbolRoot, "direction": d.lead.Direction,
+		"netPnl": d.net, "accountId": d.lead.AccountID, "legs": len(d.legs)}
+	if d.lead.SetID != nil {
+		m["setId"] = *d.lead.SetID
+	}
+	return m
+}
+
+// foldClosed groups the recent trades into decisions and keeps those with
+// a leg not yet announced. A set with one fresh leg is re-told whole, so
+// the alert carries the decision's full result. Decisions come out in
+// the order their first leg closed.
+func foldClosed(recent []closedTrade, fresh func(closedTrade) bool) []closedDecision {
+	var out []closedDecision
+	bySet := map[int64]int{}
+	for _, t := range recent {
+		if t.SetID == nil {
+			if fresh(t) {
+				out = append(out, closedDecision{lead: t, legs: []closedTrade{t}, net: t.Net, qty: t.Qty})
+			}
+			continue
+		}
+		i, seen := bySet[*t.SetID]
+		if !seen {
+			i = len(out)
+			bySet[*t.SetID] = i
+			out = append(out, closedDecision{lead: t})
+		}
+		d := &out[i]
+		d.legs = append(d.legs, t)
+		d.net += t.Net
+		d.qty += t.Qty
+		if t.ExitTime.Before(d.lead.ExitTime) || (t.ExitTime.Equal(d.lead.ExitTime) && t.ID < d.lead.ID) {
+			d.lead = t
+		}
+	}
+	kept := out[:0]
+	for _, d := range out {
+		told := false
+		for _, l := range d.legs {
+			if fresh(l) {
+				told = true
+			}
+		}
+		if told {
+			kept = append(kept, d)
+		}
+	}
+	sort.SliceStable(kept, func(i, j int) bool { return kept[i].lead.ExitTime.Before(kept[j].lead.ExitTime) })
+	return kept
+}
+
 // recentClosed are the user's trades closed in the last tradeFresh.
 func (s *Service) recentClosed(ctx context.Context, uid int64) ([]closedTrade, error) {
 	since := s.now().Add(-tradeFresh).UTC()
 	rows, err := s.DB.QueryContext(ctx, `
-		SELECT t.id, t.symbol_root, t.symbol, t.direction, t.qty, COALESCE(t.net_pnl, 0), t.exit_time, a.id, a.name
-		FROM trades t JOIN accounts a ON a.id = t.account_id
+		SELECT t.id, t.symbol_root, t.symbol, t.direction, t.qty, COALESCE(t.net_pnl, 0), t.exit_time, a.id, a.name, m.set_id
+		FROM trades t JOIN accounts a ON a.id = t.account_id LEFT JOIN trade_set_members m ON m.trade_id = t.id
 		WHERE a.user_id = ? AND t.status = 'closed' AND t.exit_time >= ?
 		ORDER BY t.exit_time, t.id`, uid, since)
 	if err != nil {
@@ -152,7 +241,7 @@ func (s *Service) recentClosed(ctx context.Context, uid int64) ([]closedTrade, e
 	var out []closedTrade
 	for rows.Next() {
 		var t closedTrade
-		if err := rows.Scan(&t.ID, &t.SymbolRoot, &t.Symbol, &t.Direction, &t.Qty, &t.Net, &t.ExitTime, &t.AccountID, &t.Account); err != nil {
+		if err := rows.Scan(&t.ID, &t.SymbolRoot, &t.Symbol, &t.Direction, &t.Qty, &t.Net, &t.ExitTime, &t.AccountID, &t.Account, &t.SetID); err != nil {
 			return nil, err
 		}
 		out = append(out, t)
@@ -192,7 +281,7 @@ func (s *Service) DataChanged(ctx context.Context, uid int64) {
 		s.log().Warn("push: closed trades", "user", uid, "err", err)
 	}
 	now := s.now()
-	var fresh []closedTrade
+	fresh := map[string]bool{}
 	s.mu.Lock()
 	if st.pushedTrade == nil {
 		st.pushedTrade = map[string]time.Time{}
@@ -205,15 +294,16 @@ func (s *Service) DataChanged(ctx context.Context, uid int64) {
 	for _, t := range recent {
 		if _, done := st.pushedTrade[t.key()]; !done {
 			st.pushedTrade[t.key()] = t.ExitTime
-			fresh = append(fresh, t)
+			fresh[t.key()] = true
 		}
 	}
 	s.mu.Unlock()
-	if len(fresh) > 3 {
-		fresh = fresh[len(fresh)-3:]
+	decisions := foldClosed(recent, func(t closedTrade) bool { return fresh[t.key()] })
+	if len(decisions) > 3 {
+		decisions = decisions[len(decisions)-3:]
 	}
 	badge := s.badge(ctx, uid)
-	for _, t := range fresh {
+	for _, d := range decisions {
 		for _, tg := range targets {
 			if why := tg.prefs.Filtered(KindTradeClosed); why != "" {
 				s.log().Debug("push skipped", "what", "trade", "device", tg.row.Name, "why", why)
@@ -223,27 +313,28 @@ func (s *Service) DataChanged(ctx context.Context, uid int64) {
 				s.log().Debug("push skipped", "what", "trade", "device", tg.row.Name, "why", "outside RTH")
 				continue
 			}
-			if s.tradeOnActivity(ctx, tg, t, badge) {
+			if s.tradeOnActivity(ctx, tg, d, badge) {
 				continue
 			}
-			_ = s.send(ctx, tg, s.tradeNotification(tg, t, badge), "trade")
+			_ = s.send(ctx, tg, s.tradeNotification(tg, d, badge), "trade")
 		}
 	}
 	s.sync(ctx, uid, targets, badge)
 }
 
-// tradeNotification is the closed-trade alert.
-func (s *Service) tradeNotification(tg target, t closedTrade, badge int) apns.Notification {
+// tradeNotification is the closed-decision alert: one per copy set, or
+// per lone trade.
+func (s *Service) tradeNotification(tg target, d closedDecision, badge int) apns.Notification {
 	sign := "+"
-	if t.Net < 0 {
+	if d.net < 0 {
 		sign = "-"
 	}
-	body := fmt.Sprintf("%s%.2f · %s", sign, abs(t.Net), t.ExitTime.In(s.tz()).Format("15:04"))
+	body := fmt.Sprintf("%s%.2f · %s", sign, abs(d.net), d.lead.ExitTime.In(s.tz()).Format("15:04"))
 	return apns.Notification{
-		Title: t.SymbolRoot + " " + t.Direction, Subtitle: t.Account, Body: body,
-		Category: CategoryTrade, ThreadID: "trades", CollapseID: "trade:" + t.key(),
+		Title: d.title(), Subtitle: d.where(), Body: body,
+		Category: CategoryTrade, ThreadID: "trades", CollapseID: d.collapseID(),
 		Badge: &badge, Sound: tg.prefs.Sound(KindTradeClosed), TimeSensitive: tg.prefs.TimeSensitive(KindTradeClosed), Mutable: true,
-		Data: map[string]any{"kind": "trade", "tradeId": t.ID, "route": "trade/" + fmt.Sprint(t.ID), "symbolRoot": t.SymbolRoot, "direction": t.Direction, "netPnl": t.Net, "accountId": t.AccountID},
+		Data: d.data(),
 	}
 }
 
