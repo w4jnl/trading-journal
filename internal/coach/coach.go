@@ -67,12 +67,15 @@ type Baseline struct {
 
 // Report is the day's checks.
 type Report struct {
-	Date      string       `json:"date"`
-	Trades    int          `json:"trades"`
-	Decisions int          `json:"decisions"`
-	Baseline  Baseline     `json:"baseline"`
-	Findings  []Finding    `json:"findings"`
-	Plan      *PlanOutcome `json:"plan,omitempty"` // the day's pre-market plan against the day; nil without one
+	Date      string `json:"date"`
+	Trades    int    `json:"trades"`
+	Decisions int    `json:"decisions"`
+	// Decisions by the sign of their net: a copy set counts once.
+	DecisionWins   int          `json:"decisionWins"`
+	DecisionLosses int          `json:"decisionLosses"`
+	Baseline       Baseline     `json:"baseline"`
+	Findings       []Finding    `json:"findings"`
+	Plan           *PlanOutcome `json:"plan,omitempty"` // the day's pre-market plan against the day; nil without one
 }
 
 // Warnings counts the findings that read as mistakes rather than notes.
@@ -234,6 +237,14 @@ func Analyze(day time.Time, tz *time.Location, today, history []Trade, plan *day
 	r := &Report{Date: day.Format("2006-01-02"), Trades: len(today)}
 	ds := decisions(today)
 	r.Decisions = len(ds)
+	for _, d := range ds {
+		switch {
+		case d.Net > 0:
+			r.DecisionWins++
+		case d.Net < 0:
+			r.DecisionLosses++
+		}
+	}
 	if plan != nil {
 		out, findings := planOutcome(*plan, ds, today, tz)
 		r.Plan = out

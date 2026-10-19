@@ -18,8 +18,9 @@ final class Settings {
     var user: UserInfo? { didSet { defaults.set(try? JSONEncoder().encode(user), forKey: "user") } }
     /// "<server>|<apns token>" of the last device registration, so it is not repeated at every start.
     var registered: String? { didSet { defaults.set(registered, forKey: "registered") } }
-    /// Which trades view the user left: by trade or by set.
-    var tradesBySet: Bool { didSet { defaults.set(tradesBySet, forKey: "tradesBySet") } }
+    /// Which trades view the user left: by trade or by set. Mirrored into the App Group, where
+    /// the widget extension reads it (Grouping.bySet) for the Session activity and the widgets.
+    var tradesBySet: Bool { didSet { defaults.set(tradesBySet, forKey: "tradesBySet"); Grouping.save(tradesBySet) } }
     /// Whether this user can run AI work; GET /me says, remembered for the next start.
     var aiReady: Bool { didSet { defaults.set(aiReady, forKey: "aiReady") } }
     /// What this phone wants pushed; Notifications.updatePrefs changes it and tells the server.
@@ -41,6 +42,7 @@ final class Settings {
         // into it, and an extension finds the server even when only the key was in the keychain.
         Keychain.set(apiKey, for: "apiKey")
         Keychain.set(serverURL, for: "serverURL")
+        Grouping.save(tradesBySet) // a build before the mirror
     }
 
     var isPaired: Bool { api != nil }

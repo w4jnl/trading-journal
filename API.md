@@ -1175,6 +1175,7 @@ pulls the latest broker fills first):
   "positions": [ /* as GET /positions */ ],
   "plan": {"plan": { /* as GET /plan */ }, "outcome": { /* checks so far */ },
            "tradesUsed": 4, "maxTrades": 6, "lossUsed": 84.2, "maxLoss": 300, "worstAccount": "APEX-1"},
+  "decisions": {"count": 2, "wins": 2, "losses": 0, "open": 1},
   "nudges": {"unseen": 1, "badge": 1, "items": [ /* newest first, at most 10; as GET /nudges */ ]},
   "lastFillAt": "2026-10-15T14:28:04Z",
   "lastTrade": {"id": 4412, "symbolRoot": "MES", "direction": "short", "netPnl": 33.3, "exitTime": "2026-10-15T14:28:04Z", "account": "APEX-1"},
@@ -1191,7 +1192,11 @@ positions (`stale` when a price is older than five minutes); positions
 on hidden accounts are neither listed nor summed. `plan`
 carries the day plan with its outcome so far plus the two budgets:
 decisions made against `maxTrades`, and the worst account's realised
-loss against `maxLoss` (`lossUsed` is positive money). `nudges.unseen`
+loss against `maxLoss` (`lossUsed` is positive money). `decisions` is
+the day per decision, a copy set counting once: closed decisions with
+their wins and losses by the sign of the set's net, and `open`, the
+decisions among the open positions; a client that groups its trades by
+set shows these in place of `stats` counts. `nudges.unseen`
 counts today's nudges not yet acknowledged, `badge` only those from the
 last two hours. `curve` is the cumulative net after each closed trade of
 the day. `equity` is `GET /equity` reduced to what fits on a card.
@@ -1326,14 +1331,24 @@ type `SessionActivityAttributes`: `{"day", "tz", "rthStart", "rthEnd", "exchange
 the hours as unix seconds and `exchangeTz` the exchange's zone, so a face can show
 the session in exchange time and the phone's), pushed as ActivityKit payloads (APNs `liveactivity`,
 topic `<bundle id>.push-type.liveactivity`) with this content state,
-every field always present, at most three positions, under 4 KB:
+every field always present, under 4 KB:
 
 ```jsonc
 {"realized": 120.5, "unrealized": 13.75, "trades": 4, "wins": 3, "losses": 1,
+ "decisions": 2, "setWins": 2, "setLosses": 0,                       // the same per decision: a copy set counts once
  "maxTrades": 6, "lossUsed": 84.2, "maxLoss": 300,                   // 0 when the plan has no cap or budget
- "positions": [{"a": 7, "s": "MESZ6", "d": "long", "q": 3, "avg": 7766.25, "last": 7767.25, "u": 13.75, "tts": 49, "beyond": false}],
- "openCount": 1, "nudges": 1, "lastFill": 1760530000, "updated": 1760530060, "stale": false, "alert": ""}
+ "positions": [{"a": 7, "s": "MESZ6", "d": "long", "q": 3, "avg": 7766.25, "last": 7767.25, "u": 13.75, "tts": 49, "beyond": false, "set": [7, 9]},
+               {"a": 9, "s": "MESZ6", "d": "long", "q": 3, "avg": 7766.50, "last": 7767.25, "u": 11.25, "tts": 48, "beyond": false, "set": [7, 9]}],
+ "openCount": 2, "openSets": 1, "nudges": 1, "lastFill": 1760530000, "updated": 1760530060, "stale": false, "alert": ""}
 ```
+
+`positions` are legs: `set` is the copied decision a leg belongs to, the
+sorted account ids of every leg (its own included, the same value on each)
+and empty for a position on its own, so a phone that groups its trades by
+set can fold the legs into one row. The legs are ordered by the decision
+with the most unrealised at stake, kept together, and the state carries
+the legs of at most three decisions (twelve legs in all), whole sets
+only. `openCount` counts legs, `openSets` decisions.
 
 The server **starts** it by push-to-start on the first fill of the day
 (a closed trade or an open position, during Globex hours), once per

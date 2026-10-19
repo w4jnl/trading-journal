@@ -29,8 +29,25 @@ struct TodayCache: Codable, Equatable, Sendable {
     var inGlobex: Bool
     /// The last trading days, oldest first, for the medium widget's strip; may be empty.
     var days: [DayCell]
+    // The same per decision (a copy set counts once); absent from a cache written before them.
+    var decisions: Int?
+    var setWins: Int?
+    var setLosses: Int?
+    var openSets: Int?
 
     var total: Double { net + unrealized }
+
+    /// The cache as a trader who groups trades by set reads it: decisions for trades, wins and
+    /// losses per decision, open decisions for open legs. Itself when nothing per decision is known.
+    func display(bySet: Bool) -> TodayCache {
+        guard bySet else { return self }
+        var g = self
+        if let d = decisions { g.trades = d }
+        if let w = setWins { g.wins = w }
+        if let l = setLosses { g.losses = l }
+        if let o = openSets { g.openCount = o }
+        return g
+    }
     var weekNet: Double { days.suffix(5).reduce(0) { $0 + $1.net } }
     var timeZone: TimeZone { TimeZone(identifier: tz) ?? .current }
 
@@ -41,7 +58,8 @@ struct TodayCache: Codable, Equatable, Sendable {
         TodayCache(day: t.day, tz: t.timezone, asOf: asOf, net: t.stats.net, unrealized: t.positions.isEmpty ? 0 : t.unrealized.total, stale: t.unrealized.stale,
                    trades: t.stats.trades, wins: t.stats.wins, losses: t.stats.losses, openCount: t.positions.count,
                    hasPlan: t.plan.plan != nil, maxTrades: t.plan.maxTrades ?? 0, tradesUsed: t.plan.tradesUsed, lossUsed: t.plan.lossUsed, maxLoss: t.plan.maxLoss ?? 0,
-                   unseen: t.nudges.unseen, inGlobex: t.session.inGlobex, days: days)
+                   unseen: t.nudges.unseen, inGlobex: t.session.inGlobex, days: days,
+                   decisions: t.decisions?.count ?? t.plan.tradesUsed, setWins: t.decisions?.wins, setLosses: t.decisions?.losses, openSets: t.positions.openSets)
     }
 
     nonisolated static func read(defaults: UserDefaults? = UserDefaults(suiteName: suite)) -> TodayCache? {

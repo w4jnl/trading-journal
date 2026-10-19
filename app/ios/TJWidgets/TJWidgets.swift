@@ -19,34 +19,36 @@ struct TJWidgets: WidgetBundle {
 
 struct SessionLiveActivity: Widget {
     var body: some WidgetConfiguration {
+        // The faces follow the trader's "Trades grouped by set": one row per decision when on.
         ActivityConfiguration(for: SessionActivityAttributes.self) { context in
-            SessionLockScreen(attributes: context.attributes, state: context.state, isStale: context.isStale)
+            SessionLockScreen(attributes: context.attributes, state: context.state.display(bySet: Grouping.bySet()), isStale: context.isStale)
                 .activityBackgroundTint(Brand.dark.bg)
                 .activitySystemActionForegroundColor(Brand.dark.fg)
                 .widgetURL(Route.today.url)
         } dynamicIsland: { context in
-            DynamicIsland {
+            let state = context.state.display(bySet: Grouping.bySet())
+            return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
                     HStack(spacing: 6) {
-                        SessionGlyph(state: context.state)
+                        SessionGlyph(state: state)
                         Text("Session").font(Brand.text(12, weight: .semibold)).foregroundStyle(Brand.dark.fg)
                     }
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    SessionTotal(state: context.state, size: 15)
+                    SessionTotal(state: state, size: 15)
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    SessionExpandedBottom(attributes: context.attributes, state: context.state)
+                    SessionExpandedBottom(attributes: context.attributes, state: state)
                 }
             } compactLeading: {
-                SessionCompactLeading(state: context.state)
+                SessionCompactLeading(state: state)
             } compactTrailing: {
-                SessionCompactTrailing(state: context.state)
+                SessionCompactTrailing(state: state)
             } minimal: {
-                SessionMinimal(state: context.state)
+                SessionMinimal(state: state)
             }
             .widgetURL(Route.today.url)
-            .keylineTint(SessionStyle.color(context.state.kind))
+            .keylineTint(SessionStyle.color(state.kind))
         }
     }
 }
@@ -62,11 +64,11 @@ struct TodayProvider: TimelineProvider {
     func placeholder(in context: Context) -> TodayEntry { TodayEntry(date: .now, today: .preview) }
 
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
-        completion(TodayEntry(date: .now, today: context.isPreview ? .preview : TodayCache.read()))
+        completion(TodayEntry(date: .now, today: context.isPreview ? .preview : TodayCache.read()?.display(bySet: Grouping.bySet())))
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
-        let t = TodayCache.read()
+        let t = TodayCache.read()?.display(bySet: Grouping.bySet()) // counts per decision when the trader groups by set
         // The app and the silent sync reload the timeline on every change; this is the fallback
         // cadence: a quarter hour in the session, an hour outside it.
         let next = Date.now.addingTimeInterval(t?.inGlobex == true ? 15 * 60 : 60 * 60)

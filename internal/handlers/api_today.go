@@ -11,6 +11,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/guardrail"
 	"github.com/w4jnl/trading-journal/internal/markethours"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/push"
 )
 
 // ---- The day for the phone: nudges, the Today aggregate, the event stream --
@@ -208,8 +209,12 @@ func (h *Handlers) todayJSON(r *http.Request) (map[string]any, error) {
 	if d := h.apiPlanDraftFor(ctx, dayKey); d != nil {
 		planOut["draft"] = d // the model's draft of today's plan (api_ai.go), when the server runs AI
 	}
+	// The day per decision (a copy set once): what a phone that groups its
+	// trades by set shows in place of the per-trade counts.
+	decisions := map[string]any{"count": stats.Totals.Trades, "wins": stats.Totals.Wins, "losses": stats.Totals.Losses, "open": openSets(positions)}
 	if rep := h.coachReport(ctx, today); rep != nil {
 		planOut["tradesUsed"] = rep.Decisions
+		decisions["count"], decisions["wins"], decisions["losses"] = rep.Decisions, rep.DecisionWins, rep.DecisionLosses
 		if rep.Plan != nil {
 			planOut["plan"] = rep.Plan.Plan
 			planOut["outcome"] = rep.Plan
@@ -301,6 +306,7 @@ func (h *Handlers) todayJSON(r *http.Request) (map[string]any, error) {
 		"unrealized": map[string]any{"total": unreal, "stale": stale, "priced": priced, "unpriced": unpriced},
 		"positions":  positions,
 		"plan":       planOut,
+		"decisions":  decisions,
 		"nudges":     map[string]any{"unseen": unseen, "badge": h.unseenBadge(r, dayKey), "items": nudgeItems},
 		"lastFillAt": lastFill,
 		"lastTrade":  lastTrade,
@@ -361,3 +367,13 @@ func (h *Handlers) APIEvents(w http.ResponseWriter, r *http.Request) {
 
 // sseKeepAlive is the comment interval; a var so tests can shorten it.
 var sseKeepAlive = 25 * time.Second
+
+// openSets counts the decisions among the open positions: a copied
+// decision's legs count once.
+func openSets(positions []apiPosition) int {
+	keys := map[string]bool{}
+	for _, p := range positions {
+		keys[push.SessionPosition{AccountID: p.AccountID, Symbol: p.Symbol, Set: sessionSet(p)}.SetKey()] = true
+	}
+	return len(keys)
+}

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"sort"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
@@ -32,9 +33,13 @@ func (h *Handlers) SessionState(ctx context.Context, uid int64) (*push.SessionSt
 		return nil, err
 	}
 	st := &push.SessionState{Realized: stats.Totals.Net, Trades: int(stats.Totals.Trades), Wins: int(stats.Totals.Wins), Losses: int(stats.Totals.Losses), Positions: []push.SessionPosition{}}
+	// Per decision the same as per trade until the coach has counted.
+	st.Decisions, st.SetWins, st.SetLosses = st.Trades, st.Wins, st.Losses
+	sets := map[string]bool{}
 	for _, p := range positions {
 		st.OpenCount++
-		sp := push.SessionPosition{AccountID: p.AccountID, Symbol: p.Symbol, Direction: p.Direction, Qty: p.Qty, Beyond: p.BeyondStop}
+		sp := push.SessionPosition{AccountID: p.AccountID, Symbol: p.Symbol, Direction: p.Direction, Qty: p.Qty, Beyond: p.BeyondStop, Set: sessionSet(p)}
+		sets[sp.SetKey()] = true
 		if p.AvgEntry != nil {
 			sp.AvgEntry = *p.AvgEntry
 		}
@@ -58,15 +63,11 @@ func (h *Handlers) SessionState(ctx context.Context, uid int64) (*push.SessionSt
 			}
 		}
 	}
-	// The largest exposure first, so the three that fit are the ones that
-	// matter.
-	for i := 1; i < len(st.Positions); i++ {
-		for j := i; j > 0 && absf(st.Positions[j].Unrealized) > absf(st.Positions[j-1].Unrealized); j-- {
-			st.Positions[j], st.Positions[j-1] = st.Positions[j-1], st.Positions[j]
-		}
-	}
+	st.OpenSets = len(sets)
+	st.Arrange()
 	if rep := h.coachReport(ctx, today); rep != nil {
 		st.Trades = max(st.Trades, rep.Trades)
+		st.Decisions, st.SetWins, st.SetLosses = rep.Decisions, rep.DecisionWins, rep.DecisionLosses
 		if rep.Plan != nil {
 			if rep.Plan.Plan.MaxTrades != nil {
 				st.MaxTrades = int(*rep.Plan.Plan.MaxTrades)
@@ -100,9 +101,14 @@ func (h *Handlers) SessionState(ctx context.Context, uid int64) (*push.SessionSt
 	return st, nil
 }
 
-func absf(v float64) float64 {
-	if v < 0 {
-		return -v
+// sessionSet is the copied decision a position belongs to, as the sorted
+// account ids of every leg including this one; nil for a position on its
+// own (the API lists only the other legs).
+func sessionSet(p apiPosition) []int64 {
+	if len(p.SetLegs) == 0 {
+		return nil
 	}
-	return v
+	set := append([]int64{p.AccountID}, p.SetLegs...)
+	sort.Slice(set, func(i, j int) bool { return set[i] < set[j] })
+	return set
 }

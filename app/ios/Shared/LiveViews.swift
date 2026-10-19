@@ -44,7 +44,8 @@ struct SessionTotal: View {
     }
 }
 
-/// One open position: contract, direction, size, unrealised and the stop distance.
+/// One open position: contract, direction, size (with the legs it stands for when folded by
+/// set), unrealised and the stop distance.
 struct SessionPositionRow: View {
     let p: SessionPosition
     var compact = false
@@ -53,6 +54,7 @@ struct SessionPositionRow: View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             Text(p.s).font(Brand.mono(compact ? 12 : 13, bold: true)).foregroundStyle(Brand.dark.fg)
             Text("\(p.d) \(Formatting.qty(p.q))").font(Brand.text(compact ? 10 : 11)).foregroundStyle(Brand.dark.fgMuted)
+            if p.legs > 1 { Text("×\(p.legs)").font(Brand.mono(compact ? 10 : 11, bold: true)).foregroundStyle(Brand.dark.group) }
             Spacer(minLength: 4)
             if p.beyond {
                 Text("through stop").font(Brand.text(compact ? 10 : 11, weight: .medium)).foregroundStyle(Brand.dark.neg)

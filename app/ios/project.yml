@@ -134,6 +134,7 @@ targets:
       - path: Shared/SessionActivity.swift
       - path: Shared/LiveViews.swift
       - path: Shared/TodayCache.swift
+      - path: Shared/Grouping.swift
       - path: Shared/Brand.swift
       - path: Shared/Formatting.swift
       - path: Shared/Route.swift

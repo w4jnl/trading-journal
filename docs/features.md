@@ -197,5 +197,6 @@ persisted per browser, or forced with `?theme=light|dark`.
 The iOS app shows Today (realised and unrealised P&L, open positions, the plan, the nudges), the
 trade log, the journal with editing, the calendar, accounts with equity and drawdown and the
 digest; it receives the guardrail's nudges as time-sensitive pushes, runs a Session Live
-Activity in the Dynamic Island and on the Lock Screen during the trading day, and keeps every
+Activity in the Dynamic Island and on the Lock Screen during the trading day (one row per
+copied decision when trades are grouped by set, as are the widgets' counts), and keeps every
 answer for when the server is out of reach. See [app/ios/README.md](../app/ios/README.md).

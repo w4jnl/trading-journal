@@ -3,6 +3,23 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The Session activity's state carries each open leg's copy set (`set`, the legs' account ids)
+  and the day per decision (`decisions`, `setWins`, `setLosses`, `openSets`); the legs are
+  ordered by the decision with the most at stake and trimmed by whole sets (three decisions,
+  twelve legs). `GET /today` gains `decisions` (count, wins, losses, open) and the coach report
+  `decisionWins` / `decisionLosses`.
+
+### App (iOS)
+
+- "Trades grouped by set" now reaches the Lock Screen and the Dynamic Island, the Today widgets
+  and Today's open positions: a copied decision's legs fold into one row (size and unrealised
+  summed, the nearest stop, ×N), and the counts are decisions, their wins and losses and open
+  decisions. Flipping the switch redraws the running activity and the widgets at once.
+
 ## 2.18.6, 2026-10-17
 
 Documentation release; the server's behaviour is unchanged. The app is rebuilt as 2.18.6 with

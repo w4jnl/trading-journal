@@ -2237,6 +2237,24 @@
        }
       }
      },
+     "decisions": {
+      "type": "object",
+      "description": "The day per decision: a copy set counts once. open counts the decisions among the open positions.",
+      "properties": {
+       "count": {
+        "type": "integer"
+       },
+       "wins": {
+        "type": "integer"
+       },
+       "losses": {
+        "type": "integer"
+       },
+       "open": {
+        "type": "integer"
+       }
+      }
+     },
      "lastFillAt": {
       "type": "string",
       "format": "date-time",
