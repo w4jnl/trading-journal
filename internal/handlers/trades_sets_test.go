@@ -212,6 +212,17 @@ func TestCollapseSetsAndSummaryUnit(t *testing.T) {
 	}
 }
 
+func TestSetRowSpreadRounds(t *testing.T) {
+	// 7766.9166... from a fill-weighted leg against 7767: a twelfth, shown as 0.08 not 0.08333333333303017.
+	s := setRow{EntryMin: 7766 + 11.0/12, EntryMax: 7767}
+	if got := s.Spread(); got != 0.08 {
+		t.Errorf("Spread() = %v, want 0.08", got)
+	}
+	if got := (setRow{EntryMin: 7767, EntryMax: 7767 + 1e-12}).Spread(); got != 0 {
+		t.Errorf("noise-only spread = %v, want 0", got)
+	}
+}
+
 // The set row's path glyph averages the measured legs in points, sums the
 // money, and says when legs are missing.
 func TestSetRowPath(t *testing.T) {
