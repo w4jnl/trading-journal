@@ -1,5 +1,6 @@
 // The pure helpers: formatting, routes, markdown, URLs and the settings' defaults.
 import Foundation
+import SwiftUI
 import Testing
 @testable import TradingJournal
 
@@ -121,6 +122,44 @@ struct MarkdownTests {
         #expect(b[9] == .listItem(text: "first", ordered: true, indent: 0))
         #expect(b[10] == .listItem(text: "☐ todo", ordered: false, indent: 0))
         #expect(b.count == 11)
+    }
+
+    /// The GEX annotation's shape: an italic title, a pipe table and a machine-readable HTML comment.
+    static let gex = """
+    _Gamma context (GEX) — futures prices_
+
+    |  | entry 16:03 ET | exit 16:05 ET |
+    |---|---|---|
+    | regime | negative (P0) | negative (P0) |
+    | flip 7796.02 | below (-399 t) | below (-381 t) @ 7792.82 |
+    | put wall 7695.24 | +4 t | +11 t @ 7694.70 |
+
+    <!-- tj-gex:v1 market=ES regime=negative
+    em=64.35 stale=false -->
+    | not a table
+    after
+    """
+
+    @Test func tablesAndComments() {
+        let b = Markdown.blocks(Self.gex)
+        #expect(b[0] == .paragraph("_Gamma context (GEX) — futures prices_"))
+        #expect(b[1] == .table(header: ["", "entry 16:03 ET", "exit 16:05 ET"],
+                               rows: [["regime", "negative (P0)", "negative (P0)"], ["flip 7796.02", "below (-399 t)", "below (-381 t) @ 7792.82"], ["put wall 7695.24", "+4 t", "+11 t @ 7694.70"]]))
+        #expect(b[2] == .paragraph("| not a table after"), "a pipe line without a delimiter row stays prose; the comment is gone")
+        #expect(b.count == 3)
+        #expect(Markdown.snippet(Self.gex) == "Gamma context (GEX) — futures prices")
+        #expect(Markdown.tableCells("| a \\| b | c |") == ["a | b", "c"], "an escaped pipe stays in its cell")
+        #expect(Markdown.tableCells("no pipes") == nil)
+        #expect(Markdown.isTableDelimiter(":---:") && Markdown.isTableDelimiter("-") && !Markdown.isTableDelimiter("") && !Markdown.isTableDelimiter("a-"))
+        #expect(Markdown.blocks("<!-- only a comment -->").isEmpty)
+    }
+
+    /// Renders the GEX note for a look by eye: TEST_RUNNER_TJ_MD_PNG=/dir xcodebuild test …
+    @MainActor @Test func rendersMarkdown() throws {
+        guard let dir = ProcessInfo.processInfo.environment["TJ_MD_PNG"] else { return }
+        let r = ImageRenderer(content: MarkdownView(source: Self.gex).padding(16).frame(width: 390).background(Brand.bg))
+        r.scale = 3
+        try #require(r.uiImage?.pngData()).write(to: URL(fileURLWithPath: dir).appending(path: "markdown-gex.png"))
     }
 
     @Test func snippetsArePlain() {

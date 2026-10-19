@@ -85,8 +85,8 @@ struct NotificationCard: View {
                 Text(why).font(Brand.text(12)).foregroundStyle(Brand.dark.fgMuted)
             case .today(let net, let open, let stale):
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    stat("today", Formatting.money(net), color: Brand.pnl(net))
-                    if let open { stat("open", Formatting.money(open) + (stale ? " ·" : ""), color: Brand.pnl(open)) }
+                    stat("today", Formatting.money(net), color: Brand.pnl(net)).amount()
+                    if let open { stat("open", Formatting.money(open) + (stale ? " ·" : ""), color: Brand.pnl(open)).amount() }
                     Spacer()
                 }
             case .position(let p):
@@ -94,7 +94,7 @@ struct NotificationCard: View {
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
                         stat(p.symbol, "\(p.direction.label) \(Formatting.qty(p.qty)) @ \(Formatting.price(p.avgEntry, tickSize: p.tickSize))")
                         stat("last", Formatting.price(p.lastPrice, tickSize: p.tickSize))
-                        stat("open", Formatting.money(p.unrealized), color: Brand.pnl(p.unrealized))
+                        stat("open", Formatting.money(p.unrealized), color: Brand.pnl(p.unrealized)).amount()
                         Spacer()
                     }
                     HStack(alignment: .firstTextBaseline, spacing: 12) {
@@ -106,7 +106,7 @@ struct NotificationCard: View {
                 }
             case .trade(let t):
                 HStack(alignment: .firstTextBaseline, spacing: 12) {
-                    stat("net", Formatting.money(t.netPnl), color: Brand.pnl(t.netPnl))
+                    stat("net", Formatting.money(t.netPnl), color: Brand.pnl(t.netPnl)).amount()
                     stat("R", Formatting.r(t.r))
                     stat("in", Formatting.clock(t.entryTime, tz: tz))
                     stat("out", Formatting.clock(t.exitTime, tz: tz))
