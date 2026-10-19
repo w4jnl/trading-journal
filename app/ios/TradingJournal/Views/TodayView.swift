@@ -91,15 +91,17 @@ struct TodayView: View {
         }
     }
 
+    /// The open positions; one row per decision, the legs summed, when trades are grouped by set.
     private func positions(_ t: Today) -> some View {
-        Card {
-            CardTitle("Open positions", trailing: "\(t.positions.count)")
-            ForEach(t.positions) { p in
+        let rows = settings.tradesBySet ? t.positions.foldedBySet() : t.positions
+        return Card {
+            CardTitle("Open positions", trailing: "\(rows.count)")
+            ForEach(rows) { p in
                 NavigationLink(value: Route.position(account: p.accountId, symbol: p.symbol)) {
                     PositionRow(position: p, tz: t.tz)
                 }
                 .buttonStyle(.plain)
-                if p.id != t.positions.last?.id { Divider() }
+                if p.id != rows.last?.id { Divider() }
             }
         }
     }

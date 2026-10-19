@@ -4,6 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
+	"sort"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/markethours"
@@ -27,26 +31,35 @@ import (
 
 // SessionState is the activity's content state; the keys are the Swift
 // property names and every field is always present. It must stay small
-// (ActivityKit allows 4 KB): at most three positions.
+// (ActivityKit allows 4 KB): the legs of at most three decisions, twelve
+// legs in all. The counts come twice, per trade and per decision (a copy
+// set counts once), so the phone shows whichever its trades list shows.
 type SessionState struct {
 	Realized   float64           `json:"realized"`
 	Unrealized float64           `json:"unrealized"`
 	Trades     int               `json:"trades"`
 	Wins       int               `json:"wins"`
 	Losses     int               `json:"losses"`
+	Decisions  int               `json:"decisions"` // closed, a copy set once
+	SetWins    int               `json:"setWins"`
+	SetLosses  int               `json:"setLosses"`
 	MaxTrades  int               `json:"maxTrades"` // 0: no cap
 	LossUsed   float64           `json:"lossUsed"`
 	MaxLoss    float64           `json:"maxLoss"` // 0: no budget
 	Positions  []SessionPosition `json:"positions"`
-	OpenCount  int               `json:"openCount"`
-	Nudges     int               `json:"nudges"` // unseen
+	OpenCount  int               `json:"openCount"` // legs
+	OpenSets   int               `json:"openSets"`  // decisions among them
+	Nudges     int               `json:"nudges"`    // unseen
 	LastFill   int64             `json:"lastFill"`
 	Updated    int64             `json:"updated"`
 	Stale      bool              `json:"stale"`
 	Alert      string            `json:"alert"`
 }
 
-// SessionPosition is one open position in the activity.
+// SessionPosition is one open position in the activity: a leg. Set names
+// the copied decision it belongs to as the sorted account ids of every
+// leg (this one included; the same value on each), empty for a position
+// on its own, so the phone can fold the legs into one row.
 type SessionPosition struct {
 	AccountID   int64   `json:"a"`
 	Symbol      string  `json:"s"`
@@ -57,6 +70,25 @@ type SessionPosition struct {
 	Unrealized  float64 `json:"u"`
 	TicksToStop float64 `json:"tts"`
 	Beyond      bool    `json:"beyond"`
+	Set         []int64 `json:"set"`
+}
+
+// SetKey names the decision a leg belongs to: its set and contract, or
+// the leg itself when it is on its own.
+func (p SessionPosition) SetKey() string {
+	if len(p.Set) == 0 {
+		return fmt.Sprintf("%d:%s", p.AccountID, p.Symbol)
+	}
+	var b strings.Builder
+	for i, a := range p.Set {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		b.WriteString(strconv.FormatInt(a, 10))
+	}
+	b.WriteByte(':')
+	b.WriteString(p.Symbol)
+	return b.String()
 }
 
 // SessionAttributes are the activity's static facts.
@@ -71,7 +103,8 @@ type SessionAttributes struct {
 const (
 	sessionAttributesType = "SessionActivityAttributes"
 	sessionKind           = "session"
-	liveMaxPositions      = 3
+	liveMaxSets           = 3  // decisions shown
+	liveMaxPositions      = 12 // legs in all, for the 4 KB payload
 	liveStaleAfter        = 10 * time.Minute
 	liveRefresh           = 5 * time.Minute
 	liveQuietAfter        = 10 * time.Minute
@@ -89,15 +122,52 @@ type liveMemory struct {
 	ended    string // the day an end was sent, so it is not sent again
 }
 
-// trim bounds the state for the payload and stamps it.
+// trim bounds the state for the payload and stamps it: the legs of the
+// three decisions with the most at stake, whole sets only.
 func (st *SessionState) trim(now time.Time) {
-	if len(st.Positions) > liveMaxPositions {
-		st.Positions = st.Positions[:liveMaxPositions]
+	st.Arrange()
+	kept, sets := 0, 0
+	last := ""
+	for _, p := range st.Positions {
+		if k := p.SetKey(); k != last {
+			if sets == liveMaxSets {
+				break
+			}
+			sets++
+			last = k
+		}
+		if kept == liveMaxPositions {
+			break
+		}
+		kept++
 	}
+	st.Positions = st.Positions[:kept]
 	if st.Positions == nil {
 		st.Positions = []SessionPosition{}
 	}
 	st.Updated = now.Unix()
+}
+
+// Arrange orders the legs by what is at stake: the decision with the
+// largest unrealised exposure (summed over its legs) first, its legs
+// together and the largest first, so the ones that fit are the ones that
+// matter and the phone can fold a set from consecutive legs.
+func (st *SessionState) Arrange() {
+	exposure := map[string]float64{}
+	for _, p := range st.Positions {
+		exposure[p.SetKey()] += math.Abs(p.Unrealized)
+	}
+	sort.SliceStable(st.Positions, func(i, j int) bool {
+		a, b := st.Positions[i], st.Positions[j]
+		ka, kb := a.SetKey(), b.SetKey()
+		if ka != kb {
+			if exposure[ka] != exposure[kb] {
+				return exposure[ka] > exposure[kb]
+			}
+			return ka < kb
+		}
+		return math.Abs(a.Unrealized) > math.Abs(b.Unrealized)
+	})
 }
 
 // key is the state without the stamp, for change detection.

@@ -107,6 +107,17 @@ final class LiveActivities {
         }
     }
 
+    /// Re-sends every running activity its own content, so its faces re-read the grouping switch
+    /// (a face renders only on an update); no push is needed for that.
+    func refreshFaces() {
+        for a in running {
+            let id = a.id
+            let state = a.content.state
+            let stale = a.content.staleDate ?? Date.now.addingTimeInterval(10 * 60)
+            Task { await Self.update(id, state: state, stale: stale) }
+        }
+    }
+
     /// Updates an activity by id; looked up off the main actor, because an Activity is not Sendable.
     nonisolated private static func update(_ id: String, state: SessionActivityAttributes.ContentState, stale: Date) async {
         for a in Activity<SessionActivityAttributes>.activities where a.id == id {

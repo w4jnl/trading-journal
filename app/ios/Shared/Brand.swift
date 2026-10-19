@@ -51,6 +51,7 @@ enum Brand {
         static let pos = Color(hex: 0x22C55E)
         static let neg = Color(hex: 0xEF4444)
         static let warn = Color(hex: 0xF59E0B)
+        static let group = Color(hex: 0xC084FC)
     }
 
     /// Green for gains and zero, red for losses, muted when unknown.

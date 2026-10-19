@@ -60,6 +60,10 @@ func TestAnalyzeRules(t *testing.T) {
 	today = append(today, mk(200, 1, "MES", "long", 1, 4*3600, 4*3600+30, 2, day)) // 18:00 entry
 
 	r := Analyze(day, tz, today, history, nil)
+	// 14 decisions: the first set, the held loser and p lost; the second set, w, the 8 CL and the late MES won.
+	if r.DecisionWins != 11 || r.DecisionLosses != 3 {
+		t.Errorf("decision wins/losses = %d/%d, want 11/3", r.DecisionWins, r.DecisionLosses)
+	}
 	if r.Trades != len(today) || r.Decisions != 14 || r.Baseline.Days != 10 || r.Baseline.MedianDecisions != 4 || r.Baseline.UsualLastEntry != "14:30" || r.Baseline.MedianWinnerHoldSec != 40 {
 		t.Fatalf("report shape: trades %d decisions %d baseline %+v", r.Trades, r.Decisions, r.Baseline)
 	}

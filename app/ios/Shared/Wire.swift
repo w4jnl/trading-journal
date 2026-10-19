@@ -372,6 +372,14 @@ struct PlanOutcome: Codable, Sendable, Hashable {
     var editedLate: Bool
 }
 
+/// The day per decision: a copy set counts once. What the counts become when trades are grouped by set.
+struct TodayDecisions: Codable, Sendable, Hashable {
+    var count: Int
+    var wins: Int
+    var losses: Int
+    var open: Int
+}
+
 struct TodayPlan: Codable, Sendable, Hashable {
     var plan: DayPlan?
     var outcome: PlanOutcome?
@@ -483,6 +491,7 @@ struct Today: Codable, Sendable, Hashable {
     var lastTrade: LastTrade?
     var curve: [CurvePoint]
     var equity: TodayEquity
+    var decisions: TodayDecisions? // absent from a server before 2.18.7
 
     var tz: TimeZone { TimeZone(identifier: timezone) ?? .current }
     /// Realised net plus the open positions' unrealised.

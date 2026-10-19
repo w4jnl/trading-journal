@@ -2,6 +2,7 @@
 // journal, the calendar, the guardrail's nudges. Talks to the journal's HTTP API only (API.md).
 import SwiftUI
 import UIKit
+import WidgetKit
 
 @main
 struct TradingJournalApp: App {
@@ -16,6 +17,12 @@ struct TradingJournalApp: App {
                 .environment(Settings.shared)
                 .environment(lock)
                 .onAppear { lock.scene(.active, settings: Settings.shared) } // a cold start locks before the first frame
+        }
+        // The grouping switch reaches the running activity and the widgets at once: their faces
+        // read it from the App Group on their next render, which this provokes.
+        .onChange(of: Settings.shared.tradesBySet) {
+            LiveActivities.shared.refreshFaces()
+            WidgetCenter.shared.reloadAllTimelines()
         }
         .onChange(of: phase) { _, now in
             lock.scene(now, settings: Settings.shared)

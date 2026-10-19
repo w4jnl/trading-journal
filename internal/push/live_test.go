@@ -2,6 +2,8 @@ package push
 
 import (
 	"context"
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,5 +127,44 @@ func TestSessionActivity(t *testing.T) {
 		if g.pushType == "liveactivity" {
 			t.Errorf("activity pushed to a phone that turned it off: %+v", g)
 		}
+	}
+}
+
+// The legs are ordered by the decision with the most at stake, kept
+// together, and trimmed by whole sets: three decisions, twelve legs.
+func TestSessionStateArrangesAndTrimsBySet(t *testing.T) {
+	leg := func(a int64, s string, u float64, set ...int64) SessionPosition {
+		return SessionPosition{AccountID: a, Symbol: s, Unrealized: u, Set: set}
+	}
+	st := &SessionState{Positions: []SessionPosition{
+		leg(1, "MESZ6", 10, 1, 2, 3), leg(5, "MNQZ6", -25), leg(2, "MESZ6", 14, 1, 2, 3), leg(6, "MCLZ6", 4), leg(3, "MESZ6", 9, 1, 2, 3), leg(7, "ESZ6", 30),
+	}}
+	st.trim(time.Unix(100, 0))
+	var got []string
+	for _, p := range st.Positions {
+		got = append(got, p.SetKey())
+	}
+	// The MES set (33 at stake) first, its largest leg leading; then ES 30, MNQ 25; MCL does not fit.
+	want := []string{"1,2,3:MESZ6", "1,2,3:MESZ6", "1,2,3:MESZ6", "7:ESZ6", "5:MNQZ6"}
+	if strings.Join(got, " ") != strings.Join(want, " ") || st.Positions[0].AccountID != 2 || st.Updated != 100 {
+		t.Errorf("arranged = %v (lead %d), want %v", got, st.Positions[0].AccountID, want)
+	}
+	// A set that would cross the leg cap is kept whole up to it: 12 legs of one set, no more.
+	wide := &SessionState{}
+	for i := int64(1); i <= 14; i++ {
+		wide.Positions = append(wide.Positions, leg(i, "MESZ6", float64(i), 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14))
+	}
+	wide.Positions = append(wide.Positions, leg(20, "ESZ6", 1))
+	wide.trim(time.Unix(1, 0))
+	if len(wide.Positions) != liveMaxPositions || wide.Positions[0].AccountID != 14 {
+		t.Errorf("wide: %d legs, lead %d", len(wide.Positions), wide.Positions[0].AccountID)
+	}
+	if b, _ := json.Marshal(wide); len(b) > 4096 {
+		t.Errorf("twelve wide legs make %d bytes, over the 4 KB limit", len(b))
+	}
+	empty := &SessionState{}
+	empty.trim(time.Unix(1, 0))
+	if empty.Positions == nil || len(empty.Positions) != 0 {
+		t.Errorf("empty positions must marshal as [], got %v", empty.Positions)
 	}
 }
