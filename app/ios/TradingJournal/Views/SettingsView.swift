@@ -3,11 +3,13 @@
 // push phase. PairView: scan the QR shown in the web app's Settings, or type the code.
 import SwiftUI
 import VisionKit
+import WidgetKit
 
 struct SettingsView: View {
     let pair: () -> Void
     @Environment(Client.self) private var client
     @Environment(Settings.self) private var settings
+    @Environment(LockGate.self) private var lock
     @State private var me: Me?
     @State private var stored: Int?
     @State private var error: String?
@@ -86,6 +88,25 @@ struct SettingsView: View {
                 Text("The journal's answers, kept so the screens show the last known state when it is out of reach, and the images. At most 150 MB; answers older than a month leave.")
             }
             Section {
+                Toggle("Require \(biometry)", isOn: Binding(get: { settings.lockEnabled }, set: { on in Task { await setLock(on) } }))
+                    .tint(Brand.accent)
+                    .disabled(!lock.canAuthenticate)
+                if settings.lockEnabled {
+                    Picker("Lock after", selection: $settings.lockGraceSeconds) {
+                        ForEach(LockPolicy.graces, id: \.seconds) { Text($0.label).tag($0.seconds) }
+                    }
+                    Toggle("Lock on launch", isOn: $settings.lockOnLaunch).tint(Brand.accent)
+                }
+                Toggle("Hide amounts until unlocked", isOn: $settings.hideAmountsLocked).tint(Brand.accent)
+            } header: {
+                Text("Privacy")
+            } footer: {
+                Text(lock.canAuthenticate
+                     ? "The app asks for \(biometry) when it comes back after the time you pick (Until tomorrow: once a day, when the date has changed), and at a cold start unless Lock on launch is off; the passcode is the fallback. Hiding amounts redacts money in the widgets, the Live Activity and notification cards until the phone is unlocked; the activity follows at its next update."
+                     : "Set a passcode on this phone to lock the app.")
+            }
+            .onChange(of: settings.hideAmountsLocked) { _, _ in WidgetCenter.shared.reloadAllTimelines() }
+            Section {
                 Button("Pair again") { pair() }
                 Button("Sign out", role: .destructive) { confirmSignOut = true }
                     .confirmationDialog("Forget this journal on this phone?", isPresented: $confirmSignOut, titleVisibility: .visible) {
@@ -109,6 +130,16 @@ struct SettingsView: View {
             } catch {
                 self.error = error.localizedDescription
             }
+        }
+    }
+
+    private var biometry: String { LockPolicy.label(lock.biometry) }
+
+    /// On and off each take one successful authentication, so a borrowed phone cannot quietly switch it off.
+    private func setLock(_ on: Bool) async {
+        guard on != settings.lockEnabled else { return }
+        if await lock.authenticate(reason: on ? "Lock the journal behind \(biometry)." : "Turn the lock off.") {
+            settings.lockEnabled = on
         }
     }
 
