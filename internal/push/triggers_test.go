@@ -23,9 +23,9 @@ import (
 
 // sent is one push the stand-in received.
 type sent struct {
-	path, pushType, topic, priority string
-	aps                             map[string]any
-	body                            map[string]any
+	path, pushType, topic, priority, collapse string
+	aps                                       map[string]any
+	body                                      map[string]any
 }
 
 // apnsStandIn is an HTTP/2 server that records every push.
@@ -51,7 +51,7 @@ func newStandIn(t *testing.T) (*apnsStandIn, *apns.Client) {
 		_ = json.Unmarshal(data, &body)
 		aps, _ := body["aps"].(map[string]any)
 		st.mu.Lock()
-		st.got = append(st.got, sent{r.URL.Path, r.Header.Get("apns-push-type"), r.Header.Get("apns-topic"), r.Header.Get("apns-priority"), aps, body})
+		st.got = append(st.got, sent{r.URL.Path, r.Header.Get("apns-push-type"), r.Header.Get("apns-topic"), r.Header.Get("apns-priority"), r.Header.Get("apns-collapse-id"), aps, body})
 		fail := st.fail
 		st.mu.Unlock()
 		if fail {
@@ -225,6 +225,74 @@ func TestDataChangedClosedTrade(t *testing.T) {
 	fx.s.Tick(fx.ctx)
 	if list, _ := fx.s.List(fx.ctx, fx.uid); len(list) != 0 {
 		t.Errorf("a 410 did not forget the phone: %+v", list)
+	}
+}
+
+// A copied exit closes one trade per account; the phone hears the decision
+// once: the legs in the title, the accounts as subtitle, the summed net,
+// the first leg's id and the set id in the payload. A leg that lands a
+// tick later re-tells the whole decision under the same collapse id, so
+// the banner is replaced, not stacked.
+func TestDataChangedClosedSet(t *testing.T) {
+	fx := newPushFixture(t, nil)
+	firm := "apex"
+	beta, err := fx.q.CreateAccount(fx.ctx, models.CreateAccountParams{UserID: fx.uid, Name: "APEX-2", Firm: &firm, ImportSource: "motivewave_csv", AccountRef: "A2", Currency: "USD", CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	gamma, err := fx.q.CreateAccount(fx.ctx, models.CreateAccountParams{UserID: fx.uid, Name: "APEX-3", Firm: &firm, ImportSource: "motivewave_csv", AccountRef: "A3", Currency: "USD", CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fx.s.Tick(fx.ctx) // snapshot
+	exit := fx.now.Add(-time.Minute)
+	closeLeg := func(id, acct int64, net float64, exit time.Time) {
+		t.Helper()
+		if _, err := fx.s.DB.Exec(`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status, net_pnl)
+			VALUES (?, ?, 'MESZ6', 'MES', 'short', 5, 7769, 7766.25, ?, ?, 'closed', ?)`, id, acct, exit.Add(-10*time.Minute), exit, net); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := fx.s.DB.Exec(`INSERT INTO trade_set_members (trade_id, set_id) VALUES (?, 1)`, id); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := fx.s.DB.Exec(`INSERT INTO trade_sets (id, user_id, cluster_key, symbol_root, direction, entry_time, members, accounts, qty, entry_avg, entry_spread)
+		VALUES (1, ?, 'ES=F', 'MES', 'short', ?, 2, 2, 10, 7769, 0)`, fx.uid, exit.Add(-10*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	closeLeg(10, fx.acct.ID, 12.5, exit)
+	closeLeg(11, beta.ID, 12.5, exit.Add(time.Second))
+	fx.closeTrade(t, 12, -8, exit.Add(2*time.Second)) // a lone trade on the first account, told on its own
+	fx.s.Live.Bump(fx.uid)
+	fx.s.Tick(fx.ctx)
+	got := fx.st.drain()
+	if len(got) != 3 {
+		t.Fatalf("pushes = %d, want set + trade + sync: %+v", len(got), got)
+	}
+	al := got[0].aps["alert"].(map[string]any)
+	if al["title"] != "MES short ×2" || al["subtitle"] != "2 accounts" || al["body"] != "+25.00 · 14:29" ||
+		got[0].body["tradeId"].(float64) != 10 || got[0].body["route"] != "trade/10" || got[0].body["setId"].(float64) != 1 || got[0].body["legs"].(float64) != 2 ||
+		got[0].body["netPnl"].(float64) != 25 || got[0].collapse != "trade:"+(closedTrade{AccountID: fx.acct.ID, Symbol: "MESZ6", Direction: "short", Qty: 5, ExitTime: exit}).key() {
+		t.Errorf("set alert = %+v (collapse %q)", got[0], got[0].collapse)
+	}
+	if al := got[1].aps["alert"].(map[string]any); al["title"] != "MES short" || al["subtitle"] != "APEX-1" || got[1].body["legs"].(float64) != 1 || got[1].body["setId"] != nil {
+		t.Errorf("lone alert = %+v", got[1])
+	}
+	// The third leg arrives a tick later: the decision again, now ×3, same collapse id.
+	closeLeg(13, gamma.ID, 10, exit.Add(3*time.Second))
+	fx.s.Live.Bump(fx.uid)
+	fx.s.Tick(fx.ctx)
+	got = fx.st.drain()
+	if len(got) != 2 {
+		t.Fatalf("pushes = %d, want set + sync: %+v", len(got), got)
+	}
+	if al := got[0].aps["alert"].(map[string]any); al["title"] != "MES short ×3" || al["subtitle"] != "3 accounts" || al["body"] != "+35.00 · 14:29" ||
+		got[0].body["tradeId"].(float64) != 10 || got[0].collapse != "trade:"+(closedTrade{AccountID: fx.acct.ID, Symbol: "MESZ6", Direction: "short", Qty: 5, ExitTime: exit}).key() {
+		t.Errorf("late leg alert = %+v", got[0])
+	}
+	fx.s.Tick(fx.ctx)
+	if got := fx.st.drain(); len(got) != 0 {
+		t.Errorf("repeat = %+v", got)
 	}
 }
 

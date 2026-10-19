@@ -3,6 +3,18 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- Push: a copied exit is one notification, not one per account. The closed-trade alert folds
+  the legs of a copy set into the decision (`MES short ×5`, `5 accounts`, the summed net); a
+  leg that lands a tick later re-tells the decision under the same collapse id, so the banner
+  is replaced rather than stacked. The Session activity's trade alert folds the same way.
+- Guardrail: "price is through your stop" is said once for the legs of a decision that share
+  the stop, naming the accounts; a leg with a stop of its own is still said on its own
+  ("no stop recorded" already spoke per decision).
+
 ## 2.18.6, 2026-10-17
 
 Documentation release; the server's behaviour is unchanged. The app is rebuilt as 2.18.6 with
