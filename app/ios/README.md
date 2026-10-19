@@ -100,6 +100,22 @@ read `Shared/TodayCache.swift`, which the app writes to the App Group after ever
 reload then and on the silent sync. An unsigned simulator build has no APS environment: the
 activity still starts locally and follows the app, but no push reaches it.
 
+## Privacy
+
+Settings → Privacy. **Require Face ID** (the label follows the enrolled biometry) is off by
+default; on, the app asks when it comes back after **Lock after** (Immediately, 30 seconds, 1,
+5, 15 minutes, 1 hour; 1 minute by default) and at every cold start unless **Lock on launch** is
+off. The policy is `deviceOwnerAuthentication`, so the passcode is the fallback and the lock
+cannot shut the owner out; a phone without a passcode cannot turn it on. Turning it on or off
+takes one authentication. While the app is merely inactive (the switcher, a call) the content
+is covered without a prompt. The lock is a UI gate (`LockGate`, a window above the alert
+level; the pure decision is `LockPolicy.shouldLock`, measured on `ContinuousClock` so a phone
+asleep in a pocket still counts): the device key stays in the shared keychain as before, the
+client keeps streaming behind the cover, and the server-side control remains revoking the
+device from the web app. **Hide amounts until unlocked** puts `.privacySensitive` on the money
+in the widgets, the Live Activity and the notification cards; the phone's own unlock reveals
+them, and the activity follows at its next update.
+
 ## Layout
 
 - `Shared/`: compiled into the app and, in later phases, every extension. `Wire.swift` (the
