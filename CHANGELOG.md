@@ -9,9 +9,10 @@ built against it carries the same marketing version.
 
 - An app lock, off by default: Settings > Privacy > Require Face ID (Touch ID, or the passcode
   when nothing is enrolled). The app asks when it comes back after the grace you pick
-  (Immediately, 30 seconds, 1, 5, 15 minutes or 1 hour; 1 minute by default) and, unless
-  "Lock on launch" is off, at every cold start. The passcode is the fallback, so the lock can
-  never shut you out. In the app switcher the content is covered without a prompt. Turning the
+  (Immediately, 30 seconds, 1, 5, 15 minutes, 1 hour, 24 hours, or Until tomorrow, which asks
+  once a day; 1 minute by default) and, unless "Lock on launch" is off, at every cold start;
+  with it off, a cold start measures the grace from the last time the app went to the
+  background. The passcode is the fallback, so the lock can never shut you out. In the app switcher the content is covered without a prompt. Turning the
   lock on or off takes one authentication. The device key and the server are untouched: this
   guards the unlocked phone in someone else's hand, nothing more.
 - "Hide amounts until unlocked": money in the widgets, the Session Live Activity and the

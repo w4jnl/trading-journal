@@ -102,7 +102,7 @@ struct SettingsView: View {
                 Text("Privacy")
             } footer: {
                 Text(lock.canAuthenticate
-                     ? "The app asks for \(biometry) when it comes back after the time you pick; the passcode is the fallback. Hiding amounts redacts money in the widgets, the Live Activity and notification cards until the phone is unlocked; the activity follows at its next update."
+                     ? "The app asks for \(biometry) when it comes back after the time you pick (Until tomorrow: once a day, when the date has changed), and at a cold start unless Lock on launch is off; the passcode is the fallback. Hiding amounts redacts money in the widgets, the Live Activity and notification cards until the phone is unlocked; the activity follows at its next update."
                      : "Set a passcode on this phone to lock the app.")
             }
             .onChange(of: settings.hideAmountsLocked) { _, _ in WidgetCenter.shared.reloadAllTimelines() }

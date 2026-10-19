@@ -104,8 +104,9 @@ activity still starts locally and follows the app, but no push reaches it.
 
 Settings → Privacy. **Require Face ID** (the label follows the enrolled biometry) is off by
 default; on, the app asks when it comes back after **Lock after** (Immediately, 30 seconds, 1,
-5, 15 minutes, 1 hour; 1 minute by default) and at every cold start unless **Lock on launch** is
-off. The policy is `deviceOwnerAuthentication`, so the passcode is the fallback and the lock
+5, 15 minutes, 1 hour, 24 hours, or **Until tomorrow**, which asks once a day, when the date has
+changed; 1 minute by default) and at every cold start unless **Lock on launch** is off, in which
+case a cold start measures the grace from the last background the app remembered. The policy is `deviceOwnerAuthentication`, so the passcode is the fallback and the lock
 cannot shut the owner out; a phone without a passcode cannot turn it on. Turning it on or off
 takes one authentication. While the app is merely inactive (the switcher, a call) the content
 is covered without a prompt. The lock is a UI gate (`LockGate`, a window above the alert

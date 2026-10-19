@@ -15,7 +15,11 @@ final class LockGate {
     private(set) var covered = false
     private(set) var authenticating = false
     private var backgroundedAt: ContinuousClock.Instant?
+    private var backgroundedOn: Date?
     private var activatedOnce = false
+    /// The wall clock of the last background, kept for the next process: a cold start without
+    /// "Lock on launch" measures the grace from it.
+    private static let rememberedKey = "lockBackgroundedAt"
     private var window: UIWindow?
 
     /// The enrolled biometry, for labels; Face ID on most phones.
@@ -33,17 +37,28 @@ final class LockGate {
         switch phase {
         case .background:
             backgroundedAt = .now
+            backgroundedOn = .now
+            UserDefaults.standard.set(backgroundedOn, forKey: Self.rememberedKey)
             covered = settings.lockEnabled
         case .inactive:
             covered = settings.lockEnabled // the switcher's thumbnail; never a prompt from here
         case .active:
-            let since = backgroundedAt.map { ContinuousClock.now - $0 }
-            if LockPolicy.shouldLock(since: since, grace: settings.lockGrace, enabled: settings.lockEnabled,
+            var since: Duration?
+            var sameDay = true
+            if let backgroundedAt, let backgroundedOn {
+                since = ContinuousClock.now - backgroundedAt
+                sameDay = Calendar.current.isDateInToday(backgroundedOn)
+            } else if !activatedOnce, let remembered = UserDefaults.standard.object(forKey: Self.rememberedKey) as? Date {
+                since = .seconds(Date.now.timeIntervalSince(remembered))
+                sameDay = Calendar.current.isDateInToday(remembered)
+            }
+            if LockPolicy.shouldLock(since: since, sameDay: sameDay, grace: settings.lockGrace, enabled: settings.lockEnabled,
                                      onLaunch: settings.lockOnLaunch, launching: !activatedOnce) {
                 locked = true
             }
             activatedOnce = true
             backgroundedAt = nil
+            backgroundedOn = nil
             covered = false
             if locked, !authenticating { Task { await unlock() } }
         @unknown default:

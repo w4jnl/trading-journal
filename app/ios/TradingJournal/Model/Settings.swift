@@ -26,7 +26,7 @@ final class Settings {
     var notificationPrefs: DevicePrefs { didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") } }
     /// Face ID (the passcode as fallback) before the app shows anything: Settings > Privacy. Off until asked for.
     var lockEnabled: Bool { didSet { defaults.set(lockEnabled, forKey: "lockEnabled") } }
-    /// How long the app may be away before it locks again, in seconds; 0 is at once.
+    /// How long the app may be away before it locks again, in seconds; 0 is at once, negative once a day.
     var lockGraceSeconds: Double { didSet { defaults.set(lockGraceSeconds, forKey: "lockGraceSeconds") } }
     /// Whether a cold start always asks, whatever the grace.
     var lockOnLaunch: Bool { didSet { defaults.set(lockOnLaunch, forKey: "lockOnLaunch") } }
@@ -60,7 +60,7 @@ final class Settings {
     var api: TJAPI? { TJAPI(serverURL: serverURL, key: apiKey) }
     /// The trading timezone, the server's; the phone's until the server has said.
     var tz: TimeZone { server?.tz ?? .current }
-    var lockGrace: Duration { .seconds(lockGraceSeconds) }
+    var lockGrace: LockGrace { LockGrace(seconds: lockGraceSeconds) }
 
     /// The push token this phone registered with the current server, from the `registered` record.
     var registeredToken: String? { Self.registeredToken(registered, serverURL: serverURL) }

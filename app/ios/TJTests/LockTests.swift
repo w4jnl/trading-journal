@@ -5,32 +5,50 @@ import Testing
 @testable import TradingJournal
 
 struct LockTests {
+    private func lock(since: Duration?, sameDay: Bool = true, grace: LockGrace = .after(.seconds(60)), enabled: Bool = true, onLaunch: Bool = true, launching: Bool = false) -> Bool {
+        LockPolicy.shouldLock(since: since, sameDay: sameDay, grace: grace, enabled: enabled, onLaunch: onLaunch, launching: launching)
+    }
+
     @Test func offMeansNeverLocked() {
-        #expect(!LockPolicy.shouldLock(since: .seconds(3600), grace: .zero, enabled: false, onLaunch: true, launching: true))
-        #expect(!LockPolicy.shouldLock(since: nil, grace: .zero, enabled: false, onLaunch: true, launching: false))
+        #expect(!lock(since: .seconds(3600), grace: .after(.zero), enabled: false, launching: true))
+        #expect(!lock(since: nil, grace: .after(.zero), enabled: false))
+        #expect(!lock(since: .seconds(90000), sameDay: false, grace: .untilTomorrow, enabled: false))
     }
 
     @Test func aColdStartFollowsLockOnLaunch() {
-        #expect(LockPolicy.shouldLock(since: nil, grace: .seconds(60), enabled: true, onLaunch: true, launching: true))
-        #expect(!LockPolicy.shouldLock(since: nil, grace: .seconds(60), enabled: true, onLaunch: false, launching: true))
-        #expect(LockPolicy.shouldLock(since: .seconds(1), grace: .seconds(60), enabled: true, onLaunch: true, launching: true), "the first activation never trusts a grace")
+        #expect(lock(since: nil, launching: true))
+        #expect(lock(since: .seconds(1), launching: true), "Lock on launch never trusts a grace")
+        #expect(!lock(since: nil, onLaunch: false, launching: true), "nothing remembered: nothing to measure")
+        #expect(!lock(since: .seconds(30), onLaunch: false, launching: true), "a remembered background inside the grace: a cold start is a return")
+        #expect(lock(since: .seconds(61), onLaunch: false, launching: true))
     }
 
     @Test func theGraceIsMeasuredFromTheBackground() {
-        let grace = Duration.seconds(60)
-        #expect(!LockPolicy.shouldLock(since: .seconds(59), grace: grace, enabled: true, onLaunch: true, launching: false))
-        #expect(LockPolicy.shouldLock(since: .seconds(60), grace: grace, enabled: true, onLaunch: true, launching: false), "the boundary locks")
-        #expect(LockPolicy.shouldLock(since: .seconds(3600), grace: grace, enabled: true, onLaunch: true, launching: false))
-        #expect(LockPolicy.shouldLock(since: .zero, grace: .zero, enabled: true, onLaunch: false, launching: false), "Immediately is grace zero")
+        #expect(!lock(since: .seconds(59)))
+        #expect(lock(since: .seconds(60)), "the boundary locks")
+        #expect(lock(since: .seconds(3600)))
+        #expect(lock(since: .zero, grace: .after(.zero), onLaunch: false), "Immediately is grace zero")
+        #expect(lock(since: .seconds(-5)), "a clock that went backwards locks rather than trusts")
+        #expect(!lock(since: .seconds(86399), grace: .after(.seconds(86400))) && lock(since: .seconds(86400), grace: .after(.seconds(86400))))
+    }
+
+    @Test func untilTomorrowAsksOnceADay() {
+        #expect(!lock(since: .seconds(8 * 3600), sameDay: true, grace: .untilTomorrow), "away all afternoon, still today: no prompt")
+        #expect(lock(since: .seconds(60), sameDay: false, grace: .untilTomorrow), "a minute across midnight: the day changed")
+        #expect(lock(since: .seconds(3 * 86400), sameDay: false, grace: .untilTomorrow))
+        #expect(!lock(since: nil, sameDay: false, grace: .untilTomorrow), "inactive never locks, whatever the day")
+        #expect(LockGrace(seconds: LockPolicy.untilTomorrow) == .untilTomorrow && LockGrace(seconds: 300) == .after(.seconds(300)))
     }
 
     @Test func goingInactiveNeverLocks() {
-        #expect(!LockPolicy.shouldLock(since: nil, grace: .zero, enabled: true, onLaunch: true, launching: false), "Control Center, a call, the Face ID sheet: no background, no lock")
+        #expect(!lock(since: nil, grace: .after(.zero)), "Control Center, a call, the Face ID sheet: no background, no lock")
     }
 
     @Test func gracesAreOrderedAndHoldTheDefault() {
         let s = LockPolicy.graces.map(\.seconds)
-        #expect(s == s.sorted() && s.first == 0)
+        let timed = s.filter { $0 >= 0 }
+        #expect(timed == timed.sorted() && timed.first == 0 && timed.last == 86400)
+        #expect(s.last == LockPolicy.untilTomorrow, "the once-a-day choice closes the list")
         #expect(s.contains(LockPolicy.defaultGrace))
         #expect(Set(s).count == s.count)
     }
@@ -49,7 +67,7 @@ struct LockTests {
         for k in keys { d.removeObject(forKey: k) }
         let fresh = Settings()
         #expect(!fresh.lockEnabled, "a fresh install asks for nothing")
-        #expect(fresh.lockGraceSeconds == 60 && fresh.lockGrace == .seconds(60))
+        #expect(fresh.lockGraceSeconds == 60 && fresh.lockGrace == .after(.seconds(60)))
         #expect(fresh.lockOnLaunch)
         fresh.lockEnabled = true
         fresh.lockGraceSeconds = 300
