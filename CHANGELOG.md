@@ -3,6 +3,14 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS)
+
+- Journal notes render pipe tables (the GEX annotation's entry and exit columns) as a table
+  instead of a run of bars, and drop the HTML comment the annotation carries for the machine,
+  as the web does.
+
 ## 2.18.6, 2026-10-17
 
 Documentation release; the server's behaviour is unchanged. The app is rebuilt as 2.18.6 with
