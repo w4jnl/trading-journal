@@ -5,6 +5,11 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+### App (iOS)
+
+- Journal notes render pipe tables (the GEX annotation's entry and exit columns) as a table
+  instead of a run of bars, and drop the HTML comment the annotation carries for the machine,
+  as the web does.
 ### Web
 
 - The sets view of the trade log draws the price path glyph (heat, best seen, the exit) on the
