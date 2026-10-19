@@ -8,12 +8,15 @@ import WidgetKit
 struct TradingJournalApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var phase
+    @State private var lock = LockGate()
 
     var body: some Scene {
         WindowGroup {
             RootView()
                 .environment(Client.shared)
                 .environment(Settings.shared)
+                .environment(lock)
+                .onAppear { lock.scene(.active, settings: Settings.shared) } // a cold start locks before the first frame
         }
         // The grouping switch reaches the running activity and the widgets at once: their faces
         // read it from the App Group on their next render, which this provokes.
@@ -22,6 +25,7 @@ struct TradingJournalApp: App {
             WidgetCenter.shared.reloadAllTimelines()
         }
         .onChange(of: phase) { _, now in
+            lock.scene(now, settings: Settings.shared)
             switch now {
             case .active:
                 Client.shared.start()

@@ -60,6 +60,7 @@ targets:
         UIAppFonts: [Inter-Regular.ttf, Inter-Medium.ttf, Inter-SemiBold.ttf, Inter-Bold.ttf, JetBrainsMono-Regular.ttf, JetBrainsMono-Bold.ttf]
         NSCameraUsageDescription: Scan the pairing code shown in the journal's Settings.
         NSPhotoLibraryUsageDescription: Attach a photo to a journal note.
+        NSFaceIDUsageDescription: Unlock the journal on this phone.
         NSAppTransportSecurity:
           # A journal on the home network (http://, a plain IP) must be reachable too.
           NSAllowsLocalNetworking: true
@@ -132,6 +133,7 @@ targets:
     sources:
       - path: TJWidgets
       - path: Shared/SessionActivity.swift
+      - path: Shared/Privacy.swift
       - path: Shared/LiveViews.swift
       - path: Shared/TodayCache.swift
       - path: Shared/Grouping.swift

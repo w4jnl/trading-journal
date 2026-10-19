@@ -492,7 +492,7 @@
         <th class="tabular c-exit" title="Average exit across the accounts">Exit avg</th>
         <th class="tabular c-comm">Comm</th>
         {{template "sort_th" (dict "Label" "Net P&L" "Col" "net" "Class" "tabular c-net" "Sort" $sort "Dir" $dir "Refs" $refs)}}
-        <th class="tabular c-r" title="R: net over the planned risk summed across the set">Risk</th>
+        <th class="tabular c-r" title="R: net over the planned risk summed across the set · path: heat left, best seen right, exit as the dot, averaged over the legs">Risk</th>
       </tr>
     </thead>
     <tbody>
@@ -515,7 +515,7 @@
         <td class="tabular num c-exit" data-label="Exit">{{if .ExitAvg}}{{printf "%.2f" (deref .ExitAvg)}}{{else}}—{{end}}</td>
         <td class="tabular num muted c-comm" data-label="Comm">{{if .Commission}}{{printf "%.2f" (deref .Commission)}}{{else}}—{{end}}</td>
         <td class="tabular num c-net" data-label="Net">{{pnlChip .NetPnl}}</td>
-        <td class="tabular num c-r" data-label="Risk">{{if .PastStop}}<span class="past-stop-dot past-stop-dot--lead" title="At least one account went past its planned stop"></span>{{end}}{{with .RMultiple}}<span class="{{pnlSign (deref $s.NetPnl)}}">{{printf "%+.2fR" (deref .)}}</span>{{else}}<span class="muted">—</span>{{end}}</td>
+        <td class="tabular num c-r" data-label="Risk" title="R: net over the planned risk summed across the set · path: heat left, best seen right, exit as the dot, averaged over the legs">{{if .PastStop}}<span class="past-stop-dot past-stop-dot--lead" title="At least one account went past its planned stop"></span>{{end}}{{$r := .RMultiple}}{{$path := .Path}}{{if $r}}<span class="{{pnlSign (deref $s.NetPnl)}}">{{printf "%+.2fR" (deref $r)}}</span>{{end}}{{with $path}} <span class="path" title="{{.Title}}"><span class="path__heat" style="width: {{.HeatPct}}%"></span><span class="path__gain" style="width: {{.GainPct}}%"></span><span class="path__exit {{.Sign}}" style="left: {{.ExitPct}}%"></span></span>{{end}}{{if and (not $r) (not $path)}}<span class="muted">—</span>{{end}}</td>
       </tr>
       {{if .IsSet}}{{range .Members}}{{$row := .}}
       <tr class="trade-row set-member{{if .AccountRetired}} trade-row--retired{{end}}"

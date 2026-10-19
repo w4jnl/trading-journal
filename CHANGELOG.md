@@ -7,11 +7,28 @@ built against it carries the same marketing version.
 
 ### Server
 
+- Push: a copied exit is one notification, not one per account. The closed-trade alert folds
+  the legs of a copy set into the decision (`MES short ×5`, `5 accounts`, the summed net); a
+  leg that lands a tick later re-tells the decision under the same collapse id, so the banner
+  is replaced rather than stacked. The Session activity's trade alert folds the same way.
+- Guardrail: "price is through your stop" is said once for the legs of a decision that share
+  the stop, naming the accounts; a leg with a stop of its own is still said on its own
+  ("no stop recorded" already spoke per decision).
 - The Session activity's state carries each open leg's copy set (`set`, the legs' account ids)
   and the day per decision (`decisions`, `setWins`, `setLosses`, `openSets`); the legs are
   ordered by the decision with the most at stake and trimmed by whole sets (three decisions,
   twelve legs). `GET /today` gains `decisions` (count, wins, losses, open) and the coach report
   `decisionWins` / `decisionLosses`.
+
+### Web
+
+- The sets view of the trade log draws the price path glyph (heat, best seen, the exit) on the
+  set's row too, averaged over the measured legs with the money summed; the tooltip says when
+  some legs are not measured yet.
+- Trades, sets view: the entry spread of a decision is shown to the cent. A leg's entry is a
+  fill-weighted average, and the difference of two such averages printed its float noise
+  (`±0.08333333333303017` for a twelfth of a point); the set detail's spread and tick count
+  read from the same rounded value.
 
 ### App (iOS)
 
@@ -19,6 +36,20 @@ built against it carries the same marketing version.
   and Today's open positions: a copied decision's legs fold into one row (size and unrealised
   summed, the nearest stop, ×N), and the counts are decisions, their wins and losses and open
   decisions. Flipping the switch redraws the running activity and the widgets at once.
+- An app lock, off by default: Settings > Privacy > Require Face ID (Touch ID, or the passcode
+  when nothing is enrolled). The app asks when it comes back after the grace you pick
+  (Immediately, 30 seconds, 1, 5, 15 minutes, 1 hour, 24 hours, or Until tomorrow, which asks
+  once a day; 1 minute by default) and, unless "Lock on launch" is off, at every cold start;
+  with it off, a cold start measures the grace from the last time the app went to the
+  background. The passcode is the fallback, so the lock can never shut you out. In the app
+  switcher the content is covered without a prompt. Turning the lock on or off takes one
+  authentication. The device key and the server are untouched: this guards the unlocked phone
+  in someone else's hand, nothing more.
+- "Hide amounts until unlocked": money in the widgets, the Session Live Activity and the
+  notification cards is redacted until the phone itself is unlocked. No prompt of its own.
+- Journal notes render pipe tables (the GEX annotation's entry and exit columns) as a table
+  instead of a run of bars, and drop the HTML comment the annotation carries for the machine,
+  as the web does.
 
 ## 2.18.6, 2026-10-17
 

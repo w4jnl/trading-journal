@@ -414,14 +414,41 @@ struct MarkdownView: View {
                 Rectangle().fill(Brand.borderStrong).frame(width: 2)
                 inline(text).font(Brand.text(15, relativeTo: .body)).foregroundStyle(Brand.fgMuted)
             }
+        case .table(let header, let rows):
+            // Cells wrap to the width at hand (a sideways scroll would hide half the table on a phone).
+            Grid(alignment: .topLeading, horizontalSpacing: 12, verticalSpacing: 6) {
+                GridRow {
+                    ForEach(Array(header.enumerated()), id: \.offset) { _, h in
+                        inline(h).font(Brand.text(11, weight: .medium, relativeTo: .caption)).foregroundStyle(Brand.fgMuted).textCase(.uppercase)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                Divider().gridCellUnsizedAxes(.horizontal)
+                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { _, c in
+                            inline(c).font(Brand.text(13, relativeTo: .footnote)).monospacedDigit()
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+            .padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Brand.bgSunken)
+            .clipShape(RoundedRectangle(cornerRadius: 4))
         }
     }
 
     private func inline(_ s: String) -> Text {
-        if let a = try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) {
-            return Text(a)
+        guard var a = try? AttributedString(markdown: s, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)) else {
+            return Text(s)
         }
-        return Text(s)
+        // The bundled Inter has no italic face, so emphasis alone would vanish: it reads muted too.
+        for run in a.runs where run.inlinePresentationIntent?.contains(.emphasized) == true {
+            a[run.range].foregroundColor = Brand.fgMuted
+        }
+        return Text(a)
     }
 }
 

@@ -1300,13 +1300,19 @@ while the activity shows (otherwise it rides the activity as its alert);
   `thread-id: nudges`, `collapse-id: nudge:<id>`, time-sensitive and the
   `tj-nudge.caf` sound by default, `mutable-content`, badge = the unseen
   count. Custom keys: `kind`, `id`, `key`, `route`, `day`, `lesson`.
-- A **closed trade**, on the tick after it closed (`kind: "trade"`; only
-  trades closed in the last twenty minutes, so an import of a finished
-  session announces nothing): title `MES short`, subtitle the account,
-  body `+71.00 · 14:29`; category `TJ_TRADE`, `thread-id: trades`,
-  passive and silent by default. Custom keys: `kind`, `tradeId`, `route`
-  (`trade/<id>`), `symbolRoot`, `direction`, `netPnl`, `accountId`.
-  Dropped outside regular hours when `quietOutsideRth` is set.
+- A **closed decision**, on the tick after it closed (`kind: "trade"`;
+  only trades closed in the last twenty minutes, so an import of a
+  finished session announces nothing). A lone trade: title `MES short`,
+  subtitle the account, body `+71.00 · 14:29`. A copy set is told once,
+  not once per account: title `MES short ×5`, subtitle `5 accounts`, body
+  the summed net and the first exit; a leg that lands a tick later
+  re-tells the whole decision under the same `collapse-id`
+  (`trade:<first leg>`), replacing the banner. Category `TJ_TRADE`,
+  `thread-id: trades`, passive and silent by default. Custom keys:
+  `kind`, `tradeId` (the first leg), `route` (`trade/<id>`),
+  `symbolRoot`, `direction`, `netPnl` (the decision's), `accountId`,
+  `legs`, and `setId` for a set. Dropped outside regular hours when
+  `quietOutsideRth` is set.
 - A **silent sync** after every change of the data (APNs `background`,
   `content-available`, priority 5): `{"kind": "sync", "v": 138, "badge":
   1, "unseen": [912]}`. The app removes its delivered nudge

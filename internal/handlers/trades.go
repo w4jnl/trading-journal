@@ -142,12 +142,18 @@ func (r tradeRow) Path() *tradePath {
 	if r.MaePoints == nil || r.MfePoints == nil || r.ExitPrice == nil {
 		return nil
 	}
-	mae, mfe := *r.MaePoints, *r.MfePoints
+	realized := excursion.Realized(r.Direction, r.EntryPrice, *r.ExitPrice)
+	return newTradePath(*r.MaePoints, *r.MfePoints, realized, r.MaePnl, r.MfePnl, r.ExcursionTf)
+}
+
+// newTradePath draws the glyph from a measured path in points (heat, best
+// seen, the realized move, signed in the trade's favour) and, when priced,
+// the heat and best seen in money for the tooltip. nil when nothing moved.
+func newTradePath(mae, mfe, realized float64, maePnl, mfePnl *float64, tf *string) *tradePath {
 	scale := math.Max(mae, mfe)
 	if scale <= 0 {
 		return nil
 	}
-	realized := excursion.Realized(r.Direction, r.EntryPrice, *r.ExitPrice)
 	p := &tradePath{
 		HeatPct: int(math.Round(mae / scale * 50)),
 		GainPct: int(math.Round(mfe / scale * 50)),
@@ -160,16 +166,16 @@ func (r tradeRow) Path() *tradePath {
 	case realized < 0:
 		p.Sign = "pnl-neg"
 	}
-	if r.MaePnl != nil && r.MfePnl != nil {
-		p.Title = fmt.Sprintf("Heat −%.2f · best seen +%.2f", *r.MaePnl, *r.MfePnl)
+	if maePnl != nil && mfePnl != nil {
+		p.Title = fmt.Sprintf("Heat −%.2f · best seen +%.2f", *maePnl, *mfePnl)
 	} else {
 		p.Title = fmt.Sprintf("Heat %g pts · best seen %g pts", mae, mfe)
 	}
-	if e := excursion.Efficiency(r.Direction, r.EntryPrice, *r.ExitPrice, mfe); e != nil {
-		p.Title += fmt.Sprintf(" · exit kept %.0f%%", *e*100)
+	if mfe > 0 {
+		p.Title += fmt.Sprintf(" · exit kept %.0f%%", realized/mfe*100)
 	}
-	if r.ExcursionTf != nil {
-		p.Title += " (" + *r.ExcursionTf + " bars)"
+	if tf != nil {
+		p.Title += " (" + *tf + " bars)"
 	}
 	return p
 }

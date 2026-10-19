@@ -305,7 +305,7 @@ func money(v float64) string {
 // activity's alert (one thing on the Lock Screen, not two) plus a
 // badge-only push that keeps the badge; false when the phone has no
 // running activity, or asked for notifications.
-func (s *Service) tradeOnActivity(ctx context.Context, tg target, t closedTrade, badge int) bool {
+func (s *Service) tradeOnActivity(ctx context.Context, tg target, d closedDecision, badge int) bool {
 	if !s.Enabled() || s.State == nil || (tg.prefs != nil && (tg.prefs.NoActivity || tg.prefs.FinishedAsNotification)) {
 		return false
 	}
@@ -328,11 +328,11 @@ func (s *Service) tradeOnActivity(ctx context.Context, tg target, t closedTrade,
 	}
 	now := s.now()
 	state.trim(now)
-	state.Alert = fmt.Sprintf("%s %s %s", t.SymbolRoot, t.Direction, money(t.Net))
+	state.Alert = d.title() + " " + money(d.net)
 	sent := false
 	for _, a := range running {
 		if err := s.sendActivity(ctx, tg, a.Token, apns.Notification{
-			Title: t.SymbolRoot + " " + t.Direction, Body: money(t.Net) + " · " + t.Account, Sound: tg.prefs.Sound(KindTradeClosed),
+			Title: d.title(), Body: money(d.net) + " · " + d.where(), Sound: tg.prefs.Sound(KindTradeClosed),
 			Live: &apns.Live{Event: "update", ContentState: state, Stale: now.Add(liveStaleAfter), Urgent: true},
 		}, "trade on activity"); err == nil {
 			sent = true

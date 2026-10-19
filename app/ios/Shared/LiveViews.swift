@@ -40,7 +40,7 @@ struct SessionTotal: View {
     let state: SessionActivityAttributes.ContentState
     var size: CGFloat = 13
     var body: some View {
-        Text(Formatting.moneyShort(state.total)).font(Brand.mono(size, bold: true)).foregroundStyle(SessionStyle.pnl(state.total))
+        Text(Formatting.moneyShort(state.total)).font(Brand.mono(size, bold: true)).foregroundStyle(SessionStyle.pnl(state.total)).amount()
     }
 }
 
@@ -63,7 +63,7 @@ struct SessionPositionRow: View {
             } else {
                 Text("no stop").font(Brand.text(compact ? 10 : 11, weight: .medium)).foregroundStyle(Brand.dark.warn)
             }
-            Text(Formatting.money(p.u)).font(Brand.mono(compact ? 12 : 13)).foregroundStyle(SessionStyle.pnl(p.u)).frame(minWidth: 64, alignment: .trailing)
+            Text(Formatting.money(p.u)).font(Brand.mono(compact ? 12 : 13)).foregroundStyle(SessionStyle.pnl(p.u)).frame(minWidth: 64, alignment: .trailing).amount()
         }
         .lineLimit(1)
     }
@@ -81,7 +81,7 @@ struct SessionProgress: View {
                 BudgetBar(fraction: f, tint: f >= 1 ? Brand.dark.neg : f >= 0.8 ? Brand.dark.warn : Brand.dark.accent)
                 if !compact {
                     Text("\(Formatting.moneyShort(-state.lossUsed)) of \(Formatting.moneyShort(-state.maxLoss)) max loss\(state.maxTrades > 0 ? " · \(state.trades) of \(state.maxTrades) trades" : "")")
-                        .font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted)
+                        .font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted).amount()
                 }
             }
         } else if state.maxTrades > 0 {
@@ -133,10 +133,10 @@ struct SessionLockScreen: View {
                 }
             }
             HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text(Formatting.money(state.total)).font(Brand.mono(28, bold: true)).foregroundStyle(isStale ? Brand.dark.fgMuted : SessionStyle.pnl(state.total))
+                Text(Formatting.money(state.total)).font(Brand.mono(28, bold: true)).foregroundStyle(isStale ? Brand.dark.fgMuted : SessionStyle.pnl(state.total)).amount()
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("realised \(Formatting.money(state.realized))").font(Brand.mono(11)).foregroundStyle(Brand.dark.fgMuted)
-                    Text(state.openCount > 0 ? "open \(Formatting.money(state.unrealized))\(state.stale ? " ·" : "")" : "\(state.trades) trades · \(state.wins)W \(state.losses)L")
+                    Text("realised \(Formatting.money(state.realized))").font(Brand.mono(11)).foregroundStyle(Brand.dark.fgMuted).amount()
+                    Text(state.openCount > 0 ? "open \(Formatting.money(state.unrealized))\(state.stale ? " ·" : "")" : "\(state.trades) trades · \(state.wins)W \(state.losses)L").amount()
                         .font(Brand.mono(11)).foregroundStyle(Brand.dark.fgMuted)
                 }
                 Spacer()
@@ -226,8 +226,8 @@ struct SessionExpandedBottom: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text("realised \(Formatting.money(state.realized))").font(Brand.mono(11)).foregroundStyle(Brand.dark.fgMuted)
-                if state.openCount > 0 { Text("open \(Formatting.money(state.unrealized))").font(Brand.mono(11)).foregroundStyle(SessionStyle.pnl(state.unrealized)) }
+                Text("realised \(Formatting.money(state.realized))").font(Brand.mono(11)).foregroundStyle(Brand.dark.fgMuted).amount()
+                if state.openCount > 0 { Text("open \(Formatting.money(state.unrealized))").font(Brand.mono(11)).foregroundStyle(SessionStyle.pnl(state.unrealized)).amount() }
                 Spacer()
                 SessionClock(attributes: attributes)
             }

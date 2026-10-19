@@ -25,6 +25,15 @@ final class Settings {
     var aiReady: Bool { didSet { defaults.set(aiReady, forKey: "aiReady") } }
     /// What this phone wants pushed; Notifications.updatePrefs changes it and tells the server.
     var notificationPrefs: DevicePrefs { didSet { defaults.set(try? JSONEncoder().encode(notificationPrefs), forKey: "notificationPrefs") } }
+    /// Face ID (the passcode as fallback) before the app shows anything: Settings > Privacy. Off until asked for.
+    var lockEnabled: Bool { didSet { defaults.set(lockEnabled, forKey: "lockEnabled") } }
+    /// How long the app may be away before it locks again, in seconds; 0 is at once, negative once a day.
+    var lockGraceSeconds: Double { didSet { defaults.set(lockGraceSeconds, forKey: "lockGraceSeconds") } }
+    /// Whether a cold start always asks, whatever the grace.
+    var lockOnLaunch: Bool { didSet { defaults.set(lockOnLaunch, forKey: "lockOnLaunch") } }
+    /// Money in the widgets, the activity and the notification card redacted until the phone is
+    /// unlocked. In the App Group, because the extensions read it.
+    var hideAmountsLocked: Bool { didSet { UserDefaults(suiteName: TodayCache.suite)?.set(hideAmountsLocked, forKey: Privacy.key) } }
 
     private let defaults = UserDefaults.standard
 
@@ -38,6 +47,10 @@ final class Settings {
         tradesBySet = defaults.object(forKey: "tradesBySet") as? Bool ?? false
         aiReady = defaults.object(forKey: "aiReady") as? Bool ?? false
         notificationPrefs = defaults.data(forKey: "notificationPrefs").flatMap { try? JSONDecoder().decode(DevicePrefs.self, from: $0) } ?? DevicePrefs()
+        lockEnabled = defaults.object(forKey: "lockEnabled") as? Bool ?? false
+        lockGraceSeconds = defaults.object(forKey: "lockGraceSeconds") as? Double ?? LockPolicy.defaultGrace
+        lockOnLaunch = defaults.object(forKey: "lockOnLaunch") as? Bool ?? true
+        hideAmountsLocked = Privacy.hideAmounts()
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and an extension finds the server even when only the key was in the keychain.
         Keychain.set(apiKey, for: "apiKey")
@@ -49,6 +62,7 @@ final class Settings {
     var api: TJAPI? { TJAPI(serverURL: serverURL, key: apiKey) }
     /// The trading timezone, the server's; the phone's until the server has said.
     var tz: TimeZone { server?.tz ?? .current }
+    var lockGrace: LockGrace { LockGrace(seconds: lockGraceSeconds) }
 
     /// The push token this phone registered with the current server, from the `registered` record.
     var registeredToken: String? { Self.registeredToken(registered, serverURL: serverURL) }
