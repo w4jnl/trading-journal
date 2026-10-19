@@ -3,6 +3,14 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Web
+
+- The sets view of the trade log draws the price path glyph (heat, best seen, the exit) on the
+  set's row too, averaged over the measured legs with the money summed; the tooltip says when
+  some legs are not measured yet.
+
 ## 2.18.6, 2026-10-17
 
 Documentation release; the server's behaviour is unchanged. The app is rebuilt as 2.18.6 with

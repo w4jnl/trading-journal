@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/excursion"
 	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
@@ -51,6 +52,49 @@ type setRow struct {
 
 // RMultiple is net over planned risk for the set, nil without a plan.
 func (s setRow) RMultiple() *float64 { return positions.RMultiple(s.NetPnl, s.PlannedRisk) }
+
+// Path is the set's price path for the row glyph: heat, best seen and the
+// realized move averaged in points over the legs that were measured, the
+// money summed over them. The legs are one decision filled on several
+// accounts, so their paths differ only by slippage and one bar reads for
+// the set. nil when no leg is measured yet.
+func (s setRow) Path() *tradePath {
+	var mae, mfe, realized float64
+	var maePnl, mfePnl *float64
+	var tf *string
+	measured, priced := 0, 0
+	for _, m := range s.Members {
+		if m.MaePoints == nil || m.MfePoints == nil || m.ExitPrice == nil {
+			continue
+		}
+		measured++
+		mae += *m.MaePoints
+		mfe += *m.MfePoints
+		realized += excursion.Realized(m.Direction, m.EntryPrice, *m.ExitPrice)
+		if m.MaePnl != nil && m.MfePnl != nil {
+			priced++
+			addOpt(&maePnl, m.MaePnl)
+			addOpt(&mfePnl, m.MfePnl)
+		}
+		if tf == nil {
+			tf = m.ExcursionTf
+		}
+	}
+	if measured == 0 {
+		return nil
+	}
+	if priced != measured {
+		// A leg on a stub instrument has points but no money: the sum would
+		// understate the set, so the tooltip falls back to points.
+		maePnl, mfePnl = nil, nil
+	}
+	k := float64(measured)
+	p := newTradePath(mae/k, mfe/k, realized/k, maePnl, mfePnl, tf)
+	if p != nil && measured < len(s.Members) {
+		p.Title += fmt.Sprintf(" · %d of %d legs measured", measured, len(s.Members))
+	}
+	return p
+}
 
 // IsSet reports a real copy set (as opposed to a lone trade).
 func (s setRow) IsSet() bool { return s.SetID != nil }
