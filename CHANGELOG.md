@@ -3,6 +3,15 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Web
+
+- Trades, sets view: the entry spread of a decision is shown to the cent. A leg's entry is a
+  fill-weighted average, and the difference of two such averages printed its float noise
+  (`±0.08333333333303017` for a twelfth of a point); the set detail's spread and tick count
+  read from the same rounded value.
+
 ## 2.18.6, 2026-10-17
 
 Documentation release; the server's behaviour is unchanged. The app is rebuilt as 2.18.6 with

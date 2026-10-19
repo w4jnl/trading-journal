@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -63,8 +64,10 @@ func (s setRow) SetIDValue() int64 {
 	return *s.SetID
 }
 
-// Spread is the entry price range across members.
-func (s setRow) Spread() float64 { return s.EntryMax - s.EntryMin }
+// Spread is the entry price range across members, to the cent: a member's
+// entry is itself a fill-weighted average, and the difference of two such
+// averages carries float noise (0.08333333333303017 for a twelfth).
+func (s setRow) Spread() float64 { return math.Round((s.EntryMax-s.EntryMin)*100) / 100 }
 
 // setGroupKeySQL is the unit of the sets view: the set id, or the trade id
 // negated so it never collides with a set id.
