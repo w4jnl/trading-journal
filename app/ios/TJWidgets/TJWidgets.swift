@@ -97,7 +97,7 @@ struct TodayWidgetView: View {
                 switch family {
                 case .accessoryCircular: circular(t)
                 case .accessoryRectangular: rectangular(t)
-                case .accessoryInline: Text("Journal \(Formatting.moneyShort(t.total))")
+                case .accessoryInline: Text("Journal \(Formatting.moneyShort(t.total))").amount()
                 case .systemMedium: medium(t)
                 default: small(t)
                 }
@@ -116,7 +116,7 @@ struct TodayWidgetView: View {
         Gauge(value: t.maxLoss > 0 ? min(1, t.lossUsed / t.maxLoss) : (t.maxTrades > 0 ? min(1, Double(t.tradesUsed) / Double(t.maxTrades)) : 0)) {
             Text("J")
         } currentValueLabel: {
-            Text(Formatting.moneyShort(t.total)).font(.system(size: 11, weight: .semibold, design: .monospaced)).minimumScaleFactor(0.6)
+            Text(Formatting.moneyShort(t.total)).font(.system(size: 11, weight: .semibold, design: .monospaced)).minimumScaleFactor(0.6).amount()
         }
         .gaugeStyle(.accessoryCircularCapacity)
     }
@@ -125,7 +125,7 @@ struct TodayWidgetView: View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
                 Text("Trade Log").font(.system(size: 12, weight: .semibold))
-                Text(Formatting.moneyShort(t.total)).font(.system(size: 14, weight: .bold, design: .monospaced))
+                Text(Formatting.moneyShort(t.total)).font(.system(size: 14, weight: .bold, design: .monospaced)).amount()
             }
             Text("\(t.trades) trades · \(t.openCount) open\(t.unseen > 0 ? " · \(t.unseen) nudge\(t.unseen == 1 ? "" : "s")" : "")").font(.system(size: 11))
             Text(t.hasPlan ? "plan \(t.tradesUsed)\(t.maxTrades > 0 ? "/\(t.maxTrades)" : "")\(t.maxLoss > 0 ? " · \(Int(t.lossUsed))/\(Int(t.maxLoss))" : "")" : "no plan").font(.system(size: 11)).opacity(0.8)
@@ -139,9 +139,9 @@ struct TodayWidgetView: View {
                 Spacer()
                 if t.unseen > 0 { Text("⚠ \(t.unseen)").font(Brand.mono(10, bold: true)).foregroundStyle(Brand.dark.warn) }
             }
-            Text(Formatting.money(t.net)).font(Brand.mono(26, bold: true)).foregroundStyle(SessionStyle.pnl(t.net)).minimumScaleFactor(0.6).lineLimit(1)
+            Text(Formatting.money(t.net)).font(Brand.mono(26, bold: true)).foregroundStyle(SessionStyle.pnl(t.net)).minimumScaleFactor(0.6).lineLimit(1).amount()
             if t.openCount > 0 {
-                Text("open \(Formatting.money(t.unrealized))\(t.stale ? " ·" : "")").font(Brand.mono(11)).foregroundStyle(SessionStyle.pnl(t.unrealized))
+                Text("open \(Formatting.money(t.unrealized))\(t.stale ? " ·" : "")").font(Brand.mono(11)).foregroundStyle(SessionStyle.pnl(t.unrealized)).amount()
             }
             Spacer(minLength: 0)
             HStack(spacing: 8) {
@@ -158,11 +158,11 @@ struct TodayWidgetView: View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("TODAY").font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
-                Text(Formatting.money(t.net)).font(Brand.mono(24, bold: true)).foregroundStyle(SessionStyle.pnl(t.net)).minimumScaleFactor(0.6).lineLimit(1)
+                Text(Formatting.money(t.net)).font(Brand.mono(24, bold: true)).foregroundStyle(SessionStyle.pnl(t.net)).minimumScaleFactor(0.6).lineLimit(1).amount()
                 Text("\(t.trades) trades · \(t.openCount) open").font(Brand.text(11)).foregroundStyle(Brand.dark.fgMuted)
                 Spacer(minLength: 0)
                 Text("WEEK").font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
-                Text(Formatting.money(t.weekNet + t.net)).font(Brand.mono(16, bold: true)).foregroundStyle(SessionStyle.pnl(t.weekNet + t.net))
+                Text(Formatting.money(t.weekNet + t.net)).font(Brand.mono(16, bold: true)).foregroundStyle(SessionStyle.pnl(t.weekNet + t.net)).amount()
             }
             VStack(alignment: .leading, spacing: 4) {
                 Text("LAST DAYS").font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
@@ -175,11 +175,11 @@ struct TodayWidgetView: View {
                     }
                 }
                 if let best = t.days.max(by: { $0.net < $1.net }), let worst = t.days.min(by: { $0.net < $1.net }) {
-                    Text("best \(Formatting.moneyShort(best.net)) · worst \(Formatting.moneyShort(worst.net))").font(Brand.mono(10)).foregroundStyle(Brand.dark.fgMuted)
+                    Text("best \(Formatting.moneyShort(best.net)) · worst \(Formatting.moneyShort(worst.net))").font(Brand.mono(10)).foregroundStyle(Brand.dark.fgMuted).amount()
                 }
                 Spacer(minLength: 0)
                 if t.hasPlan {
-                    Text("plan \(t.tradesUsed)\(t.maxTrades > 0 ? " of \(t.maxTrades)" : "") trades\(t.maxLoss > 0 ? " · \(Formatting.moneyShort(-t.lossUsed)) of \(Formatting.moneyShort(-t.maxLoss))" : "")").font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted)
+                    Text("plan \(t.tradesUsed)\(t.maxTrades > 0 ? " of \(t.maxTrades)" : "") trades\(t.maxLoss > 0 ? " · \(Formatting.moneyShort(-t.lossUsed)) of \(Formatting.moneyShort(-t.maxLoss))" : "")").font(Brand.text(10)).foregroundStyle(Brand.dark.fgMuted).amount()
                 } else {
                     Text("no plan today").font(Brand.text(10, weight: .medium)).foregroundStyle(Brand.dark.warn)
                 }

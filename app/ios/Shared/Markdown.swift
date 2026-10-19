@@ -1,6 +1,7 @@
 // The journal's notes are markdown written by the trader and by the AI review. This splits a
 // note into blocks the view renders one by one: headings, paragraphs, list items, code, rules,
-// images (attachments the API serves) and the "_Note added …_" markers. Pure, tested.
+// images (attachments the API serves), pipe tables and the "_Note added …_" markers. HTML
+// comments (the GEX annotation's machine-readable tail) are dropped, as the web does. Pure, tested.
 import Foundation
 
 enum Markdown {
@@ -13,6 +14,7 @@ enum Markdown {
         case image(alt: String, href: String)
         case noteMarker(String) // "_Note added 2026-10-14 21:16 CEST_"
         case quote(String)
+        case table(header: [String], rows: [[String]])
     }
 
     nonisolated static func blocks(_ source: String) -> [Block] {
@@ -25,8 +27,14 @@ enum Markdown {
                 paragraph = []
             }
         }
-        for rawLine in source.replacingOccurrences(of: "\r\n", with: "\n").split(separator: "\n", omittingEmptySubsequences: false) {
-            let line = String(rawLine)
+        let lines = source.replacingOccurrences(of: "\r\n", with: "\n")
+            .replacingOccurrences(of: "<!--[\\s\\S]*?-->", with: "", options: .regularExpression)
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map(String.init)
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
+            i += 1
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if var c = code {
                 if trimmed.hasPrefix("```") {
@@ -80,6 +88,18 @@ enum Markdown {
                 }
                 continue
             }
+            if trimmed.hasPrefix("|"), i < lines.count, let cells = tableCells(lines[i]), cells.allSatisfy(isTableDelimiter) {
+                // a pipe table: header, delimiter row, then every pipe line that follows
+                flush()
+                var rows: [[String]] = []
+                i += 1
+                while i < lines.count, lines[i].trimmingCharacters(in: .whitespaces).hasPrefix("|"), let row = tableCells(lines[i]) {
+                    rows.append(row)
+                    i += 1
+                }
+                out.append(.table(header: tableCells(trimmed) ?? [], rows: rows))
+                continue
+            }
             if let item = listItem(line) {
                 flush()
                 out.append(item)
@@ -95,6 +115,24 @@ enum Markdown {
         if let c = code { out.append(.code(c.joined(separator: "\n"))) }
         flush()
         return out
+    }
+
+    /// The cells of a pipe-table line, outer pipes dropped and each cell trimmed; nil off a table line.
+    nonisolated static func tableCells(_ line: String) -> [String]? {
+        var t = line.trimmingCharacters(in: .whitespaces)
+        guard t.hasPrefix("|") else { return nil }
+        t.removeFirst()
+        if t.hasSuffix("|") { t.removeLast() }
+        return t.replacingOccurrences(of: "\\|", with: "\u{1}").split(separator: "|", omittingEmptySubsequences: false)
+            .map { $0.replacingOccurrences(of: "\u{1}", with: "|").trimmingCharacters(in: .whitespaces) }
+    }
+
+    /// "---", ":---:" and the like: a cell of the row under a table's header.
+    nonisolated static func isTableDelimiter(_ cell: String) -> Bool {
+        var c = Substring(cell)
+        if c.hasPrefix(":") { c = c.dropFirst() }
+        if c.hasSuffix(":") { c = c.dropLast() }
+        return !c.isEmpty && c.allSatisfy { $0 == "-" }
     }
 
     /// "![alt](/api/v1/attachments/3)" on a line of its own.
