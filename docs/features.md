@@ -24,7 +24,9 @@ Feed study), which wins where both know a level. Levels fold into scored zones, 
 card reads the prior day and the overnight into a lean with its reasons, charts draw the
 zones, and one button writes them into the day plan. The page covers the markets traded in the
 last thirty days plus the ones pinned under Settings > Levels, refreshes itself when a chart
-posts, and the feed is shared by every user of the instance. The scores rank; they do not
+posts, and the feed is shared by every user of the instance. The chart's last price also prices
+the open positions everywhere (dashboard, Today, the phone, the Session activity, the guardrail)
+whenever it is the most recent price known. The scores rank; they do not
 forecast.
 
 **Copy sets.** One decision fanned across accounts by a copytrader (same underlying, same

@@ -72,7 +72,7 @@ All prices are futures points of the posted contract. Times are RFC 3339 UTC.
 |---|---|
 | `contract` | the chart's contract code, e.g. `ESZ6` |
 | `asOf` | the time of the chart's newest bar (or tick) the values were read at; the journal derives the CME trading day from it (17:00 Chicago rolls to the next day) |
-| `mark` | the last price on the chart; the journal uses it as the live price for this market |
+| `mark` | the last price on the chart; the journal uses it as the live price for this market: on the Levels page, and for the open positions everywhere (the web, `/today`, the phone, the Session activity, the guardrail) whenever it is the most recent price known, within three minutes of `asOf` |
 | `session.pdh`, `pdl`, `pdc` | the prior RTH session's high, low and close (settle-style close) |
 | `session.onh`, `onl` | the overnight (Globex) high and low of the current trading day, so far or final |
 | `session.poc`, `vah`, `val` | the prior RTH session's volume point of control and value area; `profileApprox: true` when built from bar ranges rather than ticks (as SessionLevels flags it) |

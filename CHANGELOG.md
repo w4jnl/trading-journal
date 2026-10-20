@@ -12,6 +12,10 @@ built against it carries the same marketing version.
   trade, a group or a day and the levels suggestion on an open position get the map around the
   entry, with the nearest zones above and below, and are asked to judge the location of the entry,
   the exit and the stop against it.
+- The chart's mark from the levels feed prices the open positions (dashboard, `/today`, the phone,
+  the Session activity, the guardrail's through-stop check) whenever it is the most recent price
+  known, within three minutes of the post; `priceSource` says `MotiveWave`. Older marks lose to a
+  newer broker or vendor bar, as before.
 
 ## 2.20.0, 2026-10-20
 

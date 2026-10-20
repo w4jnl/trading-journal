@@ -330,3 +330,33 @@ func TestLevelsBriefForAI(t *testing.T) {
 		t.Errorf("brief for one market is %d bytes; keep it small for the prompt", len(raw))
 	}
 }
+
+// A chart's mark prices the open positions when it is the most recent
+// answer; an old mark loses to a newer bar; a silent chart is ignored.
+func TestFeedMarkPricesPositions(t *testing.T) {
+	h, ctx, uid, _ := levelsFixture(t)
+	mux := levelsMux(h)
+	user := &auth.User{ID: uid, Username: "boot"}
+	if q := h.fetchQuote(ctx, user, "ESZ6", "ES"); q == nil || q.Source == "MotiveWave" {
+		t.Fatalf("quote before any post = %+v, want the bars", q)
+	}
+	fresh := time.Now().UTC().Add(-20 * time.Second).Format(time.RFC3339)
+	if rec := postJSON(ctx, mux, "/api/v1/levels/ES", `{"contract":"ESZ6","asOf":"`+fresh+`","mark":7777.25}`); rec.Code != http.StatusAccepted {
+		t.Fatal(rec.Body.String())
+	}
+	if q := h.fetchQuote(ctx, user, "ESZ6", "ES"); q == nil || q.Source != "MotiveWave" || q.Price != 7777.25 {
+		t.Errorf("quote with a fresh mark = %+v, want 7777.25 from MotiveWave", q)
+	}
+	if q := h.fetchQuote(ctx, user, "MESZ6", "MES"); q == nil || q.Source != "MotiveWave" {
+		t.Errorf("a micro prices from its market's mark: %+v", q)
+	}
+	if price, _, ok := FeedMark(ctx, h.Queries, "ES", time.Now(), h.chicago()); !ok || price != 7777.25 {
+		t.Errorf("FeedMark = %v %v", price, ok)
+	}
+	if _, _, ok := FeedMark(ctx, h.Queries, "ES", time.Now().Add(10*time.Minute), h.chicago()); ok {
+		t.Error("a mark older than three minutes still counted")
+	}
+	if _, _, ok := FeedMark(ctx, h.Queries, "CL", time.Now(), h.chicago()); ok {
+		t.Error("a market without posts priced")
+	}
+}

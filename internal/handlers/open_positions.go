@@ -24,7 +24,7 @@ const quoteCacheTTL = 20 * time.Second
 type quote struct {
 	Price  float64
 	At     time.Time
-	Source string // "TopstepX" | "Yahoo" | "cached bars"
+	Source string // "MotiveWave" | "TopstepX" | "Yahoo" | "cached bars"
 }
 
 type cachedQuote struct {
@@ -59,7 +59,26 @@ func (h *Handlers) latestQuote(ctx context.Context, u *auth.User, symbol, root s
 	return q
 }
 
+// fetchQuote asks every source that can price the contract and keeps the
+// most recent answer: a MotiveWave chart's mark (the feed study, once a
+// minute from the broker's own feed), the TopstepX bar, the vendor's bar.
 func (h *Handlers) fetchQuote(ctx context.Context, u *auth.User, symbol, root string) *quote {
+	var best *quote
+	keep := func(q *quote) {
+		if q != nil && (best == nil || q.At.After(best.At)) {
+			best = q
+		}
+	}
+	if price, at, ok := FeedMark(ctx, h.rq(), root, time.Now(), h.chicago()); ok {
+		keep(&quote{Price: price, At: at, Source: "MotiveWave"})
+	}
+	keep(h.fetchBrokerQuote(ctx, u, symbol, root))
+	return best
+}
+
+// fetchBrokerQuote is the TopstepX bar when the user has a session, else
+// the vendor's.
+func (h *Handlers) fetchBrokerQuote(ctx context.Context, u *auth.User, symbol, root string) *quote {
 	if u != nil && h.TopstepxSync != nil {
 		if cid, ok := topstepx.ContractIDForSymbol(symbol, root, time.Now()); ok {
 			tctx, cancel := context.WithTimeout(ctx, latestPriceTimeout)

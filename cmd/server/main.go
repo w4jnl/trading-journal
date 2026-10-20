@@ -709,17 +709,17 @@ func run() error {
 	// as their fills arrive and records nudges the pages pick up.
 	guard := &guardrail.Service{DB: conn, RDB: rconn, Live: liveData, TZ: tz}
 	if marketCache != nil {
-		// The newest cached bar, never a fetch: the warm-up keeps it fresh.
+		// A chart's mark from the levels feed when a chart is posting, else
+		// the newest cached bar; never a fetch: the warm-up keeps it fresh.
+		chicago, _ := time.LoadLocation("America/Chicago")
 		guard.LastClose = func(ctx context.Context, root string) (float64, time.Time, bool) {
-			sym, ok := marketdata.YahooSymbol(root)
-			if !ok {
-				return 0, time.Time{}, false
+			price, at, ok := handlers.FeedMark(ctx, models.New(rconn), root, time.Now(), chicago)
+			if sym, mapped := marketdata.YahooSymbol(root); mapped {
+				if b, cached := marketCache.CachedLatest(ctx, sym); cached && (!ok || time.Unix(b.Time, 0).After(at)) {
+					price, at, ok = b.Close, time.Unix(b.Time, 0), true
+				}
 			}
-			b, ok := marketCache.CachedLatest(ctx, sym)
-			if !ok {
-				return 0, time.Time{}, false
-			}
-			return b.Close, time.Unix(b.Time, 0), true
+			return price, at, ok
 		}
 	}
 
