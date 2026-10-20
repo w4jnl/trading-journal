@@ -27,6 +27,7 @@ type CachingSource struct {
 	// re-fetching on every view. <=0 falls back to 15m.
 	IntradayTTL time.Duration
 	Logger      *slog.Logger
+	dailyCache  // the daily series held in memory (daily.go)
 }
 
 func (c *CachingSource) logger() *slog.Logger {

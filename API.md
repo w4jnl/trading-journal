@@ -1248,6 +1248,34 @@ before or is not yours); `POST /api/v1/nudges/seen` with `{"ids": [...]}`
 marks several. `deliveredAt` is set when a web page took the nudge (that
 also counts as seen); `seenAt` when the trader acknowledged it anywhere.
 
+### Levels (the day map)
+
+`GET /api/v1/levels/{market}?day=YYYY-MM-DD` is the day map of one market
+(`ES`, `NQ`, `YM`, `RTY`, `CL`, `GC`; micros fold into their market) for a
+trading day, today by default: the reference levels, each with a `source`
+(`bars`: the journal's own math from its bar cache; `chart`: the session map
+a MotiveWave chart posted; `gex`: the gamma engine), the `zones` they fold
+into ranked by score, the `expected` range (the session anchor ± the daily
+ATR), the `atr`, and the `dayType` (inside, outside, NR7 or wide prior day,
+strong or weak close, the gap, the overnight against the prior range, a lean
+with its reasons). Levels are descending by price. Kinds: `pdh`, `pdl`,
+`pdc`, `onh`, `onl`, `orh`, `orl`, `poc`, `vah`, `val`, `vwap`, `vwap_band`,
+`atr`, `pivot`, `camarilla`, `period`, `swing`, `gap`, `round`, `gamma`. The
+scores rank, they do not forecast. A past day answers the map as it stood
+at that session's close when one was recorded.
+
+`POST /api/v1/levels/{market}` is the feed a chart posts: the contract, an
+RFC 3339 `asOf`, the `mark` (last price) and optional `session`, `vwap`,
+`atr` and `study` blocks; the full contract is in
+`docs/api-handoff-002-levels-feed.md`. The trading day is derived from
+`asOf` (17:00 Chicago rolls to the next day). Every accepted post is kept
+for thirty days; the newest `asOf` per market and day is what the map
+shows. `202 {"ok": true, "market": "ES", "tradeDay": "...", "receivedAt":
+"...", "newest": true}`; `400` on a shape problem (missing fields, a clock
+off by more than five minutes forward or three days back, a price that is
+not positive), `413` over 16 KB. Any key may post. The MCP tool
+`get_levels` answers the same map.
+
 ### Devices and push
 
 The phone app registers for push after pairing; the server then sends it

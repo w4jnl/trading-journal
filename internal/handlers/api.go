@@ -24,6 +24,8 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m.HandleFunc("GET /api/v1/version", h.APIVersion)
 	m.HandleFunc("GET /api/v1/me", h.APIMe)
 	m.HandleFunc("GET /api/v1/today", h.APIToday)
+	m.HandleFunc("GET /api/v1/levels/{market}", h.APILevelsGet)
+	m.HandleFunc("POST /api/v1/levels/{market}", h.APILevelsPost)
 	m.HandleFunc("GET /api/v1/devices", h.APIDevicesList)
 	m.HandleFunc("POST /api/v1/devices", h.APIDeviceRegister)
 	m.HandleFunc("PUT /api/v1/devices/{token}/prefs", h.APIDevicePrefs)

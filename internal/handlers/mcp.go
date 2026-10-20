@@ -253,6 +253,12 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id.")),
 		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday 'today' questions.")),
 	), h.mcpGetDailyStats)
+	s.AddTool(mcpgo.NewTool("get_levels",
+		mcpgo.WithReadOnlyHintAnnotation(true),
+		mcpgo.WithDescription("The day map of one market for a trading day: the reference levels (prior day high/low/close, overnight range, opening range, VWAP, volume profile when a chart posted it, daily ATR bands from the session anchor, floor and Camarilla pivots, prior week and month extremes, swing highs and lows on 30m to weekly, unfilled gaps, round numbers, gamma walls), each with its source (bars, chart, gex), the zones they fold into ranked by score, the expected range, and the day type (inside/outside/NR7/wide day, strong or weak close, gap, overnight against the prior range) with a lean and its reasons. Use it when planning a session or judging where a trade sat; scores rank, they do not forecast."),
+		mcpgo.WithString("market", mcpgo.Required(), mcpgo.Description("ES, NQ, YM, RTY, CL or GC; a micro root (MES, MNQ) is folded into its market.")),
+		mcpgo.WithString("day", mcpgo.Description("Trading day YYYY-MM-DD or today (default).")),
+	), h.mcpGetLevels)
 	s.AddTool(mcpgo.NewTool("get_analytics_summary",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("The /analytics page as one JSON object for a date range: totals (trades, win rate, net/gross/commission, avg win/loss, payoff ratio, profit factor, expectancy), R (over trades that carry a planned risk), excursion (MAE/MFE off cached bars: exit efficiency, heat on winners, profit losers gave back), compliance (playbook checklist per strategy: rules ticked, net with all rules vs rules missed), drawdown (max peak-to-trough, dates, days to recover, current), streaks (trades and days), and breakdowns by symbol, direction, strategy, tag, mistake label, emotion label, weekday and entry hour. Use it for 'how is my edge / where do I lose' questions instead of summing trade lists. Same date keywords and account rules as get_daily_stats; default range = last 30 days."),

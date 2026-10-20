@@ -100,6 +100,12 @@ type Handlers struct {
 	// Nil disables charting entirely (the mount points render nothing).
 	MarketData *marketdata.CachingSource
 
+	// levelsCache holds the day maps built lately (levels.go), per user,
+	// market and day, for a minute.
+	levelsMu     sync.Mutex
+	levelsCache  map[string]levelsCacheEntry
+	levelsPurged time.Time
+
 	// Prefetch is the background bar-cache warmer. The admin backfill action
 	// enqueues missing symbol-days through it. Nil when prefetch is disabled.
 	Prefetch *marketdata.Prefetcher

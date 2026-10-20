@@ -949,6 +949,11 @@ func run() error {
 	mux.HandleFunc("GET /analytics/lab", h.LabPage)
 	mux.HandleFunc("POST /analytics/lab/explain", h.LabExplain)
 	mux.HandleFunc("GET /data/version", h.DataVersion)
+	// The day map: reference levels per market and trading day.
+	mux.HandleFunc("GET /levels", h.LevelsPage)
+	mux.HandleFunc("GET /levels/data/{market}", h.LevelsData)
+	mux.HandleFunc("POST /levels/{market}/plan", h.LevelsToPlan)
+	mux.HandleFunc("GET /levels/{market}", h.LevelsPage)
 	mux.HandleFunc("GET /oi", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/{date}", h.OIDashboardPage)
 	mux.HandleFunc("GET /oi/file/{name}", h.OIDashboardFile)

@@ -263,6 +263,26 @@ type Lesson struct {
 	CreatedAt  time.Time  `json:"created_at"`
 }
 
+type LevelFeed struct {
+	ID         int64     `json:"id"`
+	UserID     int64     `json:"user_id"`
+	Market     string    `json:"market"`
+	TradeDay   string    `json:"trade_day"`
+	AsOf       time.Time `json:"as_of"`
+	ReceivedAt time.Time `json:"received_at"`
+	Contract   string    `json:"contract"`
+	Payload    string    `json:"payload"`
+}
+
+type LevelMap struct {
+	UserID   int64     `json:"user_id"`
+	Market   string    `json:"market"`
+	TradeDay string    `json:"trade_day"`
+	Phase    string    `json:"phase"`
+	AsOf     time.Time `json:"as_of"`
+	Data     string    `json:"data"`
+}
+
 type Nudge struct {
 	ID          int64      `json:"id"`
 	UserID      int64      `json:"user_id"`

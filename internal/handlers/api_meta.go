@@ -20,6 +20,8 @@ var apiIndexEndpoints = []map[string]string{
 	{"method": "POST", "path": "/api/v1/pair", "summary": "Exchange a pairing code from Settings for a device key (no key needed; the phone app's sign-in)"},
 	{"method": "GET", "path": "/api/v1/me", "summary": "The key's user, the server (version, timezone, features) and the user's settings"},
 	{"method": "GET", "path": "/api/v1/today", "summary": "The day in one object: stats, open positions and unrealised P&L, the plan and how much of it is used, nudges, the curve, equity"},
+	{"method": "GET", "path": "/api/v1/levels/{market}", "summary": "The day map of a market: reference levels, zones and the day type for a trading day (today by default)"},
+	{"method": "POST", "path": "/api/v1/levels/{market}", "summary": "The session map a MotiveWave chart posts (prior session, overnight, opening range, VWAP, profile, ATR bands, the mark); newest per day wins"},
 	{"method": "GET", "path": "/api/v1/devices", "summary": "The phones registered for push (device key)"},
 	{"method": "POST", "path": "/api/v1/devices", "summary": "Register a phone's push token with its notification settings (device key)"},
 	{"method": "PUT", "path": "/api/v1/devices/{token}/prefs", "summary": "Replace a phone's notification settings (device key)"},
