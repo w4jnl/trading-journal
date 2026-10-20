@@ -189,7 +189,9 @@ func (h *Handlers) levelMap(ctx context.Context, market, day string, now time.Ti
 			} else if !errors.Is(err, marketdata.ErrNoData) {
 				h.logger().Debug("levels: daily bars", "market", market, "err", err)
 			}
-			_ = h.MarketData.EnsureWindow(ctx, sym, asOf.AddDate(0, 0, -3), asOf)
+			if h.MarketData.Source != nil { // a cache without a vendor serves what it holds
+				_ = h.MarketData.EnsureWindow(ctx, sym, asOf.AddDate(0, 0, -3), asOf)
+			}
 			if bars, tf, err := h.MarketData.RecentBars(ctx, sym, levelsIntradayDays, asOf); err == nil && len(bars) > 0 {
 				in.Intraday, in.IntradayTF = bars, string(tf)
 				if tf.Duration() <= 5*time.Minute {
