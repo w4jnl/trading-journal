@@ -10,7 +10,9 @@ the paths in `config.yaml`; `config.example.yaml` lists every key with a comment
 
 The image `ghcr.io/w4jnl/trading-journal` is built for linux/amd64 and linux/arm64 on every
 release (tags `vX.Y.Z`, `vX.Y`, `vX`, `latest`), from distroless `static`: no shell, runs as
-uid 65532. `Docker/docker-compose.yml` is the deploy recipe:
+uid 65532. A development image from main between releases is one command away,
+`gh workflow run docker.yml --ref main`, and comes out as `:dev` (plus `:main` and the short
+sha); `:dev` moves with every such run, so pin the sha for anything that must stay put. `Docker/docker-compose.yml` is the deploy recipe:
 
 ```sh
 git clone git@github.com:w4jnl/trading-journal.git && cd trading-journal/Docker
