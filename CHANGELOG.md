@@ -17,7 +17,8 @@ built against it carries the same marketing version.
   wide, strong or weak close, the gap, the overnight against the prior range) into a lean with
   its reasons. A ladder, the strongest zones, daily, weekly and intraday charts with the zones
   drawn, and one button that writes the zones into the day plan's levels. Scores rank, they do
-  not forecast; each day's map is kept so a past day opens as it stood.
+  not forecast; each day's map is kept so a past day opens as it stood. Settings > Levels pins
+  the markets to keep on the page besides the ones traded lately.
 - `POST /api/v1/levels/{market}` takes the session map a MotiveWave chart posts (contract in
   `docs/api-handoff-002-levels-feed.md`: prior session, overnight, opening range, VWAP bands,
   volume profile, ATR bands and the mark); the newest post per market and day overlays the

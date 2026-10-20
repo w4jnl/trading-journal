@@ -87,6 +87,7 @@ func levelsMux(h *Handlers) *http.ServeMux {
 	mux.HandleFunc("GET /levels/data/{market}", h.LevelsData)
 	mux.HandleFunc("POST /levels/{market}/plan", h.LevelsToPlan)
 	mux.HandleFunc("GET /levels/{market}", h.LevelsPage)
+	mux.HandleFunc("POST /settings/levels", h.SettingsLevelsSave)
 	mux.HandleFunc("GET /api/v1/levels/{market}", h.APILevelsGet)
 	mux.HandleFunc("POST /api/v1/levels/{market}", h.APILevelsPost)
 	return mux
@@ -218,5 +219,38 @@ func TestLevelsMapFeedAndPlan(t *testing.T) {
 	p2, _ := dayplan.Get(ctx, h.Queries, uid, day)
 	if p2 == nil || !strings.Contains(p2.Levels, "From the map") || !strings.HasPrefix(p2.Levels, p.Levels) {
 		t.Errorf("second run = %+v", p2)
+	}
+}
+
+// The markets on the page are the ones traded lately plus the ones pinned
+// on Settings; the pin survives a save with nothing ticked as an empty list.
+func TestLevelsPinnedMarkets(t *testing.T) {
+	h, ctx, _, _ := levelsFixture(t)
+	mux := levelsMux(h)
+	if got := h.levelsMarkets(ctx, "2026-10-20"); len(got) != 1 || got[0] != "ES" {
+		t.Fatalf("markets traded = %v, want [ES]", got)
+	}
+	post := func(form string) int {
+		req := httptest.NewRequest(http.MethodPost, "/settings/levels", strings.NewReader(form)).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := post("market=NQ&market=GC&market=SPX&market=NQ"); code != http.StatusSeeOther {
+		t.Fatalf("save = %d", code)
+	}
+	if got := h.levelsMarkets(ctx, "2026-10-20"); strings.Join(got, ",") != "ES,NQ,GC" {
+		t.Errorf("markets after the pin = %v, want ES,NQ,GC in display order (SPX dropped, NQ once)", got)
+	}
+	body := serve(ctx, mux, http.MethodGet, "/levels/NQ").Body.String()
+	if !strings.Contains(body, `href="/levels/NQ?day=`) || !strings.Contains(body, "Levels · NQ") {
+		t.Errorf("NQ not on the page after the pin")
+	}
+	if code := post(""); code != http.StatusSeeOther {
+		t.Fatalf("clear = %d", code)
+	}
+	if got := h.levelsMarkets(ctx, "2026-10-20"); len(got) != 1 {
+		t.Errorf("markets after clearing = %v", got)
 	}
 }

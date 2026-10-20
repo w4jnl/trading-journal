@@ -893,6 +893,7 @@ func run() error {
 	mux.HandleFunc("POST /settings/ai/chart", h.SettingsAIChartSave)
 	mux.HandleFunc("POST /settings/ai/autoplan", h.SettingsAIAutoPlanSave)
 	mux.HandleFunc("POST /settings/guardrail", h.SettingsGuardrailSave)
+	mux.HandleFunc("POST /settings/levels", h.SettingsLevelsSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
 	mux.HandleFunc("POST /settings/topstepx/test", h.SettingsTopstepxTest)

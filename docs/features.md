@@ -22,7 +22,9 @@ and lows from 30-minute to weekly bars, unfilled gaps and round numbers from the
 bars, the gamma engine's walls, and the session map a MotiveWave chart posts (the W4J Journal
 Feed study), which wins where both know a level. Levels fold into scored zones, a day-type
 card reads the prior day and the overnight into a lean with its reasons, charts draw the
-zones, and one button writes them into the day plan. The scores rank; they do not forecast.
+zones, and one button writes them into the day plan. The page covers the markets traded in the
+last thirty days plus the ones pinned under Settings > Levels. The scores rank; they do not
+forecast.
 
 **Copy sets.** One decision fanned across accounts by a copytrader (same underlying, same
 direction, entries within two seconds, two or more accounts) forms a set. `/trades` can list by

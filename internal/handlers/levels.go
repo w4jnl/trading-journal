@@ -42,11 +42,68 @@ type levelsCacheEntry struct {
 	at time.Time
 }
 
+// levelsPrefPage is the view preference that holds the markets the user
+// pinned on Settings, comma-separated.
+const levelsPrefPage = "levels.markets"
+
+// levelsPinned are the markets the user asked for on Settings, whatever
+// they traded.
+func (h *Handlers) levelsPinned(ctx context.Context) []string {
+	if h.Queries == nil {
+		return nil
+	}
+	v, err := h.Queries.GetViewPref(ctx, models.GetViewPrefParams{UserID: userID(ctx), Page: levelsPrefPage})
+	if err != nil {
+		return nil
+	}
+	var out []string
+	for _, m := range strings.Split(v, ",") {
+		if levelmap.IsMarket(m) {
+			out = append(out, m)
+		}
+	}
+	return out
+}
+
+// levelsPinnedSet is the pinned list as a set, for the Settings card.
+func (h *Handlers) levelsPinnedSet(ctx context.Context) map[string]bool {
+	out := map[string]bool{}
+	for _, m := range h.levelsPinned(ctx) {
+		out[m] = true
+	}
+	return out
+}
+
+// SettingsLevelsSave: POST /settings/levels - the markets to keep on the
+// Levels page besides the ones traded lately.
+func (h *Handlers) SettingsLevelsSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	var keep []string
+	for _, m := range r.PostForm["market"] {
+		if levelmap.IsMarket(m) && !hasString(keep, m) {
+			keep = append(keep, m)
+		}
+	}
+	if err := h.Queries.UpsertViewPref(ctx, models.UpsertViewPrefParams{UserID: userID(ctx), Page: levelsPrefPage, Value: strings.Join(keep, ","), UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		h.serverError(w, err)
+		return
+	}
+	http.Redirect(w, r, "/settings?flash=levels#levels", http.StatusSeeOther)
+}
+
 // levelsMarkets are the markets the user gets a map for: the full-size
-// roots of what they traded in the last thirty days, plus any market a
-// chart posted for the day, in the map's display order.
+// roots of what they traded in the last thirty days, the markets pinned on
+// Settings, plus any market a chart posted for the day, in the map's
+// display order.
 func (h *Handlers) levelsMarkets(ctx context.Context, day string) []string {
 	want := map[string]bool{}
+	for _, m := range h.levelsPinned(ctx) {
+		want[m] = true
+	}
 	rows, err := h.rdb().QueryContext(ctx, `
 		SELECT DISTINCT e.symbol_root FROM executions e
 		JOIN accounts a ON a.id = e.account_id
