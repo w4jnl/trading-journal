@@ -177,6 +177,59 @@ func (q *Queries) ListLevelFeedMarkets(ctx context.Context, arg ListLevelFeedMar
 	return items, nil
 }
 
+const listLevelFeedsNewest = `-- name: ListLevelFeedsNewest :many
+SELECT id, user_id, market, trade_day, as_of, received_at, contract, payload FROM level_feeds
+WHERE user_id = ? AND market = ? AND trade_day = ?
+ORDER BY as_of DESC, id DESC
+LIMIT ?
+`
+
+type ListLevelFeedsNewestParams struct {
+	UserID   int64  `json:"user_id"`
+	Market   string `json:"market"`
+	TradeDay string `json:"trade_day"`
+	Limit    int64  `json:"limit"`
+}
+
+// The newest posts for the user, market and trading day, newest first:
+// the caller breaks a tie on as_of by the fuller post.
+func (q *Queries) ListLevelFeedsNewest(ctx context.Context, arg ListLevelFeedsNewestParams) ([]LevelFeed, error) {
+	rows, err := q.db.QueryContext(ctx, listLevelFeedsNewest,
+		arg.UserID,
+		arg.Market,
+		arg.TradeDay,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []LevelFeed
+	for rows.Next() {
+		var i LevelFeed
+		if err := rows.Scan(
+			&i.ID,
+			&i.UserID,
+			&i.Market,
+			&i.TradeDay,
+			&i.AsOf,
+			&i.ReceivedAt,
+			&i.Contract,
+			&i.Payload,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listLevelMapDays = `-- name: ListLevelMapDays :many
 SELECT DISTINCT trade_day FROM level_maps
 WHERE user_id = ? AND market = ?

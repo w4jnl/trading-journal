@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -199,13 +198,10 @@ func (h *Handlers) levelMap(ctx context.Context, market, day string, now time.Ti
 			}
 		}
 	}
-	if row, err := h.Queries.LatestLevelFeed(ctx, models.LatestLevelFeedParams{UserID: uid, Market: market, TradeDay: day}); err == nil {
-		var f levelmap.Feed
-		if json.Unmarshal([]byte(row.Payload), &f) == nil {
-			in.Feed = &f
-		}
-	} else if !errors.Is(err, sql.ErrNoRows) {
-		return nil, fmt.Errorf("levels: feed: %w", err)
+	if f, err := h.newestFeed(ctx, uid, market, day); err != nil {
+		return nil, err
+	} else if f != nil {
+		in.Feed = f
 	}
 	if lv, at := h.gammaLevels(ctx, market, asOf, levelsGammaMaxAge); len(lv) > 0 {
 		for _, g := range lv {
@@ -225,6 +221,31 @@ func (h *Handlers) levelMap(ctx context.Context, market, day string, now time.Ti
 		}
 	}
 	return &m, nil
+}
+
+// newestFeed is the post the map shows: the newest asOf for the market
+// and day and, when two charts posted the same second, the one carrying
+// more fields (then the later insert).
+func (h *Handlers) newestFeed(ctx context.Context, uid int64, market, day string) (*levelmap.Feed, error) {
+	rows, err := h.Queries.ListLevelFeedsNewest(ctx, models.ListLevelFeedsNewestParams{UserID: uid, Market: market, TradeDay: day, Limit: 8})
+	if err != nil {
+		return nil, fmt.Errorf("levels: feed: %w", err)
+	}
+	var best *levelmap.Feed
+	bestN := -1
+	for _, row := range rows {
+		if !row.AsOf.Equal(rows[0].AsOf) {
+			break
+		}
+		var f levelmap.Feed
+		if json.Unmarshal([]byte(row.Payload), &f) != nil {
+			continue
+		}
+		if n := f.Fields(); n > bestN {
+			best, bestN = &f, n
+		}
+	}
+	return best, nil
 }
 
 func (h *Handlers) rthOpenPassed(now time.Time) bool {

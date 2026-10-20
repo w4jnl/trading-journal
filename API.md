@@ -1270,7 +1270,7 @@ RFC 3339 `asOf`, the `mark` (last price) and optional `session`, `vwap`,
 `docs/api-handoff-002-levels-feed.md`. The trading day is derived from
 `asOf` (17:00 Chicago rolls to the next day). Every accepted post is kept
 for thirty days; the newest `asOf` per market and day is what the map
-shows. `202 {"ok": true, "market": "ES", "tradeDay": "...", "receivedAt":
+shows, and on the same second the post carrying more fields. `202 {"ok": true, "market": "ES", "tradeDay": "...", "receivedAt":
 "...", "newest": true}`; `400` on a shape problem (missing fields, a clock
 off by more than five minutes forward or three days back, a price that is
 not positive), `413` over 16 KB. Any key may post. The MCP tool

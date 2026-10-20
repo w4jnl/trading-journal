@@ -109,7 +109,9 @@ assistants.
 - **Latest wins.** The journal keeps the newest `asOf` per market and trading
   day as the map's chart overlay and logs every accepted post for 30 days.
   Several charts may post for the same market (two ES charts, an MES chart):
-  all are accepted, the newest `asOf` shows. No coordination needed.
+  all are accepted, the newest `asOf` shows; on the same second the post
+  carrying more fields shows (`newest` in the answer says which). No
+  coordination needed, though one feed chart per market is the intent.
 - **Partial is fine.** Before the RTH open there is no `or`; before the
   profile is built there is no `poc`. Leave the block out rather than sending
   zeros. A zero or negative price is a 400.

@@ -135,6 +135,44 @@ func (f *Feed) Validate(now time.Time) error {
 
 func positive(v float64) bool { return v > 0 && v < 1e9 }
 
+// Fields counts what a post carries, so two posts with the same asOf (two
+// charts of one market) can be ranked: the fuller one shows.
+func (f *Feed) Fields() int {
+	if f == nil {
+		return 0
+	}
+	n := 0
+	if f.Mark > 0 {
+		n++
+	}
+	if s := f.Session; s != nil {
+		for _, p := range []*float64{s.Pdh, s.Pdl, s.Pdc, s.Onh, s.Onl, s.Poc, s.Vah, s.Val} {
+			if p != nil {
+				n++
+			}
+		}
+		if s.OR != nil {
+			n += 2
+		}
+	}
+	if v := f.VWAP; v != nil {
+		n++
+		if v.SD1 > 0 {
+			n++
+		}
+		if v.SD2 > 0 {
+			n++
+		}
+	}
+	if a := f.ATR; a != nil {
+		n++
+		if a.Anchor > 0 {
+			n++
+		}
+	}
+	return n
+}
+
 // overrideFromFeed drops the bar-derived session levels the chart knows
 // better and returns the chart's own: the replacements, the profile, the
 // VWAP bands.

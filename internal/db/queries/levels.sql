@@ -13,6 +13,14 @@ WHERE user_id = ? AND market = ? AND trade_day = ?
 ORDER BY as_of DESC, id DESC
 LIMIT 1;
 
+-- name: ListLevelFeedsNewest :many
+-- The newest posts for the user, market and trading day, newest first:
+-- the caller breaks a tie on as_of by the fuller post.
+SELECT * FROM level_feeds
+WHERE user_id = ? AND market = ? AND trade_day = ?
+ORDER BY as_of DESC, id DESC
+LIMIT ?;
+
 -- name: ListLevelFeedDays :many
 -- The trading days a market has posts for, newest first.
 SELECT DISTINCT trade_day FROM level_feeds

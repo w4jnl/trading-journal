@@ -40,9 +40,13 @@ func (h *Handlers) APILevelsPost(w http.ResponseWriter, r *http.Request) {
 	}
 	uid := userID(ctx)
 	day := levelmap.TradingDay(f.AsOf, h.chicago())
+	// Newest: a later asOf than anything held, or the same second with
+	// more fields than the post that would otherwise show.
 	newest := true
-	if cur, err := h.Queries.LatestLevelFeed(ctx, models.LatestLevelFeedParams{UserID: uid, Market: market, TradeDay: day}); err == nil && cur.AsOf.After(f.AsOf) {
-		newest = false
+	if cur, err := h.newestFeed(ctx, uid, market, day); err == nil && cur != nil {
+		if cur.AsOf.After(f.AsOf) || (cur.AsOf.Equal(f.AsOf) && cur.Fields() >= f.Fields()) {
+			newest = false
+		}
 	}
 	payload, _ := json.Marshal(f)
 	if _, err := h.Queries.InsertLevelFeed(ctx, models.InsertLevelFeedParams{UserID: uid, Market: market, TradeDay: day, AsOf: f.AsOf.UTC(), ReceivedAt: now.UTC(), Contract: f.Contract, Payload: string(payload)}); err != nil {

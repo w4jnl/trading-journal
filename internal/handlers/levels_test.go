@@ -177,6 +177,20 @@ func TestLevelsMapFeedAndPlan(t *testing.T) {
 	if l := find("pdh"); l == nil || l.Price != 6901.5 {
 		t.Errorf("older post replaced the newest: %+v", l)
 	}
+	// Two charts posting the same second: the fuller post shows, whichever
+	// order they arrive in.
+	thin := `{"contract":"ESZ6","asOf":"` + asOf + `","mark":6850.25,"session":{"onh":6000,"onl":5990}}`
+	if rec := postJSON(ctx, mux, "/api/v1/levels/ES", thin); rec.Code != http.StatusAccepted || !strings.Contains(rec.Body.String(), `"newest":false`) {
+		t.Errorf("thin post at the same second = %d %s, want accepted but not newest", rec.Code, rec.Body.String())
+	}
+	rec = serve(ctx, mux, http.MethodGet, "/api/v1/levels/ES")
+	_ = json.Unmarshal(rec.Body.Bytes(), &m)
+	if l := find("onh"); l == nil || l.Price == 6000 {
+		t.Errorf("the thin post replaced the full one: %+v", l)
+	}
+	if l := find("pdh"); l == nil || l.Price != 6901.5 {
+		t.Errorf("pdh after the thin post = %+v", l)
+	}
 	for name, body := range map[string]string{
 		"no mark":   `{"contract":"ESZ6","asOf":"` + asOf + `"}`,
 		"bad price": `{"contract":"ESZ6","asOf":"` + asOf + `","mark":1,"session":{"pdl":-3}}`,
