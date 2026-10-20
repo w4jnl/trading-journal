@@ -23,7 +23,8 @@ built against it carries the same marketing version.
   `docs/api-handoff-002-levels-feed.md`: prior session, overnight, opening range, VWAP bands,
   volume profile, ATR bands and the mark); the newest post per market and day overlays the
   map with source `chart`. `GET /api/v1/levels/{market}?day=` and the MCP tool `get_levels`
-  answer the merged map. New tables `level_feeds` and `level_maps`.
+  answer the merged map. The feed is shared across the instance's users, and the page refreshes
+  its regions when a new post lands. New tables `level_feeds` and `level_maps`.
 
 ### Web
 

@@ -14,10 +14,11 @@ ORDER BY as_of DESC, id DESC
 LIMIT 1;
 
 -- name: ListLevelFeedsNewest :many
--- The newest posts for the user, market and trading day, newest first:
--- the caller breaks a tie on as_of by the fuller post.
+-- The newest posts for the market and trading day from any user of the
+-- instance (a chart's session map is market data, not a trader's), newest
+-- first: the caller breaks a tie on as_of by the fuller post.
 SELECT * FROM level_feeds
-WHERE user_id = ? AND market = ? AND trade_day = ?
+WHERE market = ? AND trade_day = ?
 ORDER BY as_of DESC, id DESC
 LIMIT ?;
 
@@ -29,9 +30,9 @@ ORDER BY trade_day DESC
 LIMIT ?;
 
 -- name: ListLevelFeedMarkets :many
--- The markets with a post on the trading day.
+-- The markets with a post on the trading day, from any user.
 SELECT DISTINCT market FROM level_feeds
-WHERE user_id = ? AND trade_day = ?
+WHERE trade_day = ?
 ORDER BY market;
 
 -- name: PurgeLevelFeeds :execrows

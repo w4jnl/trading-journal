@@ -43,7 +43,7 @@ func (h *Handlers) APILevelsPost(w http.ResponseWriter, r *http.Request) {
 	// Newest: a later asOf than anything held, or the same second with
 	// more fields than the post that would otherwise show.
 	newest := true
-	if cur, err := h.newestFeed(ctx, uid, market, day); err == nil && cur != nil {
+	if cur, _, err := h.newestFeed(ctx, market, day); err == nil && cur != nil {
 		if cur.AsOf.After(f.AsOf) || (cur.AsOf.Equal(f.AsOf) && cur.Fields() >= f.Fields()) {
 			newest = false
 		}
@@ -54,7 +54,7 @@ func (h *Handlers) APILevelsPost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if newest {
-		h.forgetLevels(uid, market, day)
+		h.forgetLevels(market, day)
 	}
 	h.levelsPurge(ctx, now)
 	writeJSON(w, http.StatusAccepted, map[string]any{"ok": true, "market": market, "tradeDay": day, "receivedAt": now.UTC(), "newest": newest})

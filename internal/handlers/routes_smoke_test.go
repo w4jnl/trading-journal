@@ -182,6 +182,7 @@ func (f *smokeFixture) routes() []smokeRoute {
 		{"/data/version", hf(h.DataVersion), true, ""},
 		{"/levels", hf(h.LevelsPage), true, ""},
 		{"/levels/data/{market}", hf(h.LevelsData), false, ""},
+		{"/levels/version/{market}", hf(h.LevelsVersion), false, ""},
 		{"/levels/{market}", hf(h.LevelsPage), true, ""},
 		{"/oi", hf(h.OIDashboardPage), true, ""},
 		{"/oi/{date}", hf(h.OIDashboardPage), false, ""},

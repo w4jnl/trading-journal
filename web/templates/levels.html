@@ -2,6 +2,7 @@
 
 {{define "content"}}
 {{template "back_button" .}}
+{{template "live_refresh" .}}
 <style>
   .lv-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
   .lv-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
@@ -74,6 +75,15 @@
   </div>
 </div>
 
+{{template "levels_live" .}}
+{{end}}
+
+{{/* The live region: everything the map draws. A chart's post makes the
+     page fetch ?fragment=1 and swap this in (levels.js polls the feed id);
+     the script inside re-runs on the swap and redraws the ladder and the
+     charts from the fresh island. */}}
+{{define "levels_live"}}
+<div id="lv-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
 {{if not .HasMap}}
 <div class="card card--warn mt-16">
   <p style="margin: 0 0 6px;">No map for {{.Market}} on {{.Day}} yet.</p>
@@ -198,7 +208,14 @@
     </table>
   </div>
 </div>
+{{end}}
 <script type="application/json" id="levels-page-data">{{.PageJSON}}</script>
 <script src="/static/js/levels.js" defer></script>
+</div>
 {{end}}
+
+{{define "levels_fragment"}}
+{{template "levels_live" .}}
+{{template "live_refresh_oob" .}}
+{{template "nav_open_badge_oob" .}}
 {{end}}

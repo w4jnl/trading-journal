@@ -85,6 +85,7 @@ func levelsMux(h *Handlers) *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /levels", h.LevelsPage)
 	mux.HandleFunc("GET /levels/data/{market}", h.LevelsData)
+	mux.HandleFunc("GET /levels/version/{market}", h.LevelsVersion)
 	mux.HandleFunc("POST /levels/{market}/plan", h.LevelsToPlan)
 	mux.HandleFunc("GET /levels/{market}", h.LevelsPage)
 	mux.HandleFunc("POST /settings/levels", h.SettingsLevelsSave)
@@ -266,5 +267,46 @@ func TestLevelsPinnedMarkets(t *testing.T) {
 	}
 	if got := h.levelsMarkets(ctx, "2026-10-20"); len(got) != 1 {
 		t.Errorf("markets after clearing = %v", got)
+	}
+}
+
+// The feed is shared across the instance's users: a chart posted under one
+// user's key overlays every user's map; the version endpoint names the post
+// a page would draw, and the fragment re-renders the live region.
+func TestLevelsFeedSharedAndLive(t *testing.T) {
+	h, ctx, _, day := levelsFixture(t)
+	mux := levelsMux(h)
+	second, err := h.Queries.CreateUser(context.Background(), models.CreateUserParams{Username: "second"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := second.ID
+	octx := auth.WithUser(context.Background(), &auth.User{ID: other, Username: "second", DisplayName: "Second"})
+	rec := serve(ctx, mux, http.MethodGet, "/levels/version/ES")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"feedId":0`) {
+		t.Fatalf("version before any post = %d %s", rec.Code, rec.Body.String())
+	}
+	asOf := time.Now().UTC().Add(-time.Minute).Format(time.RFC3339)
+	if rec := postJSON(octx, mux, "/api/v1/levels/ES", `{"contract":"ESZ6","asOf":"`+asOf+`","mark":6850.25,"session":{"pdh":6901.5}}`); rec.Code != http.StatusAccepted {
+		t.Fatalf("post by the second user = %d %s", rec.Code, rec.Body.String())
+	}
+	rec = serve(ctx, mux, http.MethodGet, "/levels/version/ES")
+	if !strings.Contains(rec.Body.String(), `"feedId":1`) {
+		t.Errorf("version after the post = %s", rec.Body.String())
+	}
+	var m levelmap.Map
+	rec = serve(ctx, mux, http.MethodGet, "/api/v1/levels/ES")
+	_ = json.Unmarshal(rec.Body.Bytes(), &m)
+	if !m.Sources.Chart || m.Sources.Contract != "ESZ6" {
+		t.Errorf("the first user does not see the second user's post: %+v", m.Sources)
+	}
+	page := serve(ctx, mux, http.MethodGet, "/levels/ES?day="+day+"&fragment=1")
+	body := page.Body.String()
+	if page.Code != http.StatusOK || !strings.Contains(body, `id="lv-live" hx-swap-oob="outerHTML"`) || !strings.Contains(body, `id="live-refresh"`) || !strings.Contains(body, `"feedId":1`) || strings.Contains(body, "<html") {
+		t.Errorf("fragment = %d %q", page.Code, between(body, "<div id=\"lv-live\"", ">"))
+	}
+	full := serve(ctx, mux, http.MethodGet, "/levels/ES").Body.String()
+	if !strings.Contains(full, `id="lv-live">`) || !strings.Contains(full, `"versionURL":"/levels/version/ES?day=`) {
+		t.Errorf("page lacks the live region or the version URL")
 	}
 }

@@ -112,6 +112,9 @@ assistants.
   all are accepted, the newest `asOf` shows; on the same second the post
   carrying more fields shows (`newest` in the answer says which). No
   coordination needed, though one feed chart per market is the intent.
+- **Shared.** The feed is instance-wide: a post under any user's key overlays
+  every user's map (the posting user is recorded). One study instance feeds
+  the whole journal.
 - **Partial is fine.** Before the RTH open there is no `or`; before the
   profile is built there is no `poc`. Leave the block out rather than sending
   zeros. A zero or negative price is a 400.

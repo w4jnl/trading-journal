@@ -184,9 +184,34 @@
     });
     host.addEventListener("pointerup", function () { pan = null; });
     host.addEventListener("pointercancel", function () { pan = null; });
+    if (window.__lvResize) window.removeEventListener("resize", window.__lvResize);
+    window.__lvResize = render;
     window.addEventListener("resize", render);
     render();
   }
+
+  // ---- Keep the page current: while the day is today, ask every 20 s which
+  // post the map would show; a new one means a chart posted, and the live
+  // region is fetched again and swapped in (the way live_refresh.js does for
+  // the data version), which re-runs this script on the fresh island.
+  function watchFeed() {
+    if (!page.live || !page.versionURL) return;
+    if (window.__lvWatch) clearInterval(window.__lvWatch);
+    window.__lvWatch = setInterval(function () {
+      if (document.hidden || !window.htmx) return;
+      fetch(page.versionURL, { credentials: "same-origin", headers: { Accept: "application/json" } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (v) {
+          if (!v || v.feedId === page.feedId) return;
+          clearInterval(window.__lvWatch);
+          window.__lvWatch = null;
+          var url = location.pathname + location.search + (location.search ? "&" : "?") + "fragment=1";
+          window.htmx.ajax("GET", url, { target: "body", swap: "none" }).catch(function () { watchFeed(); });
+        })
+        .catch(function () { /* next tick */ });
+    }, 20000);
+  }
+  watchFeed();
 
   fetch(page.dataURL, { credentials: "same-origin", headers: { Accept: "application/json" } })
     .then(function (r) { if (!r.ok) throw new Error("levels data " + r.status); return r.json(); })

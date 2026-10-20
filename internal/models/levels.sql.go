@@ -144,18 +144,13 @@ func (q *Queries) ListLevelFeedDays(ctx context.Context, arg ListLevelFeedDaysPa
 
 const listLevelFeedMarkets = `-- name: ListLevelFeedMarkets :many
 SELECT DISTINCT market FROM level_feeds
-WHERE user_id = ? AND trade_day = ?
+WHERE trade_day = ?
 ORDER BY market
 `
 
-type ListLevelFeedMarketsParams struct {
-	UserID   int64  `json:"user_id"`
-	TradeDay string `json:"trade_day"`
-}
-
-// The markets with a post on the trading day.
-func (q *Queries) ListLevelFeedMarkets(ctx context.Context, arg ListLevelFeedMarketsParams) ([]string, error) {
-	rows, err := q.db.QueryContext(ctx, listLevelFeedMarkets, arg.UserID, arg.TradeDay)
+// The markets with a post on the trading day, from any user.
+func (q *Queries) ListLevelFeedMarkets(ctx context.Context, tradeDay string) ([]string, error) {
+	rows, err := q.db.QueryContext(ctx, listLevelFeedMarkets, tradeDay)
 	if err != nil {
 		return nil, err
 	}
@@ -179,27 +174,22 @@ func (q *Queries) ListLevelFeedMarkets(ctx context.Context, arg ListLevelFeedMar
 
 const listLevelFeedsNewest = `-- name: ListLevelFeedsNewest :many
 SELECT id, user_id, market, trade_day, as_of, received_at, contract, payload FROM level_feeds
-WHERE user_id = ? AND market = ? AND trade_day = ?
+WHERE market = ? AND trade_day = ?
 ORDER BY as_of DESC, id DESC
 LIMIT ?
 `
 
 type ListLevelFeedsNewestParams struct {
-	UserID   int64  `json:"user_id"`
 	Market   string `json:"market"`
 	TradeDay string `json:"trade_day"`
 	Limit    int64  `json:"limit"`
 }
 
-// The newest posts for the user, market and trading day, newest first:
-// the caller breaks a tie on as_of by the fuller post.
+// The newest posts for the market and trading day from any user of the
+// instance (a chart's session map is market data, not a trader's), newest
+// first: the caller breaks a tie on as_of by the fuller post.
 func (q *Queries) ListLevelFeedsNewest(ctx context.Context, arg ListLevelFeedsNewestParams) ([]LevelFeed, error) {
-	rows, err := q.db.QueryContext(ctx, listLevelFeedsNewest,
-		arg.UserID,
-		arg.Market,
-		arg.TradeDay,
-		arg.Limit,
-	)
+	rows, err := q.db.QueryContext(ctx, listLevelFeedsNewest, arg.Market, arg.TradeDay, arg.Limit)
 	if err != nil {
 		return nil, err
 	}

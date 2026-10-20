@@ -119,7 +119,7 @@ func (h *Handlers) levelsMarkets(ctx context.Context, day string) []string {
 		}
 		rows.Close()
 	}
-	if fed, err := h.Queries.ListLevelFeedMarkets(ctx, models.ListLevelFeedMarketsParams{UserID: userID(ctx), TradeDay: day}); err == nil {
+	if fed, err := h.Queries.ListLevelFeedMarkets(ctx, day); err == nil {
 		for _, m := range fed {
 			want[m] = true
 		}
@@ -198,7 +198,7 @@ func (h *Handlers) levelMap(ctx context.Context, market, day string, now time.Ti
 			}
 		}
 	}
-	if f, err := h.newestFeed(ctx, uid, market, day); err != nil {
+	if f, _, err := h.newestFeed(ctx, market, day); err != nil {
 		return nil, err
 	} else if f != nil {
 		in.Feed = f
@@ -224,14 +224,17 @@ func (h *Handlers) levelMap(ctx context.Context, market, day string, now time.Ti
 }
 
 // newestFeed is the post the map shows: the newest asOf for the market
-// and day and, when two charts posted the same second, the one carrying
-// more fields (then the later insert).
-func (h *Handlers) newestFeed(ctx context.Context, uid int64, market, day string) (*levelmap.Feed, error) {
-	rows, err := h.Queries.ListLevelFeedsNewest(ctx, models.ListLevelFeedsNewestParams{UserID: uid, Market: market, TradeDay: day, Limit: 8})
+// and day from any user of the instance (the chart's session map is
+// market data, not a trader's) and, when two charts posted the same
+// second, the one carrying more fields (then the later insert). The id
+// rides along so a page can tell a new post from the one it drew.
+func (h *Handlers) newestFeed(ctx context.Context, market, day string) (*levelmap.Feed, int64, error) {
+	rows, err := h.Queries.ListLevelFeedsNewest(ctx, models.ListLevelFeedsNewestParams{Market: market, TradeDay: day, Limit: 8})
 	if err != nil {
-		return nil, fmt.Errorf("levels: feed: %w", err)
+		return nil, 0, fmt.Errorf("levels: feed: %w", err)
 	}
 	var best *levelmap.Feed
+	var bestID int64
 	bestN := -1
 	for _, row := range rows {
 		if !row.AsOf.Equal(rows[0].AsOf) {
@@ -242,10 +245,10 @@ func (h *Handlers) newestFeed(ctx context.Context, uid int64, market, day string
 			continue
 		}
 		if n := f.Fields(); n > bestN {
-			best, bestN = &f, n
+			best, bestID, bestN = &f, row.ID, n
 		}
 	}
-	return best, nil
+	return best, bestID, nil
 }
 
 func (h *Handlers) rthOpenPassed(now time.Time) bool {
@@ -262,10 +265,16 @@ func (h *Handlers) rememberLevels(key string, m *levelmap.Map, now time.Time) {
 	h.levelsMu.Unlock()
 }
 
-// forgetLevels drops a market's cached maps: a post arrived.
-func (h *Handlers) forgetLevels(uid int64, market, day string) {
+// forgetLevels drops every user's cached map of the market and day: a
+// post arrived, and the feed is shared.
+func (h *Handlers) forgetLevels(market, day string) {
+	suffix := "|" + market + "|" + day
 	h.levelsMu.Lock()
-	delete(h.levelsCache, fmt.Sprintf("%d|%s|%s", uid, market, day))
+	for k := range h.levelsCache {
+		if strings.HasSuffix(k, suffix) {
+			delete(h.levelsCache, k)
+		}
+	}
 	h.levelsMu.Unlock()
 }
 
@@ -402,10 +411,35 @@ func (h *Handlers) LevelsPage(w http.ResponseWriter, r *http.Request) {
 		data["GexAt"] = m.Sources.GexAt.In(h.localTZ()).Format("15:04")
 	}
 	data["PlanLines"] = planLines(m, 10)
-	if page, err := json.Marshal(map[string]any{"market": market, "day": day, "dataURL": "/levels/data/" + market + "?day=" + day}); err == nil {
+	_, feedID, _ := h.newestFeed(ctx, market, day)
+	if page, err := json.Marshal(map[string]any{"market": market, "day": day, "dataURL": "/levels/data/" + market + "?day=" + day,
+		"versionURL": "/levels/version/" + market + "?day=" + day, "feedId": feedID, "live": day == today}); err == nil {
 		data["PageJSON"] = template.JS(page) // a JSON island: not a JS string
 	}
+	if liveFragment(r) {
+		h.renderPageFragment(w, r, "levels.html", "levels_fragment", data)
+		return
+	}
 	h.renderPage(w, r, "levels.html", data)
+}
+
+// LevelsVersion: GET /levels/version/{market}?day= - the id of the post the
+// map would show now, for the page's poll: a change means a chart posted
+// and the page refreshes its regions.
+func (h *Handlers) LevelsVersion(w http.ResponseWriter, r *http.Request) {
+	market := r.PathValue("market")
+	day, ok := h.levelsDay(r, time.Now())
+	if !ok || !levelmap.IsMarket(market) {
+		writeJSONError(w, http.StatusBadRequest, "unknown market or bad day")
+		return
+	}
+	_, id, err := h.newestFeed(r.Context(), market, day)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "levels unavailable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"feedId": id})
 }
 
 func prevTradingDay(day string) string {
