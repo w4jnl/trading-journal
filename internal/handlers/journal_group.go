@@ -49,7 +49,9 @@ func signedMoney(v float64) string {
 // NetPnl-NULL trades count toward N but contribute 0 to the money totals —
 // same convention as elsewhere when a stub instrument hasn't been configured.
 type GroupSummary struct {
-	N          int64
+	N      int64 // rows: trades, or decisions when the trader groups by set
+	Trades int64 // trades behind the rows
+
 	Net        float64
 	Gross      float64
 	Commission float64
@@ -75,6 +77,7 @@ type linkedTrade struct {
 	GrossPnl    *float64
 	Commission  *float64
 	NetPnl      *float64
+	SetID       *int64 // the copy set the trade belongs to, nil for a lone trade
 }
 
 // summarizeTradeRows folds a slice of linkedTrade into the same shape as
@@ -85,6 +88,7 @@ func summarizeTradeRows(trades []linkedTrade) GroupSummary {
 	var s GroupSummary
 	for _, t := range trades {
 		s.N++
+		s.Trades++
 		if t.GrossPnl != nil {
 			s.Gross += *t.GrossPnl
 		}
@@ -120,9 +124,10 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 	fromU, toU := dayBoundsUTC(date)
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, m.set_id
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
+		LEFT JOIN trade_set_members m ON m.trade_id = t.id
 		WHERE t.exit_time IS NOT NULL
 		  AND a.active = 1
 		  AND a.excluded_from_stats = 0
@@ -139,9 +144,10 @@ func loadDayTrades(ctx context.Context, db *sql.DB, date time.Time) ([]linkedTra
 func loadOneTrade(ctx context.Context, db *sql.DB, tradeID int64) ([]linkedTrade, error) {
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, m.set_id
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
+		LEFT JOIN trade_set_members m ON m.trade_id = t.id
 		WHERE t.id = ? AND a.user_id = ?
 	`, tradeID, userID(ctx))
 }
@@ -153,9 +159,10 @@ func loadWeekTrades(ctx context.Context, db *sql.DB, monday time.Time) ([]linked
 	fromU, toU := daysBoundsUTC(monday, 7)
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, m.set_id
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
+		LEFT JOIN trade_set_members m ON m.trade_id = t.id
 		WHERE t.exit_time IS NOT NULL
 		  AND a.active = 1
 		  AND a.excluded_from_stats = 0
@@ -179,7 +186,7 @@ func scanLinkedTrades(ctx context.Context, db *sql.DB, query string, args ...any
 		var exit sql.NullTime
 		if err := rows.Scan(&lt.ID, &lt.Symbol, &lt.SymbolRoot, &lt.Direction, &lt.Qty,
 			&lt.AccountName, &lt.EntryTime, &exit,
-			&lt.GrossPnl, &lt.Commission, &lt.NetPnl); err != nil {
+			&lt.GrossPnl, &lt.Commission, &lt.NetPnl, &lt.SetID); err != nil {
 			return nil, err
 		}
 		if exit.Valid {
@@ -297,10 +304,11 @@ func loadGroupSummaries(ctx context.Context, db *sql.DB, entryIDs []int64) (map[
 func loadLinkedTrades(ctx context.Context, db *sql.DB, journalEntryID int64) ([]linkedTrade, error) {
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, m.set_id
 		FROM journal_entry_trades jet
 		JOIN trades t   ON t.id = jet.trade_id
 		JOIN accounts a ON a.id = t.account_id
+		LEFT JOIN trade_set_members m ON m.trade_id = t.id
 		WHERE jet.journal_entry_id = ?
 		ORDER BY t.exit_time ASC, t.id ASC
 	`, journalEntryID)
@@ -388,6 +396,11 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 	// week, and group views all run through the same summarizeTradeRows
 	// path (one source of truth for Net / Gross / Comm / W-L).
 	summary := summarizeTradeRows(trades)
+	bySet := h.tradesBySet(ctx)
+	groups := groupLinkedTrades(trades)
+	if bySet {
+		summary = summarizeGroups(groups)
+	}
 
 	var rendered template.HTML
 	if entry.Body != "" {
@@ -449,6 +462,8 @@ func (h *Handlers) GroupJournalPage(w http.ResponseWriter, r *http.Request) {
 		"EntryDate":        entry.EntryDate.In(tz).Format("2006-01-02"),
 		"EntryDateNice":    entry.EntryDate.In(tz).Format("Mon, 2 Jan 2006"),
 		"Trades":           trades,
+		"Groups":           groups,
+		"BySet":            bySet,
 		"Summary":          summary,
 		"Tag":              tag,
 		"Mistakes":         mistakes,
@@ -482,9 +497,10 @@ type groupTradePick struct {
 func loadLinkableTrades(ctx context.Context, db *sql.DB, userID, entryID int64, limit int) ([]linkedTrade, error) {
 	return scanLinkedTrades(ctx, db, `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, m.set_id
 		FROM trades t
 		JOIN accounts a ON a.id = t.account_id
+		LEFT JOIN trade_set_members m ON m.trade_id = t.id
 		WHERE a.user_id = ?
 		  AND a.excluded_from_stats = 0
 		  AND t.status = 'closed' AND t.exit_time IS NOT NULL

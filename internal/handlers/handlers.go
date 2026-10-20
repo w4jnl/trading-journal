@@ -604,7 +604,7 @@ func (h *Handlers) funcMap() template.FuncMap {
 			}
 			return ""
 		},
-		// groupTrades folds copy-trader fan-out (the same decision filled on
+		// groupTrades folds copy sets (the same decision filled on
 		// several accounts within two seconds) into one row per decision for
 		// the journal trade tables; see groupLinkedTrades.
 		"groupTrades": groupLinkedTrades,

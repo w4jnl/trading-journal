@@ -4,8 +4,10 @@
   three views render identical content under their editors.
 
   Expects a dict with:
-    Summary       GroupSummary  (Net/Gross/Comm/Wins/Losses/N)
+    Summary       GroupSummary  (Net/Gross/Comm/Wins/Losses/N; by decision when BySet)
     Trades        []linkedTrade
+    Groups        []linkedTradeGroup  (the trades folded by copy set, see groupLinkedTrades)
+    BySet         bool          (the Trades | Sets choice: one row per decision, members behind a toggle)
     AllowUnlink   bool          (true for group scope — adds × buttons)
     EntryID       int64         (only used when AllowUnlink is true)
     EmptyMessage  string        (text when no trades, e.g. "No trades on this day")
@@ -17,7 +19,7 @@
 */}}
 {{define "journal_summary"}}
 <div class="card mt-16">
-  <div class="card-title">Trades · <span class="num">{{.Summary.N}}</span></div>
+  <div class="card-title">{{if .BySet}}Decisions · <span class="num">{{.Summary.N}}</span>{{if ne .Summary.N .Summary.Trades}} <span class="muted" style="font-weight: 400;">in <span class="num">{{.Summary.Trades}}</span> trades</span>{{end}}{{else}}Trades · <span class="num">{{.Summary.N}}</span>{{end}}</div>
   {{if gt .Summary.N 0}}
   <div class="grid-auto" style="--min: 130px;">
     <div>
@@ -59,10 +61,13 @@
       </tr>
     </thead>
     <tbody>
-      {{/* Copy-trader fan-out (the same decision filled on several accounts
-           within two seconds) folds into one row per decision with the
-           members behind a toggle; see groupLinkedTrades. */}}
-      {{range $gi, $g := groupTrades .Trades}}
+      {{/* Grouped by set: a copy set (the same decision filled on several
+           accounts) folds into one row per decision with the members behind
+           a toggle; see groupLinkedTrades. Otherwise one row per trade. */}}
+      {{if not .BySet}}
+      {{range .Trades}}{{template "journal_trade_row" (dict "T" . "EntryID" $entryID "AllowUnlink" $allowUnlink "Group" -1)}}{{end}}
+      {{else}}
+      {{range $gi, $g := .Groups}}
       {{if gt $g.Accounts 1}}
       <tr class="fanout" data-fanout-toggle="{{$gi}}">
         <td class="num muted">{{ltime $g.Lead.EntryTime "datetime"}}</td>
@@ -84,6 +89,7 @@
       {{end}}
       {{else}}
       {{template "journal_trade_row" (dict "T" $g.Lead "EntryID" $entryID "AllowUnlink" $allowUnlink "Group" -1)}}
+      {{end}}
       {{end}}
       {{end}}
     </tbody>

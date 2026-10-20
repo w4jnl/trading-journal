@@ -279,6 +279,17 @@ func addOpt(dst **float64, v *float64) {
 	**dst += *v
 }
 
+// tradesBySet is the remembered choice of the Trades | Sets toggle: true
+// when the trader reads the log by decision. The journal's trade tables
+// follow it.
+func (h *Handlers) tradesBySet(ctx context.Context) bool {
+	if h.Queries == nil {
+		return false
+	}
+	v, err := h.Queries.GetViewPref(ctx, models.GetViewPrefParams{UserID: userID(ctx), Page: "trades.view"})
+	return err == nil && v == "sets"
+}
+
 // tradesView reads the page's unit (trades or sets): the ?view= parameter
 // when given (and remembered), else the remembered choice.
 func (h *Handlers) tradesView(r *http.Request, fragment bool) string {
@@ -293,10 +304,8 @@ func (h *Handlers) tradesView(r *http.Request, fragment bool) string {
 		}
 		return view
 	}
-	if h.Queries != nil {
-		if v, err := h.Queries.GetViewPref(ctx, models.GetViewPrefParams{UserID: userID(ctx), Page: "trades.view"}); err == nil && v == "sets" {
-			return "sets"
-		}
+	if h.tradesBySet(ctx) {
+		return "sets"
 	}
 	return ""
 }
@@ -789,7 +798,7 @@ func (h *Handlers) ChartSet(w http.ResponseWriter, r *http.Request) {
 	}
 	trades, err := scanLinkedTrades(ctx, h.rdb(), `
 		SELECT t.id, t.symbol, t.symbol_root, t.direction, t.qty, a.name,
-		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl
+		       t.entry_time, t.exit_time, t.gross_pnl, t.commission, t.net_pnl, m.set_id
 		FROM trade_set_members m
 		JOIN trades t   ON t.id = m.trade_id
 		JOIN accounts a ON a.id = t.account_id

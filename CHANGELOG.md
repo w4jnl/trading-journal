@@ -3,6 +3,16 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Web
+
+- The journal's trade tables (day, week and group notes) follow the Trades | Sets choice of the
+  trade log. By set, a copy set is one row per decision with its accounts behind the toggle and
+  the summary counts decisions ("Decisions · 5 in 25 trades", wins and losses per decision); by
+  trade, every trade is its own row. The rows are the real copy sets, no longer a two-second
+  guess at the fan-out.
+
 ## 2.19.0, 2026-10-19
 
 ### Server
