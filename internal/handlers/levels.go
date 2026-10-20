@@ -45,6 +45,94 @@ type levelsCacheEntry struct {
 // pinned on Settings, comma-separated.
 const levelsPrefPage = "levels.markets"
 
+// levelsFilterPage is the view preference that holds the page's importance
+// switch and source chips: "<tier>|<sources>", e.g. "2|bars,chart,gex".
+const levelsFilterPage = "levels.filter"
+
+// levelsFilter is what the page shows: levels down to Tier (1 strong only,
+// 2 strong and medium, 3 everything) from the Sources ticked.
+type levelsFilter struct {
+	Tier    int
+	Sources map[string]bool
+}
+
+func defaultLevelsFilter() levelsFilter {
+	return levelsFilter{Tier: 2, Sources: map[string]bool{levelmap.SourceBars: true, levelmap.SourceChart: true, levelmap.SourceGex: true}}
+}
+
+// Keeps says whether a level passes the filter.
+func (f levelsFilter) Keeps(l levelmap.Level) bool {
+	return scoreTier(l.Score) <= f.Tier && f.Sources[l.Source]
+}
+
+// SourceList is the ticked sources, in display order.
+func (f levelsFilter) SourceList() []string {
+	var out []string
+	for _, s := range []string{levelmap.SourceBars, levelmap.SourceChart, levelmap.SourceGex} {
+		if f.Sources[s] {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (f levelsFilter) encode() string {
+	return fmt.Sprintf("%d|%s", f.Tier, strings.Join(f.SourceList(), ","))
+}
+
+// parseLevelsFilter reads "<tier>|<sources>"; anything odd falls back to
+// the default (every source, strong and medium).
+func parseLevelsFilter(v string) levelsFilter {
+	f := defaultLevelsFilter()
+	tier, srcs, ok := strings.Cut(v, "|")
+	if !ok {
+		return f
+	}
+	switch tier {
+	case "1", "2", "3":
+		f.Tier = int(tier[0] - '0')
+	default:
+		return f
+	}
+	f.Sources = map[string]bool{}
+	for _, s := range strings.Split(srcs, ",") {
+		if s == levelmap.SourceBars || s == levelmap.SourceChart || s == levelmap.SourceGex {
+			f.Sources[s] = true
+		}
+	}
+	if len(f.Sources) == 0 {
+		f.Sources = defaultLevelsFilter().Sources
+	}
+	return f
+}
+
+func (h *Handlers) levelsFilter(ctx context.Context) levelsFilter {
+	if h.Queries == nil {
+		return defaultLevelsFilter()
+	}
+	v, err := h.Queries.GetViewPref(ctx, models.GetViewPrefParams{UserID: userID(ctx), Page: levelsFilterPage})
+	if err != nil {
+		return defaultLevelsFilter()
+	}
+	return parseLevelsFilter(v)
+}
+
+// LevelsViewSave: POST /levels/view - the importance switch and the source
+// chips, remembered per user (the page's script posts on every change).
+func (h *Handlers) LevelsViewSave(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	f := parseLevelsFilter(r.FormValue("tier") + "|" + strings.Join(r.PostForm["src"], ","))
+	if err := h.Queries.UpsertViewPref(ctx, models.UpsertViewPrefParams{UserID: userID(ctx), Page: levelsFilterPage, Value: f.encode(), UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		h.serverError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // levelsPinned are the markets the user asked for on Settings, whatever
 // they traded.
 func (h *Handlers) levelsPinned(ctx context.Context) []string {
@@ -189,7 +277,9 @@ func (h *Handlers) levelMap(ctx context.Context, market, day string, now time.Ti
 			} else if !errors.Is(err, marketdata.ErrNoData) {
 				h.logger().Debug("levels: daily bars", "market", market, "err", err)
 			}
-			_ = h.MarketData.EnsureWindow(ctx, sym, asOf.AddDate(0, 0, -3), asOf)
+			if h.MarketData.Source != nil { // a cache without a vendor serves what it holds
+				_ = h.MarketData.EnsureWindow(ctx, sym, asOf.AddDate(0, 0, -3), asOf)
+			}
 			if bars, tf, err := h.MarketData.RecentBars(ctx, sym, levelsIntradayDays, asOf); err == nil && len(bars) > 0 {
 				in.Intraday, in.IntradayTF = bars, string(tf)
 				if tf.Duration() <= 5*time.Minute {
@@ -301,6 +391,7 @@ type levelRow struct {
 	Above    bool
 	Tier     int     // 1 strong, 2 medium, 3 weak: how the row is drawn
 	ScorePct float64 // the score against the strongest level, 0 to 100
+	Hidden   bool    // outside the page's importance switch or source chips
 }
 
 // Score tiers: a level at or above tierStrong is drawn heavy and bold, one
@@ -399,9 +490,18 @@ func (h *Handlers) LevelsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	data["Map"] = m
 	data["HasMap"] = len(m.Levels) > 0
-	rows := levelRows(m)
+	filter := h.levelsFilter(ctx)
+	rows := levelRows(m, filter)
 	data["Rows"] = rows
-	data["Ladder"], data["Bands"] = ladder(m)
+	data["Ladder"], data["Bands"] = ladder(m, filter)
+	data["Filter"] = filter
+	shown := 0
+	for _, r := range rows {
+		if !r.Hidden {
+			shown++
+		}
+	}
+	data["RowsShown"] = shown
 	data["TopZones"] = topZones(m, 8)
 	data["LastAt"] = m.LastAt.In(h.localTZ()).Format("Mon 2 Jan 15:04")
 	if m.Sources.ChartAt != nil {
@@ -413,7 +513,8 @@ func (h *Handlers) LevelsPage(w http.ResponseWriter, r *http.Request) {
 	data["PlanLines"] = planLines(m, 10)
 	_, feedID, _ := h.newestFeed(ctx, market, day)
 	if page, err := json.Marshal(map[string]any{"market": market, "day": day, "dataURL": "/levels/data/" + market + "?day=" + day,
-		"versionURL": "/levels/version/" + market + "?day=" + day, "feedId": feedID, "live": day == today}); err == nil {
+		"versionURL": "/levels/version/" + market + "?day=" + day, "feedId": feedID, "live": day == today,
+		"tier": filter.Tier, "sources": filter.SourceList()}); err == nil {
 		data["PageJSON"] = template.JS(page) // a JSON island: not a JS string
 	}
 	if liveFragment(r) {
@@ -468,7 +569,7 @@ func nextTradingDay(day string) string {
 	}
 }
 
-func levelRows(m *levelmap.Map) []levelRow {
+func levelRows(m *levelmap.Map, f levelsFilter) []levelRow {
 	tick := levelmap.DefaultTick(m.Market)
 	maxScore := 0.0
 	for _, l := range m.Levels {
@@ -476,7 +577,7 @@ func levelRows(m *levelmap.Map) []levelRow {
 	}
 	rows := make([]levelRow, 0, len(m.Levels))
 	for _, l := range m.Levels {
-		r := levelRow{Level: l, Tier: scoreTier(l.Score)}
+		r := levelRow{Level: l, Tier: scoreTier(l.Score), Hidden: !f.Keeps(l)}
 		if maxScore > 0 {
 			r.ScorePct = math.Round(l.Score / maxScore * 100)
 		}
@@ -496,7 +597,7 @@ func levelRows(m *levelmap.Map) []levelRow {
 // ladder places the levels and zones on a 0..100 vertical scale around the
 // last price: a band of 1.3 ATR each way, widened to hold the strongest
 // zones.
-func ladder(m *levelmap.Map) ([]ladderLine, []ladderBand) {
+func ladder(m *levelmap.Map, f levelsFilter) ([]ladderLine, []ladderBand) {
 	if len(m.Levels) == 0 {
 		return nil, nil
 	}
@@ -512,7 +613,7 @@ func ladder(m *levelmap.Map) ([]ladderLine, []ladderBand) {
 	y := func(p float64) float64 { return math.Round((hi-p)/(hi-lo)*1000) / 10 }
 	var pool []levelmap.Level
 	for _, l := range m.Levels {
-		if l.Price >= lo && l.Price <= hi && l.Kind != "round" {
+		if l.Price >= lo && l.Price <= hi && l.Kind != "round" && f.Keeps(l) {
 			pool = append(pool, l)
 		}
 	}
@@ -541,6 +642,16 @@ func ladder(m *levelmap.Map) ([]ladderLine, []ladderBand) {
 	var bands []ladderBand
 	for _, z := range m.Zones {
 		if z.High < lo || z.Low > hi || len(z.Levels) < 2 {
+			continue
+		}
+		drawn := false
+		for _, l := range z.Levels {
+			if f.Keeps(l) {
+				drawn = true
+				break
+			}
+		}
+		if !drawn {
 			continue
 		}
 		top := y(math.Min(z.High, hi))

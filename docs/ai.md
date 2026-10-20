@@ -33,6 +33,14 @@ strategy or labels: it records suggestions you accept or dismiss, and each revie
 lesson for the ledger. Reviews run in the background and lock only the note they are writing.
 See [features.md](features.md#ai-reviews) for the behaviour on the page.
 
+**The day map in the model's evidence.** The plan draft, the per-note reviews of a trade, a group
+or a day, and the levels suggestion on an open position all carry the day map (`/levels`) for the
+markets involved: the strongest zones with what meets there, the nearest zones above and below the
+entry (or the last price), the expected range from the daily ATR, and the day type with its lean.
+A review is asked to judge the location, whether the entry, the exit and the stop sat at a zone or
+in the open; the plan draft takes its levels from the zones and the gamma map. The map's scores
+rank, they do not forecast, and the prompts say so.
+
 ## MCP
 
 The journal is an MCP server at `POST /mcp` (`mcp.enabled`, on by default). Claude Code, the

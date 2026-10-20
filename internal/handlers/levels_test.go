@@ -89,6 +89,7 @@ func levelsMux(h *Handlers) *http.ServeMux {
 	mux.HandleFunc("POST /levels/{market}/plan", h.LevelsToPlan)
 	mux.HandleFunc("GET /levels/{market}", h.LevelsPage)
 	mux.HandleFunc("POST /settings/levels", h.SettingsLevelsSave)
+	mux.HandleFunc("POST /levels/view", h.LevelsViewSave)
 	mux.HandleFunc("GET /api/v1/levels/{market}", h.APILevelsGet)
 	mux.HandleFunc("POST /api/v1/levels/{market}", h.APILevelsPost)
 	return mux
@@ -308,5 +309,90 @@ func TestLevelsFeedSharedAndLive(t *testing.T) {
 	full := serve(ctx, mux, http.MethodGet, "/levels/ES").Body.String()
 	if !strings.Contains(full, `id="lv-live">`) || !strings.Contains(full, `"versionURL":"/levels/version/ES?day=`) {
 		t.Errorf("page lacks the live region or the version URL")
+	}
+}
+
+// The plan draft and the position-levels helper read the day map: one
+// brief per market the Levels page covers, with the strongest zones, the
+// nearest zones and the day type.
+func TestLevelsBriefForAI(t *testing.T) {
+	h, ctx, _, day := levelsFixture(t)
+	d, _ := time.ParseInLocation("2006-01-02", day, h.chicago())
+	briefs := h.planLevels(ctx, d)
+	if len(briefs) != 1 || briefs[0].Market != "ES" || len(briefs[0].Zones) == 0 || briefs[0].DayType == "" || briefs[0].Expected == nil {
+		t.Fatalf("plan briefs = %+v", briefs)
+	}
+	b := briefs[0]
+	if len(b.Above) == 0 || len(b.Below) == 0 || b.Above[0].Distance <= 0 || b.Below[0].Distance >= 0 || b.Zones[0].What == "" {
+		t.Errorf("brief around the last price = %+v", b)
+	}
+	raw, _ := json.Marshal(briefs)
+	if len(raw) > 6000 {
+		t.Errorf("brief for one market is %d bytes; keep it small for the prompt", len(raw))
+	}
+}
+
+// A chart's mark prices the open positions when it is the most recent
+// answer; an old mark loses to a newer bar; a silent chart is ignored.
+func TestFeedMarkPricesPositions(t *testing.T) {
+	h, ctx, uid, _ := levelsFixture(t)
+	mux := levelsMux(h)
+	user := &auth.User{ID: uid, Username: "boot"}
+	if q := h.fetchQuote(ctx, user, "ESZ6", "ES"); q == nil || q.Source == "MotiveWave" {
+		t.Fatalf("quote before any post = %+v, want the bars", q)
+	}
+	fresh := time.Now().UTC().Add(-20 * time.Second).Format(time.RFC3339)
+	if rec := postJSON(ctx, mux, "/api/v1/levels/ES", `{"contract":"ESZ6","asOf":"`+fresh+`","mark":7777.25}`); rec.Code != http.StatusAccepted {
+		t.Fatal(rec.Body.String())
+	}
+	if q := h.fetchQuote(ctx, user, "ESZ6", "ES"); q == nil || q.Source != "MotiveWave" || q.Price != 7777.25 {
+		t.Errorf("quote with a fresh mark = %+v, want 7777.25 from MotiveWave", q)
+	}
+	if q := h.fetchQuote(ctx, user, "MESZ6", "MES"); q == nil || q.Source != "MotiveWave" {
+		t.Errorf("a micro prices from its market's mark: %+v", q)
+	}
+	if price, _, ok := FeedMark(ctx, h.Queries, "ES", time.Now(), h.chicago()); !ok || price != 7777.25 {
+		t.Errorf("FeedMark = %v %v", price, ok)
+	}
+	if _, _, ok := FeedMark(ctx, h.Queries, "ES", time.Now().Add(10*time.Minute), h.chicago()); ok {
+		t.Error("a mark older than three minutes still counted")
+	}
+	if _, _, ok := FeedMark(ctx, h.Queries, "CL", time.Now(), h.chicago()); ok {
+		t.Error("a market without posts priced")
+	}
+}
+
+// The importance switch and the source chips are remembered per user and
+// shape the page: hidden rows, the ladder's pool, the island the script
+// starts from.
+func TestLevelsImportanceFilter(t *testing.T) {
+	h, ctx, _, _ := levelsFixture(t)
+	mux := levelsMux(h)
+	body := serve(ctx, mux, http.MethodGet, "/levels/ES").Body.String()
+	if !strings.Contains(body, `"tier":2`) || !strings.Contains(body, `data-lv-tier="2" class="on"`) || !strings.Contains(body, `data-tier="3" data-source="bars" hidden`) {
+		t.Errorf("default view: want tier 2 with weak rows hidden")
+	}
+	post := func(form string) int {
+		req := httptest.NewRequest(http.MethodPost, "/levels/view", strings.NewReader(form)).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := post("tier=1&src=chart&src=gex"); code != http.StatusNoContent {
+		t.Fatalf("save = %d", code)
+	}
+	if f := h.levelsFilter(ctx); f.Tier != 1 || f.Sources["bars"] || !f.Sources["chart"] || !f.Sources["gex"] {
+		t.Errorf("filter after save = %+v", f)
+	}
+	body = serve(ctx, mux, http.MethodGet, "/levels/ES").Body.String()
+	if !strings.Contains(body, `"tier":1`) || !strings.Contains(body, `"sources":["chart","gex"]`) || strings.Contains(body, `data-tier="1" data-source="bars">`) || !strings.Contains(body, `id="lv-rows-shown">0<`) {
+		t.Errorf("view with bars off: every row from bars should be hidden")
+	}
+	if code := post("tier=9&src=nothing"); code != http.StatusNoContent {
+		t.Fatalf("odd save = %d", code)
+	}
+	if f := h.levelsFilter(ctx); f.Tier != 2 || len(f.Sources) != 3 {
+		t.Errorf("odd values should fall back to the default: %+v", f)
 	}
 }

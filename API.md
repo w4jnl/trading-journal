@@ -919,6 +919,12 @@ default list.
 }
 ```
 
+`lastPrice` is the most recent answer among the sources that can price the
+contract, and `priceSource` names it: `MotiveWave` (the mark a chart posted
+through the levels feed within the last three minutes, the broker's own
+feed), `TopstepX` (the user's session), `Yahoo` (the vendor's bar) or
+`cached bars` (an old vendor bar). `unrealized` and `ticksToStop` follow it.
+
 `POST /api/v1/positions/{account}/{symbol}/plan` with `{"stop": 7755,
 "target": 7790, "thesis": "..."}` records the plan. The whole plan is
 replaced (pass every field to keep); a stop alone derives the risk at the

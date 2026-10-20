@@ -36,6 +36,7 @@
   }
 
   function draw(host, bars, zones, levels, intraday) {
+    host.innerHTML = "";
     var LWC = window.LightweightCharts, c = colors(), zone = tz();
     var fmt = new Intl.DateTimeFormat([], Object.assign({ month: "short", day: "numeric" }, intraday ? { hour: "2-digit", minute: "2-digit" } : {}, zone ? { timeZone: zone } : {}));
     var chart = LWC.createChart(host, {
@@ -53,11 +54,11 @@
     var lo = Infinity, hi = -Infinity;
     bars.slice(-80).forEach(function (b) { lo = Math.min(lo, b.l); hi = Math.max(hi, b.h); });
     var pad = (hi - lo) * 0.6;
-    (zones || []).slice(0, 8).forEach(function (z) {
+    (zones || []).filter(function (z) { return z.levels.some(keeps); }).slice(0, 8).forEach(function (z) {
       if (z.center < lo - pad || z.center > hi + pad) return;
       candle.createPriceLine({ price: z.center, color: c.accent, lineWidth: 1, lineStyle: 2, axisLabelVisible: false, title: (z.kinds || []).slice(0, 2).join(",") });
     });
-    (levels || []).forEach(function (l) {
+    (levels || []).filter(keeps).forEach(function (l) {
       if (l.kind !== "pdh" && l.kind !== "pdl" && l.kind !== "onh" && l.kind !== "onl") return;
       if (l.price < lo - pad || l.price > hi + pad) return;
       candle.createPriceLine({ price: l.price, color: l.source === "chart" ? c.group : l.source === "gex" ? c.warn : c.muted, lineWidth: l.score >= 5 ? 2 : 1, lineStyle: 0, axisLabelVisible: false, title: l.kind });
@@ -72,11 +73,56 @@
   var ALWAYS = { pdh: 1, pdl: 1, pdc: 1, onh: 1, onl: 1, orh: 1, orl: 1, vwap: 1, poc: 1, vah: 1, val: 1 };
   var LADDER_MAX = 22, PAD = 12;
   function tierOf(score) { return score >= 5 ? 1 : score >= 2.5 ? 2 : 3; }
+
+  // ---- The importance switch and the source chips. One filter for the
+  // ladder, the charts and the table; a change redraws and is remembered
+  // per user (POST /levels/view).
+  var filter = { tier: page.tier || 2, sources: {} };
+  (page.sources || ["bars", "chart", "gex"]).forEach(function (s) { filter.sources[s] = true; });
+  function keeps(l) { return tierOf(l.score) <= filter.tier && !!filter.sources[l.source]; }
+  var redraws = [];
+  function applyFilter() {
+    document.querySelectorAll("#lv-controls [data-lv-tier]").forEach(function (b) { b.classList.toggle("on", Number(b.getAttribute("data-lv-tier")) === filter.tier); });
+    document.querySelectorAll("#lv-controls [data-lv-src]").forEach(function (b) { b.classList.toggle("on", !!filter.sources[b.getAttribute("data-lv-src")]); });
+    var shown = 0;
+    document.querySelectorAll("tr[data-tier]").forEach(function (tr) {
+      var keep = Number(tr.getAttribute("data-tier")) <= filter.tier && !!filter.sources[tr.getAttribute("data-source")];
+      tr.hidden = !keep;
+      if (keep) shown++;
+    });
+    var n = document.getElementById("lv-rows-shown");
+    if (n) n.textContent = shown;
+    redraws.forEach(function (fn) { fn(); });
+  }
+  function saveFilter() {
+    var body = new URLSearchParams({ tier: String(filter.tier) });
+    Object.keys(filter.sources).forEach(function (s) { if (filter.sources[s]) body.append("src", s); });
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    var headers = meta && meta.getAttribute("content") ? { "X-CSRF-Token": meta.getAttribute("content") } : {};
+    fetch("/levels/view", { method: "POST", body: body, headers: headers, credentials: "same-origin" }).catch(function () { /* best effort */ });
+  }
+  var controls = document.getElementById("lv-controls");
+  if (controls) {
+    controls.addEventListener("click", function (e) {
+      var b = e.target.closest("button");
+      if (!b) return;
+      if (b.hasAttribute("data-lv-tier")) filter.tier = Number(b.getAttribute("data-lv-tier"));
+      else if (b.hasAttribute("data-lv-src")) {
+        var src = b.getAttribute("data-lv-src");
+        var on = Object.keys(filter.sources).filter(function (k) { return filter.sources[k]; });
+        if (filter.sources[src] && on.length === 1) return; // never nothing
+        filter.sources[src] = !filter.sources[src];
+      } else return;
+      applyFilter();
+      saveFilter();
+    });
+  }
   function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/"/g, "&quot;"); }
 
   function ladder(host, map) {
-    var levels = (map.levels || []).filter(function (l) { return l.kind !== "round"; });
-    if (!levels.length) return;
+    var every = (map.levels || []).filter(function (l) { return l.kind !== "round"; });
+    if (!every.length) return;
+    var levels = every;
     var c = colors(), last = map.last > 0 ? map.last : levels[Math.floor(levels.length / 2)].price;
     var half = map.atr > 0 ? 1.3 * map.atr : last * 0.01;
     var fit = { lo: last - half, hi: last + half };
@@ -90,6 +136,7 @@
     if (hint) hint.hidden = false;
 
     function render() {
+      levels = every.filter(keeps);
       var w = win || fit, span = w.hi - w.lo;
       var H = host.clientHeight || 560, W = host.clientWidth || 400, inner = H - 2 * PAD;
       var y = function (p) { return PAD + (w.hi - p) / span * inner; };
@@ -108,7 +155,7 @@
       var cut = function (name) { return name.length > maxChars ? name.slice(0, maxChars - 1) + "…" : name; };
       parts.push('<line x1="' + mid + '" y1="0" x2="' + mid + '" y2="' + H + '" stroke="' + c.grid + '"/>');
       (map.zones || []).forEach(function (z) {
-        if (z.levels.length < 2 || z.high < w.lo || z.low > w.hi) return;
+        if (z.levels.length < 2 || z.high < w.lo || z.low > w.hi || !z.levels.some(keeps)) return;
         var top = y(Math.min(z.high, w.hi)), bot = y(Math.max(z.low, w.lo));
         var h = Math.max(bot - top, 4);
         var kinds = (z.kinds || []).join(", ");
@@ -187,6 +234,7 @@
     if (window.__lvResize) window.removeEventListener("resize", window.__lvResize);
     window.__lvResize = render;
     window.addEventListener("resize", render);
+    redraws.push(render);
     render();
   }
 
@@ -220,13 +268,17 @@
       if (ladderHost && data.map) { try { ladder(ladderHost, data.map); } catch (e) { console.warn("levels ladder:", e); } }
       return ensureLib().then(function () {
         var map = data.map || {};
-        document.querySelectorAll(".levels-chart").forEach(function (host) {
-          var which = host.getAttribute("data-series");
-          var bars = data[which] || [];
-          if (!bars.length) { host.innerHTML = '<p class="muted" style="font-size:12px;">No bars.</p>'; return; }
-          if (which === "daily") bars = bars.slice(-120);
-          draw(host, bars, map.zones, map.levels, which === "intraday");
-        });
+        function drawAll() {
+          document.querySelectorAll(".levels-chart").forEach(function (host) {
+            var which = host.getAttribute("data-series");
+            var bars = data[which] || [];
+            if (!bars.length) { host.innerHTML = '<p class="muted" style="font-size:12px;">No bars.</p>'; return; }
+            if (which === "daily") bars = bars.slice(-120);
+            draw(host, bars, map.zones, map.levels, which === "intraday");
+          });
+        }
+        redraws.push(drawAll);
+        drawAll();
       });
     })
     .catch(function (e) {

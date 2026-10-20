@@ -3,6 +3,26 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
+  range and the day type and takes its levels from the zones and the gamma map; the reviews of a
+  trade, a group or a day and the levels suggestion on an open position get the map around the
+  entry, with the nearest zones above and below, and are asked to judge the location of the entry,
+  the exit and the stop against it.
+- The chart's mark from the levels feed prices the open positions (dashboard, `/today`, the phone,
+  the Session activity, the guardrail's through-stop check) whenever it is the most recent price
+  known, within three minutes of the post; `priceSource` says `MotiveWave`. Older marks lose to a
+  newer broker or vendor bar, as before.
+
+### Web
+
+- Levels: an importance switch (Strong / + Medium / All, by score) and source chips (bars, chart,
+  gex) above the ladder, applied to the ladder, the charts and the table at once and remembered
+  per user; the zones stay scored over every level.
+
 ## 2.20.0, 2026-10-20
 
 ### Server

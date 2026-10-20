@@ -17,6 +17,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/coach"
 	"github.com/w4jnl/trading-journal/internal/dayplan"
+	"github.com/w4jnl/trading-journal/internal/levelmap"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -67,19 +68,20 @@ type planGamma struct {
 
 // planEvidence is the user turn of a plan draft.
 type planEvidence struct {
-	Day         string          `json:"day"`
-	Timezone    string          `json:"timezone"`
-	Norms       *coach.Baseline `json:"norms,omitempty"`
-	LossDays    *planLossDays   `json:"accountLossDays,omitempty"`
-	RecentDays  []planRecentDay `json:"recentDays,omitempty"`
-	OpenLessons []lessonGroup   `json:"openLessons,omitempty"`
-	Gamma       []planGamma     `json:"gammaLevels,omitempty"`
-	CurrentPlan *dayplan.Plan   `json:"currentPlan,omitempty"`
+	Day         string           `json:"day"`
+	Timezone    string           `json:"timezone"`
+	Norms       *coach.Baseline  `json:"norms,omitempty"`
+	LossDays    *planLossDays    `json:"accountLossDays,omitempty"`
+	RecentDays  []planRecentDay  `json:"recentDays,omitempty"`
+	OpenLessons []lessonGroup    `json:"openLessons,omitempty"`
+	Gamma       []planGamma      `json:"gammaLevels,omitempty"`
+	DayMap      []levelmap.Brief `json:"dayMap,omitempty"`
+	CurrentPlan *dayplan.Plan    `json:"currentPlan,omitempty"`
 }
 
 // thin reports evidence too thin to draft from.
 func (ev planEvidence) thin() bool {
-	return ev.Norms == nil && ev.LossDays == nil && len(ev.RecentDays) == 0 && len(ev.OpenLessons) == 0 && len(ev.Gamma) == 0
+	return ev.Norms == nil && ev.LossDays == nil && len(ev.RecentDays) == 0 && len(ev.OpenLessons) == 0 && len(ev.Gamma) == 0 && len(ev.DayMap) == 0
 }
 
 // planEvidenceFor gathers what a draft for day (local midnight) reads.
@@ -152,6 +154,7 @@ func (h *Handlers) planEvidenceFor(ctx context.Context, day time.Time) planEvide
 		ev.OpenLessons = ev.OpenLessons[:5]
 	}
 	ev.Gamma = h.planGamma(ctx, day)
+	ev.DayMap = h.planLevels(ctx, day)
 	return ev
 }
 
@@ -194,6 +197,22 @@ func (h *Handlers) planGamma(ctx context.Context, day time.Time) []planGamma {
 	return out
 }
 
+// planLevels is the day map of each market the Levels page covers (traded
+// lately, pinned, or fed by a chart), briefed for the model: the strongest
+// zones, the expected range and the day type.
+func (h *Handlers) planLevels(ctx context.Context, day time.Time) []levelmap.Brief {
+	dayStr := day.Format("2006-01-02")
+	var out []levelmap.Brief
+	for _, market := range h.levelsMarkets(ctx, dayStr) {
+		m, err := h.levelMap(ctx, market, dayStr, time.Now())
+		if err != nil || m == nil || len(m.Zones) == 0 {
+			continue
+		}
+		out = append(out, m.Brief(0, 8, 2))
+	}
+	return out
+}
+
 // gammaLevel is a level of the gamma map, in futures prices.
 type gammaLevel struct {
 	Name  string  `json:"name"`
@@ -228,13 +247,13 @@ func (h *Handlers) gammaLevels(ctx context.Context, market string, at time.Time,
 	return out, snap.AsOf
 }
 
-const aiPlanDraftPrompt = `You draft a futures day trader's pre-market plan for one session. The user message is JSON: the day; the trader's own norms (median decisions per day, the usual last entry time in the trader's timezone - a copy of one decision across accounts counts once); what one account usually loses on a losing day (USD: median, 80th percentile and worst over the last 60 days); the last trading days with their net result, the coach's findings (overtrading, late entries, re-entries after a loss, size-ups, stops run through) and how that day's plan held; the lessons still open from the trader's reviews (count = how often the same mistake came back); the gamma levels known now (futures prices, asOf = when computed); and the plan already written for the day, if any.
+const aiPlanDraftPrompt = `You draft a futures day trader's pre-market plan for one session. The user message is JSON: the day; the trader's own norms (median decisions per day, the usual last entry time in the trader's timezone - a copy of one decision across accounts counts once); what one account usually loses on a losing day (USD: median, 80th percentile and worst over the last 60 days); the last trading days with their net result, the coach's findings (overtrading, late entries, re-entries after a loss, size-ups, stops run through) and how that day's plan held; the lessons still open from the trader's reviews (count = how often the same mistake came back); the gamma levels known now (futures prices, asOf = when computed); the day map per market (dayMap: the strongest zones with what meets there and their score, the nearest zones above and below the last price, the expected range from the daily ATR around the session's anchor, and the day type read off the prior day and the overnight with a lean and its reasons; a score ranks, it does not forecast); and the plan already written for the day, if any.
 
 Draft the rules that would have prevented the recent damage while leaving room for the trader's normal day:
 - maxTrades: the most decisions for the day - near the usual day, lower after overtrading or a run of losing days.
 - stopTime: HH:MM in the trader's timezone, no new entries after it - from the usual last entry, earlier when late entries cost.
 - maxLoss: USD per account at which the trader stops for the day - from the usual losing day, never beyond its 80th percentile.
-- levels: the prices to watch, one per line as "<market> <price> <what it is>", from the gamma levels only; empty without them.
+- levels: the prices to watch, one per line as "<market> <price> <what it is>", from the day map's zones (the strongest and the nearest, naming what meets there) and the gamma levels; empty without either. Keep the list short: the four to eight prices that matter, nearest first.
 - notes: two to four short lines, each an instruction for the day, built from the open lessons (the most repeated first) and the recent findings.
 Use null for a field the evidence does not support. Never set a market bias: that is the trader's call. When the trader already wrote a plan, improve it rather than ignore it.
 
