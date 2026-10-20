@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/auth"
+	"github.com/w4jnl/trading-journal/internal/levelmap"
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
@@ -162,6 +163,8 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"AutoPlanRuns":    h.AITasks != nil,
 		"GuardrailRuns":   h.Guardrail != nil,
 		"Guardrail":       h.guardrailOn(ctx),
+		"LevelsMarkets":   levelmap.Markets,
+		"LevelsPinned":    h.levelsPinnedSet(ctx),
 		"AILanguages":     aiLanguageOptions,
 		"AIEnabled":       h.AIJobs != nil,
 		"AI":              h.aiSettings(ctx),

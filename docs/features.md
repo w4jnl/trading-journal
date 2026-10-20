@@ -15,6 +15,18 @@ instrument's tick size and tick value, never a raw price difference; an unknown 
 created as a stub and its trades show no P&L until an admin sets its ticks on `/commissions`,
 after which everything is recomputed.
 
+**Levels, the day map.** `/levels` holds one set of reference levels per market and trading
+day: prior day high, low and close, the overnight and opening range, VWAP, daily ATR bands from
+the session's anchor, floor and Camarilla pivots, prior week and month extremes, swing highs
+and lows from 30-minute to weekly bars, unfilled gaps and round numbers from the journal's own
+bars, the gamma engine's walls, and the session map a MotiveWave chart posts (the W4J Journal
+Feed study), which wins where both know a level. Levels fold into scored zones, a day-type
+card reads the prior day and the overnight into a lean with its reasons, charts draw the
+zones, and one button writes them into the day plan. The page covers the markets traded in the
+last thirty days plus the ones pinned under Settings > Levels, refreshes itself when a chart
+posts, and the feed is shared by every user of the instance. The scores rank; they do not
+forecast.
+
 **Copy sets.** One decision fanned across accounts by a copytrader (same underlying, same
 direction, entries within two seconds, two or more accounts) forms a set. `/trades` can list by
 set with the accounts folded underneath and the set's R and price path (heat, best seen and

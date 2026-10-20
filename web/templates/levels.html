@@ -1,0 +1,221 @@
+{{define "title"}}Levels · {{.Market}} · {{.Day}} — Trading Journal{{end}}
+
+{{define "content"}}
+{{template "back_button" .}}
+{{template "live_refresh" .}}
+<style>
+  .lv-head { display: flex; align-items: baseline; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
+  .lv-tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+  .lv-tabs a { padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border); color: var(--fg-muted); font-size: var(--fs-12); font-weight: var(--fw-semibold); text-decoration: none; }
+  .lv-tabs a.active { background: var(--bg-sunken); color: var(--fg); border-color: var(--border-strong); }
+  .lv-daynav { display: flex; align-items: center; gap: 8px; font-size: var(--fs-12); }
+  .lv-daynav a { color: var(--fg-muted); text-decoration: none; }
+  .lv-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  @media (max-width: 900px) { .lv-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .lv-tile { padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; }
+  .lv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .lv-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr); gap: 16px; margin-top: 16px; }
+  @media (max-width: 900px) { .lv-grid { grid-template-columns: 1fr; } }
+  .lv-ladder { position: relative; height: 560px; margin: 8px 0 0; }
+  .lv-ladder svg { width: 100%; height: 100%; display: block; user-select: none; cursor: ns-resize; }
+  .lv-ladder svg text { font-size: 10px; }
+  .lv-ladder svg text.p { font-family: var(--font-mono); }
+  .lv-ladder svg text.t1 { font-size: 11px; font-weight: 600; }
+  .lv-ladder svg .band-score { font-size: 9px; }
+  .lv-ladder .axis { position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px solid var(--border); }
+  .lv-band { position: absolute; left: 30%; right: 30%; background: var(--accent-soft); border-radius: 3px; }
+  .lv-band span { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 9px; color: var(--accent-text); white-space: nowrap; }
+  /* Sources by colour: grey for the journal's bars, violet for the chart feed, orange for the
+     gamma engine; teal stays with the zones. Tiers by weight: a strong level is a heavy line and
+     a bold label, a weak one a thin dashed line and a muted label. */
+  .lv-line { position: absolute; left: 34%; right: 34%; height: 0; border-top: 1px solid var(--fg-subtle); }
+  .lv-line.t1 { border-top-width: 2.5px; border-top-color: var(--fg); }
+  .lv-line.t2 { border-top-width: 1.5px; border-top-color: var(--fg-muted); }
+  .lv-line.t3 { border-top-style: dashed; border-top-color: var(--border-strong); }
+  .lv-line.chart { border-top-color: var(--group); }
+  .lv-line.gex { border-top-color: var(--warn); }
+  .lv-line.atr { border-top-style: dotted; }
+  .lv-label { position: absolute; width: 33%; font-size: 10px; line-height: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-muted); }
+  .lv-label.right { left: 67%; text-align: left; padding-left: 4px; }
+  .lv-label.left { right: 67%; text-align: right; padding-right: 4px; }
+  .lv-label .p { font-family: var(--font-mono); color: var(--fg); }
+  .lv-label.t1 { font-size: 11px; font-weight: var(--fw-semibold); color: var(--fg); }
+  .lv-label.t3 { color: var(--fg-subtle); }
+  .lv-label.chart .p, .lv-label.chart.t1 { color: var(--group); }
+  .lv-label.gex .p, .lv-label.gex.t1 { color: var(--warn); }
+  .lv-last { position: absolute; left: 30%; right: 30%; border-top: 2px solid var(--fg); }
+  .lv-last span { position: absolute; left: 50%; top: -8px; transform: translateX(-50%); font-size: 11px; font-weight: var(--fw-semibold); font-family: var(--font-mono); background: var(--fg); color: var(--bg-elev); padding: 1px 6px; border-radius: 3px; }
+  .lv-src { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .lv-src.bars { background: var(--bg-sunken); color: var(--fg-muted); border: 1px solid var(--border); }
+  .lv-src.chart { background: rgba(124, 58, 237, .14); color: var(--group); }
+  .lv-src.gex { background: rgba(217, 119, 6, .16); color: var(--warn); }
+  .lv-tier { display: inline-block; width: 56px; height: 6px; border-radius: 3px; background: var(--bg-sunken); vertical-align: middle; overflow: hidden; }
+  .lv-tier i { display: block; height: 100%; background: var(--fg-muted); }
+  .lv-tier.t1 i { background: var(--fg); }
+  .lv-tier.t3 i { background: var(--border-strong); }
+  tr.lv-t1 td { font-weight: var(--fw-semibold); }
+  tr.lv-t1 td.num { font-weight: var(--fw-semibold); }
+  tr.lv-t3 td { color: var(--fg-subtle); }
+  .lv-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
+  @media (max-width: 1100px) { .lv-charts { grid-template-columns: 1fr; } }
+  .levels-chart { height: 280px; width: 100%; }
+  .lv-zone-row td { vertical-align: top; }
+</style>
+
+<div class="lv-head">
+  <h1 class="page-title">Levels · {{.Market}}</h1>
+  <div class="lv-tabs">
+    {{range .Markets}}<a href="/levels/{{.}}?day={{$.Day}}" class="{{if eq . $.Market}}active{{end}}">{{.}}</a>{{end}}
+  </div>
+  <div class="lv-daynav">
+    <a href="/levels/{{.Market}}?day={{.PrevDay}}" title="Previous trading day">‹</a>
+    <span class="num">{{.Day}}</span>
+    <a href="/levels/{{.Market}}?day={{.NextDay}}" title="Next trading day">›</a>
+    {{if not .IsToday}}<a href="/levels/{{.Market}}">Today</a>{{end}}
+  </div>
+</div>
+
+{{template "levels_live" .}}
+{{end}}
+
+{{/* The live region: everything the map draws. A chart's post makes the
+     page fetch ?fragment=1 and swap this in (levels.js polls the feed id);
+     the script inside re-runs on the swap and redraws the ladder and the
+     charts from the fresh island. */}}
+{{define "levels_live"}}
+<div id="lv-live"{{if .OOB}} hx-swap-oob="outerHTML"{{end}}>
+{{if not .HasMap}}
+<div class="card card--warn mt-16">
+  <p style="margin: 0 0 6px;">No map for {{.Market}} on {{.Day}} yet.</p>
+  <p class="muted" style="margin: 0; font-size: 12px;">The journal needs bars for the market (the chart cache fills for the roots you trade) or a post from the MotiveWave feed study. A past day without a record cannot be rebuilt as it stood.</p>
+</div>
+{{else}}
+{{with .Map}}
+<p class="muted" style="margin: 6px 0 0; font-size: 12px;">
+  Last <span class="num">{{printf "%.2f" .Last}}</span> at {{$.LastAt}} ·
+  from {{if .Sources.Chart}}<span class="lv-src chart">chart</span> {{.Sources.Contract}} at {{$.ChartAt}}{{else}}<span class="lv-src bars">bars</span>{{if .Sources.BarsTF}} ({{.Sources.BarsTF}}){{end}}{{end}}{{if .Sources.Gex}} · <span class="lv-src gex">gex</span> at {{$.GexAt}}{{end}}
+  · <span class="num">{{.Sources.DailyN}}</span> days of history
+</p>
+
+<div class="lv-strip">
+  <div class="card lv-tile">
+    <div class="label">Daily ATR(14)</div>
+    <div class="value num">{{if gt .ATR 0.0}}{{printf "%.2f" .ATR}}{{else}}—{{end}}</div>
+    <div class="subtle">{{.ATRMethod}}{{if .Anchor}} · bands from the {{.Anchor}} open{{end}}</div>
+  </div>
+  <div class="card lv-tile">
+    <div class="label">Expected range</div>
+    <div class="value num">{{with .Expected}}{{printf "%.2f" .Low}} – {{printf "%.2f" .High}}{{else}}—{{end}}</div>
+    <div class="subtle">anchor ± 1 ATR</div>
+  </div>
+  <div class="card lv-tile">
+    <div class="label">Prior day</div>
+    <div class="value">{{with .DayType}}{{if .Range}}{{.Range}}{{end}}{{if .Close}} · {{.Close}} close{{end}}{{else}}—{{end}}</div>
+    <div class="subtle">{{with .DayType}}range {{printf "%.2f" .RangePts}}{{if gt .RangeATR 0.0}} ({{printf "%.1f" .RangeATR}} ATR){{end}}{{if .Relation}} · {{.Relation}} the day before{{end}}{{end}}</div>
+  </div>
+  <div class="card lv-tile">
+    <div class="label">Overnight</div>
+    <div class="value num">{{with .DayType.Overnight}}{{printf "%.2f" .Low}} – {{printf "%.2f" .High}}{{else}}—{{end}}</div>
+    <div class="subtle">{{with .DayType.Overnight}}{{if .AbovePDH}}above the prior high{{else if .BelowPDL}}below the prior low{{else}}inside the prior range{{end}}{{if gt .RangeATR 0.0}} · {{printf "%.1f" .RangeATR}} ATR{{end}}{{end}}</div>
+  </div>
+</div>
+
+{{with .DayType}}{{if .Sentence}}
+<div class="card mt-16">
+  <div class="card-title">Day type</div>
+  <p style="margin: 0;">{{.Sentence}}</p>
+  <div class="lv-chips">
+    {{if eq .Bias "long"}}<span class="pill dir-long">lean long</span>{{else if eq .Bias "short"}}<span class="pill dir-short">lean short</span>{{else}}<span class="pill">no lean</span>{{end}}
+    {{range .Reasons}}<span class="pill" style="font-weight: 400;">{{.}}</span>{{end}}
+    {{with .Gap}}<span class="pill" style="font-weight: 400;">{{if eq .Basis "last"}}last vs prior close: {{.Dir}} {{printf "%.2f" .Points}}{{else}}gap {{.Dir}} {{printf "%.2f" .Points}}{{if .Filled}}, filled{{end}}{{end}}</span>{{end}}
+    {{with .Trend}}{{range $tf, $t := .}}<span class="pill" style="font-weight: 400;">{{$tf}} trend {{$t}}</span>{{end}}{{end}}
+  </div>
+  <p class="muted" style="margin: 8px 0 0; font-size: 12px;">A lean from the facts above, nothing more: the bias is yours. The plan draft reads the same facts.</p>
+</div>
+{{end}}{{end}}
+{{end}}
+
+<div class="lv-grid">
+  <div class="card">
+    <div class="card-title">Ladder <span class="muted" style="font-weight: 400;" id="lv-ladder-title">· 1.3 ATR each way, the strongest {{len .Ladder}}</span></div>
+    <div class="lv-ladder" id="lv-ladder">
+      <div class="axis"></div>
+      {{range .Bands}}<div class="lv-band" style="top: {{.Top}}%; height: {{.Height}}%;" title="zone {{.Center}} · {{.Kinds}} · score {{.Score}}"><span>{{.Score}}</span></div>{{end}}
+      {{range .Ladder}}<div class="lv-line {{.Source}} {{.Kind}} t{{.Tier}}" style="top: {{.Y}}%;" title="{{.Name}} · {{.Price}} · {{.Source}} · score {{printf "%.2f" .Score}}"></div>
+      <div class="lv-label {{.Source}} t{{.Tier}} {{if .Left}}left{{else}}right{{end}}" style="top: calc({{.LabelY}}% - 7px);" title="{{.Name}} · {{.Price}} · {{.Source}}">{{if .Left}}{{.Name}} <span class="p">{{printf "%.2f" .Price}}</span>{{else}}<span class="p">{{printf "%.2f" .Price}}</span> {{.Name}}{{end}}</div>{{end}}
+      <div class="lv-last" style="top: 50%;"><span>{{printf "%.2f" .Map.Last}}</span></div>
+    </div>
+    <p class="muted" style="margin: 8px 0 0; font-size: 11px;"><span class="lv-src bars">bars</span> the journal's own math · <span class="lv-src chart">chart</span> the MotiveWave feed · <span class="lv-src gex">gex</span> the gamma engine · heavy line and bold name: a strong level (score {{printf "%.0f" 5.0}} and up); dashed and faint: a weak one · shaded: zones of two or more levels · <span id="lv-ladder-hint" hidden>wheel zooms at the cursor, drag pans, double-click resets</span></p>
+  </div>
+
+  <div class="card">
+    <div class="card-title">Strongest zones</div>
+    {{if .TopZones}}
+    <div class="table-scroll">
+      <table>
+        <thead><tr><th class="tabular">Zone</th><th class="tabular">Distance</th><th>What meets there</th><th class="tabular">Score</th></tr></thead>
+        <tbody>
+          {{range .TopZones}}
+          <tr class="lv-zone-row">
+            <td class="num">{{printf "%.2f" .Center}}{{if ne .Low .High}}<div class="subtle">{{printf "%.2f" .Low}} – {{printf "%.2f" .High}}</div>{{end}}</td>
+            <td class="num {{if gt .Distance 0.0}}pnl-pos{{else if lt .Distance 0.0}}pnl-neg{{end}}">{{printf "%+.2f" .Distance}}{{if ne .ATRShare 0.0}}<div class="subtle">{{printf "%+.2f" .ATRShare}} ATR</div>{{end}}</td>
+            <td style="font-size: 12px;">{{.Names}}</td>
+            <td class="num">{{.Score}}</td>
+          </tr>
+          {{end}}
+        </tbody>
+      </table>
+    </div>
+    {{else}}<p class="muted">No zones yet.</p>{{end}}
+    {{if .PlanLines}}
+    <form method="post" action="/levels/{{.Market}}/plan" class="mt-12" data-confirm="Write these {{len .PlanLines}} zones into the plan for {{.Day}}?">
+      <input type="hidden" name="day" value="{{.Day}}">
+      <button type="submit" class="btn btn--secondary btn--sm">Put the zones in the day plan</button>
+      <span class="muted" style="font-size: 12px; margin-left: 8px;">appends one line per zone to the plan's levels</span>
+    </form>
+    {{end}}
+  </div>
+</div>
+
+<div class="lv-charts" id="levels-charts">
+  <div class="card card--compact"><div class="label">Daily</div><div class="levels-chart" data-series="daily"></div></div>
+  <div class="card card--compact"><div class="label">Weekly</div><div class="levels-chart" data-series="weekly"></div></div>
+  <div class="card card--compact"><div class="label">Intraday</div><div class="levels-chart" data-series="intraday"></div></div>
+</div>
+
+<div class="card mt-16">
+  <div class="card-title">All levels <span class="muted" style="font-weight: 400;">· <span class="num">{{len .Rows}}</span></span></div>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th class="tabular">Price</th><th class="tabular">Distance</th><th class="tabular">Ticks</th><th class="tabular">ATR</th><th>Level</th><th>Kind</th><th>TF</th><th>Source</th><th class="tabular">Touches</th><th class="tabular">Score</th><th title="The score against the strongest level on the map">Strength</th></tr></thead>
+      <tbody>
+        {{range .Rows}}
+        <tr class="lv-t{{.Tier}}">
+          <td class="num">{{printf "%.2f" .Price}}</td>
+          <td class="num {{if .Above}}pnl-pos{{else}}pnl-neg{{end}}">{{printf "%+.2f" .Distance}}</td>
+          <td class="num muted">{{printf "%+.0f" .Ticks}}</td>
+          <td class="num muted">{{if ne .ATRShare 0.0}}{{printf "%+.2f" .ATRShare}}{{end}}</td>
+          <td>{{.Name}}</td>
+          <td><span class="pill" style="font-weight: 400;">{{.Kind}}</span></td>
+          <td class="muted">{{.TF}}</td>
+          <td><span class="lv-src {{.Source}}">{{.Source}}</span></td>
+          <td class="num muted">{{.Touches}}</td>
+          <td class="num">{{printf "%.2f" .Score}}</td>
+          <td><span class="lv-tier t{{.Tier}}" title="{{printf "%.0f" .ScorePct}}% of the strongest"><i style="width: {{printf "%.0f" .ScorePct}}%;"></i></span></td>
+        </tr>
+        {{end}}
+      </tbody>
+    </table>
+  </div>
+</div>
+{{end}}
+<script type="application/json" id="levels-page-data">{{.PageJSON}}</script>
+<script src="/static/js/levels.js" defer></script>
+</div>
+{{end}}
+
+{{define "levels_fragment"}}
+{{template "levels_live" .}}
+{{template "live_refresh_oob" .}}
+{{template "nav_open_badge_oob" .}}
+{{end}}

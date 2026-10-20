@@ -22,6 +22,7 @@
 {{if eq .Flash "ai-saved"}}<div class="flash saved mb-16">AI provider verified and saved — reviews now run on your key.</div>{{end}}
 {{if eq .Flash "ai-test-ok"}}<div class="flash saved mb-16">AI provider answered — your key works.</div>{{end}}
 {{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
+{{if eq .Flash "levels"}}<div class="flash saved mb-16">Levels: the markets to keep are saved.</div>{{end}}
 {{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
 {{if eq .Flash "auto-plan"}}<div class="flash saved mb-16">{{if eq .AIAutoPlan "plan"}}Every new open position gets the AI's stop and target as its plan.{{else if eq .AIAutoPlan "suggest"}}Every new open position gets the AI's stop and target as a suggestion on its sheet; you decide whether to use it.{{else}}Automatic suggestions off: the suggestion is a button on the position sheet.{{end}}</div>{{end}}
 {{if eq .Flash "ai-removed"}}<div class="flash saved mb-16">Your AI provider and key were removed.</div>{{end}}
@@ -311,6 +312,22 @@
   <p class="muted" style="font-size: 12px; margin: 6px 0 0;">With notifications allowed, a nudge also pops up while the journal's tab is in the background.</p>
 </div>
 {{end}}
+
+<div class="card mb-16" id="levels">
+  <div class="card-title">Levels</div>
+  <p class="muted" style="font-size: 12px; margin: 0 0 10px;">
+    The Levels page maps the markets you traded in the last thirty days and any market a chart feeds. Tick the ones
+    to keep on the page whatever you traded.
+  </p>
+  <form method="post" action="/settings/levels" class="row-sm" style="gap: 14px; flex-wrap: wrap;">
+    {{range .LevelsMarkets}}
+    <label class="row-sm" style="gap: 6px; align-items: center; font-size: 13px;">
+      <input type="checkbox" name="market" value="{{.}}" {{if index $.LevelsPinned .}}checked{{end}} data-autosubmit>
+      <span class="num">{{.}}</span>
+    </label>
+    {{end}}
+  </form>
+</div>
 
 {{if .TopstepxEnabled}}
 <div class="card mb-16">

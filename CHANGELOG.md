@@ -5,6 +5,27 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+### Server
+
+- **Levels, the day map** (`/levels`, `/levels/{market}`): one set of reference levels per
+  market and trading day for the markets traded in the last thirty days. The journal computes
+  the structural map from its bar cache (prior day high, low and close, overnight and opening
+  range, daily ATR(14) bands from the session's ETH or RTH anchor as the MotiveWave study
+  draws them, floor and Camarilla pivots, prior week and month extremes, swing highs and lows
+  on 30m to weekly bars, unfilled gaps, round numbers) and merges the gamma engine's walls;
+  levels fold into scored zones; a day-type card reads the prior day (inside, outside, NR7,
+  wide, strong or weak close, the gap, the overnight against the prior range) into a lean with
+  its reasons. A ladder, the strongest zones, daily, weekly and intraday charts with the zones
+  drawn, and one button that writes the zones into the day plan's levels. Scores rank, they do
+  not forecast; each day's map is kept so a past day opens as it stood. Settings > Levels pins
+  the markets to keep on the page besides the ones traded lately.
+- `POST /api/v1/levels/{market}` takes the session map a MotiveWave chart posts (contract in
+  `docs/api-handoff-002-levels-feed.md`: prior session, overnight, opening range, VWAP bands,
+  volume profile, ATR bands and the mark); the newest post per market and day overlays the
+  map with source `chart`. `GET /api/v1/levels/{market}?day=` and the MCP tool `get_levels`
+  answer the merged map. The feed is shared across the instance's users, and the page refreshes
+  its regions when a new post lands. New tables `level_feeds` and `level_maps`.
+
 ### Web
 
 - The journal's trade tables (day, week and group notes) follow the Trades | Sets choice of the
