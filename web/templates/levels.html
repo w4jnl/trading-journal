@@ -16,6 +16,11 @@
   .lv-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr); gap: 16px; margin-top: 16px; }
   @media (max-width: 900px) { .lv-grid { grid-template-columns: 1fr; } }
   .lv-ladder { position: relative; height: 560px; margin: 8px 0 0; }
+  .lv-ladder svg { width: 100%; height: 100%; display: block; user-select: none; cursor: ns-resize; }
+  .lv-ladder svg text { font-size: 10px; }
+  .lv-ladder svg text.p { font-family: var(--font-mono); }
+  .lv-ladder svg text.t1 { font-size: 11px; font-weight: 600; }
+  .lv-ladder svg .band-score { font-size: 9px; }
   .lv-ladder .axis { position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px solid var(--border); }
   .lv-band { position: absolute; left: 30%; right: 30%; background: var(--accent-soft); border-radius: 3px; }
   .lv-band span { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 9px; color: var(--accent-text); white-space: nowrap; }
@@ -122,15 +127,15 @@
 
 <div class="lv-grid">
   <div class="card">
-    <div class="card-title">Ladder <span class="muted" style="font-weight: 400;">· 1.3 ATR each way, the strongest {{len .Ladder}}</span></div>
-    <div class="lv-ladder">
+    <div class="card-title">Ladder <span class="muted" style="font-weight: 400;" id="lv-ladder-title">· 1.3 ATR each way, the strongest {{len .Ladder}}</span></div>
+    <div class="lv-ladder" id="lv-ladder">
       <div class="axis"></div>
       {{range .Bands}}<div class="lv-band" style="top: {{.Top}}%; height: {{.Height}}%;" title="zone {{.Center}} · {{.Kinds}} · score {{.Score}}"><span>{{.Score}}</span></div>{{end}}
       {{range .Ladder}}<div class="lv-line {{.Source}} {{.Kind}} t{{.Tier}}" style="top: {{.Y}}%;" title="{{.Name}} · {{.Price}} · {{.Source}} · score {{printf "%.2f" .Score}}"></div>
       <div class="lv-label {{.Source}} t{{.Tier}} {{if .Left}}left{{else}}right{{end}}" style="top: calc({{.LabelY}}% - 7px);" title="{{.Name}} · {{.Price}} · {{.Source}}">{{if .Left}}{{.Name}} <span class="p">{{printf "%.2f" .Price}}</span>{{else}}<span class="p">{{printf "%.2f" .Price}}</span> {{.Name}}{{end}}</div>{{end}}
       <div class="lv-last" style="top: 50%;"><span>{{printf "%.2f" .Map.Last}}</span></div>
     </div>
-    <p class="muted" style="margin: 8px 0 0; font-size: 11px;"><span class="lv-src bars">bars</span> the journal's own math · <span class="lv-src chart">chart</span> the MotiveWave feed · <span class="lv-src gex">gex</span> the gamma engine · heavy line and bold name: a strong level (score {{printf "%.0f" 5.0}} and up); dashed and faint: a weak one · shaded: zones of two or more levels</p>
+    <p class="muted" style="margin: 8px 0 0; font-size: 11px;"><span class="lv-src bars">bars</span> the journal's own math · <span class="lv-src chart">chart</span> the MotiveWave feed · <span class="lv-src gex">gex</span> the gamma engine · heavy line and bold name: a strong level (score {{printf "%.0f" 5.0}} and up); dashed and faint: a weak one · shaded: zones of two or more levels · <span id="lv-ladder-hint" hidden>wheel zooms at the cursor, drag pans, double-click resets</span></p>
   </div>
 
   <div class="card">
