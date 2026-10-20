@@ -310,3 +310,23 @@ func TestLevelsFeedSharedAndLive(t *testing.T) {
 		t.Errorf("page lacks the live region or the version URL")
 	}
 }
+
+// The plan draft and the position-levels helper read the day map: one
+// brief per market the Levels page covers, with the strongest zones, the
+// nearest zones and the day type.
+func TestLevelsBriefForAI(t *testing.T) {
+	h, ctx, _, day := levelsFixture(t)
+	d, _ := time.ParseInLocation("2006-01-02", day, h.chicago())
+	briefs := h.planLevels(ctx, d)
+	if len(briefs) != 1 || briefs[0].Market != "ES" || len(briefs[0].Zones) == 0 || briefs[0].DayType == "" || briefs[0].Expected == nil {
+		t.Fatalf("plan briefs = %+v", briefs)
+	}
+	b := briefs[0]
+	if len(b.Above) == 0 || len(b.Below) == 0 || b.Above[0].Distance <= 0 || b.Below[0].Distance >= 0 || b.Zones[0].What == "" {
+		t.Errorf("brief around the last price = %+v", b)
+	}
+	raw, _ := json.Marshal(briefs)
+	if len(raw) > 6000 {
+		t.Errorf("brief for one market is %d bytes; keep it small for the prompt", len(raw))
+	}
+}

@@ -214,3 +214,24 @@ func TestTradingDays(t *testing.T) {
 		t.Error("market mapping")
 	}
 }
+
+func TestBrief(t *testing.T) {
+	day := "2026-10-20"
+	asOf := time.Date(2026, 10, 20, 14, 0, 0, 0, time.UTC)
+	ds := days(30, day)
+	last := ds[len(ds)-1]
+	m := Build(Input{Market: "ES", Day: day, AsOf: asOf, Chicago: chicago, Tick: 0.25, Daily: ds, Intraday: minutes(day, asOf, last.Close-30, last.Close+20), IntradayTF: "1m"})
+	b := m.Brief(0, 5, 2)
+	if b.Market != "ES" || b.Source != "bars" || len(b.Zones) != 5 || b.ATR <= 0 || b.Expected == nil || b.DayType == "" || b.Lean == "" {
+		t.Fatalf("brief = %+v", b)
+	}
+	if len(b.Above) != 2 || len(b.Below) != 2 || b.Above[0].Distance <= 0 || b.Below[0].Distance >= 0 || b.Above[0].Price > b.Above[1].Price || b.Below[0].Price < b.Below[1].Price {
+		t.Errorf("nearest = above %+v below %+v", b.Above, b.Below)
+	}
+	if b.Zones[0].What == "" || b.Zones[0].Score < b.Zones[4].Score {
+		t.Errorf("zones = %+v", b.Zones)
+	}
+	if n := len(b.Zones[0].What); n > 200 {
+		t.Errorf("what too long: %d", n)
+	}
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/w4jnl/trading-journal/internal/chartpng"
 	"github.com/w4jnl/trading-journal/internal/copyset"
 	"github.com/w4jnl/trading-journal/internal/dayplan"
+	"github.com/w4jnl/trading-journal/internal/levelmap"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
@@ -234,6 +235,11 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 	panel, window := h.positionBars(ctx, *pos, now)
 	low, high := 0.0, 0.0
 	barsTf := ""
+	if market, ok := levelmap.MarketOf(pos.SymbolRoot); ok {
+		if m, err := h.levelMap(ctx, market, levelmap.TradingDay(now, h.chicago()), now); err == nil && m != nil && len(m.Zones) > 0 {
+			payload["dayMap"] = m.Brief(derefOr(pos.AvgEntry, 0), 6, 3)
+		}
+	}
 	if session := h.aiSession(ctx, pos.SymbolRoot, now); session != nil {
 		payload["session"] = session
 		if tf, ok := session["barsStoredAt"].(string); ok {

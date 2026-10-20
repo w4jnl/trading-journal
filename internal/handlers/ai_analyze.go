@@ -16,6 +16,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/journal"
+	"github.com/w4jnl/trading-journal/internal/levelmap"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
@@ -38,6 +39,8 @@ import (
 const aiPromptCommon = `You are a trading-journal analyst reviewing the user's own futures trades. The user message is JSON context for ONE journal entry; the part below says what kind of item it is and what to write.
 
 Ground every point in the context: interpret the numbers rather than restating them, and never invent prices, times or facts that are not there. The data holds the fills, never the working orders: a stop or target that was never hit leaves no trace, and a null plannedStop only means no plan was recorded - never say or imply the trader had no stop unless their own notes say so. entry.chart.panels[].bars, when present, is the price action around the trade: rows of [time, open, high, low, close] in bars of the given tf, with the entry and exit times - read the move into the entry, the path while open and what came after the exit from them. Money is USD; times are in the trader's timezone (context.timezone). entry.notes are the trader's own words; entry.labels the mistakes and emotions they already marked; coachChecks, when present, are rule-based observations computed from the trades (timing, size, heat against the planned stop, share of the best move kept, the trader's own norms) - treat them as objective evidence, cite the relevant ones with their numbers, weigh them against the notes, and do not present them as your own discovery. recentLessons, when present, are the lessons of the trader's latest reviews (newest first): say plainly when this item repeated one or applied it, and when the lesson you would give is already there, say it recurs rather than rewording it.
+
+When the context carries "dayMap" (the reference levels of the day: the strongest zones with what meets there, the nearest zones above and below the entry, the expected range from the daily ATR, the day type and its lean), judge the location: whether the entry and the exit sat at a zone or in the open between zones, whether the stop sat beyond a zone or inside one, and whether the day type argued for or against the trade. The map's scores rank the zones; they do not forecast.
 
 Format: Markdown, a short bullet list with one bullet per section, each led by a bold label (nested bullets allowed). No headings (the review is inserted under an existing one), no preamble such as "Here is the analysis", no closing pleasantries. Omit a section only when there is genuinely nothing to say. Be specific and brief: one concrete, actionable lesson beats a list of generic advice. Use the SAME structure every time, whether or not a strategy is tagged.`
 
@@ -484,12 +487,17 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	}
 	if e.Scope == "week" {
 		delete(detail, "trades") // the digest carries the week, per decision
-	} else {
+	}
+	entryPrice := map[int64]float64{} // by trade id, for the map around the entry
+	if e.Scope != "week" {
 		rich, err := h.aiTrades(ctx, linked, tz, decision)
 		if err != nil {
 			return "", nil, err
 		}
 		detail["trades"] = rich
+		for _, t := range rich {
+			entryPrice[t.ID] = t.EntryPrice
+		}
 	}
 	out := map[string]any{"entry": detail, "timezone": tz.String()}
 	if decision {
@@ -540,6 +548,31 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 		}
 		if session := h.aiSession(ctx, first.SymbolRoot, first.EntryTime); session != nil {
 			out["sessionAtEntry"] = session
+		}
+		// The day map of the decision's market, as it stood that day,
+		// around the entry: whether the trade sat at a zone or in the open.
+		if market, ok := levelmap.MarketOf(first.SymbolRoot); ok {
+			if m, err := h.levelMap(ctx, market, levelmap.TradingDay(first.EntryTime, h.chicago()), time.Now()); err == nil && m != nil && len(m.Zones) > 0 {
+				out["dayMap"] = m.Brief(entryPrice[first.ID], 6, 2)
+			}
+		}
+	}
+	// A day's review reads the map of every market traded that day.
+	if e.Scope == "day" && len(linked) > 0 {
+		seen := map[string]bool{}
+		var maps []levelmap.Brief
+		for _, t := range linked {
+			market, ok := levelmap.MarketOf(t.SymbolRoot)
+			if !ok || seen[market] {
+				continue
+			}
+			seen[market] = true
+			if m, err := h.levelMap(ctx, market, e.EntryDate.In(tz).Format("2006-01-02"), time.Now()); err == nil && m != nil && len(m.Zones) > 0 {
+				maps = append(maps, m.Brief(0, 8, 0))
+			}
+		}
+		if len(maps) > 0 {
+			out["dayMap"] = maps
 		}
 	}
 

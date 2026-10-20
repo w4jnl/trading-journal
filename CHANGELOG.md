@@ -3,6 +3,16 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
+  range and the day type and takes its levels from the zones and the gamma map; the reviews of a
+  trade, a group or a day and the levels suggestion on an open position get the map around the
+  entry, with the nearest zones above and below, and are asked to judge the location of the entry,
+  the exit and the stop against it.
+
 ## 2.20.0, 2026-10-20
 
 ### Server
