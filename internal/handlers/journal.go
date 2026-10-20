@@ -749,6 +749,11 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	daySummary := summarizeTradeRows(dayTrades)
+	bySet := h.tradesBySet(ctx)
+	dayGroups := groupLinkedTrades(dayTrades)
+	if bySet {
+		daySummary = summarizeGroups(dayGroups)
+	}
 
 	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
 	if err != nil {
@@ -806,6 +811,8 @@ func (h *Handlers) JournalPage(w http.ResponseWriter, r *http.Request) {
 		"Recent":           recent,
 		"Flash":            flash,
 		"Trades":           dayTrades,
+		"Groups":           dayGroups,
+		"BySet":            bySet,
 		"Summary":          daySummary,
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(entry.StrategyID),
@@ -1050,6 +1057,11 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	weekSummary := summarizeTradeRows(weekTrades)
+	bySet := h.tradesBySet(ctx)
+	weekGroups := groupLinkedTrades(weekTrades)
+	if bySet {
+		weekSummary = summarizeGroups(weekGroups)
+	}
 
 	strategies, err := h.Queries.ListStrategies(ctx, userID(ctx))
 	if err != nil {
@@ -1082,6 +1094,8 @@ func (h *Handlers) WeekJournalPage(w http.ResponseWriter, r *http.Request) {
 		"Rendered":         rendered,
 		"Flash":            r.URL.Query().Get("flash"),
 		"Trades":           weekTrades,
+		"Groups":           weekGroups,
+		"BySet":            bySet,
 		"Summary":          weekSummary,
 		"Strategies":       strategies,
 		"StrategyID":       strategyIDValue(entry.StrategyID),

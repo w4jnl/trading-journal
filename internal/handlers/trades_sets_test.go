@@ -252,3 +252,37 @@ func TestSetRowPath(t *testing.T) {
 		t.Error("a set with no measured leg should have no path")
 	}
 }
+
+// The day journal's trade table follows the Trades | Sets choice: by trade
+// it lists every trade; by set it folds the copy set into one decision row
+// with the accounts behind a toggle, and the summary counts decisions.
+func TestJournalDayFollowsTradesBySet(t *testing.T) {
+	h, ctx, uid := setsFixture(t)
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /journal/{date}", h.JournalPage)
+	body := serve(ctx, mux, http.MethodGet, "/journal/2026-10-09").Body.String()
+	if !strings.Contains(body, "Trades · <span class=\"num\">3</span>") || strings.Contains(body, "fanout-btn") || strings.Count(body, "<td>alpha</td>") != 2 {
+		t.Errorf("by trade: want three plain rows, two on alpha; got summary %q, fanout %v", between(body, "card-title\">", "</div>"), strings.Contains(body, "fanout-btn"))
+	}
+	if err := h.Queries.UpsertViewPref(ctx, models.UpsertViewPrefParams{UserID: uid, Page: "trades.view", Value: "sets", UpdatedAt: "2026-10-09T00:00:00Z"}); err != nil {
+		t.Fatal(err)
+	}
+	body = serve(ctx, mux, http.MethodGet, "/journal/2026-10-09").Body.String()
+	if !strings.Contains(body, "Decisions · <span class=\"num\">2</span>") || !strings.Contains(body, "in <span class=\"num\">3</span> trades") ||
+		strings.Count(body, "fanout-btn") != 1 || !strings.Contains(body, "<span class=\"num\">2</span> accounts") || !strings.Contains(body, "2W</span>") {
+		t.Errorf("by set: want two decisions in three trades, one two-account row, 2W; got %q", between(body, "card-title\">", "</table>"))
+	}
+}
+
+// between is the text after the first `from` up to the next `to`, for a test's message.
+func between(s, from, to string) string {
+	i := strings.Index(s, from)
+	if i < 0 {
+		return ""
+	}
+	s = s[i:]
+	if j := strings.Index(s, to); j >= 0 {
+		return s[:j]
+	}
+	return s
+}

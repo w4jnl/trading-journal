@@ -5,47 +5,44 @@ import (
 	"time"
 )
 
-func TestGroupLinkedTradesFoldsFanOut(t *testing.T) {
+func TestGroupLinkedTradesFoldsSets(t *testing.T) {
 	t0 := time.Date(2026, 7, 31, 13, 33, 10, 0, time.UTC)
-	mk := func(acct, sym, root, dir string, qty float64, at time.Time, net *float64) linkedTrade {
+	set := func(id int64) *int64 { return &id }
+	mk := func(acct, sym, root, dir string, qty float64, at time.Time, net *float64, setID *int64) linkedTrade {
 		exit := at.Add(5 * time.Minute)
-		return linkedTrade{ID: int64(len(acct)), Symbol: sym, SymbolRoot: root, Direction: dir, Qty: qty, AccountName: acct, EntryTime: at, ExitTime: &exit, NetPnl: net}
+		return linkedTrade{ID: int64(len(acct)), Symbol: sym, SymbolRoot: root, Direction: dir, Qty: qty, AccountName: acct, EntryTime: at, ExitTime: &exit, NetPnl: net, SetID: setID}
 	}
 	trades := []linkedTrade{
-		// One decision fanned to three accounts within two seconds; one is a
-		// micro on the full-size root and one trades the next contract month.
-		mk("PRO002", "MESU6", "MES", "short", 2, t0, ptrF(6.75)),
-		mk("PRO003", "MESU6", "MES", "short", 2, t0.Add(time.Second), ptrF(6.75)),
-		mk("U10000001", "MESU26", "MES", "short", 4, t0.Add(2*time.Second), ptrF(12.62)),
-		// Same root/direction but 10 s later: a separate decision.
-		mk("PRO002", "MESU6", "MES", "short", 1, t0.Add(10*time.Second), ptrF(10.03)),
-		// Opposite direction at the same second: separate.
-		mk("PRO002", "MESU6", "MES", "long", 1, t0, ptrF(-3)),
-		// A single account scaling in twice within two seconds is NOT fan-out.
-		mk("SOLO", "NQU6", "NQ", "long", 1, t0, ptrF(20)),
-		mk("SOLO", "NQU6", "NQ", "long", 1, t0.Add(time.Second), ptrF(25)),
+		// One decision on three accounts (set 7), given out of entry order; one
+		// leg trades the next contract month.
+		mk("PRO003", "MESU6", "MES", "short", 2, t0.Add(time.Second), ptrF(6.75), set(7)),
+		mk("PRO002", "MESU6", "MES", "short", 2, t0, ptrF(6.75), set(7)),
+		mk("U10000001", "MESU26", "MES", "short", 4, t0.Add(2*time.Second), ptrF(12.62), set(7)),
+		// A later short on one account: its own row.
+		mk("PRO002", "MESU6", "MES", "short", 1, t0.Add(10*time.Second), ptrF(10.03), nil),
+		// A second set, two accounts, a loser.
+		mk("PRO002", "NQU6", "NQ", "long", 1, t0.Add(20*time.Second), ptrF(-3), set(9)),
+		mk("PRO003", "NQU6", "NQ", "long", 1, t0.Add(21*time.Second), ptrF(-4), set(9)),
 	}
 	groups := groupLinkedTrades(trades)
-	if len(groups) != 5 {
+	if len(groups) != 3 {
 		for _, g := range groups {
 			t.Logf("group lead=%s %s acc=%d n=%d", g.Lead.AccountName, g.Lead.Direction, g.Accounts, len(g.Members))
 		}
-		t.Fatalf("groups = %d, want 5 (fan-out, later short, long, two solo rows)", len(groups))
+		t.Fatalf("groups = %d, want 3 (the set, the lone short, the second set)", len(groups))
 	}
-	var fan *linkedTradeGroup
-	for i := range groups {
-		if groups[i].Accounts == 3 {
-			fan = &groups[i]
-		}
-	}
-	if fan == nil {
-		t.Fatal("no three-account group")
+	fan := groups[0]
+	if fan.Accounts != 3 || fan.Lead.AccountName != "PRO002" || fan.Members[0].AccountName != "PRO002" || fan.Members[2].AccountName != "U10000001" {
+		t.Errorf("set group = %+v, want the earliest leg leading and members in entry order", fan)
 	}
 	if fan.Qty != 8 || fan.Net == nil || *fan.Net < 26.119 || *fan.Net > 26.121 {
-		t.Errorf("fan-out qty/net = %v / %v, want 8 / 26.12", fan.Qty, fan.Net)
+		t.Errorf("set qty/net = %v / %v, want 8 / 26.12", fan.Qty, fan.Net)
 	}
 	if fan.Symbols != "MESU26, MESU6" {
-		t.Errorf("fan-out symbols = %q, want both contracts listed", fan.Symbols)
+		t.Errorf("set symbols = %q, want both contracts listed", fan.Symbols)
+	}
+	if groups[1].Accounts != 1 || groups[1].Lead.Qty != 1 || groups[2].Accounts != 2 {
+		t.Errorf("groups = %+v", groups)
 	}
 	// Display order follows the lead entry time.
 	for i := 1; i < len(groups); i++ {
@@ -53,12 +50,22 @@ func TestGroupLinkedTradesFoldsFanOut(t *testing.T) {
 			t.Errorf("groups out of time order at %d", i)
 		}
 	}
-	// A NULL net anywhere in the group leaves the group net NULL.
+	// The summary by decision: three rows in six trades, two winners and a loser.
+	if s := summarizeGroups(groups); s.N != 3 || s.Trades != 6 || s.Wins != 2 || s.Losses != 1 || s.Net < 29.149 || s.Net > 29.151 {
+		t.Errorf("summary by decision = %+v", s)
+	}
+	if s := summarizeTradeRows(trades); s.N != 6 || s.Trades != 6 || s.Wins != 4 || s.Losses != 2 {
+		t.Errorf("summary by trade = %+v", s)
+	}
+	// A NULL net anywhere in the group leaves the group net NULL and the
+	// decision uncounted as a win or a loss.
 	trades[1].NetPnl = nil
-	for _, g := range groupLinkedTrades(trades) {
-		if g.Accounts == 3 && g.Net != nil {
-			t.Errorf("group net = %v with a NULL member, want nil", *g.Net)
-		}
+	g2 := groupLinkedTrades(trades)
+	if g2[0].Net != nil {
+		t.Errorf("group net = %v with a NULL member, want nil", *g2[0].Net)
+	}
+	if s := summarizeGroups(g2); s.Wins != 1 {
+		t.Errorf("wins with a NULL leg = %d, want 1", s.Wins)
 	}
 	if groupLinkedTrades(nil) != nil {
 		t.Error("nil in, nil out")

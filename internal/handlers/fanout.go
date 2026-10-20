@@ -2,19 +2,14 @@ package handlers
 
 import (
 	"sort"
-	"time"
 )
 
-// Copy-trader fan-out in the journal trade tables. One decision filled on a
-// dozen follower accounts produces a dozen near-identical rows (same root,
-// direction and second); the 31 July day page listed 35 rows for about
-// five decisions. groupLinkedTrades folds such rows into one line per
-// decision, with the members available for expansion. The clustering rule
-// mirrors prepare-day's clusterCopytrader: same copy key (micros fold into
-// their full-size root) and direction, entries within two seconds, at
-// least two distinct accounts.
-
-const fanoutWindow = 2 * time.Second
+// Copy sets in the journal trade tables. One decision filled on a dozen
+// follower accounts produces a dozen near-identical rows; when the trader
+// reads the log by decision (the Trades | Sets toggle), groupLinkedTrades
+// folds the members of each copy set (internal/copyset, trade_set_members)
+// into one line per decision, with the members available for expansion.
+// A trade in no set is a row of its own.
 
 // linkedTradeGroup is one row of the folded table. Accounts is the number
 // of distinct accounts; a group of one renders as a plain row.
@@ -31,43 +26,45 @@ func groupLinkedTrades(trades []linkedTrade) []linkedTradeGroup {
 	if len(trades) == 0 {
 		return nil
 	}
-	idx := make([]int, len(trades))
-	for i := range idx {
-		idx[i] = i
-	}
-	key := func(t linkedTrade) string { return copyClusterKey(t.SymbolRoot) + "|" + t.Direction }
-	sort.SliceStable(idx, func(a, b int) bool {
-		ta, tb := trades[idx[a]], trades[idx[b]]
-		if ka, kb := key(ta), key(tb); ka != kb {
-			return ka < kb
-		}
-		return ta.EntryTime.Before(tb.EntryTime)
-	})
 	var groups []linkedTradeGroup
-	var cur *linkedTradeGroup
-	var curKey string
-	var curStart time.Time
-	flush := func() {
-		if cur == nil {
-			return
+	bySet := map[int64]int{}
+	for _, t := range trades {
+		if t.SetID == nil {
+			groups = append(groups, linkedTradeGroup{Lead: t, Members: []linkedTrade{t}})
+			continue
 		}
+		i, ok := bySet[*t.SetID]
+		if !ok {
+			i = len(groups)
+			bySet[*t.SetID] = i
+			groups = append(groups, linkedTradeGroup{Lead: t})
+		}
+		g := &groups[i]
+		g.Members = append(g.Members, t)
+		if t.EntryTime.Before(g.Lead.EntryTime) {
+			g.Lead = t
+		}
+	}
+	for i := range groups {
+		g := &groups[i]
+		sort.SliceStable(g.Members, func(a, b int) bool { return g.Members[a].EntryTime.Before(g.Members[b].EntryTime) })
 		seen := map[string]bool{}
+		syms := map[string]bool{}
 		var net float64
 		netOK := true
-		syms := map[string]bool{}
-		for _, m := range cur.Members {
+		for _, m := range g.Members {
 			seen[m.AccountName] = true
 			syms[m.Symbol] = true
-			cur.Qty += m.Qty
+			g.Qty += m.Qty
 			if m.NetPnl == nil {
 				netOK = false
 			} else {
 				net += *m.NetPnl
 			}
 		}
-		cur.Accounts = len(seen)
+		g.Accounts = len(seen)
 		if netOK {
-			cur.Net = &net
+			g.Net = &net
 		}
 		if len(syms) > 1 {
 			names := make([]string, 0, len(syms))
@@ -75,36 +72,45 @@ func groupLinkedTrades(trades []linkedTrade) []linkedTradeGroup {
 				names = append(names, s)
 			}
 			sort.Strings(names)
-			cur.Symbols = joinComma(names)
+			g.Symbols = joinComma(names)
 		}
-		groups = append(groups, *cur)
-		cur = nil
 	}
-	for _, i := range idx {
-		t := trades[i]
-		k := key(t)
-		if cur == nil || k != curKey || t.EntryTime.Sub(curStart) > fanoutWindow {
-			flush()
-			cur = &linkedTradeGroup{Lead: t}
-			curKey, curStart = k, t.EntryTime
-		}
-		cur.Members = append(cur.Members, t)
-	}
-	flush()
-	// Back to time order for display (groups by their lead's entry).
+	// Time order for display, by the lead's entry.
 	sort.SliceStable(groups, func(a, b int) bool { return groups[a].Lead.EntryTime.Before(groups[b].Lead.EntryTime) })
-	// A cluster on a single account is not fan-out: split it back into rows.
-	var out []linkedTradeGroup
+	return groups
+}
+
+// summarizeGroups is the summary card by decision: one count per group,
+// wins and losses by the group's net, the money over every member.
+func summarizeGroups(groups []linkedTradeGroup) GroupSummary {
+	var s GroupSummary
 	for _, g := range groups {
-		if g.Accounts > 1 {
-			out = append(out, g)
-			continue
+		s.N++
+		for _, t := range g.Members {
+			s.Trades++
+			if t.GrossPnl != nil {
+				s.Gross += *t.GrossPnl
+			}
+			if t.Commission != nil {
+				s.Commission += *t.Commission
+			}
+			if t.NetPnl != nil {
+				s.Net += *t.NetPnl
+			}
+			if t.ExitTime != nil && t.ExitTime.After(s.LastExit) {
+				s.LastExit = *t.ExitTime
+			}
 		}
-		for _, m := range g.Members {
-			out = append(out, linkedTradeGroup{Lead: m, Members: []linkedTrade{m}, Accounts: 1, Qty: m.Qty, Net: m.NetPnl})
+		if g.Net != nil {
+			switch {
+			case *g.Net > 0:
+				s.Wins++
+			case *g.Net < 0:
+				s.Losses++
+			}
 		}
 	}
-	return out
+	return s
 }
 
 func joinComma(ss []string) string {
