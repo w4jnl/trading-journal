@@ -60,7 +60,7 @@
     (levels || []).forEach(function (l) {
       if (l.kind !== "pdh" && l.kind !== "pdl" && l.kind !== "onh" && l.kind !== "onl") return;
       if (l.price < lo - pad || l.price > hi + pad) return;
-      candle.createPriceLine({ price: l.price, color: l.source === "chart" ? c.group : c.muted, lineWidth: 1, lineStyle: 0, axisLabelVisible: false, title: l.kind });
+      candle.createPriceLine({ price: l.price, color: l.source === "chart" ? c.group : l.source === "gex" ? c.warn : c.muted, lineWidth: l.score >= 5 ? 2 : 1, lineStyle: 0, axisLabelVisible: false, title: l.kind });
     });
     chart.timeScale().fitContent();
   }

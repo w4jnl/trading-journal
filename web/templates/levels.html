@@ -19,22 +19,37 @@
   .lv-ladder .axis { position: absolute; left: 50%; top: 0; bottom: 0; border-left: 1px solid var(--border); }
   .lv-band { position: absolute; left: 30%; right: 30%; background: var(--accent-soft); border-radius: 3px; }
   .lv-band span { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); font-size: 9px; color: var(--accent-text); white-space: nowrap; }
-  .lv-line { position: absolute; left: 34%; right: 34%; height: 0; border-top: 1px solid var(--border-strong); }
-  .lv-line.chart { border-top-color: var(--accent); border-top-width: 2px; }
-  .lv-line.gex { border-top-color: var(--warn); border-top-style: dashed; }
+  /* Sources by colour: grey for the journal's bars, violet for the chart feed, orange for the
+     gamma engine; teal stays with the zones. Tiers by weight: a strong level is a heavy line and
+     a bold label, a weak one a thin dashed line and a muted label. */
+  .lv-line { position: absolute; left: 34%; right: 34%; height: 0; border-top: 1px solid var(--fg-subtle); }
+  .lv-line.t1 { border-top-width: 2.5px; border-top-color: var(--fg); }
+  .lv-line.t2 { border-top-width: 1.5px; border-top-color: var(--fg-muted); }
+  .lv-line.t3 { border-top-style: dashed; border-top-color: var(--border-strong); }
+  .lv-line.chart { border-top-color: var(--group); }
+  .lv-line.gex { border-top-color: var(--warn); }
   .lv-line.atr { border-top-style: dotted; }
   .lv-label { position: absolute; width: 33%; font-size: 10px; line-height: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg-muted); }
   .lv-label.right { left: 67%; text-align: left; padding-left: 4px; }
   .lv-label.left { right: 67%; text-align: right; padding-right: 4px; }
   .lv-label .p { font-family: var(--font-mono); color: var(--fg); }
-  .lv-label.chart .p { color: var(--accent-text); }
-  .lv-label.gex .p { color: var(--warn); }
+  .lv-label.t1 { font-size: 11px; font-weight: var(--fw-semibold); color: var(--fg); }
+  .lv-label.t3 { color: var(--fg-subtle); }
+  .lv-label.chart .p, .lv-label.chart.t1 { color: var(--group); }
+  .lv-label.gex .p, .lv-label.gex.t1 { color: var(--warn); }
   .lv-last { position: absolute; left: 30%; right: 30%; border-top: 2px solid var(--fg); }
   .lv-last span { position: absolute; left: 50%; top: -8px; transform: translateX(-50%); font-size: 11px; font-weight: var(--fw-semibold); font-family: var(--font-mono); background: var(--fg); color: var(--bg-elev); padding: 1px 6px; border-radius: 3px; }
   .lv-src { display: inline-block; padding: 1px 6px; border-radius: 4px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; }
-  .lv-src.bars { background: var(--bg-sunken); color: var(--fg-muted); }
-  .lv-src.chart { background: var(--accent-soft); color: var(--accent-text); }
-  .lv-src.gex { background: var(--warn-soft, rgba(217,119,6,.12)); color: var(--warn); }
+  .lv-src.bars { background: var(--bg-sunken); color: var(--fg-muted); border: 1px solid var(--border); }
+  .lv-src.chart { background: rgba(124, 58, 237, .14); color: var(--group); }
+  .lv-src.gex { background: rgba(217, 119, 6, .16); color: var(--warn); }
+  .lv-tier { display: inline-block; width: 56px; height: 6px; border-radius: 3px; background: var(--bg-sunken); vertical-align: middle; overflow: hidden; }
+  .lv-tier i { display: block; height: 100%; background: var(--fg-muted); }
+  .lv-tier.t1 i { background: var(--fg); }
+  .lv-tier.t3 i { background: var(--border-strong); }
+  tr.lv-t1 td { font-weight: var(--fw-semibold); }
+  tr.lv-t1 td.num { font-weight: var(--fw-semibold); }
+  tr.lv-t3 td { color: var(--fg-subtle); }
   .lv-charts { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 16px; }
   @media (max-width: 1100px) { .lv-charts { grid-template-columns: 1fr; } }
   .levels-chart { height: 280px; width: 100%; }
@@ -111,11 +126,11 @@
     <div class="lv-ladder">
       <div class="axis"></div>
       {{range .Bands}}<div class="lv-band" style="top: {{.Top}}%; height: {{.Height}}%;" title="zone {{.Center}} · {{.Kinds}} · score {{.Score}}"><span>{{.Score}}</span></div>{{end}}
-      {{range .Ladder}}<div class="lv-line {{.Source}} {{.Kind}}" style="top: {{.Y}}%;" title="{{.Name}} · {{.Price}} · {{.Source}}"></div>
-      <div class="lv-label {{.Source}} {{if .Left}}left{{else}}right{{end}}" style="top: calc({{.LabelY}}% - 7px);" title="{{.Name}} · {{.Price}} · {{.Source}}">{{if .Left}}{{.Name}} <span class="p">{{printf "%.2f" .Price}}</span>{{else}}<span class="p">{{printf "%.2f" .Price}}</span> {{.Name}}{{end}}</div>{{end}}
+      {{range .Ladder}}<div class="lv-line {{.Source}} {{.Kind}} t{{.Tier}}" style="top: {{.Y}}%;" title="{{.Name}} · {{.Price}} · {{.Source}} · score {{printf "%.2f" .Score}}"></div>
+      <div class="lv-label {{.Source}} t{{.Tier}} {{if .Left}}left{{else}}right{{end}}" style="top: calc({{.LabelY}}% - 7px);" title="{{.Name}} · {{.Price}} · {{.Source}}">{{if .Left}}{{.Name}} <span class="p">{{printf "%.2f" .Price}}</span>{{else}}<span class="p">{{printf "%.2f" .Price}}</span> {{.Name}}{{end}}</div>{{end}}
       <div class="lv-last" style="top: 50%;"><span>{{printf "%.2f" .Map.Last}}</span></div>
     </div>
-    <p class="muted" style="margin: 8px 0 0; font-size: 11px;"><span class="lv-src bars">bars</span> the journal's own math · <span class="lv-src chart">chart</span> the MotiveWave feed · <span class="lv-src gex">gex</span> the gamma engine · shaded: zones of two or more levels</p>
+    <p class="muted" style="margin: 8px 0 0; font-size: 11px;"><span class="lv-src bars">bars</span> the journal's own math · <span class="lv-src chart">chart</span> the MotiveWave feed · <span class="lv-src gex">gex</span> the gamma engine · heavy line and bold name: a strong level (score {{printf "%.0f" 5.0}} and up); dashed and faint: a weak one · shaded: zones of two or more levels</p>
   </div>
 
   <div class="card">
@@ -157,10 +172,10 @@
   <div class="card-title">All levels <span class="muted" style="font-weight: 400;">· <span class="num">{{len .Rows}}</span></span></div>
   <div class="table-scroll">
     <table>
-      <thead><tr><th class="tabular">Price</th><th class="tabular">Distance</th><th class="tabular">Ticks</th><th class="tabular">ATR</th><th>Level</th><th>Kind</th><th>TF</th><th>Source</th><th class="tabular">Touches</th><th class="tabular">Score</th></tr></thead>
+      <thead><tr><th class="tabular">Price</th><th class="tabular">Distance</th><th class="tabular">Ticks</th><th class="tabular">ATR</th><th>Level</th><th>Kind</th><th>TF</th><th>Source</th><th class="tabular">Touches</th><th class="tabular">Score</th><th title="The score against the strongest level on the map">Strength</th></tr></thead>
       <tbody>
         {{range .Rows}}
-        <tr>
+        <tr class="lv-t{{.Tier}}">
           <td class="num">{{printf "%.2f" .Price}}</td>
           <td class="num {{if .Above}}pnl-pos{{else}}pnl-neg{{end}}">{{printf "%+.2f" .Distance}}</td>
           <td class="num muted">{{printf "%+.0f" .Ticks}}</td>
@@ -171,6 +186,7 @@
           <td><span class="lv-src {{.Source}}">{{.Source}}</span></td>
           <td class="num muted">{{.Touches}}</td>
           <td class="num">{{printf "%.2f" .Score}}</td>
+          <td><span class="lv-tier t{{.Tier}}" title="{{printf "%.0f" .ScorePct}}% of the strongest"><i style="width: {{printf "%.0f" .ScorePct}}%;"></i></span></td>
         </tr>
         {{end}}
       </tbody>

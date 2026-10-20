@@ -269,6 +269,27 @@ type levelRow struct {
 	Ticks    float64
 	ATRShare float64
 	Above    bool
+	Tier     int     // 1 strong, 2 medium, 3 weak: how the row is drawn
+	ScorePct float64 // the score against the strongest level, 0 to 100
+}
+
+// Score tiers: a level at or above tierStrong is drawn heavy and bold, one
+// under tierMedium light and muted. The scores are kind weight times
+// timeframe weight plus touches (levelmap), so the prior day's extremes,
+// the period extremes and a touched pivot sit in the first tier.
+const (
+	tierStrong = 5.0
+	tierMedium = 2.5
+)
+
+func scoreTier(score float64) int {
+	switch {
+	case score >= tierStrong:
+		return 1
+	case score >= tierMedium:
+		return 2
+	}
+	return 3
 }
 
 // ladderLine is one mark on the ladder: a level at a vertical position.
@@ -280,6 +301,7 @@ type ladderLine struct {
 	Kind   string
 	Source string
 	Score  float64
+	Tier   int
 	Above  bool
 	Left   bool // the label on the left; sides alternate so neighbours do not overlap
 }
@@ -393,9 +415,16 @@ func nextTradingDay(day string) string {
 
 func levelRows(m *levelmap.Map) []levelRow {
 	tick := levelmap.DefaultTick(m.Market)
+	maxScore := 0.0
+	for _, l := range m.Levels {
+		maxScore = math.Max(maxScore, l.Score)
+	}
 	rows := make([]levelRow, 0, len(m.Levels))
 	for _, l := range m.Levels {
-		r := levelRow{Level: l}
+		r := levelRow{Level: l, Tier: scoreTier(l.Score)}
+		if maxScore > 0 {
+			r.ScorePct = math.Round(l.Score / maxScore * 100)
+		}
 		if m.Last > 0 {
 			r.Distance = math.Round((l.Price-m.Last)*100) / 100
 			r.Ticks = math.Round(r.Distance / tick)
@@ -452,7 +481,7 @@ func ladder(m *levelmap.Map) ([]ladderLine, []ladderBand) {
 			ly = lastLabel[left] + ladderLabelGap
 		}
 		lastLabel[left] = ly
-		lines = append(lines, ladderLine{Y: y(l.Price), LabelY: ly, Price: l.Price, Name: l.Name, Kind: l.Kind, Source: l.Source, Score: l.Score, Above: l.Price > mid, Left: left})
+		lines = append(lines, ladderLine{Y: y(l.Price), LabelY: ly, Price: l.Price, Name: l.Name, Kind: l.Kind, Source: l.Source, Score: l.Score, Tier: scoreTier(l.Score), Above: l.Price > mid, Left: left})
 	}
 	var bands []ladderBand
 	for _, z := range m.Zones {
