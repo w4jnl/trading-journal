@@ -16,6 +16,12 @@
   .lv-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
   .lv-grid { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(0, 1.4fr); gap: 16px; margin-top: 16px; }
   @media (max-width: 900px) { .lv-grid { grid-template-columns: 1fr; } }
+  .lv-controls { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 0; }
+  .lv-seg { display: inline-flex; gap: 4px; }
+  .lv-seg button { font-size: 10px; line-height: 15px; padding: 1px 8px; border: 1px solid var(--border); border-radius: 999px; background: none; color: var(--fg-muted); cursor: pointer; text-transform: uppercase; letter-spacing: 0.03em; }
+  .lv-seg button.on { background: var(--bg-sunken); color: var(--fg); border-color: var(--border-strong); }
+  .lv-seg button.src-chart.on { color: var(--group); border-color: var(--group); }
+  .lv-seg button.src-gex.on { color: var(--warn); border-color: var(--warn); }
   .lv-ladder { position: relative; height: 560px; margin: 8px 0 0; }
   .lv-ladder svg { width: 100%; height: 100%; display: block; user-select: none; cursor: ns-resize; }
   .lv-ladder svg text { font-size: 10px; }
@@ -138,6 +144,18 @@
 <div class="lv-grid">
   <div class="card">
     <div class="card-title">Ladder <span class="muted" style="font-weight: 400;" id="lv-ladder-title">· 1.3 ATR each way, the strongest {{len .Ladder}}</span></div>
+    <div class="lv-controls" id="lv-controls" data-tier="{{.Filter.Tier}}" data-sources="{{range $i, $s := .Filter.SourceList}}{{if $i}},{{end}}{{$s}}{{end}}">
+      <span class="lv-seg" role="group" aria-label="Importance">
+        <button type="button" data-lv-tier="1" class="{{if eq .Filter.Tier 1}}on{{end}}" title="Score 5 and up: the prior day's extremes, the periods, the touched pivots, what the chart posted">Strong</button>
+        <button type="button" data-lv-tier="2" class="{{if eq .Filter.Tier 2}}on{{end}}" title="Score 2.5 and up: adds most pivots, the ATR bands, the daily and 4h swings">+ Medium</button>
+        <button type="button" data-lv-tier="3" class="{{if eq .Filter.Tier 3}}on{{end}}" title="Every level, including Camarilla, round numbers and the 30-minute swings">All</button>
+      </span>
+      <span class="lv-seg" role="group" aria-label="Sources">
+        <button type="button" data-lv-src="bars" class="src-bars {{if index .Filter.Sources "bars"}}on{{end}}" title="The journal's own math">bars</button>
+        <button type="button" data-lv-src="chart" class="src-chart {{if index .Filter.Sources "chart"}}on{{end}}" title="The MotiveWave feed">chart</button>
+        <button type="button" data-lv-src="gex" class="src-gex {{if index .Filter.Sources "gex"}}on{{end}}" title="The gamma engine">gex</button>
+      </span>
+    </div>
     <div class="lv-ladder" id="lv-ladder">
       <div class="axis"></div>
       {{range .Bands}}<div class="lv-band" style="top: {{.Top}}%; height: {{.Height}}%;" title="zone {{.Center}} · {{.Kinds}} · score {{.Score}}"><span>{{.Score}}</span></div>{{end}}
@@ -184,13 +202,13 @@
 </div>
 
 <div class="card mt-16">
-  <div class="card-title">All levels <span class="muted" style="font-weight: 400;">· <span class="num">{{len .Rows}}</span></span></div>
+  <div class="card-title">All levels <span class="muted" style="font-weight: 400;">· <span class="num" id="lv-rows-shown">{{.RowsShown}}</span> of <span class="num">{{len .Rows}}</span></span></div>
   <div class="table-scroll">
     <table>
       <thead><tr><th class="tabular">Price</th><th class="tabular">Distance</th><th class="tabular">Ticks</th><th class="tabular">ATR</th><th>Level</th><th>Kind</th><th>TF</th><th>Source</th><th class="tabular">Touches</th><th class="tabular">Score</th><th title="The score against the strongest level on the map">Strength</th></tr></thead>
       <tbody>
         {{range .Rows}}
-        <tr class="lv-t{{.Tier}}">
+        <tr class="lv-t{{.Tier}}" data-tier="{{.Tier}}" data-source="{{.Source}}"{{if .Hidden}} hidden{{end}}>
           <td class="num">{{printf "%.2f" .Price}}</td>
           <td class="num {{if .Above}}pnl-pos{{else}}pnl-neg{{end}}">{{printf "%+.2f" .Distance}}</td>
           <td class="num muted">{{printf "%+.0f" .Ticks}}</td>

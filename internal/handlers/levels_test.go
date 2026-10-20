@@ -89,6 +89,7 @@ func levelsMux(h *Handlers) *http.ServeMux {
 	mux.HandleFunc("POST /levels/{market}/plan", h.LevelsToPlan)
 	mux.HandleFunc("GET /levels/{market}", h.LevelsPage)
 	mux.HandleFunc("POST /settings/levels", h.SettingsLevelsSave)
+	mux.HandleFunc("POST /levels/view", h.LevelsViewSave)
 	mux.HandleFunc("GET /api/v1/levels/{market}", h.APILevelsGet)
 	mux.HandleFunc("POST /api/v1/levels/{market}", h.APILevelsPost)
 	return mux
@@ -358,5 +359,40 @@ func TestFeedMarkPricesPositions(t *testing.T) {
 	}
 	if _, _, ok := FeedMark(ctx, h.Queries, "CL", time.Now(), h.chicago()); ok {
 		t.Error("a market without posts priced")
+	}
+}
+
+// The importance switch and the source chips are remembered per user and
+// shape the page: hidden rows, the ladder's pool, the island the script
+// starts from.
+func TestLevelsImportanceFilter(t *testing.T) {
+	h, ctx, _, _ := levelsFixture(t)
+	mux := levelsMux(h)
+	body := serve(ctx, mux, http.MethodGet, "/levels/ES").Body.String()
+	if !strings.Contains(body, `"tier":2`) || !strings.Contains(body, `data-lv-tier="2" class="on"`) || !strings.Contains(body, `data-tier="3" data-source="bars" hidden`) {
+		t.Errorf("default view: want tier 2 with weak rows hidden")
+	}
+	post := func(form string) int {
+		req := httptest.NewRequest(http.MethodPost, "/levels/view", strings.NewReader(form)).WithContext(ctx)
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		w := httptest.NewRecorder()
+		mux.ServeHTTP(w, req)
+		return w.Code
+	}
+	if code := post("tier=1&src=chart&src=gex"); code != http.StatusNoContent {
+		t.Fatalf("save = %d", code)
+	}
+	if f := h.levelsFilter(ctx); f.Tier != 1 || f.Sources["bars"] || !f.Sources["chart"] || !f.Sources["gex"] {
+		t.Errorf("filter after save = %+v", f)
+	}
+	body = serve(ctx, mux, http.MethodGet, "/levels/ES").Body.String()
+	if !strings.Contains(body, `"tier":1`) || !strings.Contains(body, `"sources":["chart","gex"]`) || strings.Contains(body, `data-tier="1" data-source="bars">`) || !strings.Contains(body, `id="lv-rows-shown">0<`) {
+		t.Errorf("view with bars off: every row from bars should be hidden")
+	}
+	if code := post("tier=9&src=nothing"); code != http.StatusNoContent {
+		t.Fatalf("odd save = %d", code)
+	}
+	if f := h.levelsFilter(ctx); f.Tier != 2 || len(f.Sources) != 3 {
+		t.Errorf("odd values should fall back to the default: %+v", f)
 	}
 }

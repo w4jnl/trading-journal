@@ -17,6 +17,12 @@ built against it carries the same marketing version.
   known, within three minutes of the post; `priceSource` says `MotiveWave`. Older marks lose to a
   newer broker or vendor bar, as before.
 
+### Web
+
+- Levels: an importance switch (Strong / + Medium / All, by score) and source chips (bars, chart,
+  gex) above the ladder, applied to the ladder, the charts and the table at once and remembered
+  per user; the zones stay scored over every level.
+
 ## 2.20.0, 2026-10-20
 
 ### Server

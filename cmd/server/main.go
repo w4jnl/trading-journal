@@ -954,6 +954,7 @@ func run() error {
 	mux.HandleFunc("GET /levels", h.LevelsPage)
 	mux.HandleFunc("GET /levels/data/{market}", h.LevelsData)
 	mux.HandleFunc("GET /levels/version/{market}", h.LevelsVersion)
+	mux.HandleFunc("POST /levels/view", h.LevelsViewSave)
 	mux.HandleFunc("POST /levels/{market}/plan", h.LevelsToPlan)
 	mux.HandleFunc("GET /levels/{market}", h.LevelsPage)
 	mux.HandleFunc("GET /oi", h.OIDashboardPage)
