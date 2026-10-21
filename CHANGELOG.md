@@ -7,6 +7,9 @@ built against it carries the same marketing version.
 
 ### Server
 
+- The Sets view of the trades page shows the Horizon column the Trades view has: a set's pill
+  covers the decision from its first entry to its last exit across the accounts, and each
+  account's leg underneath carries its own.
 - Fixed: the Levels ladder's importance switch and source chips did nothing in a browser that had
   cached the previous `levels.js`. The script was the one static file referenced without the build
   version query, and release builds serve `/static` immutable for a year, so the browser kept

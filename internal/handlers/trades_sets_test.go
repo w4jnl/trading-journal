@@ -94,6 +94,11 @@ func TestTradesSetsView(t *testing.T) {
 			t.Errorf("sets page missing %q", want)
 		}
 	}
+	// The horizon column: the set row (first entry to last exit), each
+	// member and the lone trade carry the pill, as the trades view does.
+	if n := strings.Count(body, `pill-horizon horizon-scalp`); n != 4 {
+		t.Errorf("sets page has %d horizon pills, want 4 (set, two members, the lone trade)", n)
+	}
 	if v, err := h.Queries.GetViewPref(ctx, models.GetViewPrefParams{UserID: uid, Page: "trades.view"}); err != nil || v != "sets" {
 		t.Errorf("view pref = %q, %v; want sets", v, err)
 	}
