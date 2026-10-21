@@ -37,7 +37,9 @@ built against it carries the same marketing version.
   when gamma is not a focus), and reaches every connected agent (`server_info.profile`, the resource
   `trading-journal://profile`, the prompts, `get_review_method`) and the REST API (`/api/v1/me`
   `settings.aiProfile`, `/api/v1/ai/method`). A review can be asked for in another language once
-  (`?lang=` in the app, `language` on the MCP prompts and `get_review_method`).
+  (`?lang=` in the app, `language` on the MCP prompts and `get_review_method`). `GET
+  /api/v1/ai/preview/{id}` shows the request a review would send, block by block with what is
+  cached and how big each part is, without calling a model.
 
 - The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
   range and the day type and takes its levels from the zones and the gamma map; the reviews of a

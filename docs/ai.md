@@ -53,7 +53,9 @@ window; a trader whose focus leaves out gamma gets the walls, not the whole map)
 every MCP client through `server_info.profile`, the resource `trading-journal://profile`, the
 prompts and `get_review_method`. The method itself, the contracts and the markers stay the
 journal's. A review can be asked for in another language once: `?lang=Czech` on the in-app review
-routes, the `language` argument on the MCP prompts and on `get_review_method`.
+routes, the `language` argument on the MCP prompts and on `get_review_method`. To see exactly what a
+review would send, `GET /api/v1/ai/preview/{entryId}` returns the request block by block, with what is
+cached and how big each part is, without calling a model.
 
 **Caching.** A call is blocks (`ai.Request`): the method, the label vocabulary and the playbooks
 lead and are flagged cacheable, the item follows. Anthropic receives `cache_control` on the last

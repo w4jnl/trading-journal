@@ -468,6 +468,33 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	return blocks, chart, nil
 }
 
+// aiReviewRequest is the model call a review of e makes: the system turn
+// (the method, the language), the evidence blocks, the chart image for a
+// trade or group when the user sends one (vision models; a model that
+// refuses it is asked again without it) and the language line. The preview
+// endpoint returns it without sending it.
+func (h *Handlers) aiReviewRequest(ctx context.Context, e models.JournalEntry) (ai.Request, error) {
+	tz := h.localTZ()
+	blocks, chart, err := h.aiEntryContext(ctx, e, tz)
+	if err != nil {
+		return ai.Request{}, err
+	}
+	req := ai.Request{System: aiReviewSystem(h.userAILanguage(ctx)), User: blocks}
+	last := &req.User[len(req.User)-1]
+	if chart != nil && (e.Scope == "trade" || e.Scope == "group") && h.userSendsChart(ctx) {
+		if b, err := h.chartEnvelopePNG(*chart, "", tz); err == nil {
+			req.Images = [][]byte{b}
+			last.Text = aiImageSentence + last.Text
+		}
+	}
+	// Restate the language directive at the top of the USER turn too - some local models
+	// follow the user message more closely than the system prompt for output language.
+	if lang := h.userAILanguage(ctx); lang != "" {
+		last.Text = "Reply in " + lang + " (write the whole review and the lesson in " + lang + "; keep only the keywords of the machine-readable lines in English).\n\n" + last.Text
+	}
+	return req, nil
+}
+
 // aiMaxMistakes / aiMaxEmotions cap the labels one review may fill: a few
 // that the evidence shows, not a sweep of the vocabulary.
 const (
@@ -495,26 +522,10 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	if err != nil {
 		return res, fmt.Errorf("load entry %d: %w", entryID, err)
 	}
-	tz := h.localTZ()
-	blocks, chart, err := h.aiEntryContext(ctx, e, tz)
+	tz, lang := h.localTZ(), h.userAILanguage(ctx)
+	req, err := h.aiReviewRequest(ctx, e)
 	if err != nil {
 		return res, err
-	}
-	// The chart image, for a trade or group when the user sends it (vision
-	// models; a model that refuses it is asked again without it).
-	req := ai.Request{System: aiReviewSystem(h.userAILanguage(ctx)), User: blocks}
-	last := &req.User[len(req.User)-1]
-	if chart != nil && (e.Scope == "trade" || e.Scope == "group") && h.userSendsChart(ctx) {
-		if b, err := h.chartEnvelopePNG(*chart, "", tz); err == nil {
-			req.Images = [][]byte{b}
-			last.Text = aiImageSentence + last.Text
-		}
-	}
-	// Restate the language directive at the top of the USER turn too - some local models
-	// follow the user message more closely than the system prompt for output language.
-	lang := h.userAILanguage(ctx)
-	if lang != "" {
-		last.Text = "Reply in " + lang + " (write the whole review and the lesson in " + lang + "; keep only the keywords of the machine-readable lines in English).\n\n" + last.Text
 	}
 	out, err := aiGenerate(ctx, client, req)
 	if err != nil {

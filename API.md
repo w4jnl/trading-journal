@@ -497,6 +497,21 @@ server serves the same method as its instructions, as the resource
 `trading-journal://method`, as the tool `get_review_method` and as prompts;
 the client skills only point at it.
 
+`GET /api/v1/ai/preview/{id}` is the request a review of journal entry `id`
+would send right now, without calling a model and without writing anything:
+`system` and `user` as lists of blocks (`text`, `cached`, `chars`,
+`tokensEstimate` at four characters a token), `images` (whether the chart
+would ride along), `language`, `method` and `totals` (`chars`,
+`tokensEstimate`, `cachedTokensEstimate`). `?lang=Czech` previews the review
+in another offered language. The cached blocks are what a provider's prompt
+cache reads back from the second call on; the last user block is the item
+itself and changes every time.
+
+```bash
+curl -s -H "Authorization: Bearer tj_..." "$BASE/api/v1/ai/preview/42" \
+  | jq '{scope, images, totals, blocks: [.system[], .user[] | {cached, tokensEstimate}]}'
+```
+
 ### AI from the phone (device key)
 
 Every AI call runs on the server with the user's own provider; a client only

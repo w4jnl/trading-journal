@@ -2,6 +2,9 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -107,5 +110,46 @@ func TestReviewCarriesTheProfile(t *testing.T) {
 	}
 	if u, _ := q.GetUserByID(ctx, 7); u.AiLanguage != "" {
 		t.Errorf("the override changed the setting to %q", u.AiLanguage)
+	}
+
+	// The preview is the same request, block by block, without a call.
+	calls := fp.calls
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/ai/preview/1?lang=Czech", nil).WithContext(ctx)
+	req.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+	h.APIAIPreview(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview = %d: %s", rec.Code, rec.Body.String())
+	}
+	var pv struct {
+		Scope, Language string
+		Images          int
+		System, User    []struct {
+			Cached         bool
+			Chars          int
+			TokensEstimate int
+			Text           string
+		}
+		Totals struct{ Chars, TokensEstimate, CachedTokensEstimate int }
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &pv); err != nil {
+		t.Fatal(err)
+	}
+	if pv.Scope != "trade" || pv.Language != "Czech" || pv.Images != 0 || len(pv.System) < 2 || len(pv.User) < 3 || fp.calls != calls {
+		t.Errorf("preview = scope %s lang %s images %d system %d user %d calls %d", pv.Scope, pv.Language, pv.Images, len(pv.System), len(pv.User), fp.calls-calls)
+	}
+	if !pv.User[0].Cached || !strings.Contains(pv.User[0].Text, "labelVocabulary") || !pv.User[1].Cached || !strings.Contains(pv.User[1].Text, "THE TRADER") ||
+		pv.User[len(pv.User)-1].Cached || !strings.HasPrefix(pv.User[len(pv.User)-1].Text, "Reply in Czech") {
+		t.Errorf("preview blocks: %+v", pv.User)
+	}
+	if pv.Totals.CachedTokensEstimate == 0 || pv.Totals.CachedTokensEstimate >= pv.Totals.TokensEstimate || pv.Totals.TokensEstimate != (pv.Totals.Chars+3)/4 {
+		t.Errorf("totals = %+v", pv.Totals)
+	}
+	req = httptest.NewRequest(http.MethodGet, "/api/v1/ai/preview/99", nil).WithContext(ctx)
+	req.SetPathValue("id", "99")
+	rec = httptest.NewRecorder()
+	h.APIAIPreview(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Errorf("unknown entry = %d", rec.Code)
 	}
 }
