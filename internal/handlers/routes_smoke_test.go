@@ -257,6 +257,9 @@ func TestSmokeEveryGETRoute(t *testing.T) {
 			for _, bad := range unnoncedScripts(rec.Body.String(), "smoke-nonce") {
 				t.Errorf("GET %s: inline script without the nonce (CSP would block it): %s", target, bad)
 			}
+			for _, bad := range unversionedScripts(rec.Body.String()) {
+				t.Errorf("GET %s: static script without {{assetVer}} (a browser keeps the old copy for a year): %s", target, bad)
+			}
 		}
 		t.Logf("GET %-40s %d", target, rec.Code)
 	}
@@ -283,6 +286,24 @@ func unnoncedScripts(body, nonce string) []string {
 		case strings.Contains(tag, `nonce="`+nonce+`"`):
 		default:
 			bad = append(bad, tag)
+		}
+	}
+	return bad
+}
+
+var staticScriptRe = regexp.MustCompile(`<script\b[^>]*\bsrc="(/static/[^"]*)"`)
+
+// unversionedScripts returns the same-origin <script src> tags whose URL lacks
+// the ?v= query the assetVer template func appends. Release builds serve
+// /static immutable for a year, so a script referenced by its bare path keeps
+// running in the trader's browser long after the binary changed it (the
+// Levels ladder buttons were dead for every browser that had cached the
+// previous levels.js).
+func unversionedScripts(body string) []string {
+	var bad []string
+	for _, m := range staticScriptRe.FindAllStringSubmatch(body, -1) {
+		if !strings.Contains(m[1], "?v=") {
+			bad = append(bad, m[0])
 		}
 	}
 	return bad
