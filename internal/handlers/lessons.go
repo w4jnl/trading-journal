@@ -72,6 +72,27 @@ func stripAILesson(s string) string {
 // aiLessonInstruction asks every review for the lesson line (the method's).
 func aiLessonInstruction() string { return aimethod.LessonLine() }
 
+// aiDayLessons are the lessons recorded on a trading day by its trade and
+// group reviews, for the day's own review to build on.
+func (h *Handlers) aiDayLessons(ctx context.Context, day string) []map[string]string {
+	rows, err := h.Queries.ListLessonsBetween(ctx, models.ListLessonsBetweenParams{UserID: userID(ctx), Day: day, Day_2: day})
+	if err != nil {
+		return nil
+	}
+	out := make([]map[string]string, 0, len(rows))
+	for _, l := range rows {
+		if l.Scope == "day" || l.Scope == "week" {
+			continue
+		}
+		m := map[string]string{"scope": l.Scope, "lesson": l.Text}
+		if l.MistakeKey != nil {
+			m["mistake"] = *l.MistakeKey
+		}
+		out = append(out, m)
+	}
+	return out
+}
+
 // recordLesson replaces the entry's lesson with the review's.
 func (h *Handlers) recordLesson(ctx context.Context, e models.JournalEntry, l aiLesson) {
 	if l.Text == "" {

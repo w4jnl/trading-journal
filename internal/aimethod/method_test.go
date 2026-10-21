@@ -8,18 +8,19 @@ import (
 	"github.com/w4jnl/trading-journal/internal/journal"
 )
 
-// The rendered prompts equal the method as it stood before this package
-// (captured from the handlers' constants), so moving the text changed
-// nothing a model sees.
+// The rendered prompts equal the committed method text: a change to the
+// method is a deliberate edit of a golden file and a version bump, never a
+// side effect. (The v1 files were the handlers' constants before the
+// package; v2 reads bars as one string per row and the day's lessons.)
 func TestSystemPromptMatchesGolden(t *testing.T) {
 	for _, tc := range []struct {
 		scope Scope
 		lang  string
 		file  string
 	}{
-		{ScopeTrade, "", "system_trade_v1.txt"}, {ScopeGroup, "", "system_group_v1.txt"},
-		{ScopeDay, "", "system_day_v1.txt"}, {ScopeWeek, "", "system_week_v1.txt"},
-		{ScopeTrade, "Czech", "system_trade_czech_v1.txt"},
+		{ScopeTrade, "", "system_trade_v2.txt"}, {ScopeGroup, "", "system_group_v2.txt"},
+		{ScopeDay, "", "system_day_v2.txt"}, {ScopeWeek, "", "system_week_v2.txt"},
+		{ScopeTrade, "Czech", "system_trade_czech_v2.txt"},
 	} {
 		want, err := os.ReadFile("testdata/" + tc.file)
 		if err != nil {
@@ -56,7 +57,7 @@ func TestVocabularyCoversLabels(t *testing.T) {
 			t.Errorf("lesson line lacks %s", k)
 		}
 	}
-	if Version == "" || Version == "1" {
+	if Version != "2" {
 		t.Error("the method version must move past the pre-package method")
 	}
 }

@@ -167,3 +167,20 @@ func TestAIWordsCoverEveryLanguage(t *testing.T) {
 		t.Errorf("customHost = %q", got)
 	}
 }
+
+// A review reads the trader's own words: the blocks earlier reviews and the
+// gamma annotator appended are dropped and counted, the rest is cut to
+// the cap.
+func TestTraderBody(t *testing.T) {
+	body := "Took the 3bar at the open.\n\n---\n\n### AI review (x) — 2026-10-09\n\n- **Setup:** fine\n\n<!-- " + aiMarkerLocal + " method=2 -->\n---\n\n### GEX\n\n<!-- " + gexMarker + " -->\n---\n\nAdded: moved the stop too early.\n---\n\n### AI review (mcp)\n\n<!-- " + aiMarkerMCP + " -->"
+	words, prior := traderBody(body, 4000)
+	if prior != 2 || strings.Contains(words, "AI review") || strings.Contains(words, "GEX") || !strings.Contains(words, "Took the 3bar") || !strings.Contains(words, "moved the stop") {
+		t.Errorf("traderBody = %q prior %d", words, prior)
+	}
+	if w, _ := traderBody(strings.Repeat("x", 50), 10); len([]rune(w)) != 12 || !strings.HasSuffix(w, " …") {
+		t.Errorf("cap = %q", w)
+	}
+	if w, n := traderBody("", 100); w != "" || n != 0 {
+		t.Errorf("empty = %q %d", w, n)
+	}
+}

@@ -20,10 +20,10 @@ import (
 // recent days complete and fresh.
 
 const (
-	aiSessionDays = 3   // days of one-minute bars read from the cache
-	aiBars15m     = 120 // about thirty hours
-	aiBars5m      = 36  // three hours
-	aiBars1m      = 30
+	aiSessionDays = 3  // days of one-minute bars read from the cache
+	aiBars15m     = 52 // about thirty hours
+	aiBars5m      = 24 // three hours
+	aiBars1m      = 20
 )
 
 // aiSession is the session context and window for a root as of asOf, nil
@@ -75,11 +75,7 @@ func (h *Handlers) aiSession(ctx context.Context, root string, asOf time.Time) m
 		if len(agg) > w.n {
 			agg = agg[len(agg)-w.n:]
 		}
-		rows := make([][]any, 0, len(agg))
-		for _, b := range agg {
-			rows = append(rows, []any{time.Unix(b.Time, 0).In(tz).Format("Mon 15:04"), b.Open, b.High, b.Low, b.Close})
-		}
-		windows[string(w.tf)] = rows
+		windows[string(w.tf)] = barRows(agg, "Mon 15:04", tz)
 	}
 	out["windows"] = windows
 	out["windowNote"] = aimethod.Glossary["sessionAtEntry.windows"]
