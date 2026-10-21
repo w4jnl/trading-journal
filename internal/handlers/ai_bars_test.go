@@ -62,6 +62,18 @@ func TestAIBarWindow(t *testing.T) {
 	}
 }
 
+// itemObject is the JSON object of a flattened user turn that carries the
+// item under review (MarshalIndent never emits a blank line, so objects
+// split on them).
+func itemObject(user string) string {
+	for _, chunk := range strings.Split(user, "\n\n") {
+		if strings.HasPrefix(chunk, "{") && strings.Contains(chunk, `"entry"`) {
+			return chunk
+		}
+	}
+	return ""
+}
+
 // imageClient accepts or refuses images, recording what it was sent.
 type imageClient struct {
 	refuse      int // status for image calls, 0 = accept
@@ -93,22 +105,22 @@ func TestAIGenerateImageFallback(t *testing.T) {
 	ctx := context.Background()
 	user := "The attached image is this trade's chart (candles with the entry and exit marked).\n\n{}"
 	ok := &imageClient{}
-	if out, err := aiGenerate(ctx, ok, "s", user, []byte("png")); err != nil || out != "image review" || !ok.lastImageOK {
+	if out, err := aiGenerate(ctx, ok, aiRequest("s", user, []byte("png"))); err != nil || out != "image review" || !ok.lastImageOK {
 		t.Errorf("vision model: %q %v", out, err)
 	}
 	refuse := &imageClient{refuse: 400}
-	if out, err := aiGenerate(ctx, refuse, "s", user, []byte("png")); err != nil || out != "text review" || refuse.textCalls != 1 || refuse.lastUser != "{}" {
+	if out, err := aiGenerate(ctx, refuse, aiRequest("s", user, []byte("png"))); err != nil || out != "text review" || refuse.textCalls != 1 || refuse.lastUser != "{}" {
 		t.Errorf("text-only model: %q %v calls=%d user=%q", out, err, refuse.textCalls, refuse.lastUser)
 	}
 	for _, code := range []int{401, 429, 503} {
 		c := &imageClient{refuse: code}
 		var se *ai.StatusError
-		if _, err := aiGenerate(ctx, c, "s", user, []byte("png")); !errors.As(err, &se) || c.textCalls != 0 {
+		if _, err := aiGenerate(ctx, c, aiRequest("s", user, []byte("png"))); !errors.As(err, &se) || c.textCalls != 0 {
 			t.Errorf("status %d retried without the image (err %v)", code, err)
 		}
 	}
 	plain := &imageClient{}
-	if _, err := aiGenerate(ctx, plain, "s", "{}", nil); err != nil || plain.imageCalls != 0 || plain.textCalls != 1 {
+	if _, err := aiGenerate(ctx, plain, aiRequest("s", "{}", nil)); err != nil || plain.imageCalls != 0 || plain.textCalls != 1 {
 		t.Error("no image: should be a text call")
 	}
 }
@@ -171,9 +183,17 @@ func TestTradeReviewSendsBarsAndChart(t *testing.T) {
 				} `json:"chart"`
 			} `json:"entry"`
 		}
-		ctxJSON := fp.user[strings.Index(fp.user, "{"):]
-		if err := json.Unmarshal([]byte(ctxJSON), &sent); err != nil || len(sent.Entry.Chart.Panels) == 0 {
+		// The user turn is a few JSON objects (the vocabulary and the
+		// playbooks first, then the item); the item is the one with "entry".
+		item := itemObject(fp.user)
+		if err := json.Unmarshal([]byte(item), &sent); err != nil || len(sent.Entry.Chart.Panels) == 0 {
 			t.Fatalf("no chart in the context: %v", err)
+		}
+		if v, e := strings.Index(fp.user, `"labelVocabulary"`), strings.Index(fp.user, `"entry"`); v < 0 || e < 0 || v > e {
+			t.Errorf("the vocabulary must lead the user turn (stable first): vocab at %d, entry at %d", v, e)
+		}
+		if !strings.Contains(fp.user, "THIS ITEM IS A TRADE") || !strings.Contains(fp.system, "THIS ITEM IS ONE TRADE") {
+			t.Error("the scope line or the method is missing")
 		}
 		return sent.Entry.Chart.Panels[0]["bars"].(map[string]any)
 	}
@@ -196,7 +216,7 @@ func TestTradeReviewSendsBarsAndChart(t *testing.T) {
 		t.Fatal(err)
 	}
 	review()
-	if fp.images != 1 || !strings.HasPrefix(fp.user, "The attached image is this trade's chart") {
+	if fp.images != 1 || !strings.Contains(fp.user, "The attached image is this trade's chart") {
 		t.Errorf("chart image not sent: images=%d user=%.60q", fp.images, fp.user)
 	}
 }

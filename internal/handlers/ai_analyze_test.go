@@ -55,27 +55,28 @@ func TestParseAIVerdictLabels(t *testing.T) {
 
 // Each scope gets its own brief and verdict line; an unknown scope reads as a
 // trade; a language wraps the prompt but leaves the verdict keywords alone.
+// The system prompt is the whole method, the same for every scope, with the
+// scope named at its end (the user turn repeats it); the language wraps it.
 func TestAISystemPromptPerScope(t *testing.T) {
-	for _, c := range []struct {
-		scope, has string
-		labels     bool
-	}{
-		{"trade", "ONE TRADE", true},
-		{"group", "Copy consistency", true},
-		{"day", "WHOLE TRADING DAY", false},
-		{"week", "weeklyDigest", false},
-		{"", "ONE TRADE", true},
+	for _, c := range []struct{ scope, line string }{
+		{"trade", "THIS ITEM IS A TRADE"}, {"group", "THIS ITEM IS A GROUP"}, {"day", "THIS ITEM IS A DAY"}, {"week", "THIS ITEM IS A WEEK"}, {"", "THIS ITEM IS A TRADE"},
 	} {
 		p := aiSystemPrompt(c.scope, "")
-		if !strings.Contains(p, c.has) || !strings.Contains(p, "tj-ai:verdict tag=") {
-			t.Errorf("%q prompt lacks %q or the verdict line", c.scope, c.has)
-		}
-		if got := strings.Contains(p, "mistakes=<keys|none>"); got != c.labels {
-			t.Errorf("%q prompt asks for labels = %v, want %v", c.scope, got, c.labels)
+		for _, has := range []string{c.line, "ONE TRADE", "Copy consistency", "WHOLE TRADING DAY", "weeklyDigest", "tj-ai:verdict tag=", "mistakes=<keys|none>"} {
+			if !strings.Contains(p, has) {
+				t.Errorf("%q prompt lacks %q", c.scope, has)
+			}
 		}
 	}
-	if p := aiSystemPrompt("day", "Czech"); !strings.HasPrefix(p, "WRITE YOUR ENTIRE REVIEW IN Czech") || !strings.Contains(p, "WHOLE TRADING DAY") {
-		t.Errorf("language wrapper lost the scope part")
+	if p := aiSystemPrompt("day", "Czech"); !strings.HasPrefix(p, "WRITE YOUR ENTIRE REVIEW IN Czech") || !strings.Contains(p, "THIS ITEM IS A DAY") {
+		t.Errorf("language wrapper lost the scope line")
+	}
+	sys := aiReviewSystem("Czech")
+	if len(sys) != 2 || !sys[0].Cache || sys[1].Cache || !strings.HasPrefix(sys[1].Text, "WRITE YOUR ENTIRE REVIEW IN Czech") {
+		t.Errorf("system blocks = %+v", sys)
+	}
+	if sys := aiReviewSystem(""); len(sys) != 1 || !sys[0].Cache {
+		t.Errorf("default system blocks = %d", len(sys))
 	}
 }
 
