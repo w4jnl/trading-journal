@@ -41,6 +41,11 @@ it exists once and carries a version (`aimethod.Version`, recorded on every revi
 `method=` and on every stored output). The contracts and the markers are not user-editable: the
 parsers and the review loop depend on them.
 
+**What a review costs.** The evidence is JSON; bars are one string per row ("time open high low
+close") so the session windows and the chart stay a few thousand tokens, the trader's own words
+exclude earlier AI blocks, and a day review builds on the day's recorded lessons. A trade review
+runs about five to seven thousand input tokens with a typical playbook list, more with a chart image.
+
 **The day map in the model's evidence.** The plan draft, the per-note reviews of a trade, a group
 or a day, and the levels suggestion on an open position all carry the day map (`/levels`) for the
 markets involved: the strongest zones with what meets there, the nearest zones above and below the

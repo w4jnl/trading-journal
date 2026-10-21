@@ -9,7 +9,6 @@ import (
 	"math"
 	"net/http"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -18,7 +17,6 @@ import (
 	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/levelmap"
-	"github.com/w4jnl/trading-journal/internal/marketdata"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/positions"
 )
@@ -167,119 +165,6 @@ func aiTruncate(s string, n int) string {
 	return string(r[:n]) + "…"
 }
 
-// compactChartForAI turns the chart into what the reviewer reads: per panel
-// the contract, the entry and exit averages and markers, and a window of
-// price bars around the trade (aiBarWindow) instead of every cached bar.
-func compactChartForAI(ce chartEnvelope, tz *time.Location) map[string]any {
-	panels := make([]map[string]any, 0, len(ce.Panels))
-	for i, p := range ce.Panels {
-		if i == aiMaxChartPanels {
-			break
-		}
-		panel := map[string]any{
-			"contract":  p.Contract,
-			"direction": p.Direction,
-			"entryAvg":  p.EntryAvg,
-			"exitAvg":   p.ExitAvg,
-			"markers":   p.Markers,
-		}
-		if w := aiBarWindow(p, tz); w != nil {
-			panel["bars"] = w
-		}
-		panels = append(panels, panel)
-	}
-	return map[string]any{"status": ce.Status, "panels": panels}
-}
-
-// The bar window: aiBarsBefore bars before the entry and aiBarsAfter after the
-// exit, merged into wider bars when that is more than aiMaxBars; a chart
-// beyond aiMaxChartPanels contracts (a busy day) is cut.
-const (
-	aiBarsBefore     = 30
-	aiBarsAfter      = 15
-	aiMaxBars        = 90
-	aiMaxChartPanels = 3
-)
-
-// aiBarWindow is the stretch of a panel's bars around its trade, as
-// {tf, entry, exit, rows: [[time, open, high, low, close], ...]} with times
-// in the trader's timezone: what the model needs to judge the entry against
-// the move and the exit against what followed. nil without bars.
-func aiBarWindow(p chartPanel, tz *time.Location) map[string]any {
-	if len(p.Bars) == 0 {
-		return nil
-	}
-	var entryT, exitT int64
-	for _, m := range p.Markers {
-		if m.Role == "entry" && (entryT == 0 || m.T < entryT) {
-			entryT = m.T
-		}
-		if m.Role == "exit" && m.T > exitT {
-			exitT = m.T
-		}
-	}
-	// barAt: the last bar opening at or before t.
-	barAt := func(t int64) int {
-		i := sort.Search(len(p.Bars), func(i int) bool { return p.Bars[i].Time > t }) - 1
-		if i < 0 {
-			return 0
-		}
-		return i
-	}
-	start, end := len(p.Bars)-aiMaxBars, len(p.Bars)
-	if entryT > 0 {
-		in, out := barAt(entryT), barAt(entryT)
-		if exitT > 0 {
-			out = barAt(exitT)
-		}
-		start, end = in-aiBarsBefore, out+aiBarsAfter+1
-	}
-	start, end = max(start, 0), min(end, len(p.Bars))
-	bars := p.Bars[start:end]
-	// Merge k consecutive bars when the window is too long.
-	k := (len(bars) + aiMaxBars - 1) / aiMaxBars
-	tf := p.BarTimeframe
-	if k > 1 {
-		merged := make([]marketdata.Bar, 0, aiMaxBars)
-		for i := 0; i < len(bars); i += k {
-			j := min(i+k, len(bars))
-			b := marketdata.Bar{Time: bars[i].Time, Open: bars[i].Open, High: bars[i].High, Low: bars[i].Low, Close: bars[j-1].Close}
-			for _, x := range bars[i:j] {
-				b.High, b.Low = math.Max(b.High, x.High), math.Min(b.Low, x.Low)
-			}
-			merged = append(merged, b)
-		}
-		bars = merged
-		tf = scaleTimeframe(p.BarTimeframe, k)
-	}
-	clock := func(t int64) string { return time.Unix(t, 0).In(tz).Format("15:04") }
-	rows := make([][]any, 0, len(bars))
-	for _, b := range bars {
-		rows = append(rows, []any{clock(b.Time), b.Open, b.High, b.Low, b.Close})
-	}
-	w := map[string]any{"tf": tf, "rows": rows}
-	if entryT > 0 {
-		w["entry"] = clock(entryT)
-	}
-	if exitT > 0 {
-		w["exit"] = clock(exitT)
-	}
-	return w
-}
-
-// scaleTimeframe names k merged bars of tf ("1m" x5 = "5m"); tf itself when it
-// does not parse.
-func scaleTimeframe(tf string, k int) string {
-	if len(tf) < 2 {
-		return tf
-	}
-	n, err := strconv.Atoi(tf[:len(tf)-1])
-	if err != nil {
-		return tf
-	}
-	return strconv.Itoa(n*k) + tf[len(tf)-1:]
-}
-
 // aiTrade is one trade as the reviewer sees it: prices and times in the
 // trader's timezone, the plan and the measured price path (nulls = not
 // planned or not measured) and, for a trade or group review, its fills.
@@ -359,6 +244,31 @@ func (h *Handlers) aiTrades(ctx context.Context, trades []linkedTrade, tz *time.
 	return out, nil
 }
 
+// aiNotesRunes caps the trader's words a review reads.
+const aiNotesRunes = 4000
+
+// traderBody is the note's body without the blocks the AI or the gamma
+// annotator appended, cut to n runes, and how many AI blocks were dropped.
+func traderBody(body string, n int) (string, int) {
+	var keep []string
+	prior := 0
+	for _, seg := range strings.Split(body, "\n---\n") {
+		switch {
+		case strings.Contains(seg, "<!-- "+aiMarkerLocal) || strings.Contains(seg, "<!-- "+aiMarkerMCP):
+			prior++
+			continue
+		case strings.Contains(seg, "<!-- "+gexMarker) || strings.TrimSpace(seg) == strings.TrimSpace(aiPlaceholderBody):
+			continue
+		}
+		keep = append(keep, seg)
+	}
+	out := strings.TrimSpace(strings.Join(keep, "\n---\n"))
+	if r := []rune(out); len(r) > n {
+		out = string(r[:n]) + " …"
+	}
+	return out, prior
+}
+
 // aiEntryContext builds the user-prompt JSON for one entry, shaped by its
 // scope: the entry (notes, labels, checklist, summary, compact chart) with
 // its trades in the reviewer's view (fills for a trade or group; none for a
@@ -374,6 +284,16 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	delete(detail, "chartPng")
 	delete(detail, "createdAt")
 	delete(detail, "updatedAt")
+	// The trader's own words: the blocks the AI or the gamma annotator
+	// appended are dropped (a review must not re-read its predecessors as
+	// the trader's notes), their count kept.
+	if body, ok := detail["notes"].(string); ok {
+		words, prior := traderBody(body, aiNotesRunes)
+		detail["notes"] = words
+		if prior > 0 {
+			detail["priorReviews"] = prior
+		}
+	}
 	var chart *chartEnvelope
 	if ce, ok := detail["chart"].(chartEnvelope); ok && e.Scope != "week" {
 		chart = &ce
@@ -437,6 +357,12 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 
 	if lessons := h.aiRecentLessons(ctx, e.ID); len(lessons) > 0 {
 		out["recentLessons"] = lessons
+	}
+	// A day's review builds on what the day's own trade reviews drew.
+	if e.Scope == "day" {
+		if lessons := h.aiDayLessons(ctx, e.EntryDate.In(tz).Format("2006-01-02")); len(lessons) > 0 {
+			out["dayLessons"] = lessons
+		}
 	}
 	// A decision is judged with the session as it stood at its entry: the
 	// structure and the bars known then, never what followed.

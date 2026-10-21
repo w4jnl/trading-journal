@@ -35,23 +35,27 @@ func TestAIBarWindow(t *testing.T) {
 	at := func(i int) int64 { return bars[i].Time + 20 }
 	p := chartPanel{BarTimeframe: "1m", Bars: bars, Markers: []chartMarker{{T: at(100), Role: "entry"}, {T: at(110), Role: "exit"}}}
 	w := aiBarWindow(p, time.UTC)
-	rows := w["rows"].([][]any)
-	if w["tf"] != "1m" || len(rows) != 56 || rows[0][0] != "14:10" || w["entry"] != "14:40" || w["exit"] != "14:50" {
-		t.Errorf("window tf=%v rows=%d first=%v entry=%v exit=%v", w["tf"], len(rows), rows[0][0], w["entry"], w["exit"])
+	rows := w["rows"].([]string)
+	if w["tf"] != "1m" || len(rows) != 56 || !strings.HasPrefix(rows[0], "14:10 ") || w["entry"] != "14:40" || w["exit"] != "14:50" {
+		t.Errorf("window tf=%v rows=%d first=%v entry=%v exit=%v", w["tf"], len(rows), rows[0], w["entry"], w["exit"])
 	}
-	if rows[0][1] != 7070.0 || rows[0][2] != 7071.0 {
-		t.Errorf("row = %v", rows[0])
+	// One string per bar, "time open high low close", prices without trailing zeros.
+	if rows[0] != "14:10 7070 7071 7069 7070.5" && !strings.HasPrefix(rows[0], "14:10 7070 7071 ") {
+		t.Errorf("row = %q", rows[0])
+	}
+	if strings.Count(rows[0], " ") != 4 || strings.Contains(rows[0], ".00") {
+		t.Errorf("row shape = %q", rows[0])
 	}
 	// A long hold: 10..190 plus margins = 200 bars -> merged by 3.
 	p.Markers = []chartMarker{{T: at(10), Role: "entry"}, {T: at(190), Role: "exit"}}
 	w = aiBarWindow(p, time.UTC)
-	rows = w["rows"].([][]any)
-	if w["tf"] != "3m" || len(rows) != 67 || rows[0][2] != 7003.0 {
+	rows = w["rows"].([]string)
+	if w["tf"] != "3m" || len(rows) != 67 || !strings.Contains(rows[0], " 7003 ") {
 		t.Errorf("merged tf=%v rows=%d first=%v", w["tf"], len(rows), rows[0])
 	}
 	p.Markers = nil
-	if rows := aiBarWindow(p, time.UTC)["rows"].([][]any); len(rows) != 90 || rows[0][0] != "14:50" {
-		t.Errorf("no markers: %d rows from %v", len(rows), rows[0][0])
+	if rows := aiBarWindow(p, time.UTC)["rows"].([]string); len(rows) != 90 || !strings.HasPrefix(rows[0], "14:50 ") {
+		t.Errorf("no markers: %d rows from %v", len(rows), rows[0])
 	}
 	if aiBarWindow(chartPanel{}, time.UTC) != nil {
 		t.Error("window without bars")
@@ -176,6 +180,13 @@ func TestTradeReviewSendsBarsAndChart(t *testing.T) {
 	bars := review()
 	if bars["tf"] != "1m" || bars["entry"] != "14:01" || bars["exit"] != "14:04" || len(bars["rows"].([]any)) < 45 || fp.images != 0 {
 		t.Errorf("bars = tf %v entry %v exit %v rows %d, images %d", bars["tf"], bars["entry"], bars["exit"], len(bars["rows"].([]any)), fp.images)
+	}
+	t.Logf("user prompt: %d chars", len(fp.user))
+	if len(fp.user) > 30000 {
+		t.Errorf("user prompt grew to %d chars; the bars are meant to be compact", len(fp.user))
+	}
+	if strings.Contains(fp.user, "\"notes\": \"") && strings.Contains(fp.user, "tj-ai:") {
+		t.Errorf("an earlier review leaked into the trader's notes")
 	}
 	if !strings.Contains(fp.system, "entry.chart.panels[].bars") {
 		t.Error("the prompt does not explain the bars")

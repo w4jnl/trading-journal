@@ -12,6 +12,11 @@ built against it carries the same marketing version.
   verdict contracts, the label vocabulary, a glossary of the evidence) and renders the review
   prompts from them, byte for byte what they were. Every review note's marker and every stored AI
   output now record the method version (`method=2`), so later rubric changes never blur comparisons.
+- Reviews send less and read better: every bar is one string ("time open high low close") instead of
+  seven lines of JSON, the session windows are trimmed to the prior session and the last hours, a
+  note's earlier AI reviews and gamma block are no longer sent back as the trader's words (their
+  count is), and a day's review receives the lessons its own trade reviews already drew and is
+  asked to build on them. A trade review costs about half the input tokens it did.
 
 - The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
   range and the day type and takes its levels from the zones and the gamma map; the reviews of a
