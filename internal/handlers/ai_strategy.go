@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"html/template"
 	"math"
 	"net/http"
@@ -344,7 +345,7 @@ func (h *Handlers) draftStrategy(ctx context.Context, strategyID int64) error {
 	data, _ := json.Marshal(strategyDraftData{Checklist: cleanRules(res.Checklist, 8), StatedVsActual: res.StatedVsActual, Evidence: ev})
 	return h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{
 		UserID: userID(ctx), Kind: aiKindStrategyDraft, Ref: strconv.FormatInt(strategyID, 10),
-		Body: strings.TrimSpace(res.Playbook), Data: string(data), Model: model.Label(aiWordsFor("")),
+		Body: strings.TrimSpace(res.Playbook), Data: string(data), Model: model.Label(aiWordsFor("")), Method: aimethod.Version,
 	})
 }
 
@@ -516,7 +517,7 @@ func (h *Handlers) discoverStrategies(ctx context.Context) error {
 	}
 	data, _ := json.Marshal(groups)
 	return h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{
-		UserID: userID(ctx), Kind: aiKindDiscovery, Ref: "all", Body: "", Data: string(data), Model: model.Label(aiWordsFor("")),
+		UserID: userID(ctx), Kind: aiKindDiscovery, Ref: "all", Body: "", Data: string(data), Model: model.Label(aiWordsFor("")), Method: aimethod.Version,
 	})
 }
 
@@ -656,7 +657,7 @@ func (h *Handlers) StrategyDiscoverCreate(w http.ResponseWriter, r *http.Request
 		}
 		g.Created = true
 		data, _ := json.Marshal(groups)
-		_ = h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{UserID: userID(ctx), Kind: aiKindDiscovery, Ref: "all", Body: out.Body, Data: string(data), Model: out.Model})
+		_ = h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{UserID: userID(ctx), Kind: aiKindDiscovery, Ref: "all", Body: out.Body, Data: string(data), Model: out.Model, Method: out.Method})
 		redirectLibrary(w, r, "strategies", "strategy-found", "")
 		return
 	}

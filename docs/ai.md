@@ -33,6 +33,14 @@ strategy or labels: it records suggestions you accept or dismiss, and each revie
 lesson for the ledger. Reviews run in the background and lock only the note they are writing.
 See [features.md](features.md#ai-reviews) for the behaviour on the page.
 
+**The method is data.** `internal/aimethod` owns what the models work by: the generic skill (role,
+grounding rules, the glossary of the evidence the app hands over, the format), one skill per entry
+scope (trade, group, day, week), the lesson and verdict contracts and the label vocabulary. The
+in-app prompts render from it; the MCP server and the client skills will read the same method, so
+it exists once and carries a version (`aimethod.Version`, recorded on every review marker as
+`method=` and on every stored output). The contracts and the markers are not user-editable: the
+parsers and the review loop depend on them.
+
 **The day map in the model's evidence.** The plan draft, the per-note reviews of a trade, a group
 or a day, and the levels suggestion on an open position all carry the day map (`/levels`) for the
 markets involved: the strongest zones with what meets there, the nearest zones above and below the

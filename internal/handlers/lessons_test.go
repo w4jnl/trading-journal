@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,7 +47,7 @@ func TestParseAILesson(t *testing.T) {
 	if strings.Contains(aiLessonInstruction(), "no-stop") {
 		t.Error("the lesson line offers no-stop")
 	}
-	vocab, _ := json.Marshal(aiLabelVocabulary())
+	vocab, _ := json.Marshal(aimethod.LabelVocabulary())
 	if strings.Contains(string(vocab), "no-stop") || !strings.Contains(string(vocab), "moved-stop") {
 		t.Errorf("label vocabulary offered to the review = %s", vocab)
 	}

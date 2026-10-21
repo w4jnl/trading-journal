@@ -25,7 +25,7 @@ func (q *Queries) DeleteAIOutput(ctx context.Context, arg DeleteAIOutputParams) 
 }
 
 const getAIOutput = `-- name: GetAIOutput :one
-SELECT user_id, kind, ref, body, data, model, created_at FROM ai_outputs WHERE user_id = ? AND kind = ? AND ref = ?
+SELECT user_id, kind, ref, body, data, model, created_at, method FROM ai_outputs WHERE user_id = ? AND kind = ? AND ref = ?
 `
 
 type GetAIOutputParams struct {
@@ -45,12 +45,13 @@ func (q *Queries) GetAIOutput(ctx context.Context, arg GetAIOutputParams) (AiOut
 		&i.Data,
 		&i.Model,
 		&i.CreatedAt,
+		&i.Method,
 	)
 	return i, err
 }
 
 const listAIOutputsOfKind = `-- name: ListAIOutputsOfKind :many
-SELECT user_id, kind, ref, body, data, model, created_at FROM ai_outputs WHERE user_id = ? AND kind = ? ORDER BY created_at DESC
+SELECT user_id, kind, ref, body, data, model, created_at, method FROM ai_outputs WHERE user_id = ? AND kind = ? ORDER BY created_at DESC
 `
 
 type ListAIOutputsOfKindParams struct {
@@ -75,6 +76,7 @@ func (q *Queries) ListAIOutputsOfKind(ctx context.Context, arg ListAIOutputsOfKi
 			&i.Data,
 			&i.Model,
 			&i.CreatedAt,
+			&i.Method,
 		); err != nil {
 			return nil, err
 		}
@@ -90,12 +92,13 @@ func (q *Queries) ListAIOutputsOfKind(ctx context.Context, arg ListAIOutputsOfKi
 }
 
 const upsertAIOutput = `-- name: UpsertAIOutput :exec
-INSERT INTO ai_outputs (user_id, kind, ref, body, data, model)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO ai_outputs (user_id, kind, ref, body, data, model, method)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, kind, ref) DO UPDATE SET
     body = excluded.body,
     data = excluded.data,
     model = excluded.model,
+    method = excluded.method,
     created_at = CURRENT_TIMESTAMP
 `
 
@@ -106,6 +109,7 @@ type UpsertAIOutputParams struct {
 	Body   string `json:"body"`
 	Data   string `json:"data"`
 	Model  string `json:"model"`
+	Method string `json:"method"`
 }
 
 func (q *Queries) UpsertAIOutput(ctx context.Context, arg UpsertAIOutputParams) error {
@@ -116,6 +120,7 @@ func (q *Queries) UpsertAIOutput(ctx context.Context, arg UpsertAIOutputParams) 
 		arg.Body,
 		arg.Data,
 		arg.Model,
+		arg.Method,
 	)
 	return err
 }

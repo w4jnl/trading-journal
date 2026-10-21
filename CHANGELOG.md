@@ -7,6 +7,12 @@ built against it carries the same marketing version.
 
 ### Server
 
+- The AI method lives in one place: `internal/aimethod` holds the skills the journal's models work
+  by as data (the generic futures day-trader analyst, one skill per entry scope, the lesson and
+  verdict contracts, the label vocabulary, a glossary of the evidence) and renders the review
+  prompts from them, byte for byte what they were. Every review note's marker and every stored AI
+  output now record the method version (`method=2`), so later rubric changes never blur comparisons.
+
 - The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
   range and the day type and takes its levels from the zones and the gamma map; the reviews of a
   trade, a group or a day and the levels suggestion on an open position get the map around the
