@@ -486,6 +486,7 @@
         {{template "sort_th" (dict "Label" "Entry time" "Col" "entry" "Class" "c-time" "Sort" $sort "Dir" $dir "Refs" $refs)}}
         <th class="c-set">Decision</th>
         <th class="c-dir">Dir</th>
+        <th class="c-hz" title="How long the decision was held, first entry to last exit across the accounts">Horizon</th>
         <th class="tabular c-acc" title="Accounts in the set">Accts</th>
         <th class="tabular c-qty">Qty</th>
         <th class="tabular c-entry" title="Average entry across the accounts, with the spread between the best and worst fill">Entry avg</th>
@@ -509,6 +510,7 @@
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "datetime"}}</td>
         <td class="c-set" data-label="Decision">{{.Symbol}}{{if .IsSet}} <span class="set-badge" title="{{.Accounts}} accounts, {{len .Members}} trades">set ×{{len .Members}}</span>{{end}}</td>
         <td class="c-dir">{{if eq .Direction "long"}}<span class="pill dir-long"><span class="dir-glyph dir-glyph--long"></span>long</span>{{else}}<span class="pill dir-short"><span class="dir-glyph dir-glyph--short"></span>short</span>{{end}}</td>
+        <td class="c-hz">{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
         <td class="tabular num c-acc">{{.Accounts}}</td>
         <td class="tabular num c-qty" data-label="Qty">{{.Qty}}</td>
         <td class="tabular num c-entry" data-label="Entry">{{printf "%.2f" .EntryAvg}}{{if gt .Spread 0.0}} <span class="subtle" title="Spread between the best and worst entry">±{{printf "%g" .Spread}}</span>{{end}}</td>
@@ -532,6 +534,7 @@
         <td class="num muted c-time" data-label="Entry">{{ltime .EntryTime "time"}}</td>
         <td class="c-set" data-label="Account" title="{{.AccountName}}">{{.AccountName}} <span class="subtle">· {{.Symbol}}</span></td>
         <td class="c-dir"></td>
+        <td class="c-hz">{{$hz := tradeHorizon .EntryTime .ExitTime}}{{if $hz}}<span class="pill pill-horizon horizon-{{lower $hz}}" title="Held {{heldFor .EntryTime .ExitTime}}">{{$hz}}</span>{{end}}</td>
         <td class="c-acc"></td>
         <td class="tabular num c-qty" data-label="Qty">{{.Qty}}</td>
         <td class="tabular num c-entry" data-label="Entry">{{printf "%.2f" .EntryPrice}}</td>
@@ -542,13 +545,13 @@
       </tr>
       {{end}}{{end}}
     {{else}}
-      <tr><td colspan="12" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
+      <tr><td colspan="13" class="muted" style="text-align:center; padding:24px;">No trades match the current filters.</td></tr>
     {{end}}
     </tbody>
     {{if .Sets}}
     <tfoot>
       <tr class="totals">
-        <td colspan="10" class="c-tot-label"><span class="num">{{.Units}}</span> decisions · <span class="num">{{.Totals.Count}}</span> trades in this filter · <span class="pnl-pos num">{{.Totals.Wins}}W</span><span class="muted">/</span><span class="pnl-neg num">{{.Totals.Losses}}L</span>{{with .Totals}}{{if .Planned}} · planned <span class="num">{{.Planned}}</span>{{if .RCount}} · avg <span class="num {{pnlSign .AvgR}}">{{printf "%+.2fR" .AvgR}}</span>{{end}}{{if .PastStop}} · <span class="past-stop-dot past-stop-dot--inline"></span>past stop <span class="num pnl-neg">{{.PastStop}}</span>{{end}}{{end}}{{if gt .MeasuredMfe 0.0}} · exit kept <span class="num">{{printf "%.0f%%" (mul .ExitKept 100.0)}}</span>{{end}}{{end}}</td>
+        <td colspan="11" class="c-tot-label"><span class="num">{{.Units}}</span> decisions · <span class="num">{{.Totals.Count}}</span> trades in this filter · <span class="pnl-pos num">{{.Totals.Wins}}W</span><span class="muted">/</span><span class="pnl-neg num">{{.Totals.Losses}}L</span>{{with .Totals}}{{if .Planned}} · planned <span class="num">{{.Planned}}</span>{{if .RCount}} · avg <span class="num {{pnlSign .AvgR}}">{{printf "%+.2fR" .AvgR}}</span>{{end}}{{if .PastStop}} · <span class="past-stop-dot past-stop-dot--inline"></span>past stop <span class="num pnl-neg">{{.PastStop}}</span>{{end}}{{end}}{{if gt .MeasuredMfe 0.0}} · exit kept <span class="num">{{printf "%.0f%%" (mul .ExitKept 100.0)}}</span>{{end}}{{end}}</td>
         <td class="tabular num c-net {{if gt .Totals.Net 0.0}}pnl-pos{{else if lt .Totals.Net 0.0}}pnl-neg{{end}}" data-label="Net">{{printf "%.2f" .Totals.Net}}</td>
         <td class="c-r"></td>
       </tr>

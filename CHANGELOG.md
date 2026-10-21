@@ -15,6 +15,14 @@ built against it carries the same marketing version.
   Update replaces the name, body or checklist it is given and appends the rest, so it is the one
   MCP tool that declares itself destructive and the client asks first. The strategy JSON now
   carries `checklist` and `archivedAt`. Strategy writes from the API bump live data.
+- The Sets view of the trades page shows the Horizon column the Trades view has: a set's pill
+  covers the decision from its first entry to its last exit across the accounts, and each
+  account's leg underneath carries its own.
+- Fixed: the Levels ladder's importance switch and source chips did nothing in a browser that had
+  cached the previous `levels.js`. The script was the one static file referenced without the build
+  version query, and release builds serve `/static` immutable for a year, so the browser kept
+  running the 2.20.0 copy that predates the buttons. The tag now carries `{{assetVer}}` like every
+  other script, and the route smoke test refuses a static script without it.
 
 ## 2.21.0, 2026-10-21
 
