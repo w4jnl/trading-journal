@@ -484,14 +484,33 @@ agents and scripts that are not MCP clients: `version` (the method version,
 recorded on every review marker as `method=` and on every stored AI
 output), `marker` (the line an external agent ends a review with, `<!--
 tj-ai-mcp:v1 method=2 -->`), `markers` (`app`, `agent`), the user's review
-`language`, `methodMarkdown` (the whole method: the analyst, the briefs per
-scope, the lesson and verdict lines, the write rules, the modes with their
-tool order, the evidence glossary, the tool list), `labels` (the vocabulary
+`language`, their `profile` (`style`: `scalper`, `daytrader` or `swing`;
+`focus`, the evidence families they weigh most in order, among `levels`,
+`session`, `volume`, `gamma`, `coach`, `playbooks`; `markets`; `houseRules`,
+their standing instructions; set in Settings > AI), `methodMarkdown` (the
+whole method: the analyst, the briefs per scope, the trader's profile, the
+lesson and verdict lines, the write rules, the modes with their tool order,
+the evidence glossary, the tool list), `labels` (the vocabulary
 a review may name) and `modes` (`review_day`, `review_entry`, `today`,
 `review_week`, `plan_day`, each with its arguments and steps). The MCP
 server serves the same method as its instructions, as the resource
 `trading-journal://method`, as the tool `get_review_method` and as prompts;
 the client skills only point at it.
+
+`GET /api/v1/ai/preview/{id}` is the request a review of journal entry `id`
+would send right now, without calling a model and without writing anything:
+`system` and `user` as lists of blocks (`text`, `cached`, `chars`,
+`tokensEstimate` at four characters a token), `images` (whether the chart
+would ride along), `language`, `method` and `totals` (`chars`,
+`tokensEstimate`, `cachedTokensEstimate`). `?lang=Czech` previews the review
+in another offered language. The cached blocks are what a provider's prompt
+cache reads back from the second call on; the last user block is the item
+itself and changes every time.
+
+```bash
+curl -s -H "Authorization: Bearer tj_..." "$BASE/api/v1/ai/preview/42" \
+  | jq '{scope, images, totals, blocks: [.system[], .user[] | {cached, tokensEstimate}]}'
+```
 
 ### AI from the phone (device key)
 
@@ -1159,7 +1178,8 @@ one call - the app's first request after pairing and its Settings screen:
   "user": {"id": 1, "username": "trader", "displayName": "Trader", "email": "trader@example.com"},
   "server": {"url": "https://YOUR_HOST", "version": "v2.17.0", "timezone": "America/Chicago",
              "features": {"ai": true, "charts": true, "guardrail": true, "push": false}},
-  "settings": {"guardrail": true, "autoPlan": 0},
+  "settings": {"guardrail": true, "autoPlan": 0, "aiLanguage": "",
+               "aiProfile": {"style": "daytrader"}},
   "key": {"kind": "device", "name": "the trader's iPhone", "createdAt": "2026-10-15T14:02:11Z"}
 }
 ```
@@ -1167,7 +1187,10 @@ one call - the app's first request after pairing and its Settings screen:
 `features` says what this server can do: `ai` (an AI provider is set up),
 `charts` (a market-data source is configured, so chart images and session
 context exist), `guardrail` (the intraday worker runs), `push` (phones can
-register for notifications). `settings.autoPlan` is what a new open
+register for notifications). `settings.aiLanguage` is the review language
+("" for English) and `settings.aiProfile` the trader profile from Settings >
+AI (`style`, `focus`, `markets`, `houseRules`; see the review method below),
+both read-only here. `settings.autoPlan` is what a new open
 position gets without a click: `0` nothing, `1` the AI's stop and target
 as a suggestion on its sheet, `2` the suggestion written into the plan.
 
@@ -1457,18 +1480,23 @@ The server carries the review method, so a client needs no skill of its own:
   the marker line and the write rules.
 - **Prompts** (one per mode, listed in Claude Desktop's connector menu):
   `review_day(date?, force?)`, `review_entry(entryId, force?)`, `today`,
-  `review_week(week?)`, `plan_day(day?)`. Each returns one user message with
-  the mode's steps, the arguments filled in, the trader's review language
-  and the marker.
+  `review_week(week?)`, `plan_day(day?)`, each also taking `language?`
+  (answer this one in another language than the trader's setting). Each
+  returns one user message with the mode's steps, the arguments filled in,
+  the trader's profile, their review language and the marker.
 - **Resources**: `trading-journal://method` (the method as markdown, in the
-  trader's language), `trading-journal://method/labels` (the vocabulary),
-  `trading-journal://lessons` (the open lessons grouped by mistake plus the
-  last ninety days) and `trading-journal://playbooks` (the active
-  strategies with their playbooks).
+  trader's language, with their profile), `trading-journal://method/labels`
+  (the vocabulary), `trading-journal://lessons` (the open lessons grouped by
+  mistake plus the last ninety days), `trading-journal://playbooks` (the
+  active strategies with their playbooks) and `trading-journal://profile`
+  (the trader's style, the evidence they weigh most, their markets, their
+  standing instructions and language, plus the block to put in front of a
+  review).
 - **Tools, 25 in all.** Reading: `server_info` (the instance, the server
-  version and timezone, the trader's language, the marker, the method
-  version and where to read it), `get_review_method` (the method for clients
-  that read neither instructions nor resources, ChatGPT among them),
+  version and timezone, the trader's language and profile, the marker, the
+  method version and where to read it), `get_review_method(language?)` (the
+  method for clients that read neither instructions nor resources, ChatGPT
+  among them),
   `list_lessons`, `list_trades`, `get_trade`, `list_positions`,
   `list_journal`, `get_journal_entry`, `list_strategies`, `get_strategy`,
   `get_chart_image` (the rendered PNG as image content), `get_daily_stats`,

@@ -95,7 +95,7 @@ func PrepareNote() string {
 func Instructions() string {
 	return strings.Join([]string{
 		"You are working with a futures day trader's journal. " + Role,
-		"The method (how to review a trade, a group, a day or a week; how to plan a session) lives on this server, versioned: read the resource trading-journal://method or call get_review_method at the start of a session and follow it; the prompts review_day, review_entry, today, review_week and plan_day carry the same steps. Call server_info first: it names the instance, the trader's review language, the marker and the method version.",
+		"The method (how to review a trade, a group, a day or a week; how to plan a session) lives on this server, versioned: read the resource trading-journal://method or call get_review_method at the start of a session and follow it; the prompts review_day, review_entry, today, review_week and plan_day carry the same steps. Call server_info first: it names the instance, the trader's review language and profile (their style, the evidence they weigh most, their markets, their standing instructions; also the resource trading-journal://profile), the marker and the method version.",
 		"Every review you write ends with the lesson line <!-- tj-ai:lesson key=<mistake|none> | <one sentence> --> and then the marker line " + MarkerLine() + "; a note that already carries the marker is done. Write the prose in the trader's language from server_info; the machine-readable lines stay English.",
 		WriteRules,
 		"Dates: day, from and to on list_trades and get_daily_stats accept today, yesterday and last, resolved on the server in the trading timezone; never compute a date yourself.",
@@ -169,8 +169,9 @@ func Document(o DocOptions) string {
 }
 
 // PromptText is a mode as one user message for an MCP prompt: the steps with
-// the arguments filled in, the language and the marker.
-func PromptText(m Mode, args map[string]string, language string) string {
+// the arguments filled in, the trader's profile block (Profile.Block, empty
+// for the default), the language and the marker.
+func PromptText(m Mode, args map[string]string, language, profile string) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%s: %s\n\n", m.Title, m.Purpose)
 	for _, a := range m.Args {
@@ -183,6 +184,9 @@ func PromptText(m Mode, args map[string]string, language string) string {
 	}
 	for i, s := range m.Steps {
 		fmt.Fprintf(&b, "%d. %s\n", i+1, s)
+	}
+	if profile != "" {
+		b.WriteString("\n" + profile + "\n")
 	}
 	b.WriteString("\nFollow the method on this server (resource trading-journal://method, tool get_review_method) for what to write.")
 	if language != "" {

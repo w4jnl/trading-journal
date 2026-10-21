@@ -43,6 +43,20 @@ point at it, so it exists once and carries a version (`aimethod.Version`, record
 `method=` and on every stored output). The contracts and the markers are not user-editable: the
 parsers and the review loop depend on them.
 
+**The trader profile.** Settings > AI holds how the method applies to one trader: their style
+(scalper, day trader, swing), the evidence they weigh most in order (short-term levels, session
+structure, volume profile, gamma map, coach checks, playbooks), their markets and free-text standing
+instructions, next to the review language. The profile is one cached block in every review and plan
+(after the label vocabulary, before the playbooks), it sizes the evidence the app sends (a scalper
+gets more one-minute bars and fewer fifteen-minute ones, a swing trader the reverse and no one-minute
+window; a trader whose focus leaves out gamma gets the walls, not the whole map), and it reaches
+every MCP client through `server_info.profile`, the resource `trading-journal://profile`, the
+prompts and `get_review_method`. The method itself, the contracts and the markers stay the
+journal's. A review can be asked for in another language once: `?lang=Czech` on the in-app review
+routes, the `language` argument on the MCP prompts and on `get_review_method`. To see exactly what a
+review would send, `GET /api/v1/ai/preview/{entryId}` returns the request block by block, with what is
+cached and how big each part is, without calling a model.
+
 **Caching.** A call is blocks (`ai.Request`): the method, the label vocabulary and the playbooks
 lead and are flagged cacheable, the item follows. Anthropic receives `cache_control` on the last
 cached system block and the last cached user block and bills the prefix at the cached rate from the

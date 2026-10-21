@@ -23,7 +23,7 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, is_admin, display_name)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan
+RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile
 `
 
 type CreateUserParams struct {
@@ -59,6 +59,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.AiSendChart,
 		&i.Guardrail,
 		&i.AutoPlan,
+		&i.AiProfile,
 	)
 	return i, err
 }
@@ -77,7 +78,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan FROM users WHERE id = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile FROM users WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -97,12 +98,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.AiSendChart,
 		&i.Guardrail,
 		&i.AutoPlan,
+		&i.AiProfile,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan FROM users WHERE username = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile FROM users WHERE username = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -122,6 +124,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.AiSendChart,
 		&i.Guardrail,
 		&i.AutoPlan,
+		&i.AiProfile,
 	)
 	return i, err
 }
@@ -184,7 +187,7 @@ func (q *Queries) ListGuardrailUserIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan FROM users ORDER BY username
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -210,6 +213,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.AiSendChart,
 			&i.Guardrail,
 			&i.AutoPlan,
+			&i.AiProfile,
 		); err != nil {
 			return nil, err
 		}
@@ -236,6 +240,21 @@ type SetUserAILanguageParams struct {
 // Language the in-app AI analyzer writes reviews in. Empty = model default.
 func (q *Queries) SetUserAILanguage(ctx context.Context, arg SetUserAILanguageParams) error {
 	_, err := q.db.ExecContext(ctx, setUserAILanguage, arg.AiLanguage, arg.ID)
+	return err
+}
+
+const setUserAIProfile = `-- name: SetUserAIProfile :exec
+UPDATE users SET ai_profile = ? WHERE id = ?
+`
+
+type SetUserAIProfileParams struct {
+	AiProfile string `json:"ai_profile"`
+	ID        int64  `json:"id"`
+}
+
+// The trader's profile for the AI method, as JSON (internal/aimethod.Profile).
+func (q *Queries) SetUserAIProfile(ctx context.Context, arg SetUserAIProfileParams) error {
+	_, err := q.db.ExecContext(ctx, setUserAIProfile, arg.AiProfile, arg.ID)
 	return err
 }
 

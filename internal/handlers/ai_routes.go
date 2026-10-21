@@ -78,8 +78,9 @@ func (h *Handlers) AIDayStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// The status line is app chrome, so English like the rest of the UI.
+	lang := aiLanguageOverride(aiCtx(r))
 	h.AIJobs.Start(user.ID, datePath, model.Label(aiWordsFor("")), func(ctx context.Context, progress func(done, total int, current string)) error {
-		return h.runDayAnalysis(auth.WithUser(ctx, user), date, force, progress)
+		return h.runDayAnalysis(withAILanguage(auth.WithUser(ctx, user), lang), date, force, progress)
 	})
 	h.renderAIStatus(w, r, user.ID, datePath)
 }
@@ -154,12 +155,12 @@ func (h *Handlers) aiEnsureError(w http.ResponseWriter, err error) {
 }
 
 // aiStartReview starts the background review of the caller's entryID (a no-op
-// when one is already running). The review gets the caller's identity and the
-// app's lifetime, not the request's.
+// when one is already running). The review gets the caller's identity, the
+// language the request asked for and the app's lifetime, not the request's.
 func (h *Handlers) aiStartReview(ctx context.Context, entryID int64) {
-	user := auth.MustUser(ctx)
+	user, lang := auth.MustUser(ctx), aiLanguageOverride(ctx)
 	h.AIReviews.Start(user.ID, entryID, h.entryTradeIDs(ctx, entryID), func(bg context.Context) error {
-		_, err := h.analyzeEntry(auth.WithUser(bg, user), entryID, true)
+		_, err := h.analyzeEntry(withAILanguage(auth.WithUser(bg, user), lang), entryID, true)
 		if err != nil {
 			h.logger().Warn("ai review failed", "entry", entryID, "err", err)
 		}
@@ -200,7 +201,7 @@ func (h *Handlers) entryTradeIDs(ctx context.Context, entryID int64) []int64 {
 // aiStartAndReload starts the review of entryID and reloads the page, which
 // then shows the note under review and polls for the result.
 func (h *Handlers) aiStartAndReload(w http.ResponseWriter, r *http.Request, entryID int64) {
-	h.aiStartReview(r.Context(), entryID)
+	h.aiStartReview(aiCtx(r), entryID)
 	w.Header().Set("HX-Refresh", "true")
 	w.WriteHeader(http.StatusOK)
 }
@@ -274,7 +275,7 @@ func (h *Handlers) AIAnalyzeTrade(w http.ResponseWriter, r *http.Request) {
 		h.aiStartAndReload(w, r, entryID)
 		return
 	}
-	h.aiStartReview(r.Context(), entryID)
+	h.aiStartReview(aiCtx(r), entryID)
 	h.renderTradeDetail(w, r, "")
 }
 

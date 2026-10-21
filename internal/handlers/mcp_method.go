@@ -26,7 +26,12 @@ const (
 	mcpResLabels    = "trading-journal://method/labels"
 	mcpResLessons   = "trading-journal://lessons"
 	mcpResPlaybooks = "trading-journal://playbooks"
+	mcpResProfile   = "trading-journal://profile"
 )
+
+// mcpLanguageArg is the argument every prompt and get_review_method take to
+// answer in another language than the trader's setting for once.
+const mcpLanguageArg = "language"
 
 // mcpToolNames are the tools registered on the last server built, in order.
 var mcpToolNames []string
@@ -50,6 +55,9 @@ func (h *Handlers) registerMCPMethod(s *mcpserver.MCPServer) {
 	s.AddResource(mcpgo.NewResource(mcpResPlaybooks, "The trader's playbooks",
 		mcpgo.WithResourceDescription("Every active strategy with its full playbook."),
 		mcpgo.WithMIMEType("application/json")), h.mcpPlaybooksResource)
+	s.AddResource(mcpgo.NewResource(mcpResProfile, "The trader's profile",
+		mcpgo.WithResourceDescription("How this trader tunes the method: their style, the evidence they weigh most in order, their markets, their standing instructions and their review language, with the block to put in front of a review."),
+		mcpgo.WithMIMEType("application/json")), h.mcpProfileResource)
 	for _, m := range aimethod.Modes {
 		opts := []mcpgo.PromptOption{mcpgo.WithPromptDescription(m.Purpose)}
 		for _, a := range m.Args {
@@ -59,15 +67,18 @@ func (h *Handlers) registerMCPMethod(s *mcpserver.MCPServer) {
 			}
 			opts = append(opts, mcpgo.WithArgument(a.Name, ao...))
 		}
+		opts = append(opts, mcpgo.WithArgument(mcpLanguageArg, mcpgo.ArgumentDescription("Write this one in another language than the trader's setting (an English language name such as Czech).")))
 		mode := m
 		s.AddPrompt(mcpgo.NewPrompt(m.Name, opts...), func(ctx context.Context, req mcpgo.GetPromptRequest) (*mcpgo.GetPromptResult, error) {
-			text := aimethod.PromptText(mode, req.Params.Arguments, h.mcpLanguage(ctx))
+			lang := h.mcpLanguageOr(ctx, req.Params.Arguments[mcpLanguageArg])
+			text := aimethod.PromptText(mode, req.Params.Arguments, lang, h.userAIProfile(ctx).Block())
 			return mcpgo.NewGetPromptResult(mode.Purpose, []mcpgo.PromptMessage{mcpgo.NewPromptMessage(mcpgo.RoleUser, mcpgo.NewTextContent(text))}), nil
 		})
 	}
 	addTool(s, mcpgo.NewTool("get_review_method",
 		mcpgo.WithReadOnlyHintAnnotation(true),
-		mcpgo.WithDescription("The review method this journal works by, as markdown: how to review a trade, a group, a day or a week, how to plan a session, the lines every review must end with (the lesson line and the marker), the write rules and the modes with their tool order. Call it at the start of a session and follow it; it carries a version, and the trader's review language."),
+		mcpgo.WithDescription("The review method this journal works by, as markdown: how to review a trade, a group, a day or a week, how to plan a session, the lines every review must end with (the lesson line and the marker), the write rules and the modes with their tool order. Call it at the start of a session and follow it; it carries a version, the trader's profile and their review language."),
+		mcpgo.WithString(mcpLanguageArg, mcpgo.Description("Ask for the method in another language than the trader's setting (an English language name such as Czech).")),
 	), h.mcpGetReviewMethod)
 	addTool(s, mcpgo.NewTool("list_lessons",
 		mcpgo.WithReadOnlyHintAnnotation(true),
@@ -86,9 +97,37 @@ func (h *Handlers) mcpLanguage(ctx context.Context) string {
 	return h.userAILanguage(ctx)
 }
 
+// mcpLanguageOr is the language a call asked for, when it is one the
+// journal offers, else the trader's setting.
+func (h *Handlers) mcpLanguageOr(ctx context.Context, asked string) string {
+	if asked = strings.TrimSpace(asked); asked != "" && allowedAILanguage(asked) {
+		return asked
+	}
+	return h.mcpLanguage(ctx)
+}
+
+// mcpMethodDoc is the method document for the calling trader in lang.
+func (h *Handlers) mcpMethodDoc(ctx context.Context, lang string) string {
+	return aimethod.Document(aimethod.DocOptions{Tools: mcpToolNames, Language: lang, Profile: h.userAIProfile(ctx).Block()})
+}
+
 func (h *Handlers) mcpMethodResource(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents, error) {
-	doc := aimethod.Document(aimethod.DocOptions{Tools: mcpToolNames, Language: h.mcpLanguage(ctx)})
+	doc := h.mcpMethodDoc(ctx, h.mcpLanguage(ctx))
 	return []mcpgo.ResourceContents{mcpgo.TextResourceContents{URI: req.Params.URI, MIMEType: "text/markdown", Text: doc}}, nil
+}
+
+// mcpProfile is the trader's profile as server_info and the resource show it.
+func (h *Handlers) mcpProfile(ctx context.Context) map[string]any {
+	p := h.userAIProfile(ctx)
+	return map[string]any{
+		"style": p.Style, "focus": p.Focus, "markets": p.Markets, "houseRules": p.HouseRules,
+		"language": h.mcpLanguage(ctx), "block": p.Block(),
+	}
+}
+
+func (h *Handlers) mcpProfileResource(ctx context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents, error) {
+	b, _ := json.MarshalIndent(h.mcpProfile(ctx), "", "  ")
+	return []mcpgo.ResourceContents{mcpgo.TextResourceContents{URI: req.Params.URI, MIMEType: "application/json", Text: string(b)}}, nil
 }
 
 func (h *Handlers) mcpLabelsResource(_ context.Context, req mcpgo.ReadResourceRequest) ([]mcpgo.ResourceContents, error) {
@@ -154,12 +193,14 @@ func (h *Handlers) lessonsLedger(ctx context.Context, from, to string, openOnly 
 	return out
 }
 
-func (h *Handlers) mcpGetReviewMethod(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+func (h *Handlers) mcpGetReviewMethod(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
+	lang := h.mcpLanguageOr(ctx, req.GetString(mcpLanguageArg, ""))
 	return mcpJSON(map[string]any{
 		"version":  aimethod.Version,
 		"marker":   aimethod.MarkerLine(),
-		"language": h.mcpLanguage(ctx),
-		"method":   aimethod.Document(aimethod.DocOptions{Tools: mcpToolNames, Language: h.mcpLanguage(ctx)}),
+		"language": lang,
+		"profile":  h.mcpProfile(ctx),
+		"method":   h.mcpMethodDoc(ctx, lang),
 	})
 }
 
@@ -176,18 +217,20 @@ func (h *Handlers) mcpListLessons(ctx context.Context, req mcpgo.CallToolRequest
 }
 
 // mcpServerFacts is what server_info says beyond the identity: the server,
-// the trader's language, the method and where to read it.
+// the trader's language and profile, the method and where to read it.
 func (h *Handlers) mcpServerFacts(ctx context.Context) map[string]any {
 	facts := map[string]any{
-		"version":        h.Version,
-		"timezone":       h.localTZ().String(),
-		"language":       h.mcpLanguage(ctx),
-		"marker":         aimethod.MarkerLine(),
-		"methodVersion":  aimethod.Version,
-		"methodResource": mcpResMethod,
-		"methodTool":     "get_review_method",
-		"tools":          len(mcpToolNames),
-		"prompts":        promptNames(),
+		"version":         h.Version,
+		"timezone":        h.localTZ().String(),
+		"language":        h.mcpLanguage(ctx),
+		"profile":         h.mcpProfile(ctx),
+		"profileResource": mcpResProfile,
+		"marker":          aimethod.MarkerLine(),
+		"methodVersion":   aimethod.Version,
+		"methodResource":  mcpResMethod,
+		"methodTool":      "get_review_method",
+		"tools":           len(mcpToolNames),
+		"prompts":         promptNames(),
 	}
 	if h.Queries != nil {
 		facts["features"] = map[string]bool{"ai": h.aiPossible(), "charts": h.MarketData != nil, "guardrail": h.Guardrail != nil, "push": h.Push.Enabled()}

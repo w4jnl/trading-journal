@@ -69,6 +69,7 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m.HandleFunc("POST /api/v1/positions/{account}/{symbol}/plan", h.APIPositionPlanSave)
 	// AI from the phone (api_ai.go): starts need a device key and a provider.
 	m.HandleFunc("GET /api/v1/ai/method", h.APIAIMethod)
+	m.HandleFunc("GET /api/v1/ai/preview/{id}", h.APIAIPreview)
 	m.HandleFunc("POST /api/v1/ai/review", h.APIReviewStart)
 	m.HandleFunc("GET /api/v1/ai/day", h.APIDayRunStatus)
 	m.HandleFunc("DELETE /api/v1/ai/day", h.APIDayRunCancel)

@@ -63,6 +63,14 @@ func TestMCPToolsList(t *testing.T) {
 	if text := pr.Messages[0].Content.(mcpgo.TextContent).Text; !strings.Contains(text, "date = 2026-10-09") || !strings.Contains(text, "prepare_day") || !strings.Contains(text, "tj-ai-mcp:v1 method=") {
 		t.Errorf("review_day text = %.300q", text)
 	}
+	// The language argument asks for one answer in another language.
+	pr, err = c.GetPrompt(ctx, mcpgo.GetPromptRequest{Params: mcpgo.GetPromptParams{Name: "today", Arguments: map[string]string{"language": "Czech"}}})
+	if err != nil || len(pr.Messages) != 1 {
+		t.Fatalf("today prompt = %+v %v", pr, err)
+	}
+	if text := pr.Messages[0].Content.(mcpgo.TextContent).Text; !strings.Contains(text, "Write the prose in Czech") || strings.Contains(text, "language = ") {
+		t.Errorf("today text = %.300q", text)
+	}
 	resources, err := c.ListResources(ctx, mcpgo.ListResourcesRequest{})
 	if err != nil {
 		t.Fatal(err)
@@ -71,7 +79,7 @@ func TestMCPToolsList(t *testing.T) {
 	for _, r := range resources.Resources {
 		gotRes[r.URI] = true
 	}
-	for _, uri := range []string{"trading-journal://method", "trading-journal://method/labels", "trading-journal://lessons", "trading-journal://playbooks"} {
+	for _, uri := range []string{"trading-journal://method", "trading-journal://method/labels", "trading-journal://lessons", "trading-journal://playbooks", "trading-journal://profile"} {
 		if !gotRes[uri] {
 			t.Errorf("resource %s missing", uri)
 		}

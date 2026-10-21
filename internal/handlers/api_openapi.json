@@ -1678,6 +1678,60 @@
           "autoPlan": {
             "type": "integer",
             "description": "What a new open position gets: 0 nothing, 1 the AI suggestion on its sheet, 2 the suggestion written into the plan"
+          },
+          "aiLanguage": {
+            "type": "string",
+            "description": "The review language, empty for English (read-only here; Settings > AI)"
+          },
+          "aiProfile": {
+            "$ref": "#/components/schemas/AIProfile"
+          }
+        }
+      },
+      "AIPreviewBlock": {
+        "type": "object",
+        "properties": {
+          "cached": {
+            "type": "boolean",
+            "description": "a cache breakpoint may follow this block"
+          },
+          "chars": {
+            "type": "integer"
+          },
+          "tokensEstimate": {
+            "type": "integer",
+            "description": "four characters per token"
+          },
+          "text": {
+            "type": "string"
+          }
+        }
+      },
+      "AIProfile": {
+        "type": "object",
+        "description": "How the trader tunes the review method (Settings > AI)",
+        "properties": {
+          "style": {
+            "type": "string",
+            "enum": ["scalper", "daytrader", "swing"]
+          },
+          "focus": {
+            "type": "array",
+            "description": "The evidence families the trader weighs most, in order",
+            "items": {
+              "type": "string",
+              "enum": ["levels", "session", "volume", "gamma", "coach", "playbooks"]
+            }
+          },
+          "markets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "houseRules": {
+            "type": "string",
+            "description": "The trader's standing instructions"
           }
         }
       },
@@ -6501,10 +6555,101 @@
         }
       }
     },
+    "/ai/preview/{id}": {
+      "get": {
+        "operationId": "getAIPreview",
+        "summary": "The request a review of the journal entry would send right now, block by block, without calling a model: the system and user turns, which blocks are cached, their size in characters and estimated tokens, whether a chart image rides along. ?lang= previews another language. Nothing is written.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          },
+          {
+            "name": "lang",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Preview the review in another language (an offered English language name such as Czech)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "entryId": {
+                      "type": "integer"
+                    },
+                    "scope": {
+                      "type": "string"
+                    },
+                    "method": {
+                      "type": "string"
+                    },
+                    "language": {
+                      "type": "string"
+                    },
+                    "images": {
+                      "type": "integer",
+                      "description": "chart images the request would carry"
+                    },
+                    "system": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AIPreviewBlock"
+                      }
+                    },
+                    "user": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/AIPreviewBlock"
+                      }
+                    },
+                    "totals": {
+                      "type": "object",
+                      "properties": {
+                        "chars": {
+                          "type": "integer"
+                        },
+                        "tokensEstimate": {
+                          "type": "integer"
+                        },
+                        "cachedTokensEstimate": {
+                          "type": "integer"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/ai/method": {
       "get": {
         "operationId": "getAIMethod",
-        "summary": "The review method this journal works by, for agents and scripts: the version, the markers, the user's review language, the method as markdown, the label vocabulary and the modes with their steps",
+        "summary": "The review method this journal works by, for agents and scripts: the version, the markers, the user's review language and profile, the method as markdown, the label vocabulary and the modes with their steps",
         "responses": {
           "200": {
             "description": "The method",
@@ -6533,6 +6678,9 @@
                     },
                     "language": {
                       "type": "string"
+                    },
+                    "profile": {
+                      "$ref": "#/components/schemas/AIProfile"
                     },
                     "methodMarkdown": {
                       "type": "string"

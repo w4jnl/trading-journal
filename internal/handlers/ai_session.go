@@ -13,22 +13,19 @@ import (
 // Instead of ninety bars around the trade, the model gets the last
 // sessions as a trader reads them: the structure (marketdata.ComputeSession
 // over the cached one-minute bars: prior RTH, overnight, opening range,
-// VWAP, ATR, swings) and a multi-timeframe window aggregated on read - two
-// days of 15m, the last three hours of 5m, the last thirty minutes of 1m -
-// all as of a moment, so a closed trade is judged with what was known at
+// VWAP, ATR, swings) and a multi-timeframe window aggregated on read - the
+// prior session of 15m, the last hours of 5m, the last minutes of 1m, sized
+// by the trader's profile - all as of a moment, so a closed trade is judged with what was known at
 // its entry. The warm-up (marketdata.Warmer) keeps the traded roots'
 // recent days complete and fresh.
 
-const (
-	aiSessionDays = 3  // days of one-minute bars read from the cache
-	aiBars15m     = 52 // about thirty hours
-	aiBars5m      = 24 // three hours
-	aiBars1m      = 20
-)
+// aiSessionDays is how many days of one-minute bars are read from the cache.
+const aiSessionDays = 3
 
 // aiSession is the session context and window for a root as of asOf, nil
-// without cached bars.
-func (h *Handlers) aiSession(ctx context.Context, root string, asOf time.Time) map[string]any {
+// without cached bars. ev sizes the windows: the trader's profile decides
+// how much of each timeframe a review reads (aimethod.Profile.Plan).
+func (h *Handlers) aiSession(ctx context.Context, root string, asOf time.Time, ev aimethod.Evidence) map[string]any {
 	if h.MarketData == nil {
 		return nil
 	}
@@ -64,9 +61,9 @@ func (h *Handlers) aiSession(ctx context.Context, root string, asOf time.Time) m
 	for _, w := range []struct {
 		tf marketdata.Timeframe
 		n  int
-	}{{marketdata.TF15m, aiBars15m}, {marketdata.TF5m, aiBars5m}, {marketdata.TF1m, aiBars1m}} {
-		if w.tf.Duration() < tf.Duration() {
-			continue // stored coarser than this window
+	}{{marketdata.TF15m, ev.Bars15m}, {marketdata.TF5m, ev.Bars5m}, {marketdata.TF1m, ev.Bars1m}} {
+		if w.n <= 0 || w.tf.Duration() < tf.Duration() {
+			continue // not wanted, or stored coarser than this window
 		}
 		agg := in
 		if w.tf != tf {

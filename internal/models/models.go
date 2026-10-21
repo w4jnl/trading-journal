@@ -559,6 +559,7 @@ type User struct {
 	AiSendChart  int64      `json:"ai_send_chart"`
 	Guardrail    int64      `json:"guardrail"`
 	AutoPlan     int64      `json:"auto_plan"`
+	AiProfile    string     `json:"ai_profile"`
 }
 
 type UserAiSetting struct {
