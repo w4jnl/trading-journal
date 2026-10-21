@@ -1,6 +1,6 @@
 module github.com/w4jnl/trading-journal
 
-go 1.26.9
+go 1.26.10
 
 require (
 	github.com/emersion/go-sasl v0.0.0-20241020182733-b788ff22d5a6
