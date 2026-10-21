@@ -87,7 +87,10 @@ func TestMethodForAgents(t *testing.T) {
 	if !ok {
 		t.Fatal("review_entry mode missing")
 	}
-	text := PromptText(m, map[string]string{"entryId": "42"}, "Czech")
+	text := PromptText(m, map[string]string{"entryId": "42"}, "Czech", "THE TRADER: a scalper.")
+	if !strings.Contains(text, "THE TRADER: a scalper.") {
+		t.Error("the prompt lacks the profile")
+	}
 	if !strings.Contains(text, "entryId = 42") || !strings.Contains(text, "get_journal_entry") || !strings.Contains(text, "Czech") || !strings.HasSuffix(text, MarkerLine()+".") {
 		t.Errorf("prompt text = %q", text)
 	}
@@ -96,5 +99,45 @@ func TestMethodForAgents(t *testing.T) {
 	}
 	if len(Modes) != 5 {
 		t.Errorf("modes = %d", len(Modes))
+	}
+}
+
+// The profile parses with defaults, refuses unknown keys, renders a block
+// only when it says something, and sizes the evidence by style.
+func TestProfile(t *testing.T) {
+	if p := ParseProfile(""); !p.IsDefault() || p.Style != DefaultStyle || p.Block() != "" || p.Encode() != "" {
+		t.Errorf("default profile = %+v", p)
+	}
+	p := ParseProfile(`{"style":"scalper","focus":["gamma","levels","gamma"],"markets":["mes","ES"],"houseRules":"  Never add to a loser.  "}`)
+	if p.Style != "scalper" || strings.Join(p.Focus, ",") != "gamma,levels" || strings.Join(p.Markets, ",") != "ES,MES" || p.HouseRules != "Never add to a loser." {
+		t.Errorf("parsed = %+v", p)
+	}
+	blk := p.Block()
+	for _, s := range []string{"a scalper", "gamma map", "short-term levels", "ES, MES", "STANDING INSTRUCTIONS", "Never add to a loser."} {
+		if !strings.Contains(blk, s) {
+			t.Errorf("block lacks %q", s)
+		}
+	}
+	if e := p.Plan(); e.Bars1m != 45 || e.GammaBrief {
+		t.Errorf("scalper plan = %+v", e)
+	}
+	if e := ParseProfile(`{"style":"swing","focus":["coach"]}`).Plan(); e.Bars1m != 0 || e.Bars15m != 78 || !e.GammaBrief {
+		t.Errorf("swing plan = %+v", e)
+	}
+	bad := Profile{Style: "robot"}
+	if err := bad.Validate(); err == nil {
+		t.Error("unknown style accepted")
+	}
+	bad = Profile{Focus: []string{"astrology"}}
+	if err := bad.Validate(); err == nil {
+		t.Error("unknown focus accepted")
+	}
+	bad = Profile{HouseRules: strings.Repeat("x", houseRulesMax+1)}
+	if err := bad.Validate(); err == nil {
+		t.Error("overlong rules accepted")
+	}
+	round := ParseProfile(p.Encode())
+	if round.Style != p.Style || strings.Join(round.Focus, ",") != strings.Join(p.Focus, ",") || round.HouseRules != p.HouseRules {
+		t.Errorf("round trip = %+v", round)
 	}
 }

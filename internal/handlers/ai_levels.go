@@ -241,7 +241,7 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 			payload["dayMap"] = m.Brief(derefOr(pos.AvgEntry, 0), 6, 3)
 		}
 	}
-	if session := h.aiSession(ctx, pos.SymbolRoot, now); session != nil {
+	if session := h.aiSession(ctx, pos.SymbolRoot, now, h.userAIProfile(ctx).Plan()); session != nil {
 		payload["session"] = session
 		if tf, ok := session["barsStoredAt"].(string); ok {
 			barsTf = tf
@@ -303,7 +303,7 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 			user = "The attached image is this position's chart (candles with the fills marked).\n\n" + user
 		}
 	}
-	text, err := aiGenerate(ctx, client, aiRequest(aiLevelsPrompt+aiLanguageLine(h.userAILanguage(ctx)), user, png))
+	text, err := aiGenerate(ctx, client, aiRequest(aiLevelsPrompt+aiProfileLine(h.userAIProfile(ctx))+aiLanguageLine(h.userAILanguage(ctx)), user, png))
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)
 	}

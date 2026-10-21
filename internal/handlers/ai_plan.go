@@ -36,11 +36,12 @@ import (
 const (
 	aiKindPlanDraft = "plan_draft"
 
-	planLossWindowDays = 60             // calendar days of account-days behind the usual losing day
-	planRecentDays     = 5              // trading days of coach findings handed along
-	planRootsDays      = 30             // the instruments traded this recently get gamma levels
-	planGammaMaxAge    = 24 * time.Hour // the gamma map may be the last session's
-	planMaxLevelLines  = 12
+	planLossWindowDays   = 60             // calendar days of account-days behind the usual losing day
+	planRecentDays       = 5              // trading days of coach findings handed along
+	planRootsDays        = 30             // the instruments traded this recently get gamma levels
+	planGammaMaxAge      = 24 * time.Hour // the gamma map may be the last session's
+	planGammaBriefLevels = 3              // the gamma levels sent when gamma is not among the trader's focus
+	planMaxLevelLines    = 12
 )
 
 // planLossDays is what an account loses on a losing day (USD, positive).
@@ -189,9 +190,13 @@ func (h *Handlers) planGamma(ctx context.Context, day time.Time) []planGamma {
 	if day.AddDate(0, 0, 1).Before(at) {
 		at = day
 	}
+	brief := h.userAIProfile(ctx).Plan().GammaBrief
 	var out []planGamma
 	for _, m := range markets {
 		if lv, asOf := h.gammaLevels(ctx, m, at, planGammaMaxAge); len(lv) > 0 {
+			if brief && len(lv) > planGammaBriefLevels {
+				lv = lv[:planGammaBriefLevels] // a trader who weighs other evidence gets the walls, not the map
+			}
 			out = append(out, planGamma{Market: m, AsOf: asOf, Levels: lv})
 		}
 	}
@@ -290,7 +295,7 @@ func (h *Handlers) draftPlan(ctx context.Context, day string) error {
 	if err != nil {
 		return err
 	}
-	resp, err := ai.Do(ctx, client, ai.Cached(aiPlanDraftPrompt+aiLanguageLine(h.userAILanguage(ctx)), in))
+	resp, err := ai.Do(ctx, client, ai.Cached(aiPlanDraftPrompt+aiProfileLine(h.userAIProfile(ctx))+aiLanguageLine(h.userAILanguage(ctx)), in))
 	out := resp.Text
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)

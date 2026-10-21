@@ -1678,6 +1678,41 @@
           "autoPlan": {
             "type": "integer",
             "description": "What a new open position gets: 0 nothing, 1 the AI suggestion on its sheet, 2 the suggestion written into the plan"
+          },
+          "aiLanguage": {
+            "type": "string",
+            "description": "The review language, empty for English (read-only here; Settings > AI)"
+          },
+          "aiProfile": {
+            "$ref": "#/components/schemas/AIProfile"
+          }
+        }
+      },
+      "AIProfile": {
+        "type": "object",
+        "description": "How the trader tunes the review method (Settings > AI)",
+        "properties": {
+          "style": {
+            "type": "string",
+            "enum": ["scalper", "daytrader", "swing"]
+          },
+          "focus": {
+            "type": "array",
+            "description": "The evidence families the trader weighs most, in order",
+            "items": {
+              "type": "string",
+              "enum": ["levels", "session", "volume", "gamma", "coach", "playbooks"]
+            }
+          },
+          "markets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "houseRules": {
+            "type": "string",
+            "description": "The trader's standing instructions"
           }
         }
       },
@@ -6504,7 +6539,7 @@
     "/ai/method": {
       "get": {
         "operationId": "getAIMethod",
-        "summary": "The review method this journal works by, for agents and scripts: the version, the markers, the user's review language, the method as markdown, the label vocabulary and the modes with their steps",
+        "summary": "The review method this journal works by, for agents and scripts: the version, the markers, the user's review language and profile, the method as markdown, the label vocabulary and the modes with their steps",
         "responses": {
           "200": {
             "description": "The method",
@@ -6533,6 +6568,9 @@
                     },
                     "language": {
                       "type": "string"
+                    },
+                    "profile": {
+                      "$ref": "#/components/schemas/AIProfile"
                     },
                     "methodMarkdown": {
                       "type": "string"

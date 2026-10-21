@@ -8,11 +8,11 @@ import (
 
 // APIAIMethod: GET /api/v1/ai/method - the review method this journal works
 // by, for agents and scripts that are not MCP clients: the version, the
-// markers, the user's review language, the document as markdown, the label
-// vocabulary and the modes with their steps.
+// markers, the user's review language and profile, the document as markdown
+// (with the profile), the label vocabulary and the modes with their steps.
 func (h *Handlers) APIAIMethod(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	lang := h.userAILanguage(ctx)
+	lang, profile := h.userAILanguage(ctx), h.userAIProfile(ctx)
 	modes := make([]map[string]any, 0, len(aimethod.Modes))
 	for _, m := range aimethod.Modes {
 		args := make([]map[string]any, 0, len(m.Args))
@@ -26,7 +26,8 @@ func (h *Handlers) APIAIMethod(w http.ResponseWriter, r *http.Request) {
 		"marker":         aimethod.MarkerLine(),
 		"markers":        map[string]string{"app": aimethod.Markers.Local, "agent": aimethod.Markers.MCP},
 		"language":       lang,
-		"methodMarkdown": aimethod.Document(aimethod.DocOptions{Tools: mcpToolNames, Language: lang}),
+		"profile":        profile,
+		"methodMarkdown": aimethod.Document(aimethod.DocOptions{Tools: mcpToolNames, Language: lang, Profile: profile.Block()}),
 		"labels":         aimethod.LabelVocabulary(),
 		"modes":          modes,
 	})

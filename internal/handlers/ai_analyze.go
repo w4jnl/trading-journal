@@ -63,6 +63,9 @@ func aiReviewSystem(language string) []ai.Block {
 // userAILanguage returns the calling user's configured AI-review language (e.g. "Czech"),
 // or "" when unset or unavailable - in which case the model uses its default (English).
 func (h *Handlers) userAILanguage(ctx context.Context) string {
+	if lang := aiLanguageOverride(ctx); lang != "" {
+		return lang
+	}
 	u, err := h.Queries.GetUserByID(ctx, userID(ctx))
 	if err != nil {
 		return ""
@@ -336,6 +339,7 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 			entryPrice[t.ID] = t.EntryPrice
 		}
 	}
+	profile := h.userAIProfile(ctx)
 	out := map[string]any{"entry": detail, "timezone": tz.String()}
 	if decision {
 		out["labelVocabulary"] = aimethod.LabelVocabulary()
@@ -389,7 +393,7 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 				first = t
 			}
 		}
-		if session := h.aiSession(ctx, first.SymbolRoot, first.EntryTime); session != nil {
+		if session := h.aiSession(ctx, first.SymbolRoot, first.EntryTime, profile.Plan()); session != nil {
 			out["sessionAtEntry"] = session
 		}
 		// The day map of the decision's market, as it stood that day,
@@ -432,8 +436,8 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 		out["availableStrategies"] = list
 	}
 	// The user turn, stable first so a provider's prefix cache finds it: the
-	// vocabulary and the playbooks as their own objects (cached), then the
-	// scope line and the item.
+	// vocabulary, the trader's profile and the playbooks as their own blocks
+	// (cached), then the scope line and the item.
 	var blocks []ai.Block
 	stable := func(keys ...string) {
 		part := map[string]any{}
@@ -452,6 +456,9 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 		}
 	}
 	stable("labelVocabulary")
+	if blk := profile.Block(); blk != "" {
+		blocks = append(blocks, ai.Block{Text: blk, Cache: true})
+	}
 	stable("availableStrategies", "assignedStrategy")
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {

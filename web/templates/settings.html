@@ -22,6 +22,7 @@
 {{if eq .Flash "ai-saved"}}<div class="flash saved mb-16">AI provider verified and saved — reviews now run on your key.</div>{{end}}
 {{if eq .Flash "ai-test-ok"}}<div class="flash saved mb-16">AI provider answered — your key works.</div>{{end}}
 {{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
+{{if eq .Flash "ai-profile"}}<div class="flash saved mb-16">Trader profile saved — every review, plan and connected agent reads it from now on.</div>{{end}}
 {{if eq .Flash "levels"}}<div class="flash saved mb-16">Levels: the markets to keep are saved.</div>{{end}}
 {{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
 {{if eq .Flash "auto-plan"}}<div class="flash saved mb-16">{{if eq .AIAutoPlan "plan"}}Every new open position gets the AI's stop and target as its plan.{{else if eq .AIAutoPlan "suggest"}}Every new open position gets the AI's stop and target as a suggestion on its sheet; you decide whether to use it.{{else}}Automatic suggestions off: the suggestion is a button on the position sheet.{{end}}</div>{{end}}
@@ -285,6 +286,62 @@
       {{end}}
     </select>
     <button type="submit" class="btn btn--primary btn--sm">Save</button>
+  </form>
+
+</div>
+{{end}}
+
+{{with .AIProfile}}
+<div class="card mb-16" id="profile">
+  <div class="card-title">Trader profile</div>
+  <p class="muted" style="font-size: 12px;">
+    The review method is the journal's; this is how it applies to you. The in-app reviews and plans, and every
+    agent connected over MCP (Claude, ChatGPT), judge on your horizon, lead with the evidence you weigh most and
+    follow your standing instructions where they do not contradict the method.
+  </p>
+  <form method="post" action="/settings/ai/profile" id="ai-profile" style="display: grid; gap: 12px; margin: 10px 0 0;">
+    <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+    <div>
+      <div class="muted" style="font-size: 12px; margin-bottom: 4px;">Style</div>
+      <div style="display: grid; gap: 4px;">
+        {{range .Styles}}
+        <label class="row-sm" style="gap: 8px; align-items: flex-start; font-size: 13px;">
+          <input type="radio" name="style" value="{{.Key}}" {{if .On}}checked{{end}} style="margin-top: 3px;">
+          <span><strong>{{.Label}}</strong> <span class="muted" style="font-size: 12px;">({{.Hint}})</span></span>
+        </label>
+        {{end}}
+      </div>
+    </div>
+    <div>
+      <div class="muted" style="font-size: 12px; margin-bottom: 4px;">The evidence you weigh most, in order (the first tick leads; untick all for the method's own weighting)</div>
+      <ol id="ai-focus" style="display: grid; gap: 4px; margin: 0; padding: 0; list-style: none;">
+        {{range .Focus}}
+        <li class="row-sm" style="gap: 8px; align-items: flex-start; font-size: 13px;">
+          <span class="ai-focus-rank muted" style="min-width: 1.2em; text-align: right; font-size: 12px;">{{if .Rank}}{{.Rank}}.{{end}}</span>
+          <label class="row-sm" style="gap: 8px; align-items: flex-start;">
+            <input type="checkbox" name="focus" value="{{.Key}}" {{if .On}}checked{{end}} style="margin-top: 3px;">
+            <span><strong>{{.Label}}</strong> <span class="muted" style="font-size: 12px;">({{.Hint}})</span></span>
+          </label>
+        </li>
+        {{end}}
+      </ol>
+    </div>
+    <div>
+      <div class="muted" style="font-size: 12px; margin-bottom: 4px;">Your markets</div>
+      <div class="row-sm" style="gap: 14px; flex-wrap: wrap;">
+        {{range .Markets}}
+        <label class="row-sm" style="gap: 6px; align-items: center; font-size: 13px;">
+          <input type="checkbox" name="market" value="{{.Key}}" {{if .On}}checked{{end}}> {{.Label}}
+        </label>
+        {{end}}
+        <input type="text" name="markets_extra" value="{{.Extra}}" placeholder="others, e.g. ZB, 6E" style="max-width: 200px;">
+      </div>
+    </div>
+    <div>
+      <div class="muted" style="font-size: 12px; margin-bottom: 4px;">Standing instructions <span style="opacity: .7;">(followed where they do not contradict the method; at most 2000 characters)</span></div>
+      <textarea name="house_rules" rows="4" maxlength="2000" style="width: 100%; max-width: 720px;" placeholder="e.g. I never add to a loser. Judge my exits against the opening range, not the daily chart. Call out every entry in the first five minutes after the open.">{{.Profile.HouseRules}}</textarea>
+    </div>
+    <div><button type="submit" class="btn btn--primary btn--sm">Save profile</button></div>
   </form>
 </div>
 {{end}}
@@ -654,4 +711,5 @@ curl -H "Authorization: Bearer tj_..." https://YOUR_HOST/api/v1/version</pre>
   </details>
 </div>
 </div>
+<script src="/static/js/ai_profile.js{{assetVer}}" defer></script>
 {{end}}

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/internal/qr"
@@ -207,7 +208,7 @@ func apiUserInfo(u models.User) map[string]any {
 
 // apiUserSettings is the user's switches as the API shows them.
 func apiUserSettings(u models.User) map[string]any {
-	return map[string]any{"guardrail": u.Guardrail == 1, "autoPlan": u.AutoPlan}
+	return map[string]any{"guardrail": u.Guardrail == 1, "autoPlan": u.AutoPlan, "aiLanguage": u.AiLanguage, "aiProfile": aimethod.ParseProfile(u.AiProfile)}
 }
 
 // APIMe: GET /api/v1/me - who the key belongs to, the server, the user's

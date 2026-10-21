@@ -166,6 +166,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"LevelsMarkets":   levelmap.Markets,
 		"LevelsPinned":    h.levelsPinnedSet(ctx),
 		"AILanguages":     aiLanguageOptions,
+		"AIProfile":       h.aiProfileSettings(ctx),
 		"AIEnabled":       h.AIJobs != nil,
 		"AI":              h.aiSettings(ctx),
 		"VisGroups":       visGroups,
