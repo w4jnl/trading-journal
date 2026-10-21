@@ -84,8 +84,10 @@ The journal is an MCP server at `POST /mcp` (`mcp.enabled`, on by default). Clau
 Claude apps, ChatGPT and any other MCP client can list and read trades, positions, journal
 entries, strategies, daily stats, the day plan, the coach's checks, the digest and a trade's
 chart image, and can create entries, append notes, assign strategies and tags, set the day plan
-and a position's plan, and prepare a day for review. Values written this way are marked `api`
-on the note until the trader saves it.
+and a position's plan, prepare a day for review, and create or change a strategy in the library
+(the playbook, its checklist rules, drawings and chart images sent inline). Values written this
+way are marked `api` on the note until the trader saves it; a strategy write is the trader's own
+request, so `update_strategy` replaces what it is given and the client asks before it runs.
 
 Two ways to authenticate:
 

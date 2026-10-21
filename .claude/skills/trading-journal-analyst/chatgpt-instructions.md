@@ -27,7 +27,9 @@ only ever pass the `entryId` values it returns; every review you append ends
 with the lesson line `<!-- tj-ai:lesson key=<mistake|none> | <one sentence> -->`
 and then the marker line from `server_info`, and a note that already carries the
 marker is done unless the user says force; writes are additive and only-if-unset
-(`append_note`, `assign_strategy`, `set_tag`, `add_labels` never overwrite);
+(`append_note`, `assign_strategy`, `set_tag`, `add_labels` never overwrite; the
+library tools `create_strategy` and `update_strategy` write only when the user
+asks, and update replaces what it is given);
 write the prose in the trader's language from `server_info`, the machine-readable
 lines stay English; dates like `today`, `yesterday` and `last` are resolved by the
 server, never compute them.

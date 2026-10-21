@@ -7,6 +7,14 @@ built against it carries the same marketing version.
 
 ### Server
 
+- Strategies can be written from outside the app: the MCP tools `create_strategy` and
+  `update_strategy` (27 tools now) and their REST mirrors `POST /api/v1/strategies` and
+  `PUT /api/v1/strategies/{id}` take the name, the playbook as markdown, the checklist rules and
+  drawings or chart images inline as base64. An image is stored as the caller's attachment and
+  lands in the playbook where the body refers to it by name, `![caption](name)`, or at the end.
+  Update replaces the name, body or checklist it is given and appends the rest, so it is the one
+  MCP tool that declares itself destructive and the client asks first. The strategy JSON now
+  carries `checklist` and `archivedAt`. Strategy writes from the API bump live data.
 - The Sets view of the trades page shows the Horizon column the Trades view has: a set's pill
   covers the decision from its first entry to its last exit across the accounts, and each
   account's leg underneath carries its own.

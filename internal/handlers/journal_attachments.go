@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"crypto/rand"
 	"database/sql"
 	"encoding/hex"
@@ -77,7 +78,7 @@ func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request)
 	if i := strings.IndexByte(mt, ';'); i >= 0 {
 		mt = strings.TrimSpace(mt[:i])
 	}
-	ext, ok := allowedAttachmentMIMEs[mt]
+	_, ok = allowedAttachmentMIMEs[mt]
 	if !ok {
 		// Fall back to filename extension — some clients (clipboard paste)
 		// don't set Content-Type reliably. Trust extension only if it maps
@@ -86,7 +87,6 @@ func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request)
 		for canonical, canonExt := range allowedAttachmentMIMEs {
 			if canonExt == fallback {
 				mt = canonical
-				ext = canonExt
 				ok = true
 				break
 			}
@@ -97,43 +97,18 @@ func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request)
 		return 0, "", 0, false
 	}
 
-	if err := os.MkdirAll(h.AttachmentsDir, 0o755); err != nil {
-		h.serverError(w, fmt.Errorf("mkdir attachments: %w", err))
-		return 0, "", 0, false
-	}
-
-	// 16 random bytes → 32 hex chars. Avoids collisions and keeps user-
-	// supplied filenames out of the on-disk path (no traversal surface).
-	var rnd [16]byte
-	if _, err := rand.Read(rnd[:]); err != nil {
-		h.serverError(w, fmt.Errorf("rand: %w", err))
-		return 0, "", 0, false
-	}
-	fileName := hex.EncodeToString(rnd[:]) + ext
-	relPath := fileName
-	absPath := filepath.Join(h.AttachmentsDir, fileName)
-
-	out, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	data, err := io.ReadAll(io.LimitReader(file, maxAttachmentBytes+1))
 	if err != nil {
-		h.serverError(w, fmt.Errorf("create attachment: %w", err))
+		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("read: %v", err))
 		return 0, "", 0, false
 	}
-	written, err = io.Copy(out, file)
-	cerr := out.Close()
-	if err != nil {
-		_ = os.Remove(absPath)
-		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("write: %v", err))
-		return 0, "", 0, false
-	}
-	if cerr != nil {
-		_ = os.Remove(absPath)
-		h.serverError(w, fmt.Errorf("close attachment: %w", cerr))
+	if len(data) > maxAttachmentBytes {
+		writeJSONError(w, http.StatusBadRequest, "upload too large")
 		return 0, "", 0, false
 	}
 
 	scope := strings.TrimSpace(r.FormValue("scope"))
 	entryIDStr := strings.TrimSpace(r.FormValue("entry_id"))
-	uid := userID(ctx)
 	var entryID int64
 	if entryIDStr != "" {
 		if v, err := strconv.ParseInt(entryIDStr, 10, 64); err == nil && v > 0 {
@@ -143,16 +118,54 @@ func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request)
 			}
 		}
 	}
-
-	res, err := h.DB.ExecContext(ctx, `INSERT INTO journal_attachments (user_id, entry_id, entry_scope, file_path, mime, byte_size) VALUES (?, ?, ?, ?, ?, ?)`,
-		uid, entryID, scope, relPath, mt, written)
+	id, err = h.storeAttachmentBytes(ctx, userID(ctx), entryID, scope, mt, data)
 	if err != nil {
-		_ = os.Remove(absPath)
-		h.serverError(w, fmt.Errorf("insert attachment: %w", err))
+		h.serverError(w, err)
 		return 0, "", 0, false
 	}
-	id, _ = res.LastInsertId()
-	return id, header.Filename, written, true
+	return id, header.Filename, int64(len(data)), true
+}
+
+// storeAttachmentBytes writes an image the caller already checked (mt is one
+// of allowedAttachmentMIMEs, len(data) within maxAttachmentBytes) under a
+// random name and records it for the user; entryID is 0 unless the caller
+// verified the entry. Shared by the multipart uploads and the strategy
+// writes that carry their images inline.
+func (h *Handlers) storeAttachmentBytes(ctx context.Context, uid, entryID int64, scope, mt string, data []byte) (int64, error) {
+	ext, ok := allowedAttachmentMIMEs[mt]
+	if !ok {
+		return 0, fmt.Errorf("attachment: unsupported type %q", mt)
+	}
+	if err := os.MkdirAll(h.AttachmentsDir, 0o755); err != nil {
+		return 0, fmt.Errorf("mkdir attachments: %w", err)
+	}
+
+	// 16 random bytes -> 32 hex chars. Avoids collisions and keeps user-
+	// supplied filenames out of the on-disk path (no traversal surface).
+	var rnd [16]byte
+	if _, err := rand.Read(rnd[:]); err != nil {
+		return 0, fmt.Errorf("rand: %w", err)
+	}
+	fileName := hex.EncodeToString(rnd[:]) + ext
+	absPath := filepath.Join(h.AttachmentsDir, fileName)
+	out, err := os.OpenFile(absPath, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+	if err != nil {
+		return 0, fmt.Errorf("create attachment: %w", err)
+	}
+	_, werr := out.Write(data)
+	cerr := out.Close()
+	if werr != nil || cerr != nil {
+		_ = os.Remove(absPath)
+		return 0, fmt.Errorf("write attachment: %w", errors.Join(werr, cerr))
+	}
+	res, err := h.DB.ExecContext(ctx, `INSERT INTO journal_attachments (user_id, entry_id, entry_scope, file_path, mime, byte_size) VALUES (?, ?, ?, ?, ?, ?)`,
+		uid, entryID, scope, fileName, mt, len(data))
+	if err != nil {
+		_ = os.Remove(absPath)
+		return 0, fmt.Errorf("insert attachment: %w", err)
+	}
+	id, _ := res.LastInsertId()
+	return id, nil
 }
 
 // JournalAttachmentServe handles GET /journal/attachments/{id} — streams the

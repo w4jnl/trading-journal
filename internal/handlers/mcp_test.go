@@ -108,7 +108,7 @@ func TestMCPToolsList(t *testing.T) {
 	want := []string{
 		"prepare_day", "server_info",
 		"list_trades", "get_trade", "list_journal", "get_journal_entry",
-		"list_strategies", "get_strategy", "get_chart_image",
+		"list_strategies", "get_strategy", "create_strategy", "update_strategy", "get_chart_image",
 		"create_journal_entry", "append_note", "assign_strategy", "set_tag", "add_labels",
 		"get_daily_stats", "get_analytics_summary", "get_coach_checks", "get_day_plan", "set_day_plan", "get_weekly_digest",
 		"list_positions", "set_position_plan", "get_levels", "get_review_method", "list_lessons",
@@ -124,21 +124,26 @@ func TestMCPToolsList(t *testing.T) {
 
 	// Annotations drive the Claude app's connector grouping: reads must be
 	// readOnly (so they can be always-allowed), writes must declare they are
-	// non-destructive (additive / fill-a-blank only). An un-annotated tool
-	// is filed under "Write/delete tools" by the client.
+	// non-destructive (additive / fill-a-blank only), except the one that
+	// replaces the trader's own text, which must say so. An un-annotated
+	// tool is filed under "Write/delete tools" by the client.
 	readOnly := map[string]bool{
 		"server_info": true, "list_trades": true, "get_trade": true, "list_journal": true,
 		"get_journal_entry": true, "list_strategies": true, "get_strategy": true,
 		"get_chart_image": true, "get_daily_stats": true, "get_analytics_summary": true, "get_coach_checks": true, "get_day_plan": true, "get_weekly_digest": true,
 		"list_positions": true, "get_levels": true, "get_review_method": true, "list_lessons": true,
 	}
+	overwrites := map[string]bool{"update_strategy": true}
 	for _, tl := range res.Tools {
 		ro := tl.Annotations.ReadOnlyHint != nil && *tl.Annotations.ReadOnlyHint
 		if ro != readOnly[tl.Name] {
 			t.Errorf("%s readOnlyHint = %v, want %v", tl.Name, ro, readOnly[tl.Name])
 		}
-		if !readOnly[tl.Name] && (tl.Annotations.DestructiveHint == nil || *tl.Annotations.DestructiveHint) {
-			t.Errorf("%s must declare destructiveHint=false", tl.Name)
+		if readOnly[tl.Name] {
+			continue
+		}
+		if tl.Annotations.DestructiveHint == nil || *tl.Annotations.DestructiveHint != overwrites[tl.Name] {
+			t.Errorf("%s must declare destructiveHint=%v", tl.Name, overwrites[tl.Name])
 		}
 	}
 }

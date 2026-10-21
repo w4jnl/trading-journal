@@ -324,6 +324,13 @@
               "$ref": "#/components/schemas/Attachment"
             }
           },
+          "checklist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The rules a trade of this strategy is checked against, in order."
+          },
           "createdAt": {
             "type": "string",
             "format": "date-time"
@@ -331,8 +338,97 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "archivedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Set once the trader retired the strategy (the list shows active ones only)."
           }
         }
+      },
+      "StrategyWrite": {
+        "type": "object",
+        "description": "A strategy write. On POST the name is required and the rest optional; on PUT every field is optional and only the fields present change: name, body and checklist replace, append and images add.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Short name, unique among the caller's strategies."
+          },
+          "body": {
+            "type": "string",
+            "description": "The playbook, markdown. Image refs may use the API URLs (/api/v1/attachments/N) or the name of an image sent alongside: ![caption](name)."
+          },
+          "append": {
+            "type": "string",
+            "description": "Markdown added as a paragraph at the end of the playbook."
+          },
+          "checklist": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The complete list of rules, in order; [] clears them."
+          },
+          "images": {
+            "type": "array",
+            "maxItems": 10,
+            "items": {
+              "$ref": "#/components/schemas/ImageInline"
+            },
+            "description": "Drawings or chart images: stored as attachments of the caller and placed where the body refers to them by name, else appended."
+          }
+        }
+      },
+      "ImageInline": {
+        "type": "object",
+        "required": [
+          "data"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "What the body calls it in ![caption](name); the alt text when appended."
+          },
+          "data": {
+            "type": "string",
+            "description": "The image as base64 (a data: URL is accepted): PNG, JPEG, GIF or WebP, at most 8 MiB. The type is read from the bytes."
+          }
+        }
+      },
+      "StoredImage": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer"
+          },
+          "url": {
+            "type": "string",
+            "description": "/api/v1/attachments/{id}"
+          }
+        }
+      },
+      "StrategyWritten": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/Strategy"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "images": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/StoredImage"
+                },
+                "description": "The images this write stored."
+              }
+            }
+          }
+        ]
       },
       "Trade": {
         "type": "object",
@@ -3223,6 +3319,72 @@
       }
     },
     "/strategies": {
+      "post": {
+        "operationId": "createStrategy",
+        "summary": "Create a strategy: name, playbook (markdown), checklist rules, inline images (base64).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyWritten"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "No name, bad JSON, an image that is not base64 or empty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "A strategy of that name exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "An image over 8 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "An image that is not PNG, JPEG, GIF or WebP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "listStrategies",
         "summary": "List the caller's strategies (name + full markdown + image URLs).",
@@ -3259,6 +3421,92 @@
       }
     },
     "/strategies/{id}": {
+      "put": {
+        "operationId": "updateStrategy",
+        "summary": "Change a strategy: name, body and checklist replace what is passed; append and images add.",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyWrite"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OK",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyWritten"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad JSON, an empty name, an image that is not base64 or empty",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Another strategy carries the new name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "An image over 8 MiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "415": {
+            "description": "An image that is not PNG, JPEG, GIF or WebP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "operationId": "getStrategy",
         "summary": "Strategy detail.",

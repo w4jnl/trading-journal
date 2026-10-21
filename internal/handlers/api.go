@@ -39,7 +39,9 @@ func (h *Handlers) APIMux() *http.ServeMux {
 	m.HandleFunc("GET /api/v1/stats/daily", h.APIStatsDaily)
 	m.HandleFunc("GET /api/v1/analytics/summary", h.APIAnalyticsSummary)
 	m.HandleFunc("GET /api/v1/strategies", h.APIStrategiesList)
+	m.HandleFunc("POST /api/v1/strategies", h.APIStrategyCreate)
 	m.HandleFunc("GET /api/v1/strategies/{id}", h.APIStrategyDetail)
+	m.HandleFunc("PUT /api/v1/strategies/{id}", h.APIStrategyUpdate)
 	m.HandleFunc("GET /api/v1/journal", h.APIJournalList)
 	m.HandleFunc("POST /api/v1/journal", h.APIJournalCreate)
 	m.HandleFunc("POST /api/v1/journal/prepare-day", h.APIPrepareDay)
@@ -177,8 +179,10 @@ type apiStrategy struct {
 	Name        string          `json:"name"`
 	Body        string          `json:"body"`
 	Attachments []apiAttachment `json:"attachments"`
+	Checklist   []string        `json:"checklist"`
 	CreatedAt   time.Time       `json:"createdAt"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
+	ArchivedAt  *time.Time      `json:"archivedAt"`
 }
 
 type apiStrategyRef struct {
