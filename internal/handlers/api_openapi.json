@@ -6500,6 +6500,83 @@
           }
         }
       }
+    },
+    "/ai/method": {
+      "get": {
+        "operationId": "getAIMethod",
+        "summary": "The review method this journal works by, for agents and scripts: the version, the markers, the user's review language, the method as markdown, the label vocabulary and the modes with their steps",
+        "responses": {
+          "200": {
+            "description": "The method",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "marker": {
+                      "type": "string",
+                      "description": "the line an external agent ends a review with"
+                    },
+                    "markers": {
+                      "type": "object",
+                      "properties": {
+                        "app": {
+                          "type": "string"
+                        },
+                        "agent": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "language": {
+                      "type": "string"
+                    },
+                    "methodMarkdown": {
+                      "type": "string"
+                    },
+                    "labels": {
+                      "type": "object",
+                      "additionalProperties": true
+                    },
+                    "modes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "title": {
+                            "type": "string"
+                          },
+                          "purpose": {
+                            "type": "string"
+                          },
+                          "arguments": {
+                            "type": "array",
+                            "items": {
+                              "type": "object"
+                            }
+                          },
+                          "steps": {
+                            "type": "array",
+                            "items": {
+                              "type": "string"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }

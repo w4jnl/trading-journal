@@ -69,3 +69,32 @@ func TestVocabularyCoversLabels(t *testing.T) {
 		t.Error("the method version must move past the pre-package method")
 	}
 }
+
+// The document, the instructions and the prompts carry the marker, the
+// modes and the lines, and a prompt fills its arguments.
+func TestMethodForAgents(t *testing.T) {
+	doc := Document(DocOptions{Tools: []string{"prepare_day", "append_note"}, Language: "Czech"})
+	for _, s := range []string{"# The review method, version " + Version, MarkerLine(), "## Modes", "`review_day`", "`today`", "## Language", "Czech", "`prepare_day`", "`append_note`", "tj-ai:lesson key=", "## The evidence", "`dayMap`"} {
+		if !strings.Contains(doc, s) {
+			t.Errorf("document lacks %q", s)
+		}
+	}
+	ins := Instructions()
+	if !strings.Contains(ins, MarkerLine()) || !strings.Contains(ins, "trading-journal://method") || !strings.Contains(ins, "server_info") {
+		t.Errorf("instructions = %.200q", ins)
+	}
+	m, ok := ModeByName("review_entry")
+	if !ok {
+		t.Fatal("review_entry mode missing")
+	}
+	text := PromptText(m, map[string]string{"entryId": "42"}, "Czech")
+	if !strings.Contains(text, "entryId = 42") || !strings.Contains(text, "get_journal_entry") || !strings.Contains(text, "Czech") || !strings.HasSuffix(text, MarkerLine()+".") {
+		t.Errorf("prompt text = %q", text)
+	}
+	if !strings.Contains(PrepareNote(), MarkerLine()) || MarkerLine() != "<!-- tj-ai-mcp:v1 method="+Version+" -->" {
+		t.Errorf("prepare note / marker line = %q / %q", PrepareNote(), MarkerLine())
+	}
+	if len(Modes) != 5 {
+		t.Errorf("modes = %d", len(Modes))
+	}
+}

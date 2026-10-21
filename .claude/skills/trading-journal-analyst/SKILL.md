@@ -1,224 +1,61 @@
 ---
 name: trading-journal-analyst
-description: Review and write the trading journal via the trading-journal MCP/API. Use when asked to analyze yesterday's trading, review my trades, write/synthesize my journal, do a daily trade review, or analyze a specific trade or journal entry. Clusters copytrader fan-out into group entries, writes per-trade/group analysis (once), synthesizes the daily journal, and prints an overview.
+description: Review and write the trading journal via the trading-journal MCP/API. Use when asked to analyze yesterday's trading, review my trades, write/synthesize my journal, do a daily trade review, plan the session, or analyze a specific trade or journal entry. The method lives on the journal server; this skill connects and follows it.
 ---
 
 # Trading journal analyst
 
-You review a trading day and write the journal, using the trading-journal tools.
-You **read** trades + journal + strategies + chart images, and **write** analysis
-into journal entries (create new ones, or append to existing ones - **never
-overwrite**). You analyze each trade/group/entry **exactly once** (idempotent via
-a marker), and you finish by printing an overview in chat.
+The journal server carries the review method: how to review a trade, a group, a
+day or a week, how to plan a session, which lines every review ends with, the
+write rules and the modes with their tool order. It is versioned and it changes
+with the server, so **do not keep a copy here**: read it at the start of every
+session and follow it.
 
-## Tools
+## Every session
 
-In **Claude** (Code and app) and in **ChatGPT** alike these are the MCP tools of the
-`trading-journal` connector — same names, same behaviour (ChatGPT connection steps in
-[chatgpt-setup.md](chatgpt-setup.md)). The REST path in parentheses is the equivalent
-for scripts using the HTTP API:
+1. Call `server_info` on the trading-journal connector (with several journals
+   configured, pick one instance and use it for the whole run). It names the
+   server, the trader's review language, the marker line and the method version.
+2. Read the method: the resource `trading-journal://method`, or the tool
+   `get_review_method` when your client does not read resources. Follow it.
+3. When your client lists the server's prompts, use them: `review_day`,
+   `review_entry`, `today`, `review_week`, `plan_day`. They carry the same steps
+   with the arguments filled in.
 
-- `prepare_day` (`POST /journal/prepare-day`) - **the daily entry point.** Clusters
-  the day's copytrader fan-out into **group** entries + solos into **trade**
-  entries, CREATES the missing ones (idempotent), and returns them with
-  `entryId, scope, created, alreadyAnalyzed, label, symbolRoot, direction, netPnl,
-  tradeIds`. The server does the clustering and id handling - you only analyze the
-  entries it returns. Defaults to the last trading day before today.
-- `server_info` - service + instance label (e.g. prod/dev) + the authenticated
-  user; call first if several connectors might be configured.
-- `list_trades` (`GET /trades`) - rows carry `hasJournal`, `groupCount`,
-  `entryTime`, `direction`, `account`, `entryPrice`, `netPnl`. Page size 50.
-- `get_trade` (`GET /trades/{id}`) - fills + linked entry + chart data.
-- `get_chart_image` (`GET /trades/{id}/chart.png`) - candlestick PNG; **look at
-  it** to judge entries/exits. (ChatGPT: reason from the numeric `chart` data.)
-- `list_journal` (`GET /journal`), `get_journal_entry` (`GET /journal/{id}`) -
-  the latter returns raw `notes` (check for the marker) + `strategy{id,name}`.
-- `list_strategies` / `get_strategy` (`GET /strategies/{id}`) - full playbook.
-- `create_journal_entry` (`POST /journal`) - scope `day|week|trade|group`.
-- `append_note` (`POST /journal/{id}/notes`) - append-only.
-- `assign_strategy` (`POST /journal/{id}/strategy`) - set an entry's strategy
-  **only if it has none** (never overwrites), on any entry when one clearly fits.
-  Trade/group entries only (a day/week is rejected).
-- `set_tag` (`POST /journal/{id}/tag`) - set `good|neutral|bad` **only if the
-  entry has none** (never overwrites), on any entry when your analysis warrants a
-  clear verdict.
-- `get_daily_stats` (`GET /stats/daily`) - per-day P&L + trade counts with range
-  totals (the Calendar's numbers: `trades, wins, losses, net, gross, commission,
-  winRate, largestWin, largestLoss`). Use it for the overview's figures instead of
-  summing trades yourself; `day` or `from`/`to` inclusive (default last 30 days),
-  optional `accountId`, `refresh=true` to pull fresh fills first. Days without
-  closed trades are omitted; `null` means absent.
-
-**Dates:** `day`/`from`/`to` on `list_trades` and `get_daily_stats` accept the
-keywords `today`, `yesterday` and `last` (last trading day), resolved on the
-**server in the trading timezone** - always use them instead of computing a
-date yourself; you do not reliably know today's date in the user's zone.
-
-## The once-only marker
-
-Every analysis you write **ends with** this exact HTML comment (renders blank in
-the journal UI, detectable in raw `notes`):
-
-```
-<!-- tj-ai-mcp:v1 -->
-```
-
-**Before analyzing anything, check for it.** If an entry's `notes` already
-contains `tj-ai-mcp:v1`, it's done - skip it (unless the user says "re-analyze" /
-"force"). This is what makes a scheduled re-run safe.
-
-Write each analysis under a visible heading that names YOUR model in brackets, so a
-human sees who wrote it (your model + version, e.g. Opus 4.8):
-
-```
-### AI review (Opus 4.8) — 2026-05-12
-
-<your analysis>
-
-<!-- tj-ai-mcp:v1 -->
-```
-
----
-
-## Mode: daily review (default = "yesterday" = last trading day)
-
-`prepare_day` does the date resolution, copytrader clustering, and entry creation
-on the **server** - you never cluster trades or pass raw trade ids yourself; you
-only analyze the entries it returns. The target date defaults to the **last
-trading day before today** (trading tz - so on a Monday it's the previous Friday,
-and weekends/holidays/no-trade days are skipped); pass an explicit `date` to
-override. Do the steps in order, then print the overview.
-
-### 1. Prepare the day
-Call `prepare_day` (no args for the default last-trading-day, or
-`date="YYYY-MM-DD"`). It clusters copytrader fan-out into group entries + solos
-into trade entries, creates the missing ones, and returns `entries[]` - each
-`{entryId, scope, created, alreadyAnalyzed, label, symbolRoot, direction, netPnl,
-tradeIds}`. You work only from these entry ids.
-
-### 2. Analyze each entry (once)
-Fetch your strategies once with `list_strategies` (id + name + full playbook) so
-you can match a trade to one.
-
-For every returned entry with `alreadyAnalyzed: false`:
-- `get_chart_image(entryId=…)` and **look at** the candles/markers;
-  `get_journal_entry(entryId)` for its `notes` + any assigned `strategy`.
-- **Classify (any entry, only-if-unset, only-if-fitting):** set a strategy and/or
-  tag on an entry that has none yet — whether you just created it (`created: true`)
-  or it pre-existed — but only when each clearly applies:
-  - `assign_strategy(entryId, strategyId)` if one of your strategies *clearly*
-    fits the trade; if nothing clearly fits, leave it unassigned — don't force it.
-    Trade/group entries only (a day/week spans mixed setups and is rejected).
-  - `set_tag(entryId, "good"|"neutral"|"bad")` if your analysis warrants a clear
-    verdict; if it's ambiguous, leave it untagged.
-  You **never overwrite** a strategy or tag that's already set (the user's or a
-  prior run's) — both calls refuse to, as a backstop — so you only fill in blanks.
-- Judge the trade against the relevant playbook (`get_strategy(id)` for the one
-  you just assigned or that was already set), then
-  `append_note(entryId, note=<your analysis ending in the marker>)`.
-
-Skip entries where `alreadyAnalyzed: true` (unless the user said force) - that is
-the once-only guarantee. You never pass trade ids; only the `entryId`s that
-`prepare_day` returned.
-
-### 3. Synthesize the daily journal
-From the day's entries + their `netPnl`, write a day-level synthesis (themes,
-what repeated, net result, one thing to fix tomorrow):
-- `create_journal_entry(scope="day", date=<the date prepare_day returned>,
-  body=<synthesis + marker>)`.
-- If it returns `{alreadyExists:true, entryId}` and that entry's `notes` lack
-  `tj-ai-mcp:v1`, `append_note(entryId, <synthesis + marker>)`; otherwise leave it.
-
-### 4. Overview in chat
-Print a concise digest (don't just say "done"):
-- Net / gross P&L, # trades, win rate; # group + # trade entries (created vs
-  already there); best and worst.
-- 2-4 recurring observations (timing, sizing, strategy adherence, copytrader
-  consistency across accounts).
-- Anything needing attention (a stub instrument with no P&L, entries skipped as
-  already analyzed).
-
-If a tool returns "not found" for an id, re-fetch (`prepare_day` / `list_journal`)
-and use the exact value - do **not** invent ids or conclude a backend problem
-(trade ids, entry ids, and account ids are different namespaces). If several
-trading-journal connectors are configured, call `server_info` first and use one
-instance for the whole run.
-
----
-
-## Mode: today (P&L and trades check - read-only)
-
-When the user asks how they are doing today / today's P&L / today's trades (or
-"yesterday's numbers"), answer from two calls and **write nothing** - no entries,
-notes, tags or strategies in this mode:
-
-1. `get_daily_stats(day="today", refresh=true)` - `refresh` pulls the latest
-   fills from the brokers and waits for them, so the answer is current. Use
-   `day="yesterday"` / `day="last"` when asked; never compute the date.
-2. `list_trades(day="today", refresh=true)` for the trade list (page through if
-   `page.pages > 1`).
-
-Report: net (and gross / commission), # trades with wins/losses and win rate,
-best and worst trade (symbol, direction, time, net), and the run of the day
-in a few words. If `items` is empty, say there are no closed trades today yet
-(open positions are not P&L). `null` fields mean "none", not zero. Do not
-start the daily review unless asked.
-
-## Mode: on-demand (a specific trade or entry)
-- **Trade**: `get_trade(id)` + `get_chart_image(tradeId=id)`; if it has a linked
-  entry with the marker, stop unless forced. Otherwise analyze, then either
-  `create_journal_entry(scope="trade", tradeId=id, body=…+marker)` or, if an
-  entry exists, `append_note`. Print the analysis in chat too.
-- **Entry**: `get_journal_entry(id)`; skip if marked (unless forced); pull
-  `get_strategy` if assigned + `get_chart_image(entryId=id)`; `append_note`
-  the analysis + marker. Print it in chat.
-
----
-
-## Analysis rubric (what to actually write)
-Keep it specific and short (a few tight paragraphs or bullets), grounded in the
-chart + numbers - not generic advice:
-- **Execution**: entry vs structure on the chart (early/late/chasing?), exit vs
-  the move (left runner? cut winner? stop placement vs MAE?).
-- **Strategy adherence** (if a strategy is assigned): did the trade follow the
-  playbook's setup/entry/exit/risk rules? Call out deviations explicitly.
-- **Risk/sizing**: size vs the rest of the day; was the loss/gain in normal range?
-- **Copytrader consistency** (groups): did all accounts get comparable fills, or
-  did some lag/slip materially?
-- **Verdict + lesson**: tag-worthy (good/neutral/bad) and one concrete takeaway.
-
-Set `tag` to your honest read (`good`/`neutral`/`bad`) on any untagged entry (it
-fills only when unset); leave it untagged when the read is ambiguous.
+The method's rules that matter most, in one line each: `prepare_day` clusters and
+creates the entries, you only ever pass the `entryId` values it returns; every
+review ends with the lesson line and then the marker line from `server_info`,
+and a note that already carries the marker is done; writes are additive and
+only-if-unset; write the prose in the trader's language from `server_info`;
+dates like `today`, `yesterday` and `last` are resolved on the server.
 
 ## Setup (one-time)
 
-Every client connects to `https://YOUR_HOST/mcp` and **signs in with OAuth** through
-the browser (the journal is its own authorization server, `mcp.oauth` enabled — see
-`docs/mcp-oauth-setup.md`). There is no key to generate or paste; each connection
-shows up under the journal's **Settings → Connected apps**, where Revoke cuts it off.
+Every client connects to `https://YOUR_HOST/mcp` and **signs in with OAuth**
+through the browser (the journal is its own authorization server, `mcp.oauth`
+enabled; see `docs/mcp-oauth-setup.md`). Each connection shows up under the
+journal's **Settings → Connected apps**, where Revoke cuts it off.
 
 - **Claude Code**:
   ```bash
   claude mcp add --transport http trading-journal https://YOUR_HOST/mcp
   claude mcp login trading-journal      # browser → your login → Allow
   ```
-- **Claude app** (claude.ai / desktop): Settings → Connectors → *Add custom connector*
-  → URL `https://YOUR_HOST/mcp`, leave client ID/secret empty → *Connect* → log in →
-  **Allow**.
-- **ChatGPT**: Settings → Connectors (Plugins) → *Create* → server URL
-  `https://YOUR_HOST/mcp`, authentication **OAuth** → *Create* → log in → **Allow**.
-  Then put [chatgpt-instructions.md](chatgpt-instructions.md) into the Project / GPT
-  that has the connector; full steps in [chatgpt-setup.md](chatgpt-setup.md).
-- **Scripts** (not chat clients) keep using a per-user API key from `/settings`
-  against the REST API — see API.md.
+- **Claude app** (claude.ai / desktop): Settings → Connectors → *Add custom
+  connector* → URL `https://YOUR_HOST/mcp`, leave client ID/secret empty →
+  *Connect* → log in → **Allow**.
+- **ChatGPT**: Settings → Connectors → *Create* → server URL
+  `https://YOUR_HOST/mcp`, authentication **OAuth** → *Create* → log in →
+  **Allow**. Then put [chatgpt-instructions.md](chatgpt-instructions.md) into the
+  Project or GPT that has the connector; steps in [chatgpt-setup.md](chatgpt-setup.md).
+- **Scripts** keep using a per-user API key against the REST API; the method is
+  at `GET /api/v1/ai/method`.
 
 ## Scheduling (daily, automatic)
-- **Claude Code routine** (recommended): use the `schedule` skill to run this each
-  morning, e.g. prompt `use trading-journal-analyst to review yesterday` on a
-  `0 7 * * *` cron.
-- **Claude app**: a scheduled task with the same prompt + the connector enabled.
-- **Plain cron** fallback:
-  ```bash
-  claude -p "use trading-journal-analyst to review yesterday"
-  ```
-Each run is idempotent (the marker), so a missed/rerun day is safe.
+
+- **Claude Code routine**: run `use trading-journal-analyst to review yesterday`
+  each morning, for example on a `0 7 * * *` cron with the `schedule` skill.
+- **Claude app**: a scheduled task with the same prompt and the connector enabled.
+- **Plain cron** fallback: `claude -p "use trading-journal-analyst to review yesterday"`.
+
+Each run is idempotent (the marker), so a missed or repeated day is safe.
