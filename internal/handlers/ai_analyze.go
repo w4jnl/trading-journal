@@ -44,12 +44,18 @@ func aiSystemPrompt(scope, language string) string {
 	return aimethod.SystemPrompt(aimethod.Scope(scope), language)
 }
 
-// aiReviewSystem is the system turn of a review: the method as one cached
-// block, then the language lead when one is set.
+// aiReviewSystem is the system turn of a review: the language lead when one
+// is set (first, so a flat prompt opens with it), the method as the cached
+// block, the language reminder last. The cache breakpoint sits after the
+// method, so the lead is part of the per-user prefix.
 func aiReviewSystem(language string) []ai.Block {
-	blocks := []ai.Block{{Text: aimethod.ReviewMethod(), Cache: true}}
+	var blocks []ai.Block
 	if lead := aimethod.LanguageLead(language); lead != "" {
 		blocks = append(blocks, ai.Block{Text: lead})
+	}
+	blocks = append(blocks, ai.Block{Text: aimethod.ReviewMethod(), Cache: true})
+	if tail := aimethod.LanguageTail(language); tail != "" {
+		blocks = append(blocks, ai.Block{Text: tail})
 	}
 	return blocks
 }
@@ -502,7 +508,6 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	lang := h.userAILanguage(ctx)
 	if lang != "" {
 		last.Text = "Reply in " + lang + " (write the whole review and the lesson in " + lang + "; keep only the keywords of the machine-readable lines in English).\n\n" + last.Text
-		req.System = append(req.System, ai.Block{Text: aimethod.LanguageTail(lang)})
 	}
 	out, err := aiGenerate(ctx, client, req)
 	if err != nil {

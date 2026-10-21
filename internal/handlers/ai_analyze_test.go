@@ -72,8 +72,8 @@ func TestAISystemPromptPerScope(t *testing.T) {
 		t.Errorf("language wrapper lost the scope line")
 	}
 	sys := aiReviewSystem("Czech")
-	if len(sys) != 2 || !sys[0].Cache || sys[1].Cache || !strings.HasPrefix(sys[1].Text, "WRITE YOUR ENTIRE REVIEW IN Czech") {
-		t.Errorf("system blocks = %+v", sys)
+	if len(sys) != 3 || sys[0].Cache || !sys[1].Cache || sys[2].Cache || !strings.HasPrefix(sys[0].Text, "WRITE YOUR ENTIRE REVIEW IN Czech") || !strings.HasPrefix(sys[2].Text, "Reminder:") {
+		t.Errorf("system blocks = %d, want lead, cached method, tail", len(sys))
 	}
 	if sys := aiReviewSystem(""); len(sys) != 1 || !sys[0].Cache {
 		t.Errorf("default system blocks = %d", len(sys))

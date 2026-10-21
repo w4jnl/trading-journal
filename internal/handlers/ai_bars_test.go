@@ -63,11 +63,13 @@ func TestAIBarWindow(t *testing.T) {
 }
 
 // itemObject is the JSON object of a flattened user turn that carries the
-// item under review (MarshalIndent never emits a blank line, so objects
-// split on them).
-func itemObject(user string) string {
+// item under review; jsonObjectWith finds the object holding any key
+// (MarshalIndent never emits a blank line, so objects split on them).
+func itemObject(user string) string { return jsonObjectWith(user, `"entry"`) }
+
+func jsonObjectWith(user, key string) string {
 	for _, chunk := range strings.Split(user, "\n\n") {
-		if strings.HasPrefix(chunk, "{") && strings.Contains(chunk, `"entry"`) {
+		if strings.HasPrefix(chunk, "{") && strings.Contains(chunk, key) {
 			return chunk
 		}
 	}
