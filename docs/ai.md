@@ -41,6 +41,14 @@ it exists once and carries a version (`aimethod.Version`, recorded on every revi
 `method=` and on every stored output). The contracts and the markers are not user-editable: the
 parsers and the review loop depend on them.
 
+**Caching.** A call is blocks (`ai.Request`): the method, the label vocabulary and the playbooks
+lead and are flagged cacheable, the item follows. Anthropic receives `cache_control` on the last
+cached system block and the last cached user block and bills the prefix at the cached rate from the
+second call within five minutes (prefixes under 1024 tokens, or 4096 on some models, are not cached;
+the method plus the vocabulary clears that). OpenAI, xAI and the other OpenAI-compatible providers
+cache prefixes on their own, which the stable-first order serves. The `-d` log shows per call
+`ai usage model=… input=… output=… cacheRead=… cacheWrite=…`.
+
 **What a review costs.** The evidence is JSON; bars are one string per row ("time open high low
 close") so the session windows and the chart stay a few thousand tokens, the trader's own words
 exclude earlier AI blocks, and a day review builds on the day's recorded lessons. A trade review

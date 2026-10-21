@@ -408,8 +408,9 @@ func TestAnalyzeEntryUsesOwnProvider(t *testing.T) {
 	if !strings.Contains(body, "### AI review — ") || !strings.Contains(body, "\n*gemini-pro via Google Gemini*\n") {
 		t.Errorf("review does not name its model: %q", body)
 	}
-	if !strings.Contains(fp.system, "WHOLE TRADING DAY") || strings.Contains(fp.system, "mistakes=") {
-		t.Errorf("day review got the wrong prompt: %.200q", fp.system)
+	// The method carries every brief; the user turn names the item's kind.
+	if !strings.Contains(fp.system, "WHOLE TRADING DAY") || !strings.Contains(fp.user, "THIS ITEM IS A DAY") || strings.Contains(fp.user, `"labelVocabulary"`) {
+		t.Errorf("day review got the wrong prompt: %.200q / %.120q", fp.system, fp.user)
 	}
 }
 
@@ -512,8 +513,12 @@ func TestAnalyzeTradeSuggestsWhatFits(t *testing.T) {
 		} `json:"entry"`
 		Vocabulary map[string][]map[string]string `json:"labelVocabulary"`
 	}
-	if err := json.Unmarshal([]byte(fp.user), &sent); err != nil {
+	// The user turn is a few JSON objects: the vocabulary first, the item last.
+	if err := json.Unmarshal([]byte(itemObject(fp.user)), &sent); err != nil {
 		t.Fatalf("context is not JSON: %v", err)
+	}
+	if err := json.Unmarshal([]byte(jsonObjectWith(fp.user, `"labelVocabulary"`)), &sent); err != nil {
+		t.Fatalf("vocabulary is not JSON: %v", err)
 	}
 	if len(sent.Entry.Trades) != 1 {
 		t.Fatalf("trades = %+v", sent.Entry.Trades)
@@ -603,7 +608,7 @@ func TestReviewFollowsTheLanguageSetting(t *testing.T) {
 		t.Fatal(err)
 	}
 	if !strings.HasPrefix(fp.system, "WRITE YOUR ENTIRE REVIEW IN Czech") || !strings.Contains(fp.system, "write each of them in Czech") ||
-		!strings.HasPrefix(fp.user, "Reply in Czech") {
+		!strings.Contains(fp.user, "\n\nReply in Czech") {
 		t.Errorf("language not asked for: system %.80q user %.40q", fp.system, fp.user)
 	}
 	var body string

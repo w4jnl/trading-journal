@@ -290,7 +290,8 @@ func (h *Handlers) draftPlan(ctx context.Context, day string) error {
 	if err != nil {
 		return err
 	}
-	out, err := client.Generate(ctx, aiPlanDraftPrompt+aiLanguageLine(h.userAILanguage(ctx)), in)
+	resp, err := ai.Do(ctx, client, ai.Cached(aiPlanDraftPrompt+aiLanguageLine(h.userAILanguage(ctx)), in))
+	out := resp.Text
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)
 	}

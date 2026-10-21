@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/ai"
 	"html/template"
 	"math"
 	"net/http"
@@ -414,7 +415,8 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 			user = "Reply in " + lang + ".\n\n" + user
 		}
 		model = label
-		out, err := client.Generate(ctx, gexAnalysisPromptFor(lang), user)
+		resp, err := ai.Do(ctx, client, ai.Cached(gexAnalysisPromptFor(lang), user))
+		out := resp.Text
 		if err != nil {
 			h.logger().Warn("gex analyze: generate failed", "market", market, "err", err)
 			http.Error(w, "AI analysis failed: "+err.Error(), http.StatusBadGateway)

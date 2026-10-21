@@ -17,6 +17,12 @@ built against it carries the same marketing version.
   note's earlier AI reviews and gamma block are no longer sent back as the trader's words (their
   count is), and a day's review receives the lessons its own trade reviews already drew and is
   asked to build on them. A trade review costs about half the input tokens it did.
+- Prompt caching. A model call is now blocks with cache hints: the method (one block for every
+  review scope, with the item's kind named in the user turn), the label vocabulary and the
+  playbooks lead and are marked cacheable; the item follows. Anthropic gets `cache_control`
+  breakpoints and reports the cached tokens; every OpenAI-compatible provider gets the same
+  stable-first order for its own prefix caching. A day run's N+1 reviews now share one prefix.
+  Usage (input, output, cached) is logged at debug level. xAI (Grok) joins the provider presets.
 
 - The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
   range and the day type and takes its levels from the zones and the gamma map; the reviews of a

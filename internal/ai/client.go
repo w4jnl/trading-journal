@@ -222,6 +222,13 @@ type chatRequest struct {
 }
 
 type chatResponse struct {
+	Usage struct {
+		Prompt     int `json:"prompt_tokens"`
+		Completion int `json:"completion_tokens"`
+		Details    struct {
+			Cached int `json:"cached_tokens"`
+		} `json:"prompt_tokens_details"`
+	} `json:"usage"`
 	Choices []struct {
 		Message struct {
 			// A string for most providers; an array of typed parts for some
@@ -260,17 +267,27 @@ func contentText(raw json.RawMessage) string {
 
 // Generate POSTs a single-turn chat completion and returns the assistant content.
 func (c *openAIClient) Generate(ctx context.Context, system, user string) (string, error) {
-	return c.GenerateImages(ctx, system, user, nil)
+	r, err := c.Complete(ctx, Text(system, user))
+	return r.Text, err
 }
 
 // GenerateImages is Generate with PNGs attached to the user turn as data URLs
 // (the OpenAI vision format, which Gemini, Mistral, OpenRouter and local
 // vision servers accept too).
 func (c *openAIClient) GenerateImages(ctx context.Context, system, user string, pngs [][]byte) (string, error) {
+	r, err := c.Complete(ctx, Request{System: []Block{{Text: system}}, User: []Block{{Text: user}}, Images: pngs})
+	return r.Text, err
+}
+
+// Complete sends the blocks as one system message and one user turn, the
+// blocks in order (the cached ones first, so the provider's own prefix
+// caching finds them), the images after the text.
+func (c *openAIClient) Complete(ctx context.Context, req Request) (Response, error) {
+	system, user := joinBlocks(req.System), joinBlocks(req.User)
 	var content any = user
-	if len(pngs) > 0 {
+	if len(req.Images) > 0 {
 		parts := []chatPart{{Type: "text", Text: user}}
-		for _, p := range pngs {
+		for _, p := range req.Images {
 			parts = append(parts, chatPart{Type: "image_url", ImageURL: &chatImageURL{URL: "data:image/png;base64," + base64.StdEncoding.EncodeToString(p)}})
 		}
 		content = parts
@@ -291,32 +308,35 @@ func (c *openAIClient) GenerateImages(ctx context.Context, system, user string, 
 	}
 	payload, err := json.Marshal(cr)
 	if err != nil {
-		return "", err
+		return Response{}, err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
+	hreq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+"/chat/completions", bytes.NewReader(payload))
 	if err != nil {
-		return "", err
+		return Response{}, err
 	}
-	req.Header.Set("Content-Type", "application/json")
+	hreq.Header.Set("Content-Type", "application/json")
 	if c.apiKey != "" {
-		req.Header.Set("Authorization", "Bearer "+c.apiKey)
+		hreq.Header.Set("Authorization", "Bearer "+c.apiKey)
 	}
-	body, err := c.do(req)
+	body, err := c.do(hreq)
 	if err != nil {
-		return "", err
+		return Response{}, err
 	}
 	var resp chatResponse
 	if err := json.Unmarshal(body, &resp); err != nil {
-		return "", fmt.Errorf("ai: decode response: %w", err)
+		return Response{}, fmt.Errorf("ai: decode response: %w", err)
 	}
 	if resp.Error != nil && resp.Error.Message != "" {
-		return "", fmt.Errorf("ai: %s", resp.Error.Message)
+		return Response{}, fmt.Errorf("ai: %s", resp.Error.Message)
 	}
 	if len(resp.Choices) == 0 {
-		return "", fmt.Errorf("ai: empty response (no choices)")
+		return Response{}, fmt.Errorf("ai: empty response (no choices)")
 	}
+	usage := Usage{Input: resp.Usage.Prompt, Output: resp.Usage.Completion, CacheRead: resp.Usage.Details.Cached}
+	logUsage(c.model, usage)
 	ch := resp.Choices[0]
-	return answer(stripReasoning(contentText(ch.Message.Content)), ch.FinishReason == "length")
+	out, err := answer(stripReasoning(contentText(ch.Message.Content)), ch.FinishReason == "length")
+	return Response{Text: out, Usage: usage}, err
 }
 
 // answer turns a finished completion into the result: an empty one is an error,

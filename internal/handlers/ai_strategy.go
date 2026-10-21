@@ -330,7 +330,8 @@ func (h *Handlers) draftStrategy(ctx context.Context, strategyID int64) error {
 		"evidence": ev, "notes": h.strategyNotes(ctx, strategyID), "timezone": tz.String(),
 	}, "", "  ")
 	lang := h.userAILanguage(ctx)
-	out, err := client.Generate(ctx, aiStrategyDraftPrompt+aiLanguageLine(lang), string(in))
+	resp, err := ai.Do(ctx, client, ai.Cached(aiStrategyDraftPrompt+aiLanguageLine(lang), string(in)))
+	out := resp.Text
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)
 	}
@@ -481,7 +482,8 @@ func (h *Handlers) discoverStrategies(ctx context.Context) error {
 		in = append(in, map[string]any{"id": g.ID, "symbol": g.Symbol, "session": g.Session, "hold": g.Hold, "evidence": g.Evidence})
 	}
 	payload, _ := json.MarshalIndent(map[string]any{"groups": in, "timezone": h.localTZ().String()}, "", "  ")
-	out, err := client.Generate(ctx, aiDiscoveryPrompt+aiLanguageLine(h.userAILanguage(ctx)), string(payload))
+	resp, err := ai.Do(ctx, client, ai.Cached(aiDiscoveryPrompt+aiLanguageLine(h.userAILanguage(ctx)), string(payload)))
+	out := resp.Text
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)
 	}

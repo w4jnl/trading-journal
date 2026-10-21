@@ -28,6 +28,8 @@ var Presets = []Preset{
 		KeyURL: "https://platform.openai.com/api-keys", CompletionTokens: true},
 	{ID: "anthropic", Label: "Anthropic (Claude)", Dialect: "anthropic", BaseURL: "https://api.anthropic.com/v1",
 		KeyURL: "https://platform.claude.com/settings/keys"},
+	{ID: "xai", Label: "xAI (Grok)", Dialect: "openai", BaseURL: "https://api.x.ai/v1",
+		KeyURL: "https://console.x.ai/", CompletionTokens: true},
 	{ID: "gemini", Label: "Google Gemini", Dialect: "openai", BaseURL: "https://generativelanguage.googleapis.com/v1beta/openai",
 		KeyURL: "https://aistudio.google.com/apikey"},
 	{ID: "mistral", Label: "Mistral", Dialect: "openai", BaseURL: "https://api.mistral.ai/v1",

@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/ai"
 	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"html/template"
 	"math"
@@ -406,7 +407,8 @@ func (h *Handlers) explainLab(ctx context.Context, f labFilters) error {
 		"decisions": res.Decisions, "stops": res.Stops, "targets": res.Targets, "grid": res.Grid, "baseline": res.Baseline,
 		"usdPerPoint": res.PointUSD,
 	})
-	out, err := client.Generate(ctx, aiLabPrompt+aiLanguageLine(h.userAILanguage(ctx)), payload)
+	resp, err := ai.Do(ctx, client, ai.Cached(aiLabPrompt+aiLanguageLine(h.userAILanguage(ctx)), payload))
+	out := resp.Text
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)
 	}

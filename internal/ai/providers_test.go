@@ -150,15 +150,97 @@ func TestAnthropicGenerate(t *testing.T) {
 	if srv.header.Get("Authorization") != "" {
 		t.Error("Anthropic request carried a bearer header")
 	}
-	if srv.body["system"] != "SYS" || srv.body["model"] != "claude-sonnet-5-5" || srv.body["max_tokens"] != float64(userMaxTokens) {
+	sys, _ := srv.body["system"].([]any)
+	if len(sys) != 1 || sys[0].(map[string]any)["text"] != "SYS" || srv.body["model"] != "claude-sonnet-5-5" || srv.body["max_tokens"] != float64(userMaxTokens) {
 		t.Errorf("body = %v", srv.body)
 	}
 	if _, ok := srv.body["temperature"]; ok {
 		t.Error("temperature sent")
 	}
 	msgs, _ := srv.body["messages"].([]any)
-	if len(msgs) != 1 || msgs[0].(map[string]any)["role"] != "user" || msgs[0].(map[string]any)["content"] != "USR" {
+	content, _ := msgs[0].(map[string]any)["content"].([]any)
+	if len(msgs) != 1 || msgs[0].(map[string]any)["role"] != "user" || len(content) != 1 || content[0].(map[string]any)["text"] != "USR" {
 		t.Errorf("messages = %v", srv.body["messages"])
+	}
+}
+
+// A structured request: the cached system blocks end in one cache_control,
+// the cached user blocks end in one, the images sit between the cached and
+// the volatile user text, and the usage comes back parsed.
+func TestAnthropicCompleteCaches(t *testing.T) {
+	srv := newJSONServer(t, 200, `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1200,"output_tokens":40,"cache_read_input_tokens":1000,"cache_creation_input_tokens":0}}`)
+	p, _ := PresetByID("anthropic")
+	p.BaseURL = srv.URL + "/v1"
+	c, _ := New(p.Options("claude-sonnet-5-5", "sk-ant"))
+	req := Request{
+		System: []Block{{Text: "METHOD", Cache: true}, {Text: "LANG"}},
+		User:   []Block{{Text: "VOCAB", Cache: true}, {Text: "PLAYBOOKS", Cache: true}, {Text: "ITEM"}},
+		Images: [][]byte{[]byte("png")},
+	}
+	r, err := c.(Requester).Complete(context.Background(), req)
+	if err != nil || r.Text != "ok" || r.Usage.Input != 1200 || r.Usage.CacheRead != 1000 || r.Usage.Output != 40 {
+		t.Fatalf("response = %+v err %v", r, err)
+	}
+	sys, _ := srv.body["system"].([]any)
+	if len(sys) != 2 || sys[0].(map[string]any)["cache_control"] == nil || sys[1].(map[string]any)["cache_control"] != nil || sys[1].(map[string]any)["text"] != "LANG" {
+		t.Errorf("system = %v", sys)
+	}
+	content := srv.body["messages"].([]any)[0].(map[string]any)["content"].([]any)
+	kinds := make([]string, 0, len(content))
+	cached := 0
+	for _, b := range content {
+		m := b.(map[string]any)
+		kinds = append(kinds, m["type"].(string))
+		if m["cache_control"] != nil {
+			cached++
+			if m["text"] != "PLAYBOOKS" {
+				t.Errorf("the breakpoint sits on %v, want the last cached block", m["text"])
+			}
+		}
+	}
+	if strings.Join(kinds, ",") != "text,text,image,text" || cached != 1 {
+		t.Errorf("content = %v (cached %d)", kinds, cached)
+	}
+}
+
+// The OpenAI dialect concatenates the blocks in order (cached first) into one
+// system message and one user text, images after, and reads cached_tokens.
+func TestOpenAICompleteConcatenates(t *testing.T) {
+	srv := newJSONServer(t, 200, `{"choices":[{"message":{"content":"ok"}}],"usage":{"prompt_tokens":900,"completion_tokens":30,"prompt_tokens_details":{"cached_tokens":800}}}`)
+	p, _ := PresetByID("openai")
+	p.BaseURL = srv.URL
+	c, _ := New(p.Options("gpt-x", "sk"))
+	r, err := c.(Requester).Complete(context.Background(), Request{System: []Block{{Text: "A", Cache: true}, {Text: "B"}}, User: []Block{{Text: "C", Cache: true}, {Text: "D"}}, Images: [][]byte{[]byte("png")}})
+	if err != nil || r.Usage.CacheRead != 800 || r.Usage.Input != 900 || r.Usage.Output != 30 {
+		t.Fatalf("response = %+v err %v", r, err)
+	}
+	msgs := srv.body["messages"].([]any)
+	if msgs[0].(map[string]any)["content"] != "A\n\nB" {
+		t.Errorf("system = %v", msgs[0])
+	}
+	parts := msgs[1].(map[string]any)["content"].([]any)
+	if len(parts) != 2 || parts[0].(map[string]any)["text"] != "C\n\nD" || parts[1].(map[string]any)["type"] != "image_url" {
+		t.Errorf("user = %v", parts)
+	}
+}
+
+// plainClient is a test double offering only Generate.
+type plainClient struct{ system, user string }
+
+func (p *plainClient) Generate(_ context.Context, system, user string) (string, error) {
+	p.system, p.user = system, user
+	return "flat", nil
+}
+
+// Do flattens a structured request for a client without Complete.
+func TestDoFlattens(t *testing.T) {
+	pc := &plainClient{}
+	r, err := Do(context.Background(), pc, Request{System: []Block{{Text: "S1", Cache: true}, {Text: "S2"}}, User: []Block{{Text: "U1", Cache: true}, {Text: "U2"}}})
+	if err != nil || r.Text != "flat" || pc.system != "S1\n\nS2" || pc.user != "U1\n\nU2" {
+		t.Errorf("flattened = %q / %q (%+v, %v)", pc.system, pc.user, r, err)
+	}
+	if cached, rest := splitCached([]Block{{Text: "a"}, {Text: "b", Cache: true}, {Text: "c"}}); len(cached) != 2 || len(rest) != 1 {
+		t.Errorf("splitCached = %d / %d", len(cached), len(rest))
 	}
 }
 

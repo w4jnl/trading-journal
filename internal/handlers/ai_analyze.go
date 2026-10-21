@@ -44,6 +44,22 @@ func aiSystemPrompt(scope, language string) string {
 	return aimethod.SystemPrompt(aimethod.Scope(scope), language)
 }
 
+// aiReviewSystem is the system turn of a review: the language lead when one
+// is set (first, so a flat prompt opens with it), the method as the cached
+// block, the language reminder last. The cache breakpoint sits after the
+// method, so the lead is part of the per-user prefix.
+func aiReviewSystem(language string) []ai.Block {
+	var blocks []ai.Block
+	if lead := aimethod.LanguageLead(language); lead != "" {
+		blocks = append(blocks, ai.Block{Text: lead})
+	}
+	blocks = append(blocks, ai.Block{Text: aimethod.ReviewMethod(), Cache: true})
+	if tail := aimethod.LanguageTail(language); tail != "" {
+		blocks = append(blocks, ai.Block{Text: tail})
+	}
+	return blocks
+}
+
 // userAILanguage returns the calling user's configured AI-review language (e.g. "Czech"),
 // or "" when unset or unavailable - in which case the model uses its default (English).
 func (h *Handlers) userAILanguage(ctx context.Context) string {
@@ -275,10 +291,10 @@ func traderBody(body string, n int) (string, int) {
 // week, which reads the digest instead), the coach checks, the day plan or
 // the weekly digest, the assigned playbook, the strategies the model may pick
 // from and, for a trade or group, the label vocabulary.
-func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz *time.Location) (string, *chartEnvelope, error) {
+func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz *time.Location) ([]ai.Block, *chartEnvelope, error) {
 	detail, err := h.journalDetailJSON(ctx, e, tz)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	delete(detail, "attachments")
 	delete(detail, "chartPng")
@@ -304,7 +320,7 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	decision := e.Scope == "trade" || e.Scope == "group"
 	linked, err := h.apiTradesForEntry(ctx, e, tz)
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
 	if e.Scope == "week" {
 		delete(detail, "trades") // the digest carries the week, per decision
@@ -313,7 +329,7 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 	if e.Scope != "week" {
 		rich, err := h.aiTrades(ctx, linked, tz, decision)
 		if err != nil {
-			return "", nil, err
+			return nil, nil, err
 		}
 		detail["trades"] = rich
 		for _, t := range rich {
@@ -415,11 +431,34 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 		}
 		out["availableStrategies"] = list
 	}
+	// The user turn, stable first so a provider's prefix cache finds it: the
+	// vocabulary and the playbooks as their own objects (cached), then the
+	// scope line and the item.
+	var blocks []ai.Block
+	stable := func(keys ...string) {
+		part := map[string]any{}
+		for _, k := range keys {
+			if v, ok := out[k]; ok {
+				part[k] = v
+				delete(out, k)
+			}
+		}
+		if len(part) == 0 {
+			return
+		}
+		b, err := json.MarshalIndent(part, "", "  ")
+		if err == nil {
+			blocks = append(blocks, ai.Block{Text: string(b), Cache: true})
+		}
+	}
+	stable("labelVocabulary")
+	stable("availableStrategies", "assignedStrategy")
 	b, err := json.MarshalIndent(out, "", "  ")
 	if err != nil {
-		return "", nil, err
+		return nil, nil, err
 	}
-	return string(b), chart, nil
+	blocks = append(blocks, ai.Block{Text: aimethod.ScopeLine(aimethod.Scope(e.Scope)) + "\n\n" + string(b)})
+	return blocks, chart, nil
 }
 
 // aiMaxMistakes / aiMaxEmotions cap the labels one review may fill: a few
@@ -450,26 +489,27 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 		return res, fmt.Errorf("load entry %d: %w", entryID, err)
 	}
 	tz := h.localTZ()
-	userPrompt, chart, err := h.aiEntryContext(ctx, e, tz)
+	blocks, chart, err := h.aiEntryContext(ctx, e, tz)
 	if err != nil {
 		return res, err
 	}
 	// The chart image, for a trade or group when the user sends it (vision
-	// models; Settings > AI).
-	var png []byte
+	// models; a model that refuses it is asked again without it).
+	req := ai.Request{System: aiReviewSystem(h.userAILanguage(ctx)), User: blocks}
+	last := &req.User[len(req.User)-1]
 	if chart != nil && (e.Scope == "trade" || e.Scope == "group") && h.userSendsChart(ctx) {
 		if b, err := h.chartEnvelopePNG(*chart, "", tz); err == nil {
-			png = b
-			userPrompt = "The attached image is this trade's chart (candles with the entry and exit marked).\n\n" + userPrompt
+			req.Images = [][]byte{b}
+			last.Text = aiImageSentence + last.Text
 		}
 	}
 	// Restate the language directive at the top of the USER turn too - some local models
 	// follow the user message more closely than the system prompt for output language.
 	lang := h.userAILanguage(ctx)
 	if lang != "" {
-		userPrompt = "Reply in " + lang + " (write the whole review and the lesson in " + lang + "; keep only the keywords of the machine-readable lines in English).\n\n" + userPrompt
+		last.Text = "Reply in " + lang + " (write the whole review and the lesson in " + lang + "; keep only the keywords of the machine-readable lines in English).\n\n" + last.Text
 	}
-	out, err := aiGenerate(ctx, client, aiSystemPrompt(e.Scope, lang), userPrompt, png)
+	out, err := aiGenerate(ctx, client, req)
 	if err != nil {
 		return res, fmt.Errorf("ai generate: %w", err)
 	}
@@ -673,22 +713,37 @@ func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force boo
 	return nil
 }
 
+// aiRequest is a flat prompt as a request: a cached system block, the user
+// text, and the PNG when there is one.
+func aiRequest(system, user string, png []byte) ai.Request {
+	req := ai.Request{System: []ai.Block{{Text: system, Cache: true}}, User: []ai.Block{{Text: user}}}
+	if len(png) > 0 {
+		req.Images = [][]byte{png}
+	}
+	return req
+}
+
+// aiImageSentence introduces the chart image in the user turn.
+const aiImageSentence = "The attached image is this trade's chart (candles with the entry and exit marked).\n\n"
+
 // aiGenerate makes one review call, with the chart image attached when there
-// is one and the client takes images. A model that refuses the image (a 4xx
-// other than a key or rate problem: a text-only model) gets the call again
-// without it.
-func aiGenerate(ctx context.Context, client ai.Client, system, user string, png []byte) (string, error) {
-	if ig, ok := client.(ai.ImageGenerator); ok && len(png) > 0 {
-		out, err := ig.GenerateImages(ctx, system, user, [][]byte{png})
+// is one. A model that refuses the image (a 4xx other than a key or rate
+// problem: a text-only model) gets the call again without it.
+func aiGenerate(ctx context.Context, client ai.Client, req ai.Request) (string, error) {
+	resp, err := ai.Do(ctx, client, req)
+	if len(req.Images) > 0 {
 		var se *ai.StatusError
 		if err == nil || !errors.As(err, &se) || se.Code < 400 || se.Code >= 500 ||
 			se.Code == http.StatusUnauthorized || se.Code == http.StatusForbidden || se.Code == http.StatusTooManyRequests {
-			return out, err
+			return resp.Text, err
 		}
 		slog.Warn("ai: the model refused the chart image; reviewing without it", "status", se.Code, "msg", se.Msg)
-		user = strings.TrimPrefix(user, "The attached image is this trade's chart (candles with the entry and exit marked).\n\n")
+		req.Images = nil
+		last := &req.User[len(req.User)-1]
+		last.Text = strings.Replace(last.Text, aiImageSentence, "", 1)
+		resp, err = ai.Do(ctx, client, req)
 	}
-	return client.Generate(ctx, system, user)
+	return resp.Text, err
 }
 
 // userSendsChart reports whether the calling user sends the chart image with

@@ -303,7 +303,7 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 			user = "The attached image is this position's chart (candles with the fills marked).\n\n" + user
 		}
 	}
-	text, err := aiGenerate(ctx, client, aiLevelsPrompt+aiLanguageLine(h.userAILanguage(ctx)), user, png)
+	text, err := aiGenerate(ctx, client, aiRequest(aiLevelsPrompt+aiLanguageLine(h.userAILanguage(ctx)), user, png))
 	if err != nil {
 		return fmt.Errorf("ai generate: %w", err)
 	}
