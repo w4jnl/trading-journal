@@ -1,10 +1,11 @@
 -- name: UpsertAIOutput :exec
-INSERT INTO ai_outputs (user_id, kind, ref, body, data, model)
-VALUES (?, ?, ?, ?, ?, ?)
+INSERT INTO ai_outputs (user_id, kind, ref, body, data, model, method)
+VALUES (?, ?, ?, ?, ?, ?, ?)
 ON CONFLICT (user_id, kind, ref) DO UPDATE SET
     body = excluded.body,
     data = excluded.data,
     model = excluded.model,
+    method = excluded.method,
     created_at = CURRENT_TIMESTAMP;
 
 -- name: GetAIOutput :one

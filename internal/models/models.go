@@ -36,6 +36,7 @@ type AiOutput struct {
 	Data      string    `json:"data"`
 	Model     string    `json:"model"`
 	CreatedAt time.Time `json:"created_at"`
+	Method    string    `json:"method"`
 }
 
 type ApiKey struct {

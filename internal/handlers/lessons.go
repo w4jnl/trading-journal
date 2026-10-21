@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -68,21 +69,8 @@ func stripAILesson(s string) string {
 	return strings.TrimRight(aiLessonRe.ReplaceAllString(s, ""), " \t\n")
 }
 
-// aiLessonInstruction asks every review for the lesson line.
-func aiLessonInstruction() string {
-	return `Just before the verdict line, add EXACTLY one line naming the single most useful lesson (it is removed before saving and kept in the trader's lessons ledger):
-<!-- tj-ai:lesson key=<` + strings.Join(observableMistakeKeys(), "|") + `|none> | <the lesson: one sentence, an instruction the trader can follow next time> -->
-- key: the mistake the lesson is about, from that list, or none.`
-}
-
-// observableMistakeKeys lists the mistake keys a review may name.
-func observableMistakeKeys() []string {
-	var keys []string
-	for _, l := range journal.ObservableOptions(journal.KindMistake) {
-		keys = append(keys, l.Key)
-	}
-	return keys
-}
+// aiLessonInstruction asks every review for the lesson line (the method's).
+func aiLessonInstruction() string { return aimethod.LessonLine() }
 
 // recordLesson replaces the entry's lesson with the review's.
 func (h *Handlers) recordLesson(ctx context.Context, e models.JournalEntry, l aiLesson) {

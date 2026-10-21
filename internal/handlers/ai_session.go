@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"github.com/w4jnl/trading-journal/internal/marketdata"
 )
 
@@ -81,6 +82,6 @@ func (h *Handlers) aiSession(ctx context.Context, root string, asOf time.Time) m
 		windows[string(w.tf)] = rows
 	}
 	out["windows"] = windows
-	out["windowNote"] = "rows are [time, open, high, low, close], newest last; 15m covers the last sessions, 5m the last hours, 1m the last minutes"
+	out["windowNote"] = aimethod.Glossary["sessionAtEntry.windows"]
 	return out
 }

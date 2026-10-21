@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"html/template"
 	"math"
 	"net/http"
@@ -414,6 +415,6 @@ func (h *Handlers) explainLab(ctx context.Context, f labFilters) error {
 		return errors.New("the model returned an empty reading")
 	}
 	return h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{
-		UserID: userID(ctx), Kind: aiKindLab, Ref: f.key(), Body: body, Model: model.Label(aiWordsFor("")),
+		UserID: userID(ctx), Kind: aiKindLab, Ref: f.key(), Body: body, Model: model.Label(aiWordsFor("")), Method: aimethod.Version,
 	})
 }

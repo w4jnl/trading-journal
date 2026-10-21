@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"math"
 	"net/http"
 	"net/url"
@@ -310,7 +311,7 @@ func (h *Handlers) draftPlan(ctx context.Context, day string) error {
 	}
 	data, _ := json.Marshal(draft)
 	return h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{
-		UserID: userID(ctx), Kind: aiKindPlanDraft, Ref: day, Data: string(data), Model: model.Label(aiWordsFor("")),
+		UserID: userID(ctx), Kind: aiKindPlanDraft, Ref: day, Data: string(data), Model: model.Label(aiWordsFor("")), Method: aimethod.Version,
 	})
 }
 

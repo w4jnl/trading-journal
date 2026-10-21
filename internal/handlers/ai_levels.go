@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"math"
 	"net/http"
 	"strconv"
@@ -317,7 +318,7 @@ func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, s
 	data, _ := json.Marshal(lv)
 	return h.Queries.UpsertAIOutput(ctx, models.UpsertAIOutputParams{
 		UserID: userID(ctx), Kind: aiKindPositionLevels, Ref: aiLevelsRef(pos.AccountID, pos.Symbol, pos.Opened.ID),
-		Body: lv.Summary, Data: string(data), Model: model.Label(aiWordsFor("")),
+		Body: lv.Summary, Data: string(data), Model: model.Label(aiWordsFor("")), Method: aimethod.Version,
 	})
 }
 
