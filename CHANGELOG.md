@@ -23,6 +23,14 @@ built against it carries the same marketing version.
   breakpoints and reports the cached tokens; every OpenAI-compatible provider gets the same
   stable-first order for its own prefix caching. A day run's N+1 reviews now share one prefix.
   Usage (input, output, cached) is logged at debug level. xAI (Grok) joins the provider presets.
+- The MCP server carries the method, so an agent needs no skill of its own: instructions at
+  `initialize`, one prompt per mode (`review_day`, `review_entry`, `today`, `review_week`,
+  `plan_day`), the method, the label vocabulary, the lessons and the playbooks as resources, and
+  two tools (`get_review_method`, `list_lessons`; 25 in all). `server_info` reports the server
+  version and timezone, the trader's review language, the marker and the method version;
+  `append_note` records a trailing lesson line in the ledger; `prepare_day`'s note names the
+  method. `GET /api/v1/ai/method` answers the same over REST. The `trading-journal-analyst` skill
+  and its ChatGPT twin shrink to a pointer at the server.
 
 - The day map reaches the AI: the plan draft reads each market's strongest zones, the expected
   range and the day type and takes its levels from the zones and the gamma map; the reviews of a

@@ -477,6 +477,22 @@ propose it again. The answer is the entry as `GET` returns it (`404` for
 a suggestion that is not open, `409` with `reason: review-pending` while
 a review writes the note, `403` for an agent key).
 
+### The review method
+
+`GET /api/v1/ai/method` is the method this journal's reviews work by, for
+agents and scripts that are not MCP clients: `version` (the method version,
+recorded on every review marker as `method=` and on every stored AI
+output), `marker` (the line an external agent ends a review with, `<!--
+tj-ai-mcp:v1 method=2 -->`), `markers` (`app`, `agent`), the user's review
+`language`, `methodMarkdown` (the whole method: the analyst, the briefs per
+scope, the lesson and verdict lines, the write rules, the modes with their
+tool order, the evidence glossary, the tool list), `labels` (the vocabulary
+a review may name) and `modes` (`review_day`, `review_entry`, `today`,
+`review_week`, `plan_day`, each with its arguments and steps). The MCP
+server serves the same method as its instructions, as the resource
+`trading-journal://method`, as the tool `get_review_method` and as prompts;
+the client skills only point at it.
+
 ### AI from the phone (device key)
 
 Every AI call runs on the server with the user's own provider; a client only
@@ -1435,16 +1451,37 @@ The same per-user API keys (`Authorization: Bearer tj_...`) are also accepted on
 `mcp.enabled` (default true) and the sign-in flow with `mcp.oauth` in
 `config.yaml`.
 
-Tools, 21 in all. Reading: `server_info`, `list_trades`, `get_trade`, `list_positions`,
-`list_journal`, `get_journal_entry`, `list_strategies`, `get_strategy`,
-`get_chart_image` (the rendered PNG as image content), `get_daily_stats` (the daily
-P&L / trade stats above), `get_analytics_summary`, `get_coach_checks`, `get_day_plan`
-and `get_weekly_digest`. Writing: `prepare_day` (cluster a day's copytrader fan-out +
-create the journal entries to analyze - the daily-review entry point),
-`create_journal_entry`, `append_note`, `assign_strategy` and `set_tag` (both
-only-if-unset, never overwrite), `set_day_plan` and `set_position_plan` (recorded
-with source `api` until the trader saves). Every tool mirrors a REST endpoint
-documented above; the `/mcp` tool list carries the schemas.
+The server carries the review method, so a client needs no skill of its own:
+
+- **Instructions** at `initialize`: who the agent is, where the method is,
+  the marker line and the write rules.
+- **Prompts** (one per mode, listed in Claude Desktop's connector menu):
+  `review_day(date?, force?)`, `review_entry(entryId, force?)`, `today`,
+  `review_week(week?)`, `plan_day(day?)`. Each returns one user message with
+  the mode's steps, the arguments filled in, the trader's review language
+  and the marker.
+- **Resources**: `trading-journal://method` (the method as markdown, in the
+  trader's language), `trading-journal://method/labels` (the vocabulary),
+  `trading-journal://lessons` (the open lessons grouped by mistake plus the
+  last ninety days) and `trading-journal://playbooks` (the active
+  strategies with their playbooks).
+- **Tools, 25 in all.** Reading: `server_info` (the instance, the server
+  version and timezone, the trader's language, the marker, the method
+  version and where to read it), `get_review_method` (the method for clients
+  that read neither instructions nor resources, ChatGPT among them),
+  `list_lessons`, `list_trades`, `get_trade`, `list_positions`,
+  `list_journal`, `get_journal_entry`, `list_strategies`, `get_strategy`,
+  `get_chart_image` (the rendered PNG as image content), `get_daily_stats`,
+  `get_analytics_summary`, `get_coach_checks`, `get_day_plan`,
+  `get_weekly_digest` and `get_levels`. Writing: `prepare_day` (cluster a
+  day's copytrader fan-out, create the entries to review, the daily-review
+  entry point), `create_journal_entry`, `append_note` (a trailing
+  `<!-- tj-ai:lesson … -->` line is taken off the note and recorded in the
+  lessons ledger), `assign_strategy`, `set_tag` and `add_labels` (all
+  only-if-unset, never overwrite), `set_day_plan` and `set_position_plan`
+  (recorded with source `api` until the trader saves). Every tool mirrors
+  a REST endpoint documented above; the `/mcp` tool list carries the
+  schemas.
 
 Connect (all three sign in through the browser; nothing to paste):
 
@@ -1464,10 +1501,9 @@ claude mcp login trading-journal      # browser -> your login -> Allow
 - **Scripts / anything that holds a key**: `Authorization: Bearer tj_...` on
   `/mcp` works as before.
 
-A ready-made daily-review workflow ships as the **`trading-journal-analyst`**
-skill (`.claude/skills/trading-journal-analyst/`) — it clusters copytrader
-fan-out into group entries, writes each analysis once (idempotent via a marker),
-and synthesizes the daily journal.
+The **`trading-journal-analyst`** skill (`.claude/skills/trading-journal-analyst/`)
+is a pointer: it connects, calls `server_info`, reads the method from the
+server and follows it, so the method exists once, on the server, versioned.
 
 ## OAuth for MCP connectors
 

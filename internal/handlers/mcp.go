@@ -16,6 +16,7 @@ import (
 	mcpgo "github.com/mark3labs/mcp-go/mcp"
 	mcpserver "github.com/mark3labs/mcp-go/server"
 
+	"github.com/w4jnl/trading-journal/internal/aimethod"
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/journal"
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -37,9 +38,14 @@ import (
 func (h *Handlers) MCPHandler() http.Handler {
 	s := mcpserver.NewMCPServer("trading-journal", "v1",
 		mcpserver.WithToolCapabilities(true),
+		mcpserver.WithPromptCapabilities(false),
+		mcpserver.WithResourceCapabilities(false, false),
+		mcpserver.WithInstructions(aimethod.Instructions()),
 		mcpserver.WithToolHandlerMiddleware(h.mcpDebugMW),
 	)
+	mcpToolNames = nil
 	h.registerMCPTools(s)
+	h.registerMCPMethod(s)
 	return mcpserver.NewStreamableHTTPServer(s,
 		mcpserver.WithStateLess(true),
 		mcpserver.WithHTTPContextFunc(func(ctx context.Context, r *http.Request) context.Context {
@@ -80,18 +86,18 @@ func (h *Handlers) mcpDebugMW(next mcpserver.ToolHandlerFunc) mcpserver.ToolHand
 // ask; the writes carry destructiveHint=false because every one of them is
 // additive or fill-a-blank - nothing here deletes or overwrites.
 func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
-	s.AddTool(mcpgo.NewTool("prepare_day",
+	addTool(s, mcpgo.NewTool("prepare_day",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Prepare a trading day for review: clusters copytrader fan-out into group entries and solos into trade entries, CREATES the missing journal entries (idempotent - reuses existing), and returns them. You then analyze each returned entry by its entryId (get_chart_image + append_note) and NEVER handle raw trade ids yourself. This is the entry point for the daily review. Defaults to the last trading day before today. The result also carries 'checks': the day's rule-based coach checks with trade ids and suggested labels - cite them as evidence in each entry's review and add the suggested labels you agree with. When the trader wrote a pre-market plan, checks.plan holds it with one check per rule (held or not)."),
 		mcpgo.WithString("date", mcpgo.Description("YYYY-MM-DD; default = the last trading day before today (skips weekends/holidays/no-trade days).")),
 	), h.mcpPrepareDay)
 
-	s.AddTool(mcpgo.NewTool("server_info",
+	addTool(s, mcpgo.NewTool("server_info",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Identify this server instance: service name, instance label (e.g. prod/dev), and the authenticated user. Call this first if multiple trading-journal connectors might be configured, and use only ONE instance for a whole run."),
 	), h.mcpServerInfo)
 
-	s.AddTool(mcpgo.NewTool("list_trades",
+	addTool(s, mcpgo.NewTool("list_trades",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("List the caller's closed trades for a day or date range. Each row carries hasJournal and groupCount (use them to skip trades already journaled) and setId / setSize: copies of one decision across accounts (a copy set) share a setId, so group by it instead of guessing from timestamps. Page size 50. Dates are trading-timezone days; the keywords today, yesterday and last (last trading day) are resolved server-side - use day=\"today\" for today's trades, never compute the date yourself. Accounts hidden in Settings are left out unless accountId names one."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
@@ -107,13 +113,13 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithBoolean("includeRetired", mcpgo.Description("Include trades on retired accounts.")),
 	), h.mcpListTrades)
 
-	s.AddTool(mcpgo.NewTool("list_positions",
+	addTool(s, mcpgo.NewTool("list_positions",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("The caller's OPEN positions right now (an account's fills on a contract that do not net flat): direction, size, average entry, last price and unrealized P&L, and the plan recorded on each (stop, risk, target, thesis; planSource says who set it, 'set' means inherited from the copied decision). setLegs lists the other accounts of the same copied decision. A position is not a trade yet: it becomes one, carrying its plan, when it closes."),
 		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s).")),
 	), h.mcpListPositions)
 
-	s.AddTool(mcpgo.NewTool("set_position_plan",
+	addTool(s, mcpgo.NewTool("set_position_plan",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Record the plan on an OPEN position (from list_positions): stop price, money at risk, target price and a one-line thesis. The whole plan is replaced: pass every field you want kept. A stop alone derives the risk at the position's size; a risk alone derives the stop (snapped to tick). On a leg of a copied decision the plan goes on every leg unless allLegs=false. Write only what the trader stated: the plan shows as set through the API until they save it, and it follows the position into its trade. Never invent a stop the trader did not give."),
 		mcpgo.WithNumber("accountId", mcpgo.Required(), mcpgo.Description("Account id of the position.")),
@@ -125,13 +131,13 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithBoolean("allLegs", mcpgo.Description("On a copied decision, write the plan on every leg (default true).")),
 	), h.mcpSetPositionPlan)
 
-	s.AddTool(mcpgo.NewTool("get_trade",
+	addTool(s, mcpgo.NewTool("get_trade",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Get one trade in detail: fills (executions), linked trade-scope journal entry id, group count, and cached chart data."),
 		mcpgo.WithNumber("id", mcpgo.Required(), mcpgo.Description("Trade id.")),
 	), h.mcpGetTrade)
 
-	s.AddTool(mcpgo.NewTool("list_journal",
+	addTool(s, mcpgo.NewTool("list_journal",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("List the caller's journal entries (summary rows) for a day or range, optionally filtered by scope, tag, or a review label (mistake / emotion key; mistake=none means no mistake logged). Rows carry their labels. Newest first."),
 		mcpgo.WithString("day", mcpgo.Description("Single day YYYY-MM-DD; sets from=to=day.")),
@@ -144,24 +150,24 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("limit", mcpgo.Description("Max rows; default 100."), mcpgo.DefaultNumber(100)),
 	), h.mcpListJournal)
 
-	s.AddTool(mcpgo.NewTool("get_journal_entry",
+	addTool(s, mcpgo.NewTool("get_journal_entry",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Get one journal entry in detail: raw notes markdown (check it for the analysis marker before re-analyzing), trades overview + list, assigned strategy (id+name only - fetch get_strategy for the playbook), summary, and cached chart data."),
 		mcpgo.WithNumber("id", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 	), h.mcpGetJournalEntry)
 
-	s.AddTool(mcpgo.NewTool("list_strategies",
+	addTool(s, mcpgo.NewTool("list_strategies",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("List the caller's strategies (id, short name, full markdown playbook)."),
 	), h.mcpListStrategies)
 
-	s.AddTool(mcpgo.NewTool("get_strategy",
+	addTool(s, mcpgo.NewTool("get_strategy",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Get one strategy: short name + full markdown playbook. Use to judge whether trades followed the assigned strategy."),
 		mcpgo.WithNumber("id", mcpgo.Required(), mcpgo.Description("Strategy id.")),
 	), h.mcpGetStrategy)
 
-	s.AddTool(mcpgo.NewTool("get_chart_image",
+	addTool(s, mcpgo.NewTool("get_chart_image",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Render a candlestick PNG (entry/exit markers + avg lines) for a trade or journal entry so you can read the price action. Cached bars only; returns an error if none are cached."),
 		mcpgo.WithNumber("tradeId", mcpgo.Description("Render this trade's chart.")),
@@ -169,7 +175,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("contract", mcpgo.Description("Pick a contract/root when several; defaults to the first with data.")),
 	), h.mcpGetChartImage)
 
-	s.AddTool(mcpgo.NewTool("create_journal_entry",
+	addTool(s, mcpgo.NewTool("create_journal_entry",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Create one journal entry. scope=group takes tradeIds[] (copytrader cluster); scope=trade takes tradeId; scope=day takes date (YYYY-MM-DD); scope=week takes week (YYYY-Www). Put your analysis in body (markdown). Day/week/trade are singletons: if one exists you get {alreadyExists:true, entryId} - then use append_note instead. Group always creates."),
 		mcpgo.WithString("scope", mcpgo.Required(), mcpgo.Enum("day", "week", "trade", "group")),
@@ -185,28 +191,28 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithArray("emotions", mcpgo.Description("Emotion labels, fixed keys: "+strings.Join(journal.LabelKeys(journal.KindEmotion), ", ")+"."), mcpgo.WithStringItems()),
 	), h.mcpCreateJournalEntry)
 
-	s.AddTool(mcpgo.NewTool("append_note",
+	addTool(s, mcpgo.NewTool("append_note",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Append a dated note to an existing entry's body. Append-only - never overwrites. Include your analysis marker in the note text so a re-run can detect it."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithString("note", mcpgo.Required(), mcpgo.Description("Markdown to append.")),
 	), h.mcpAppendNote)
 
-	s.AddTool(mcpgo.NewTool("assign_strategy",
+	addTool(s, mcpgo.NewTool("assign_strategy",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Assign a strategy to a journal entry, but ONLY if it has none yet - an existing assignment is never changed (assigned=false then). Call it for ANY entry (newly created or pre-existing) that has no strategy when one of the caller's strategies clearly fits the trade's setup; if nothing clearly fits, skip it - don't force one. Only trade and group entries take a strategy (a day/week spans mixed setups and is rejected)."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithNumber("strategyId", mcpgo.Required(), mcpgo.Description("Strategy id to assign (must be owned).")),
 	), h.mcpAssignStrategy)
 
-	s.AddTool(mcpgo.NewTool("set_tag",
+	addTool(s, mcpgo.NewTool("set_tag",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Set an entry's tag (good|neutral|bad), but ONLY if it has none yet - an existing tag is never changed (assigned=false then). Call it for ANY entry (newly created or pre-existing) that is untagged when your analysis warrants a clear verdict; if it's ambiguous, leave it untagged - don't force one."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithString("tag", mcpgo.Required(), mcpgo.Enum("good", "neutral", "bad")),
 	), h.mcpSetTag)
 
-	s.AddTool(mcpgo.NewTool("add_labels",
+	addTool(s, mcpgo.NewTool("add_labels",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Add mistake and/or emotion labels to a journal entry from a FIXED vocabulary (unknown keys are rejected). Additive: existing labels stay, duplicates are ignored, nothing is ever removed. Label only what the trades and the trader's own notes clearly show (e.g. an exit before the planned target = early-exit; adding to a loser past the stop = moved-stop; no-stop only when the trader's notes say so, since the data holds the fills, never the working orders, and a missing planned stop only means no plan was recorded); don't guess emotions the notes don't mention. Mistakes: "+strings.Join(journal.LabelKeys(journal.KindMistake), ", ")+". Emotions: "+strings.Join(journal.LabelKeys(journal.KindEmotion), ", ")+"."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
@@ -214,19 +220,19 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithArray("emotions", mcpgo.Description("Emotion keys to add."), mcpgo.WithStringItems()),
 	), h.mcpAddLabels)
 
-	s.AddTool(mcpgo.NewTool("get_coach_checks",
+	addTool(s, mcpgo.NewTool("get_coach_checks",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Deterministic coach checks for a trading day: re-entry within a minute of a loss, size up after a loss, heat past the planned stop, a winner that kept under a quarter of its best move, a loser held several times longer than a usual winner, more decisions than the trader's usual day, entries past the usual hour. Each finding carries the numbers, the trade ids and, where one fits, the review label it suggests (add it with add_labels on the entry that covers those trades). Rule-based and objective: cite them in a review as evidence, not as verdicts. prepare_day returns the same checks under 'checks'."),
 		mcpgo.WithString("day", mcpgo.Description("Trading day: YYYY-MM-DD or today|yesterday|last; default = the last trading day.")),
 	), h.mcpGetCoachChecks)
 
-	s.AddTool(mcpgo.NewTool("get_day_plan",
+	addTool(s, mcpgo.NewTool("get_day_plan",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("The trader's pre-market plan for a day (bias long|short|neutral|flat, levels, max decisions, stop time, max loss per account, notes) and how the day measured against it: one check per rule with what the plan said, what the day did and whether it held, plus flags when the plan was written or edited after the first trade. Read it before reviewing a day; the same outcome rides along in get_coach_checks and prepare_day under checks.plan."),
 		mcpgo.WithString("day", mcpgo.Description("YYYY-MM-DD or today|yesterday|last; default today.")),
 	), h.mcpGetDayPlan)
 
-	s.AddTool(mcpgo.NewTool("set_day_plan",
+	addTool(s, mcpgo.NewTool("set_day_plan",
 		mcpgo.WithDestructiveHintAnnotation(false),
 		mcpgo.WithDescription("Write or amend the trader's pre-market plan for today or a future day (past days are refused). Only the fields you pass change; the rest stay. Use it when the trader states their plan for the session in conversation; do not invent rules they did not state. A decision counts a copy set once; max loss is per account."),
 		mcpgo.WithString("day", mcpgo.Description("YYYY-MM-DD or today; default today.")),
@@ -238,13 +244,13 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("notes", mcpgo.Description("Free-form plan notes (markdown).")),
 	), h.mcpSetDayPlan)
 
-	s.AddTool(mcpgo.NewTool("get_weekly_digest",
+	addTool(s, mcpgo.NewTool("get_weekly_digest",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("The weekly edge digest for an ISO week, counted per decision (a copy set once, money summed): headline numbers against the week before (net, decisions, win rate, profit factor, avg R, exit kept), what to keep and what to fix in one sentence each, the best and worst decision, the coach's findings tallied across the days, how the day plans held, and the analytics breakdowns. The starting point for a weekly review; write the week entry from it."),
 		mcpgo.WithString("week", mcpgo.Description("YYYY-Www, e.g. 2026-W41; default the week of the last trading day.")),
 	), h.mcpGetWeeklyDigest)
 
-	s.AddTool(mcpgo.NewTool("get_daily_stats",
+	addTool(s, mcpgo.NewTool("get_daily_stats",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("Daily P&L + trade stats per trading day (trades, wins, losses, net, gross, commission, winRate, largestWin/largestLoss) with totals over the range - the same numbers as the journal's Calendar. Use it for overview figures instead of summing trades yourself; for 'how am I doing today' call it with day=\"today\", refresh=true. A trade belongs to the day of its exit (trading tz); the keywords today, yesterday and last (last trading day) are resolved server-side - never compute the date yourself. Retired accounts never count and excluded-from-stats accounts are dropped unless accountId is given. Days without closed trades are omitted."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
@@ -253,13 +259,13 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithNumber("accountId", mcpgo.Description("Restrict to one account id.")),
 		mcpgo.WithBoolean("refresh", mcpgo.Description("Pull the latest fills from the brokers first and wait for them (up to ~15s) before computing. Use for intraday 'today' questions.")),
 	), h.mcpGetDailyStats)
-	s.AddTool(mcpgo.NewTool("get_levels",
+	addTool(s, mcpgo.NewTool("get_levels",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("The day map of one market for a trading day: the reference levels (prior day high/low/close, overnight range, opening range, VWAP, volume profile when a chart posted it, daily ATR bands from the session anchor, floor and Camarilla pivots, prior week and month extremes, swing highs and lows on 30m to weekly, unfilled gaps, round numbers, gamma walls), each with its source (bars, chart, gex), the zones they fold into ranked by score, the expected range, and the day type (inside/outside/NR7/wide day, strong or weak close, gap, overnight against the prior range) with a lean and its reasons. Use it when planning a session or judging where a trade sat; scores rank, they do not forecast."),
 		mcpgo.WithString("market", mcpgo.Required(), mcpgo.Description("ES, NQ, YM, RTY, CL or GC; a micro root (MES, MNQ) is folded into its market.")),
 		mcpgo.WithString("day", mcpgo.Description("Trading day YYYY-MM-DD or today (default).")),
 	), h.mcpGetLevels)
-	s.AddTool(mcpgo.NewTool("get_analytics_summary",
+	addTool(s, mcpgo.NewTool("get_analytics_summary",
 		mcpgo.WithReadOnlyHintAnnotation(true),
 		mcpgo.WithDescription("The /analytics page as one JSON object for a date range: totals (trades, win rate, net/gross/commission, avg win/loss, payoff ratio, profit factor, expectancy), R (over trades that carry a planned risk), excursion (MAE/MFE off cached bars: exit efficiency, heat on winners, profit losers gave back), compliance (playbook checklist per strategy: rules ticked, net with all rules vs rules missed), drawdown (max peak-to-trough, dates, days to recover, current), streaks (trades and days), and breakdowns by symbol, direction, strategy, tag, mistake label, emotion label, weekday and entry hour. Use it for 'how is my edge / where do I lose' questions instead of summing trade lists. Same date keywords and account rules as get_daily_stats; default range = last 30 days."),
 		mcpgo.WithString("day", mcpgo.Description("Single trading day: YYYY-MM-DD or today|yesterday|last; sets from=to=day.")),
@@ -281,16 +287,21 @@ func (h *Handlers) mcpPrepareDay(ctx context.Context, req mcpgo.CallToolRequest)
 	if err != nil {
 		return mcpgo.NewToolResultError(err.Error()), nil
 	}
+	resp.Note = aimethod.PrepareNote()
 	return mcpJSON(resp)
 }
 
 func (h *Handlers) mcpServerInfo(ctx context.Context, _ mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
 	u := auth.MustUser(ctx)
-	return mcpJSON(map[string]any{
+	out := map[string]any{
 		"service":         "trading-journal",
 		"instanceLabel":   h.MCPInstanceLabel,
 		"authenticatedAs": map[string]any{"id": u.ID, "username": u.Username},
-	})
+	}
+	for k, v := range h.mcpServerFacts(ctx) {
+		out[k] = v
+	}
+	return mcpJSON(out)
 }
 
 func (h *Handlers) mcpListTrades(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
@@ -611,6 +622,7 @@ func (h *Handlers) mcpAppendNote(ctx context.Context, req mcpgo.CallToolRequest)
 	if err != nil {
 		return mcpgo.NewToolResultError("could not load entry"), nil
 	}
+	note = h.mcpNoteLesson(ctx, e, note)
 	if err := h.appendOrSeedJournalNote(ctx, e, note); err != nil {
 		return mcpgo.NewToolResultError("could not append note"), nil
 	}

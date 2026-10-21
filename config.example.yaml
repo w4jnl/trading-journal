@@ -67,7 +67,9 @@ market_data:
 # (default true), it is authenticated by the SAME per-user API keys as /api -- so
 # Claude Code, the Claude app, and ChatGPT can read trades + journal and
 # create/append entries with the key held in the connector config, never in a
-# prompt. The bundled `trading-journal-analyst` skill drives it. See API.md.
+# prompt. The server carries the review method (instructions, prompts,
+# resources); the bundled `trading-journal-analyst` skill only points at it.
+# See API.md.
 # Set enabled: false to turn it off (the REST API at /api is unaffected).
 mcp:
   enabled: true

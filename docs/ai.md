@@ -36,8 +36,10 @@ See [features.md](features.md#ai-reviews) for the behaviour on the page.
 **The method is data.** `internal/aimethod` owns what the models work by: the generic skill (role,
 grounding rules, the glossary of the evidence the app hands over, the format), one skill per entry
 scope (trade, group, day, week), the lesson and verdict contracts and the label vocabulary. The
-in-app prompts render from it; the MCP server and the client skills will read the same method, so
-it exists once and carries a version (`aimethod.Version`, recorded on every review marker as
+in-app prompts render from it; the MCP server serves it as instructions at `initialize`, as the
+resource `trading-journal://method`, as the tool `get_review_method` and as one prompt per mode
+(`review_day`, `review_entry`, `today`, `review_week`, `plan_day`), and the client skills only
+point at it, so it exists once and carries a version (`aimethod.Version`, recorded on every review marker as
 `method=` and on every stored output). The contracts and the markers are not user-editable: the
 parsers and the review loop depend on them.
 
