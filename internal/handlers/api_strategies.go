@@ -1,22 +1,33 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/w4jnl/trading-journal/internal/models"
 )
 
 // apiStrategyObj projects a strategy with its markdown body's image refs
-// rewritten to API URLs and the referenced attachments enumerated.
-func (h *Handlers) apiStrategyObj(s models.Strategy) apiStrategy {
+// rewritten to API URLs, the referenced attachments enumerated and its
+// checklist rules in order (empty when the lookup fails: the rules are a
+// detail of the playbook, never a reason to hide it).
+func (h *Handlers) apiStrategyObj(ctx context.Context, s models.Strategy) apiStrategy {
 	body, ids := apiRewriteAttachmentRefs(s.Body)
+	checklist := []string{}
+	if items, err := h.rq().ListChecklistItems(ctx, s.ID); err == nil {
+		for _, it := range items {
+			checklist = append(checklist, it.Text)
+		}
+	}
 	return apiStrategy{
 		ID:          s.ID,
 		Name:        s.Name,
 		Body:        body,
 		Attachments: apiAttachmentsFrom(ids),
+		Checklist:   checklist,
 		CreatedAt:   s.CreatedAt,
 		UpdatedAt:   s.UpdatedAt,
+		ArchivedAt:  s.ArchivedAt,
 	}
 }
 
@@ -30,7 +41,7 @@ func (h *Handlers) APIStrategiesList(w http.ResponseWriter, r *http.Request) {
 	}
 	items := make([]apiStrategy, 0, len(rows))
 	for _, s := range rows {
-		items = append(items, h.apiStrategyObj(s))
+		items = append(items, h.apiStrategyObj(ctx, s))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"items": items})
 }
@@ -48,5 +59,5 @@ func (h *Handlers) APIStrategyDetail(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusNotFound, "strategy not found")
 		return
 	}
-	writeJSON(w, http.StatusOK, h.apiStrategyObj(s))
+	writeJSON(w, http.StatusOK, h.apiStrategyObj(ctx, s))
 }

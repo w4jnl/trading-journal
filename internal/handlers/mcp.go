@@ -84,7 +84,9 @@ func (h *Handlers) mcpDebugMW(next mcpserver.ToolHandlerFunc) mcpserver.ToolHand
 // tools". Reads carry readOnlyHint so a user can always-allow them (the
 // "how am I doing today" flow never prompts) while keeping the writes on
 // ask; the writes carry destructiveHint=false because every one of them is
-// additive or fill-a-blank - nothing here deletes or overwrites.
+// additive or fill-a-blank - nothing here deletes, and the one tool that
+// overwrites, update_strategy (the trader's own reference material, driven
+// by the trader in a chat), says so with destructiveHint=true.
 func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 	addTool(s, mcpgo.NewTool("prepare_day",
 		mcpgo.WithDestructiveHintAnnotation(false),
@@ -166,6 +168,28 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithDescription("Get one strategy: short name + full markdown playbook. Use to judge whether trades followed the assigned strategy."),
 		mcpgo.WithNumber("id", mcpgo.Required(), mcpgo.Description("Strategy id.")),
 	), h.mcpGetStrategy)
+
+	addTool(s, mcpgo.NewTool("create_strategy",
+		mcpgo.WithDestructiveHintAnnotation(false),
+		mcpgo.WithDescription("Create a strategy in the trader's library: a short name, the playbook as markdown (what the setup is, when it is traded, the entry, the exit, the risk), the checklist rules it is held to, and drawings or chart images. An image goes in 'images' as base64; refer to it in the body as ![caption](name) to put it where it belongs, or leave it unreferenced and it lands at the end. Names are unique per trader. Use when the trader asks to add a strategy or to save a setup you worked out together; the result returns the strategy with the stored image URLs."),
+		mcpgo.WithString("name", mcpgo.Required(), mcpgo.Description("Short name, unique among the trader's strategies.")),
+		mcpgo.WithString("body", mcpgo.Description("The playbook, markdown.")),
+		mcpgo.WithArray("checklist", mcpgo.Description("The rules a trade of this strategy is checked against, one per item, in order."), mcpgo.WithStringItems()),
+		mcpgo.WithArray("images", mcpgo.Description("Drawings or chart images to embed: at most "+strconv.Itoa(maxStrategyImages)+", PNG, JPEG, GIF or WebP, "+strconv.Itoa(maxAttachmentBytes>>20)+" MiB each."),
+			mcpgo.Items(mcpImageSchema)),
+	), h.mcpCreateStrategy)
+
+	addTool(s, mcpgo.NewTool("update_strategy",
+		mcpgo.WithDestructiveHintAnnotation(true),
+		mcpgo.WithDescription("Change a strategy of the trader's. REPLACES what you pass: 'name' renames it, 'body' replaces the whole playbook, 'checklist' replaces all the rules (pass [] to clear them); what you leave out stays. To add to the playbook without rewriting it pass 'append' (a paragraph added at the end) and/or 'images' (stored and placed where the body refers to them by name, else appended). Read the strategy first (get_strategy) and keep what the trader wrote; this is the trader's reference material, so change it only when they ask."),
+		mcpgo.WithNumber("id", mcpgo.Required(), mcpgo.Description("Strategy id.")),
+		mcpgo.WithString("name", mcpgo.Description("New short name.")),
+		mcpgo.WithString("body", mcpgo.Description("The whole playbook, markdown: replaces the current one.")),
+		mcpgo.WithString("append", mcpgo.Description("Markdown added at the end of the playbook.")),
+		mcpgo.WithArray("checklist", mcpgo.Description("The complete list of rules, in order: replaces the current one."), mcpgo.WithStringItems()),
+		mcpgo.WithArray("images", mcpgo.Description("Drawings or chart images to add, as on create_strategy."),
+			mcpgo.Items(mcpImageSchema)),
+	), h.mcpUpdateStrategy)
 
 	addTool(s, mcpgo.NewTool("get_chart_image",
 		mcpgo.WithReadOnlyHintAnnotation(true),
@@ -467,7 +491,7 @@ func (h *Handlers) mcpListStrategies(ctx context.Context, _ mcpgo.CallToolReques
 	}
 	items := make([]apiStrategy, 0, len(rows))
 	for _, s := range rows {
-		items = append(items, h.apiStrategyObj(s))
+		items = append(items, h.apiStrategyObj(ctx, s))
 	}
 	return mcpJSON(map[string]any{"items": items})
 }
@@ -481,7 +505,7 @@ func (h *Handlers) mcpGetStrategy(ctx context.Context, req mcpgo.CallToolRequest
 	if err != nil {
 		return mcpgo.NewToolResultError("strategy not found"), nil
 	}
-	return mcpJSON(h.apiStrategyObj(s))
+	return mcpJSON(h.apiStrategyObj(ctx, s))
 }
 
 func (h *Handlers) mcpGetChartImage(ctx context.Context, req mcpgo.CallToolRequest) (*mcpgo.CallToolResult, error) {
@@ -759,4 +783,14 @@ func mcpDateRangeTZ(req mcpgo.CallToolRequest, tz *time.Location) (from, to *tim
 		to = &t
 	}
 	return from, to
+}
+
+// mcpImageSchema is one inline image of create_strategy / update_strategy.
+var mcpImageSchema = map[string]any{
+	"type": "object",
+	"properties": map[string]any{
+		"name": map[string]any{"type": "string", "description": "What the body calls it in ![caption](name); also the alt text when appended."},
+		"data": map[string]any{"type": "string", "description": "The image, base64 (a data: URL is accepted)."},
+	},
+	"required": []string{"data"},
 }

@@ -199,7 +199,9 @@ surface:
 | `GET`  | `/api/v1/stats/daily` | Daily P&L + trade stats with range totals |
 | `GET`  | `/api/v1/analytics/summary` | The analytics page for a range as one object (totals, R, drawdown, streaks, breakdowns) |
 | `GET`  | `/api/v1/strategies` | List your strategies |
+| `POST` | `/api/v1/strategies` | Create a strategy (name, playbook, checklist, inline images) |
 | `GET`  | `/api/v1/strategies/{id}` | One strategy |
+| `PUT`  | `/api/v1/strategies/{id}` | Change a strategy (the fields passed replace; append and images add) |
 | `GET`  | `/api/v1/journal` | List journal entries (summary rows) |
 | `POST` | `/api/v1/journal` | Create an entry (day/week/trade/group) |
 | `POST` | `/api/v1/journal/prepare-day` | Cluster a day's trades + create the entries to analyze |
@@ -231,8 +233,8 @@ surface:
 A strategy is a short name plus a full markdown description (which may
 embed images).
 
-`GET /api/v1/strategies` -> `{"items": [Strategy, ...]}`
-`GET /api/v1/strategies/{id}` -> `Strategy` (or `404`)
+`GET /api/v1/strategies` -> `{"items": [Strategy, ...]}` (the active ones)
+`GET /api/v1/strategies/{id}` -> `Strategy` (or `404`; archived ones too)
 
 ```jsonc
 // Strategy
@@ -241,13 +243,42 @@ embed images).
   "name": "ORB fade",
   "body": "## Opening-range fade\n\nWait for...\n\n![chart](/api/v1/attachments/12)",
   "attachments": [ { "id": 12, "url": "/api/v1/attachments/12" } ],
+  "checklist": [ "Range is set", "Stop above the high" ],
   "createdAt": "2026-05-02T09:14:00Z",
-  "updatedAt": "2026-05-20T18:31:00Z"
+  "updatedAt": "2026-05-20T18:31:00Z",
+  "archivedAt": null
 }
 ```
 
 `body` is the complete description with image references rewritten to
-`/api/v1/attachments/{id}`; `attachments` lists those same images.
+`/api/v1/attachments/{id}`; `attachments` lists those same images;
+`checklist` holds the rules a trade of the strategy is checked against, in
+order.
+
+**Writing.** `POST /api/v1/strategies` creates one (`201`) and
+`PUT /api/v1/strategies/{id}` changes one (`200`); both take the same JSON
+and answer with the `Strategy` plus `images`, the images this write stored:
+
+```jsonc
+{
+  "name": "ORB fade",                       // POST: required. PUT: renames
+  "body": "## Opening-range fade\n\n![the setup](setup)\n\nWait for...",
+  "append": "Never before 9:45.",           // a paragraph added at the end
+  "checklist": [ "Range is set", "Stop above the high" ],
+  "images": [ { "name": "setup", "data": "<base64 PNG/JPEG/GIF/WebP>" } ]
+}
+```
+
+On `PUT` every field is optional and only what is present changes: `name`,
+`body` and `checklist` **replace** (`"checklist": []` clears the rules),
+`append` and `images` **add**. An image goes in `images` as base64 (a
+`data:` URL is accepted, the type is read from the bytes, 8 MiB and ten
+images per write); it is stored as your attachment and lands in the body
+where the body refers to it by name, `![caption](name)`, or at the end when
+nothing does. Image URLs you echo back from a `GET` are fine in `body`.
+Errors: `400` (no name, bad JSON or base64), `404`, `409` (the name is in
+use), `413` (an image over 8 MiB), `415` (not an image type we store).
+The MCP tools `create_strategy` and `update_strategy` are these two calls.
 
 ### Journal list
 
@@ -848,8 +879,8 @@ You don't construct these URLs yourself - they arrive already rewritten in
 strategy `body` and journal `notes`, and enumerated in each item's
 `attachments` array. Fetch them with the same key.
 
-For safety, an image is served over the API only when it's referenced by a
-strategy or journal body **you own**; anything else is `404`.
+An image is served over the API to the user who stored it only; anything
+else is `404`.
 
 ### Trades list
 
@@ -1492,7 +1523,7 @@ The server carries the review method, so a client needs no skill of its own:
   (the trader's style, the evidence they weigh most, their markets, their
   standing instructions and language, plus the block to put in front of a
   review).
-- **Tools, 25 in all.** Reading: `server_info` (the instance, the server
+- **Tools, 27 in all.** Reading: `server_info` (the instance, the server
   version and timezone, the trader's language and profile, the marker, the
   method version and where to read it), `get_review_method(language?)` (the
   method for clients that read neither instructions nor resources, ChatGPT
@@ -1507,8 +1538,12 @@ The server carries the review method, so a client needs no skill of its own:
   `<!-- tj-ai:lesson … -->` line is taken off the note and recorded in the
   lessons ledger), `assign_strategy`, `set_tag` and `add_labels` (all
   only-if-unset, never overwrite), `set_day_plan` and `set_position_plan`
-  (recorded with source `api` until the trader saves). Every tool mirrors
-  a REST endpoint documented above; the `/mcp` tool list carries the
+  (recorded with source `api` until the trader saves), and the library:
+  `create_strategy` and `update_strategy` (name, playbook, checklist rules
+  and drawings or chart images as base64; update replaces the name, body or
+  checklist it is given and appends the rest, so it is the one tool that
+  declares itself destructive and the client asks). Every tool mirrors a
+  REST endpoint documented above; the `/mcp` tool list carries the
   schemas.
 
 Connect (all three sign in through the browser; nothing to paste):
