@@ -5,8 +5,10 @@
       "name": "Europe Open Liquidity Scalp",
       "body": "# Europe Open Liquidity Scalp\n\nA playbook in three lines: the market, the trigger, the exit. Example text for the wire tests.\n",
       "attachments": [],
+      "checklist": ["Range is set", "Stop above the high"],
       "createdAt": "2026-05-29T12:15:30Z",
-      "updatedAt": "2026-05-29T12:24:03Z"
+      "updatedAt": "2026-05-29T12:24:03Z",
+      "archivedAt": null
     },
     {
       "id": 1,
