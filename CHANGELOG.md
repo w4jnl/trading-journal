@@ -3,6 +3,17 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The coach card's "+ Overtraded" (and the other finding labels) now logs the label on the day
+  note as yours in one click: the note is created when the day has none, the button turns into
+  the label's pill and the note carries it. Before, the button opened the editor with the chip
+  pre-checked and left the save to you; while "analyze this day" held the note, the editor was
+  hidden, so the click looked like nothing happened. While a review holds the note the button
+  shows disabled.
+
 ## 2.23.1, 2026-10-22
 
 ### App (iOS)

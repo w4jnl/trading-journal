@@ -156,7 +156,7 @@
      run), Date. */}}
 {{define "coach_card"}}
 {{with .Coach}}
-<div class="card mt-16 coach-card">
+<div class="card mt-16 coach-card" id="coach">
   <div class="card-title">Coach · {{if .Findings}}<span class="num">{{len .Findings}}</span> finding{{if ne (len .Findings) 1}}s{{end}}{{else}}nothing flagged{{end}}
     <span class="muted" style="font-weight: 400; font-size: 11px;">· <span class="num">{{.Decisions}}</span> decision{{if ne .Decisions 1}}s{{end}} in <span class="num">{{.Trades}}</span> trade{{if ne .Trades 1}}s{{end}}{{if ge .Baseline.Days 5}} · usual day <span class="num">{{printf "%.0f" .Baseline.MedianDecisions}}</span>{{if .Baseline.UsualLastEntry}}, last entry by <span class="num">{{.Baseline.UsualLastEntry}}</span>{{end}}{{else}} · norms need 5 trading days of history{{end}}</span>
   </div>
@@ -171,7 +171,17 @@
         </div>
         <div class="coach-detail">{{.Detail}}</div>
       </div>
-      {{with .Label}}<a class="btn btn--secondary btn--sm coach-label" href="/journal/{{$.Date}}?edit=1&{{.Kind}}={{.Key}}#journal-entry" title="Open the note with this label checked">+ {{.Name}}</a>{{end}}
+      {{/* The finding's label: on the day note already (a pill), or a button
+           that logs it there as the trader's own; disabled while a review
+           holds the note, since the write would be refused. */}}
+      {{with .Label}}
+        {{if or (and (eq .Kind "mistake") (hasStr $.Mistakes .Key)) (and (eq .Kind "emotion") (hasStr $.Emotions .Key))}}<span class="pill label-pill label-pill--{{.Kind}} coach-label" title="On the day note">✓ {{.Name}}</span>
+        {{else if $.AIPending}}<button type="button" class="btn btn--secondary btn--sm coach-label" disabled title="The note is under AI review; add the label when it is done">+ {{.Name}}</button>
+        {{else}}<form method="post" action="/journal/coach/{{$.Date}}" class="coach-label" data-busy="Adding…">
+          <input type="hidden" name="kind" value="{{.Kind}}"><input type="hidden" name="key" value="{{.Key}}">
+          <button type="submit" class="btn btn--secondary btn--sm" title="Log this on the day note as your {{.Kind}}">+ {{.Name}}</button>
+        </form>{{end}}
+      {{end}}
     </li>
     {{end}}
   </ul>

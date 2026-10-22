@@ -187,6 +187,33 @@ func (s *Service) SetLabels(ctx context.Context, userID, entryID int64, kind str
 	return nil
 }
 
+// AddLabel puts one label on the user's entry as the trader's own (source
+// trader), the way a page control that names a label works: the coach card's
+// "+ Overtraded" logs the finding on the day note. A label already there
+// keeps its row. ErrNotFound when the entry is not the caller's, a
+// ValidationError for an unknown kind or key, ErrReviewPending while a review
+// is writing the entry.
+func (s *Service) AddLabel(ctx context.Context, userID, entryID int64, kind, key string) error {
+	if _, ok := labelVocabulary[kind]; !ok {
+		return BadInput("unknown label kind %q", kind)
+	}
+	norm, err := normalizeLabels(kind, []string{key})
+	if err != nil {
+		return err
+	}
+	if _, err := s.ownEntry(ctx, userID, entryID); err != nil {
+		return err
+	}
+	if s.locked(entryID) {
+		return ErrReviewPending
+	}
+	if err := s.writeLabels(ctx, entryID, kind, norm, false, SourceTrader); err != nil {
+		return err
+	}
+	s.changed(ctx, userID)
+	return nil
+}
+
 // Who set a value (journal_entry_labels.source, journal_entries.tag_source /
 // strategy_source): the trader in a page editor (or by accepting an AI
 // suggestion), or a client of the REST API or MCP - typically an AI tool -
