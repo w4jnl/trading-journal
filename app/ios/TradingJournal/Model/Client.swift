@@ -532,8 +532,24 @@ final class Client {
         try await get(LabelVocabulary.self, "/journal/labels")
     }
 
-    func strategies() async throws -> Loaded<[Strategy]> {
-        try await get(StrategyList.self, "/strategies").map(\.items)
+    func strategies(fresh: Bool = false) async throws -> Loaded<[Strategy]> {
+        try await get(StrategyList.self, "/strategies", fresh: fresh).map(\.items)
+    }
+
+    func strategy(_ id: Int, fresh: Bool = false) async throws -> Loaded<Strategy> {
+        try await get(Strategy.self, "/strategies/\(id)", fresh: fresh)
+    }
+
+    /// The analytics summary over a range of trading days (YYYY-MM-DD, inclusive).
+    func analytics(from: String, to: String, fresh: Bool = false) async throws -> Loaded<AnalyticsSummary> {
+        try await get(AnalyticsSummary.self, "/analytics/summary", query: [URLQueryItem(name: "from", value: from), URLQueryItem(name: "to", value: to)], fresh: fresh)
+    }
+
+    /// The last 90 trading-timezone days ending today, the window the Library's numbers use.
+    var libraryRange: (from: String, to: String) {
+        let today = self.today?.day ?? Formatting.day(.now, tz: tz)
+        let from = Formatting.day(Date.now.addingTimeInterval(-90 * 86400), tz: tz)
+        return (from, today)
     }
 
     /// The weekly edge digest; nil week: the week of the last trading day.

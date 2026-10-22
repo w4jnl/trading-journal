@@ -65,8 +65,17 @@ func TestVocabularyCoversLabels(t *testing.T) {
 			t.Errorf("lesson line lacks %s", k)
 		}
 	}
-	if Version != "2" {
-		t.Error("the method version must move past the pre-package method")
+	if Version == "1" || Version == "2" {
+		t.Error("the method version must move past the pre-package method and the forced strategy pick")
+	}
+	// The strategy rule tests a fit, never forces one.
+	for _, s := range []string{"Never pick a strategy by elimination", "none is the right answer for a trade that fits no playbook", "dormant, automated or an overlay"} {
+		if !strings.Contains(VerdictDecision, s) {
+			t.Errorf("verdict rule lacks %q", s)
+		}
+	}
+	if strings.Contains(VerdictDecision, "not fully certain") || strings.Contains(VerdictDecision, "plausibly related") {
+		t.Error("the verdict rule still forces a strategy pick")
 	}
 }
 
@@ -80,7 +89,7 @@ func TestMethodForAgents(t *testing.T) {
 		}
 	}
 	ins := Instructions()
-	if !strings.Contains(ins, MarkerLine()) || !strings.Contains(ins, "trading-journal://method") || !strings.Contains(ins, "server_info") {
+	if !strings.Contains(ins, MarkerLine()) || !strings.Contains(ins, "trading-journal://method") || !strings.Contains(ins, "server_info") || !strings.Contains(ins, "stale") {
 		t.Errorf("instructions = %.200q", ins)
 	}
 	m, ok := ModeByName("review_entry")

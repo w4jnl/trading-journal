@@ -39,7 +39,7 @@ var Modes = []Mode{
 			"Call `prepare_day` (with `date` when given). It clusters copytrader fan-out into group entries and lone trades into trade entries, creates the missing ones and returns `entries[]` with `entryId`, `scope`, `created`, `alreadyAnalyzed`, `label`, `netPnl` and `checks`. Work only from these entry ids; never pass raw trade ids.",
 			"Call `list_strategies` once (id, name, playbook) and read `trading-journal://lessons` (or `list_lessons`) once: the open lessons are what the trader is working on.",
 			"For every entry with `alreadyAnalyzed: false` (or every entry when forced): `get_chart_image(entryId)` and look at it; `get_journal_entry(entryId)` for the notes, labels, checklist and the assigned strategy; `get_levels(market, day)` once per market for the day map; judge the decision by the trade/group brief of the method, citing the entry's `checks` as evidence.",
-			"Classify only what is unset and only when it clearly applies: `assign_strategy`, `set_tag` (good/neutral/bad on the process), `add_labels` (mistakes at most 3, emotions at most 2, each only when its description's evidence is in the context). The calls refuse to overwrite.",
+			"Classify only what is unset and only when it clearly applies: `assign_strategy` only when the trade meets the playbook's hard conditions (its market, its session window against the entry time, its entry trigger: the strategy's checklist lists them), never by elimination; `set_tag` (good/neutral/bad on the process); `add_labels` (mistakes at most 3, emotions at most 2, each only when its description's evidence is in the context). The calls refuse to overwrite.",
 			"`append_note(entryId, note)`: the review under a heading `### AI review (<model>) — <date>`, then the lesson line, then the marker line.",
 			"Synthesise the day: `create_journal_entry(scope=\"day\", date, body)` with the day brief's sections built on the day's lessons; on `alreadyExists` append to that entry when it lacks the marker, else leave it.",
 			"Print a short overview in chat: net, trades, win rate, entries reviewed and skipped, two to four recurring observations, anything needing attention.",
@@ -95,7 +95,7 @@ func PrepareNote() string {
 func Instructions() string {
 	return strings.Join([]string{
 		"You are working with a futures day trader's journal. " + Role,
-		"The method (how to review a trade, a group, a day or a week; how to plan a session) lives on this server, versioned: read the resource trading-journal://method or call get_review_method at the start of a session and follow it; the prompts review_day, review_entry, today, review_week and plan_day carry the same steps. Call server_info first: it names the instance, the trader's review language and profile (their style, the evidence they weigh most, their markets, their standing instructions; also the resource trading-journal://profile), the marker and the method version.",
+		"The method (how to review a trade, a group, a day or a week; how to plan a session) lives on this server, versioned: read the resource trading-journal://method or call get_review_method at the start of a session and follow it; the prompts review_day, review_entry, today, review_week and plan_day carry the same steps. Call server_info first: it names the instance, the trader's review language and profile (their style, the evidence they weigh most, their markets, their standing instructions; also the resource trading-journal://profile), the marker and the method version. Your client read the tool descriptions when it connected and keeps them until it reconnects; server_info is live, so when its toolNames or imageTypes say more than the tools you have, your schema is stale: trust the server and ask the trader to reconnect the connector.",
 		"Every review you write ends with the lesson line <!-- tj-ai:lesson key=<mistake|none> | <one sentence> --> and then the marker line " + MarkerLine() + "; a note that already carries the marker is done. Write the prose in the trader's language from server_info; the machine-readable lines stay English.",
 		WriteRules,
 		"Dates: day, from and to on list_trades and get_daily_stats accept today, yesterday and last, resolved on the server in the trading timezone; never compute a date yourself.",
@@ -164,6 +164,7 @@ func Document(o DocOptions) string {
 		for _, t := range o.Tools {
 			fmt.Fprintf(&b, "- `%s`\n", t)
 		}
+		b.WriteString("\nThis list is live; the tool descriptions your client holds were read when it connected. When they differ (a tool here you do not have, an image type `server_info.imageTypes` names that a description does not), the descriptions are stale: trust the server and ask the trader to reconnect the connector.\n")
 	}
 	return b.String()
 }
