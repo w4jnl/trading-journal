@@ -19,9 +19,9 @@ import (
 
 // Version names the method; it changes whenever a rubric, a contract or
 // the glossary changes, and every output records the version it was made
-// under ("method=2" on the note marker, ai_outputs.method), so reviews
+// under ("method=3" on the note marker, ai_outputs.method), so reviews
 // stay comparable. Version 1 is the method as it stood before this package.
-const Version = "2"
+const Version = "3"
 
 // Scope is the kind of journal entry a review skill is about.
 type Scope string
@@ -73,7 +73,7 @@ Sections:
 - **Setup & entry:** what the trade was and the entry against the move (early, late, chasing?).
 - **Risk:** the planned stop and risk the trader recorded (with none recorded, say only that), the heat taken against it (mae against plannedRisk), the size (coachChecks flag a size-up).
 - **Exit:** what the exit kept of the best move (exitEfficiency, mfe): a runner left, a winner cut short, a loser held.
-- **Strategy:** the assigned playbook's rules followed or broken (entry.checklist shows the ticked and missed rules); with no strategy tagged, name the closest one from availableStrategies or say that none fits.
+- **Strategy:** the assigned playbook's rules followed or broken (entry.checklist shows the ticked and missed rules); with no strategy tagged, test the trade against each playbook's hard conditions (its market, its session window against the entry time, its entry trigger: the strategy's checklist lists them) and name the one it meets, or say that none fits and which condition the nearest one fails.
 - **Mindset:** only from the trader's notes, labels or coachChecks; leave it out when there is no evidence.
 - **Verdict & lesson:** good / neutral / bad on the process, not just the P&L, and one concrete takeaway.`},
 	ScopeGroup: {Scope: ScopeGroup, Version: "1", Brief: `THIS ITEM IS A GROUP: one decision copied across several accounts (a copy set), or a few trades the trader grouped as one idea. Review it as one decision first, then what differed between its legs.
@@ -85,7 +85,7 @@ Sections:
 - **Risk:** the planned stop and risk per leg and in total (with none recorded, say only that), the heat taken against it.
 - **Exit:** what the exits kept of the best move, a runner left, a winner cut, a loser held.
 - **Copy consistency:** fills, sizes and exits across accounts - slippage, or a leg managed differently; leave it out for a single account.
-- **Strategy:** the playbook's rules followed or broken (entry.checklist); with none tagged, the closest one from availableStrategies or that none fits.
+- **Strategy:** the playbook's rules followed or broken (entry.checklist); with none tagged, the one whose hard conditions (market, session window, entry trigger: its checklist) the decision meets, or that none fits and which condition the nearest one fails.
 - **Mindset:** only from the notes, labels or coachChecks.
 - **Verdict & lesson:** good / neutral / bad on the process, and one concrete takeaway.`},
 	ScopeDay: {Scope: ScopeDay, Version: "1", Brief: `THIS ITEM IS A WHOLE TRADING DAY. Write the day's synthesis, not a trade-by-trade recap: trades have their own reviews.
@@ -115,7 +115,7 @@ Sections:
 const VerdictDecision = `End with EXACTLY one final line - a machine-readable verdict (it is removed before saving):
 <!-- tj-ai:verdict tag=<good|neutral|bad|none> strategy=<id|none> mistakes=<keys|none> emotions=<keys|none> -->
 - tag: your honest read of the process - good / neutral / bad. Use none ONLY when no such read applies.
-- strategy: identify the SINGLE best-fitting entry from "availableStrategies" and give its id or exact name. Weigh the trade (structure, direction, timing) AND the trader's own notes - a note like "3bar" points to a "Three-Bar Reversal". When the trader has not tagged one, choosing the fit is YOUR job: do not answer none just because nothing was tagged or you are not fully certain. Use none only when nothing in the list is plausibly related. Use only an id or name from that list; never invent one.
+- strategy: the id or exact name of the ONE entry in "availableStrategies" whose hard conditions the trade meets: the market the playbook names, its session window (compare the entry time, given in the context's timezone, with the window) and its entry trigger; each strategy's checklist lists those conditions. The trader's own notes count too - a note like "3bar" points to a "Three-Bar Reversal". A trade outside a playbook's window or market is NOT that strategy however alike the mechanics look: answer none and let the Strategy section name the resemblance and the condition it fails. Never pick a strategy by elimination (the only active one, the only manual one, the one the trader usually tags), and never a playbook that calls itself dormant, automated or an overlay for a hand-placed trade. none is the right answer for a trade that fits no playbook. Use only an id or name from that list; never invent one.
 - mistakes: comma-separated keys from labelVocabulary.mistakes for the mistakes the evidence shows (the numbers, coachChecks or the notes), at most 3; none when the trade was clean or the evidence is thin. Each label's description says what its evidence looks like: name a label only when the context shows that.
 - emotions: comma-separated keys from labelVocabulary.emotions ONLY when the trader's notes express that state or coachChecks show it unmistakably (a revenge re-entry right after a loss); never infer an emotion from the P&L alone; at most 2; otherwise none.
 Use only keys from labelVocabulary. Labels the trader already set are kept either way.`

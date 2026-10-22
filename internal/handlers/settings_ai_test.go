@@ -470,6 +470,7 @@ func TestAnalyzeTradeSuggestsWhatFits(t *testing.T) {
 	for _, stmt := range []string{
 		`INSERT INTO accounts (id, user_id, name, import_source, account_ref) VALUES (1, 7, 'apex-1', 'motivewave_csv', 'A-1')`,
 		`INSERT INTO strategies (id, user_id, name, body) VALUES (5, 7, 'ORB Breakout', 'opening range')`,
+		`INSERT INTO strategy_checklist_items (strategy_id, position, text) VALUES (5, 1, 'Entered between 09:45 and 11:00 ET'), (5, 2, 'Stop rested at fill')`,
 		`INSERT INTO trades (id, account_id, symbol, symbol_root, direction, qty, entry_price, exit_price, entry_time, exit_time, status, net_pnl, gross_pnl, commission, planned_stop, planned_risk, mae_pnl, mfe_pnl, mae_points, mfe_points, excursion_tf)
 			VALUES (10, 1, 'ESZ6', 'ES', 'long', 2, 6800, 6802, '2026-10-09 14:00:00 +0000 UTC', '2026-10-09 14:12:00 +0000 UTC', 'closed', 190, 200, 10, 6796, 400, 150, 600, 1.5, 6, '1m')`,
 		`INSERT INTO executions (id, account_id, broker_exec_id, symbol, symbol_root, side, qty, price, exec_time) VALUES
@@ -502,9 +503,14 @@ func TestAnalyzeTradeSuggestsWhatFits(t *testing.T) {
 		t.Errorf("suggested = %+v", res)
 	}
 
-	// The model saw the trade brief and the whole trade.
-	if !strings.Contains(fp.system, "ONE TRADE") || !strings.Contains(fp.system, "mistakes=<keys|none>") {
+	// The model saw the trade brief and the whole trade, and the strategy rule
+	// that tests the trade against each playbook's hard conditions.
+	if !strings.Contains(fp.system, "ONE TRADE") || !strings.Contains(fp.system, "mistakes=<keys|none>") || !strings.Contains(fp.system, "Never pick a strategy by elimination") {
 		t.Errorf("trade review got the wrong prompt: %.200q", fp.system)
+	}
+	// Each strategy it may name comes with its checklist: the conditions to test.
+	if !strings.Contains(fp.user, `"checklist": [`) || !strings.Contains(fp.user, "Entered between 09:45 and 11:00 ET") {
+		t.Errorf("availableStrategies lack the checklist: %.600q", jsonObjectWith(fp.user, `"availableStrategies"`))
 	}
 	var sent struct {
 		Timezone string `json:"timezone"`

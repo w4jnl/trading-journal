@@ -428,10 +428,24 @@ func (h *Handlers) aiEntryContext(ctx context.Context, e models.JournalEntry, tz
 			out["assignedStrategy"] = map[string]any{"id": s.ID, "name": s.Name, "playbook": s.Body}
 		}
 	}
+	// The strategies the verdict may name, each with the head of its playbook
+	// and its checklist: the checklist states the playbook's hard conditions
+	// (the market, the session window, the trigger), which is what the
+	// verdict rule tells the model to test the trade against.
 	if strats, err := h.Queries.ListActiveStrategies(ctx, userID(ctx)); err == nil && len(strats) > 0 {
+		checklists := map[int64][]string{}
+		if items, err := h.Queries.ListChecklistItemsForUser(ctx, userID(ctx)); err == nil {
+			for _, it := range items {
+				checklists[it.StrategyID] = append(checklists[it.StrategyID], it.Text)
+			}
+		}
 		list := make([]map[string]any, 0, len(strats))
 		for _, s := range strats {
-			list = append(list, map[string]any{"id": s.ID, "name": s.Name, "playbook": aiTruncate(s.Body, 600)})
+			item := map[string]any{"id": s.ID, "name": s.Name, "playbook": aiTruncate(s.Body, 900)}
+			if cl := checklists[s.ID]; len(cl) > 0 {
+				item["checklist"] = cl
+			}
+			list = append(list, item)
 		}
 		out["availableStrategies"] = list
 	}

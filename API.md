@@ -531,7 +531,7 @@ a review writes the note, `403` for an agent key).
 agents and scripts that are not MCP clients: `version` (the method version,
 recorded on every review marker as `method=` and on every stored AI
 output), `marker` (the line an external agent ends a review with, `<!--
-tj-ai-mcp:v1 method=2 -->`), `markers` (`app`, `agent`), the user's review
+tj-ai-mcp:v1 method=3 -->`), `markers` (`app`, `agent`), the user's review
 `language`, their `profile` (`style`: `scalper`, `daytrader` or `swing`;
 `focus`, the evidence families they weigh most in order, among `levels`,
 `session`, `volume`, `gamma`, `coach`, `playbooks`; `markets`; `houseRules`,
