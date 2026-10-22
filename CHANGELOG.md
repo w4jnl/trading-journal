@@ -15,6 +15,10 @@ built against it carries the same marketing version.
 
 ### App (iOS)
 
+- Nudges on Today and on a calendar day have a Seen button. The swipe those cards offered
+  opened but never closed, so a tap looked like it did nothing even though the nudge was
+  marked; the Nudges list keeps its swipe as well.
+
 - The Library on the phone. A Library button on the Journal tab lists the strategies with the
   first words of each playbook, the rule count and the last 90 days' trades, hit rate and net;
   a strategy opens to its playbook (markdown with its drawings), its checklist rules, the 90-day
