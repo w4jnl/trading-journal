@@ -7,6 +7,16 @@ built against it carries the same marketing version.
 
 ### Server
 
+- The AI review no longer forces a strategy onto a trade. The method (now version 3) asked the
+  model to pick the best fit and not to answer none when unsure, so a day traded outside every
+  playbook's window came back tagged with the one active lane, window or not. It now names a
+  strategy only when the trade meets the playbook's hard conditions (the market, the session
+  window against the entry time, the entry trigger), never by elimination and never a playbook
+  that calls itself dormant, automated or an overlay; the Strategy section says which condition
+  the nearest one fails. The context carries each strategy's checklist, the list of those
+  conditions, and a longer head of its playbook. The same rule reaches external agents through
+  the method document and the assign_strategy tool. Reviews record `method=3`.
+
 - An MCP agent can tell when its tool list is stale. Clients read the tool descriptions once,
   when the connector connects, so after a deploy an agent worked from the old schema (it still
   listed four image types after SVG arrived). `server_info` now carries the live `toolNames`,

@@ -224,7 +224,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 
 	addTool(s, mcpgo.NewTool("assign_strategy",
 		mcpgo.WithDestructiveHintAnnotation(false),
-		mcpgo.WithDescription("Assign a strategy to a journal entry, but ONLY if it has none yet - an existing assignment is never changed (assigned=false then). Call it for ANY entry (newly created or pre-existing) that has no strategy when one of the caller's strategies clearly fits the trade's setup; if nothing clearly fits, skip it - don't force one. Only trade and group entries take a strategy (a day/week spans mixed setups and is rejected)."),
+		mcpgo.WithDescription("Assign a strategy to a journal entry, but ONLY if it has none yet - an existing assignment is never changed (assigned=false then). Call it for ANY entry (newly created or pre-existing) that has no strategy when one of the caller's strategies clearly fits the trade: the trade meets the playbook's hard conditions (its market, its session window against the entry time, its entry trigger; the strategy's checklist lists them). A trade outside a playbook's window or market is not that strategy however alike the mechanics look, and a playbook that calls itself dormant, automated or an overlay never fits a hand-placed trade; if nothing clearly fits, skip it - never pick one by elimination. Only trade and group entries take a strategy (a day/week spans mixed setups and is rejected)."),
 		mcpgo.WithNumber("entryId", mcpgo.Required(), mcpgo.Description("Journal entry id.")),
 		mcpgo.WithNumber("strategyId", mcpgo.Required(), mcpgo.Description("Strategy id to assign (must be owned).")),
 	), h.mcpAssignStrategy)
