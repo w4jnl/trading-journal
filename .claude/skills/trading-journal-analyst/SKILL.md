@@ -16,6 +16,10 @@ session and follow it.
 1. Call `server_info` on the trading-journal connector (with several journals
    configured, pick one instance and use it for the whole run). It names the
    server, the trader's review language, the marker line and the method version.
+   It also lists the tools and the image types live: your client read the tool
+   descriptions when it connected, so when `server_info` names a tool or an
+   image type your schema does not, the schema is stale; trust the server and
+   ask the trader to reconnect the connector.
 2. Read the method: the resource `trading-journal://method`, or the tool
    `get_review_method` when your client does not read resources. Follow it.
 3. When your client lists the server's prompts, use them: `review_day`,

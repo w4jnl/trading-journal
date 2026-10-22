@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"encoding/json"
+	"sort"
 	"strings"
 	"time"
 
@@ -230,12 +231,40 @@ func (h *Handlers) mcpServerFacts(ctx context.Context) map[string]any {
 		"methodResource":  mcpResMethod,
 		"methodTool":      "get_review_method",
 		"tools":           len(mcpToolNames),
+		"toolNames":       sortedToolNames(),
+		"imageTypes":      attachmentImageTypes(),
+		"schemaNote":      mcpSchemaNote,
 		"prompts":         promptNames(),
 	}
 	if h.Queries != nil {
 		facts["features"] = map[string]bool{"ai": h.aiPossible(), "charts": h.MarketData != nil, "guardrail": h.Guardrail != nil, "push": h.Push.Enabled()}
 	}
 	return facts
+}
+
+// mcpSchemaNote tells an agent how to notice a stale tool list. MCP clients
+// read the tool descriptions once, when the connector connects, and keep
+// them until it reconnects; a deploy in between leaves the agent with
+// yesterday's schema while the server answers by today's rules. server_info
+// is a live call, so its tool names and image types are the truth to compare
+// against.
+const mcpSchemaNote = "Your client read the tool list and its descriptions when it connected and keeps them until it reconnects. toolNames and imageTypes here are live: when the tools you have differ from toolNames, or a description names fewer image types than imageTypes, your schema is stale; trust this answer, and ask the trader to reconnect the connector to refresh it."
+
+// sortedToolNames is the registered tool list in a stable order.
+func sortedToolNames() []string {
+	names := append([]string(nil), mcpToolNames...)
+	sort.Strings(names)
+	return names
+}
+
+// attachmentImageTypes lists the content types an image write accepts.
+func attachmentImageTypes() []string {
+	types := make([]string, 0, len(allowedAttachmentMIMEs))
+	for mt := range allowedAttachmentMIMEs {
+		types = append(types, mt)
+	}
+	sort.Strings(types)
+	return types
 }
 
 func promptNames() []string {

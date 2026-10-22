@@ -17,7 +17,10 @@ work from memory.
 At the start of every session:
 1. Call `server_info`. It names the server, the trader's review language, the
    marker line and the method version. With several journals connected, pick one
-   and stay on it.
+   and stay on it. It also lists the tools and the image types live: when it
+   names a tool or an image type your schema does not, your tool descriptions
+   are stale (they were read when the connector connected); trust the server
+   and ask the trader to reconnect the connector.
 2. Call `get_review_method` and follow the method it returns: it says how to
    review a trade, a group, a day or a week, how to plan a session, which lines
    every review ends with, the write rules and the modes with their tool order.

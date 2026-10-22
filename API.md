@@ -1544,7 +1544,10 @@ The server carries the review method, so a client needs no skill of its own:
   review).
 - **Tools, 27 in all.** Reading: `server_info` (the instance, the server
   version and timezone, the trader's language and profile, the marker, the
-  method version and where to read it), `get_review_method(language?)` (the
+  method version and where to read it, plus the live `toolNames` and
+  `imageTypes` with a `schemaNote`: a client reads tool descriptions once, at
+  connect, so after a deploy an agent compares them with this answer and asks
+  the trader to reconnect the connector when they differ), `get_review_method(language?)` (the
   method for clients that read neither instructions nor resources, ChatGPT
   among them),
   `list_lessons`, `list_trades`, `get_trade`, `list_positions`,

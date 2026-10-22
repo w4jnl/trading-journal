@@ -80,7 +80,7 @@ func TestMethodForAgents(t *testing.T) {
 		}
 	}
 	ins := Instructions()
-	if !strings.Contains(ins, MarkerLine()) || !strings.Contains(ins, "trading-journal://method") || !strings.Contains(ins, "server_info") {
+	if !strings.Contains(ins, MarkerLine()) || !strings.Contains(ins, "trading-journal://method") || !strings.Contains(ins, "server_info") || !strings.Contains(ins, "stale") {
 		t.Errorf("instructions = %.200q", ins)
 	}
 	m, ok := ModeByName("review_entry")
