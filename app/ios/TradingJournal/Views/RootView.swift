@@ -151,6 +151,8 @@ struct RootView: View {
         case .trade(let id): TradeDetailView(id: id)
         case .position(let acc, let sym): PositionDetailView(accountId: acc, symbol: sym)
         case .journal(let id): JournalEntryView(id: id)
+        case .library: LibraryView()
+        case .strategy(let id): StrategyView(id: id)
         case .nudges: NudgesView()
         case .plan: PlanView()
         case .accounts: AccountsView()

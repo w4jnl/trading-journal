@@ -5,6 +5,8 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+## Unreleased
+
 ### Server
 
 - An MCP agent can tell when its tool list is stale. Clients read the tool descriptions once,
@@ -12,6 +14,15 @@ built against it carries the same marketing version.
   listed four image types after SVG arrived). `server_info` now carries the live `toolNames`,
   `imageTypes` and a note on what to do when they differ from the schema at hand; the
   instructions, the method document and the image field's own description say the same.
+
+### App (iOS)
+
+- The Library on the phone. A Library button on the Journal tab lists the strategies with the
+  first words of each playbook, the rule count and the last 90 days' trades, hit rate and net;
+  a strategy opens to its playbook (markdown with its drawings), its checklist rules, the 90-day
+  numbers with how often the checklist was ticked whole and what that was worth, and the recent
+  notes filed under it. The strategy pill on a journal entry opens it; `tj://open/library` and
+  `tj://open/strategy/N` deep-link. Reading only: the web and the MCP tools write.
 
 ## 2.23.1, 2026-10-22
 

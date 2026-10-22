@@ -41,6 +41,7 @@ struct JournalView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItemGroup(placement: .topBarTrailing) {
+                NavigationLink(value: Route.library) { Label("Library", systemImage: "books.vertical") }
                 NavigationLink(value: Route.digest(nil)) { Label("Weekly digest", systemImage: "chart.bar.doc.horizontal") }
                 Button { writing = true } label: { Label("Day note", systemImage: "square.and.pencil") }
                     .keyboardShortcut("n", modifiers: .command)
@@ -184,7 +185,10 @@ struct JournalEntryView: View {
                             Pill(e.scope == .group ? "set" : e.scope.rawValue, e.scope == .group ? .group : .sunken)
                             if let p = Pill.tag(e.tag) { p }
                             if let m = e.mood { MoodDots(mood: m) }
-                            if let st = e.strategy { Pill(st.name, .accent) }
+                            if let st = e.strategy {
+                                NavigationLink(value: Route.strategy(st.id)) { Pill(st.name, .accent) }.buttonStyle(.plain)
+                                    .accessibilityHint("Opens the strategy")
+                            }
                             Spacer()
                             if let s = e.summary, s.trades > 0 { PnlChip(s.net, size: .md) }
                         }
