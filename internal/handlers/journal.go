@@ -1219,7 +1219,7 @@ var mdSanitizer = func() *bluemonday.Policy {
 // *html.Renderer is NOT goroutine-safe: concurrent requests rendering markdown race on
 // that map and crash the process with "fatal error: concurrent map writes".
 func renderMarkdown(src string) string {
-	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
+	p := parser.NewWithExtensions((parser.CommonExtensions &^ parser.MathJax) | parser.AutoHeadingIDs)
 	doc := p.Parse([]byte(src))
 	// No HrefTargetBlank renderer flag: bluemonday strips the bare target
 	// attribute anyway (UGCPolicy doesn't allowlist it) and then re-adds

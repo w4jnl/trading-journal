@@ -1847,7 +1847,10 @@ tbody tr.row-tint--neg td:first-child { box-shadow: inset 3px 0 0 var(--neg); }
   color: var(--fg-muted);
   margin: 8px 0;
 }
+/* A note's image fills the column: a chart screenshot or an SVG drawing
+   reads at the width of the text it belongs to. */
 .journal-editor__preview img, .je-peek-body img, .markdown-preview img {
+  width: 100%;
   max-width: 100%;
   height: auto;
   border-radius: var(--r-md);

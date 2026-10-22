@@ -187,12 +187,19 @@ func TestAPIJournalAttachmentUpload(t *testing.T) {
 		_ = json.Unmarshal(rec.Body.Bytes(), &out)
 		return rec.Code, out
 	}
-	png := []byte("\x89PNG\r\n\x1a\nfake")
+	png := tinyPNGBytes(t)
 	if code, _ := upload(fx.agent, "a.png", "image/png", png); code != http.StatusForbidden {
 		t.Errorf("agent upload = %d", code)
 	}
 	if code, _ := upload(fx.device, "a.txt", "text/plain", []byte("hi")); code != http.StatusUnsupportedMediaType {
 		t.Errorf("text upload = %d", code)
+	}
+	// The type comes from the bytes, and a broken image is refused by name.
+	if code, out := upload(fx.device, "a.png", "image/png", []byte("\x89PNG\r\n\x1a\nfake")); code != http.StatusBadRequest || !strings.Contains(out["error"].(string), "a.png: corrupt PNG") {
+		t.Errorf("fake png upload = %d %v", code, out)
+	}
+	if code, out := upload(fx.device, "drawing.txt", "text/plain", []byte(tinySVG)); code != http.StatusCreated || !strings.HasSuffix(out["markdown"].(string), ")") {
+		t.Errorf("svg upload = %d %v", code, out)
 	}
 	code, out := upload(fx.device, "IMG_1.png", "image/png", png)
 	if code != http.StatusCreated || out["markdown"] != "![IMG_1.png](/api/v1/attachments/"+strconv.Itoa(int(out["id"].(float64)))+")" {

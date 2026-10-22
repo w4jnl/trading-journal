@@ -246,16 +246,17 @@ func decodeStrategyImage(n int, name, data string) (strategyImage, error) {
 	if len(raw) > maxAttachmentBytes {
 		return strategyImage{}, strategyWriteError{Status: http.StatusRequestEntityTooLarge, Msg: fmt.Sprintf("image %d: larger than %d MiB", n, maxAttachmentBytes>>20)}
 	}
-	mt := http.DetectContentType(raw)
-	if i := strings.IndexByte(mt, ';'); i >= 0 {
-		mt = strings.TrimSpace(mt[:i])
-	}
-	if _, ok := allowedAttachmentMIMEs[mt]; !ok {
-		return strategyImage{}, strategyWriteError{Status: http.StatusUnsupportedMediaType, Msg: fmt.Sprintf("image %d: only PNG, JPEG, GIF and WebP images are stored", n)}
-	}
 	name = strings.TrimSpace(name)
 	if name == "" {
 		name = fmt.Sprintf("image-%d", n)
+	}
+	mt := sniffAttachmentMIME(raw)
+	if mt == "" {
+		return strategyImage{}, strategyWriteError{Status: http.StatusUnsupportedMediaType, Msg: fmt.Sprintf("image %d (%s): not an image; only %s images are stored", n, name, attachmentTypesSentence)}
+	}
+	raw, err = checkAttachmentImage(mt, raw)
+	if err != nil {
+		return strategyImage{}, strategyBad(fmt.Sprintf("image %d (%s): %v", n, name, err))
 	}
 	return strategyImage{Name: name, Mime: mt, Data: raw}, nil
 }

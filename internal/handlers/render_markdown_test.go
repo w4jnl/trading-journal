@@ -59,6 +59,20 @@ func TestRenderMarkdownSanitizes(t *testing.T) {
 	}
 }
 
+// Dollar amounts are prose, not math: "$86 vs avg loss -$559" must not
+// become an inline formula (the MathJax extension is off).
+func TestRenderMarkdownDollars(t *testing.T) {
+	out := renderMarkdown("Won $86 vs avg loss -$559 today; $$ not math either $$.")
+	for _, want := range []string{"$86", "-$559", "$$ not math either $$"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("%q missing from\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, `\(`) || strings.Contains(out, `\[`) {
+		t.Errorf("math markup in\n%s", out)
+	}
+}
+
 // TestRenderMarkdownConcurrent guards against the shared-renderer regression: a
 // package-level *html.Renderer is NOT goroutine-safe with AutoHeadingIDs (it keeps a
 // heading-ID dedup map), so concurrent requests crashed the process with
