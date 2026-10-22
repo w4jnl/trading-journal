@@ -5,8 +5,6 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
-## Unreleased
-
 ### Server
 
 - An MCP agent can tell when its tool list is stale. Clients read the tool descriptions once,
