@@ -165,7 +165,7 @@ struct DayView: View {
                 if !nudges.isEmpty {
                     Card(keyline: Brand.warn) {
                         CardTitle("Nudges", trailing: "\(nudges.count)")
-                        ForEach(nudges) { n in NudgeRow(nudge: n, tz: client.tz, here: .day(day)) }
+                        ForEach(nudges) { n in NudgeRow(nudge: n, tz: client.tz, here: .day(day), inList: false) }
                     }
                 }
                 if !trades.isEmpty {

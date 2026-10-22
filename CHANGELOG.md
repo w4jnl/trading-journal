@@ -3,6 +3,14 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS)
+
+- Nudges on Today and on a calendar day have a Seen button. The swipe those cards offered
+  opened but never closed, so a tap looked like it did nothing even though the nudge was
+  marked; the Nudges list keeps its swipe as well.
+
 ## 2.23.1, 2026-10-22
 
 ### App (iOS)
