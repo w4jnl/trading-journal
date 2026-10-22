@@ -7,6 +7,13 @@ built against it carries the same marketing version.
 
 ### Server
 
+- The coach card's "+ Overtraded" (and the other finding labels) now logs the label on the day
+  note as yours in one click: the note is created when the day has none, the button turns into
+  the label's pill and the note carries it. Before, the button opened the editor with the chip
+  pre-checked and left the save to you; while "analyze this day" held the note, the editor was
+  hidden, so the click looked like nothing happened. While a review holds the note the button
+  shows disabled.
+
 - The AI review no longer forces a strategy onto a trade. The method (now version 3) asked the
   model to pick the best fit and not to answer none when unsure, so a day traded outside every
   playbook's window came back tagged with the one active lane, window or not. It now names a

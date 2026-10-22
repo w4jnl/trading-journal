@@ -87,14 +87,14 @@ func TestCoachOnDayPageAPIAndPrepare(t *testing.T) {
 	body := page("/journal/2026-10-09")
 	for _, want := range []string{
 		`Coach · <span class="num">2</span> findings`, `coach-item coach-item--warn`, `Re-entry right after a loss`, `Price went past the planned stop`,
-		`href="/journal/2026-10-09?edit=1&mistake=revenge#journal-entry"`, `+ Revenge trade</a>`, `href="/trades?sheet=11&back=%2Fjournal%2F2026-10-09"`,
+		`action="/journal/coach/2026-10-09"`, `name="key" value="revenge"`, `+ Revenge trade</button>`, `href="/trades?sheet=11&back=%2Fjournal%2F2026-10-09"`,
 		`norms need 5 trading days of history`,
 	} {
 		if !strings.Contains(body, want) {
 			t.Errorf("day page missing %q", want)
 		}
 	}
-	// The label link: editor shown with the chip checked, nothing saved.
+	// The editor can still be opened with a chip pre-checked, nothing saved.
 	body = page("/journal/2026-10-09?edit=1&mistake=revenge")
 	if !strings.Contains(body, `name="mistake" value="revenge" checked`) || strings.Contains(body, `class="journal-form" hidden`) {
 		t.Error("label link should open the editor with the chip checked")
