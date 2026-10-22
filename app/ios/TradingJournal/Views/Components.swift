@@ -1,6 +1,7 @@
 // The web app's components in SwiftUI: cards, pills, P&L chips, stat strips, the heat cell and
 // an image that fetches with the key. Views compose these and never style a number themselves.
 import SwiftUI
+import WebKit
 
 /// A bordered panel on the elevated background, 16 pt padding, an optional keyline on the left.
 struct Card<Content: View>: View {
@@ -217,11 +218,13 @@ struct HeatCell: View {
 }
 
 /// An image the API serves (a chart PNG, an attachment), fetched with the key and cached.
+/// An SVG attachment (a drawing an agent authored) is drawn by WebKit instead of UIImage.
 struct AuthImage: View {
     let href: String
     var maxHeight: CGFloat? = 260
     @Environment(Client.self) private var client
     @State private var image: UIImage?
+    @State private var svg: String?
     @State private var failed = false
     @State private var full = false
 
@@ -235,6 +238,14 @@ struct AuthImage: View {
                     .clipShape(RoundedRectangle(cornerRadius: 4))
                     .onTapGesture { full = true }
                     .fullScreenCover(isPresented: $full) { FullImage(image: image) }
+            } else if let svg {
+                SVGView(svg: svg)
+                    .aspectRatio(SVGDrawing.aspectRatio(of: svg), contentMode: .fit)
+                    .frame(maxHeight: maxHeight)
+                    .clipShape(RoundedRectangle(cornerRadius: 4))
+                    .contentShape(Rectangle())
+                    .onTapGesture { full = true }
+                    .fullScreenCover(isPresented: $full) { FullSVG(svg: svg) }
             } else if failed {
                 Label("no image", systemImage: "photo").font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgSubtle)
             } else {
@@ -254,6 +265,8 @@ struct AuthImage: View {
             if let ui = UIImage(data: data) {
                 ImageCache.shared.setObject(ui, forKey: href as NSString)
                 image = ui
+            } else if SVGDrawing.isSVG(data), let text = String(data: data, encoding: .utf8) {
+                svg = text
             } else {
                 failed = true
             }
@@ -286,6 +299,73 @@ struct FullImage: View {
             }
             .gesture(MagnifyGesture().onChanged { v in scale = max(1, min(4, v.magnification)) })
             Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(.white.opacity(0.8)) }
+                .padding()
+                .accessibilityLabel("Close")
+        }
+    }
+}
+
+/// An SVG drawing laid out by WebKit at the width it is given: scripts off, a content security
+/// policy that loads nothing, no scrolling and no touches (the SwiftUI tap above opens it full
+/// screen). The server stored the document sanitized; this is the second lock on the door.
+struct SVGView: UIViewRepresentable {
+    let svg: String
+
+    func makeUIView(context: Context) -> WKWebView {
+        let configuration = WKWebViewConfiguration()
+        configuration.defaultWebpagePreferences.allowsContentJavaScript = false
+        let view = WKWebView(frame: .zero, configuration: configuration)
+        view.isOpaque = false
+        view.backgroundColor = .clear
+        view.scrollView.isScrollEnabled = false
+        view.scrollView.bounces = false
+        view.scrollView.backgroundColor = .clear
+        view.isUserInteractionEnabled = false
+        view.navigationDelegate = context.coordinator
+        return view
+    }
+
+    func updateUIView(_ view: WKWebView, context: Context) {
+        let html = """
+        <!doctype html><html><head><meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+        <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+        <style>html,body{margin:0;padding:0;background:transparent;overflow:hidden}svg{display:block;width:100%;height:auto}</style>
+        </head><body>\(svg)</body></html>
+        """
+        guard context.coordinator.loaded != html else { return }
+        context.coordinator.loaded = html
+        view.loadHTMLString(html, baseURL: nil)
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    @MainActor final class Coordinator: NSObject, WKNavigationDelegate {
+        var loaded = ""
+
+        /// Only the document the view loaded itself; nothing a drawing could point at.
+        func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction) async -> WKNavigationActionPolicy {
+            navigationAction.navigationType == .other && navigationAction.request.url?.scheme == "about" ? .allow : .cancel
+        }
+    }
+}
+
+/// The drawing on its own, at the screen's width, pinch to look closer.
+struct FullSVG: View {
+    let svg: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var scale: CGFloat = 1
+
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Color(uiColor: .systemBackground).ignoresSafeArea()
+            ScrollView([.horizontal, .vertical]) {
+                SVGView(svg: svg)
+                    .aspectRatio(SVGDrawing.aspectRatio(of: svg), contentMode: .fit)
+                    .frame(width: UIScreen.main.bounds.width * scale)
+            }
+            .gesture(MagnifyGesture().onChanged { v in scale = max(1, min(4, v.magnification)) })
+            Button { dismiss() } label: { Image(systemName: "xmark.circle.fill").font(.title).foregroundStyle(Brand.fgMuted) }
                 .padding()
                 .accessibilityLabel("Close")
         }

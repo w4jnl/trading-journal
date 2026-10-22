@@ -3,6 +3,14 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS)
+
+- SVG attachments render. A drawing an agent put into a strategy (the server stores it
+  sanitized) is drawn by WebKit with scripts off and nothing loaded from the network, sized by its
+  own viewBox; tap for full screen, pinch to look closer. Before, an SVG showed "no image".
+
 ## 2.23.0, 2026-10-22
 
 ### Server
