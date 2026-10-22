@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -93,6 +94,18 @@ func TestMCPToolsList(t *testing.T) {
 		if !strings.Contains(doc, "`"+tool+"`") {
 			t.Errorf("the method document does not name the tool %s", tool)
 		}
+	}
+	if !strings.Contains(doc, "This list is live") {
+		t.Error("the method document does not say how to notice a stale tool list")
+	}
+	// server_info is live: it names every tool and every image type, so an
+	// agent holding yesterday's schema can tell (the facts need a user and a
+	// database this server has not; the helpers behind them are checked here).
+	if names := sortedToolNames(); len(names) != len(mcpToolNames) || !sort.StringsAreSorted(names) || !strings.Contains(mcpSchemaNote, "reconnect") {
+		t.Errorf("toolNames = %v", names)
+	}
+	if types := attachmentImageTypes(); strings.Join(types, " ") != "image/gif image/jpeg image/png image/svg+xml image/webp" {
+		t.Errorf("imageTypes = %v", types)
 	}
 	if !strings.Contains(doc, "## Modes") || !strings.Contains(doc, "THIS ITEM IS ONE TRADE") {
 		t.Error("the method document lacks the modes or the briefs")
