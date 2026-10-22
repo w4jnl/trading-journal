@@ -3,6 +3,16 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- An MCP agent can tell when its tool list is stale. Clients read the tool descriptions once,
+  when the connector connects, so after a deploy an agent worked from the old schema (it still
+  listed four image types after SVG arrived). `server_info` now carries the live `toolNames`,
+  `imageTypes` and a note on what to do when they differ from the schema at hand; the
+  instructions, the method document and the image field's own description say the same.
+
 ## 2.23.1, 2026-10-22
 
 ### App (iOS)

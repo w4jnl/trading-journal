@@ -790,7 +790,7 @@ var mcpImageSchema = map[string]any{
 	"type": "object",
 	"properties": map[string]any{
 		"name": map[string]any{"type": "string", "description": "What the body calls it in ![caption](name); also the alt text when appended."},
-		"data": map[string]any{"type": "string", "description": "The image, base64 (a data: URL is accepted)."},
+		"data": map[string]any{"type": "string", "description": "The image, base64 (a data: URL is accepted): PNG, JPEG, GIF, WebP or SVG; the type is read from the bytes. server_info.imageTypes is the live list."},
 	},
 	"required": []string{"data"},
 }
