@@ -229,3 +229,22 @@ struct NavigationPathTests {
         #expect(RootView.deduplicated([note, trade], was: [trade, note, trade]) == [note, trade], "a programmatic path is taken as given")
     }
 }
+
+// An SVG attachment is told apart from a raster image by its bytes, and its frame is sized
+// from the root element before WebKit lays it out.
+@Suite struct SVGDrawingTests {
+    @Test func detectsSVG() {
+        #expect(SVGDrawing.isSVG(Data("<?xml version=\"1.0\"?>\n<svg xmlns=\"http://www.w3.org/2000/svg\"/>".utf8)))
+        #expect(SVGDrawing.isSVG(Data("\u{FEFF}  <svg viewBox=\"0 0 1 1\"></svg>".utf8)))
+        #expect(!SVGDrawing.isSVG(Data([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A])))
+        #expect(!SVGDrawing.isSVG(Data("plain words about <svg> later".utf8)))
+    }
+
+    @Test func aspectRatioFromRoot() {
+        #expect(SVGDrawing.aspectRatio(of: "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 200 100\"><rect/></svg>") == 2)
+        #expect(SVGDrawing.aspectRatio(of: "<svg viewBox='0,0,300,100'/>") == 3)
+        #expect(SVGDrawing.aspectRatio(of: "<svg width=\"400px\" height=\"200\"></svg>") == 2)
+        #expect(SVGDrawing.aspectRatio(of: "<svg width=\"100%\" height=\"50\"></svg>") == 16.0 / 9.0)
+        #expect(SVGDrawing.aspectRatio(of: "<svg><rect viewBox=\"0 0 5 1\"/></svg>") == 16.0 / 9.0)
+    }
+}
