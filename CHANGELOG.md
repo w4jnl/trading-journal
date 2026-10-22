@@ -3,6 +3,17 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS)
+
+- The Library on the phone. A Library button on the Journal tab lists the strategies with the
+  first words of each playbook, the rule count and the last 90 days' trades, hit rate and net;
+  a strategy opens to its playbook (markdown with its drawings), its checklist rules, the 90-day
+  numbers with how often the checklist was ticked whole and what that was worth, and the recent
+  notes filed under it. The strategy pill on a journal entry opens it; `tj://open/library` and
+  `tj://open/strategy/N` deep-link. Reading only: the web and the MCP tools write.
+
 ## 2.23.1, 2026-10-22
 
 ### App (iOS)

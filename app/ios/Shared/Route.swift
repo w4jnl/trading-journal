@@ -9,6 +9,8 @@ enum Route: Hashable, Sendable {
     case trade(Int)
     case position(account: Int, symbol: String)
     case journal(Int)
+    case library
+    case strategy(Int)
     case nudges
     case plan
     case accounts
@@ -21,7 +23,7 @@ enum Route: Hashable, Sendable {
         switch self {
         case .today, .position, .nudges, .plan, .accounts: .today
         case .trade: .trades
-        case .journal, .digest: .journal
+        case .journal, .digest, .library, .strategy: .journal
         case .day: .calendar
         case .settings, .pair: .settings
         }
@@ -58,6 +60,8 @@ enum Route: Hashable, Sendable {
         case .trade(let id): s += "trade/\(id)"
         case .position(let a, let sym): s += "position/\(a)/\(sym)"
         case .journal(let id): s += "journal/\(id)"
+        case .library: s += "library"
+        case .strategy(let id): s += "strategy/\(id)"
         case .nudges: s += "nudges"
         case .plan: s += "plan"
         case .accounts: s += "accounts"
@@ -105,6 +109,8 @@ enum Route: Hashable, Sendable {
             guard rest.count >= 2, let acc = Int(rest[0]) else { return nil }
             return .position(account: acc, symbol: rest[1])
         case "journal": return rest.first.flatMap(Int.init).map { .journal($0) }
+        case "library": return .library
+        case "strategy": return rest.first.flatMap(Int.init).map { .strategy($0) }
         case "nudges": return .nudges
         case "plan": return .plan
         case "accounts": return .accounts
