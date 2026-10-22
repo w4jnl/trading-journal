@@ -283,7 +283,7 @@ func (r *pdfRenderer) renderMarkdownBody(body string) {
 	if strings.TrimSpace(body) == "" {
 		return
 	}
-	p := parser.NewWithExtensions(parser.CommonExtensions)
+	p := parser.NewWithExtensions((parser.CommonExtensions &^ parser.MathJax))
 	doc := p.Parse([]byte(body))
 	for _, child := range doc.GetChildren() {
 		r.renderBlock(child)

@@ -26,12 +26,16 @@ const maxAttachmentBytes = 8 * 1024 * 1024 // 8 MiB
 
 // allowedAttachmentMIMEs guards the upload endpoint: a journal attachment is
 // an image, nothing else. Keeping the set narrow means the GET path can
-// safely set Content-Type from the stored value without sniffing.
+// safely set Content-Type from the stored value without sniffing. The type
+// is read from the bytes (sniffAttachmentMIME) and every image is checked
+// whole before it is stored (checkAttachmentImage): a raster image must
+// decode, an SVG is rebuilt from an allowlist.
 var allowedAttachmentMIMEs = map[string]string{
-	"image/png":  ".png",
-	"image/jpeg": ".jpg",
-	"image/gif":  ".gif",
-	"image/webp": ".webp",
+	"image/png":     ".png",
+	"image/jpeg":    ".jpg",
+	"image/gif":     ".gif",
+	"image/webp":    ".webp",
+	"image/svg+xml": ".svg",
 }
 
 // JournalAttachmentUpload handles POST /journal/attachments — multipart upload
@@ -73,30 +77,6 @@ func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request)
 	}
 	defer file.Close()
 
-	mt := strings.ToLower(strings.TrimSpace(header.Header.Get("Content-Type")))
-	// Strip parameters (e.g., "image/jpeg; charset=binary").
-	if i := strings.IndexByte(mt, ';'); i >= 0 {
-		mt = strings.TrimSpace(mt[:i])
-	}
-	_, ok = allowedAttachmentMIMEs[mt]
-	if !ok {
-		// Fall back to filename extension — some clients (clipboard paste)
-		// don't set Content-Type reliably. Trust extension only if it maps
-		// to a known type.
-		fallback := strings.ToLower(filepath.Ext(header.Filename))
-		for canonical, canonExt := range allowedAttachmentMIMEs {
-			if canonExt == fallback {
-				mt = canonical
-				ok = true
-				break
-			}
-		}
-	}
-	if !ok {
-		writeJSONError(w, http.StatusUnsupportedMediaType, "only PNG, JPEG, GIF, and WebP images are allowed")
-		return 0, "", 0, false
-	}
-
 	data, err := io.ReadAll(io.LimitReader(file, maxAttachmentBytes+1))
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, fmt.Sprintf("read: %v", err))
@@ -104,6 +84,18 @@ func (h *Handlers) storeAttachmentUpload(w http.ResponseWriter, r *http.Request)
 	}
 	if len(data) > maxAttachmentBytes {
 		writeJSONError(w, http.StatusBadRequest, "upload too large")
+		return 0, "", 0, false
+	}
+	// The type comes from the bytes: a clipboard paste often declares none
+	// and a filename extension is a guess.
+	mt := sniffAttachmentMIME(data)
+	if mt == "" {
+		writeJSONError(w, http.StatusUnsupportedMediaType, "not an image: only "+attachmentTypesSentence+" images are allowed")
+		return 0, "", 0, false
+	}
+	data, err = checkAttachmentImage(mt, data)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, header.Filename+": "+err.Error())
 		return 0, "", 0, false
 	}
 
@@ -240,6 +232,11 @@ func (h *Handlers) serveAttachmentBytes(w http.ResponseWriter, r *http.Request, 
 	}
 	w.Header().Set("Content-Type", mt)
 	w.Header().Set("Cache-Control", "private, max-age=31536000, immutable")
+	// An attachment is an image, never a page: no sniffing into HTML, and an
+	// SVG opened in its own tab runs no script and loads nothing.
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; sandbox")
+	w.Header().Set("Content-Disposition", "inline")
 	if info, err := f.Stat(); err == nil {
 		http.ServeContent(w, r, cleaned, info.ModTime(), f)
 	} else {

@@ -175,7 +175,7 @@ func (h *Handlers) registerMCPTools(s *mcpserver.MCPServer) {
 		mcpgo.WithString("name", mcpgo.Required(), mcpgo.Description("Short name, unique among the trader's strategies.")),
 		mcpgo.WithString("body", mcpgo.Description("The playbook, markdown.")),
 		mcpgo.WithArray("checklist", mcpgo.Description("The rules a trade of this strategy is checked against, one per item, in order."), mcpgo.WithStringItems()),
-		mcpgo.WithArray("images", mcpgo.Description("Drawings or chart images to embed: at most "+strconv.Itoa(maxStrategyImages)+", PNG, JPEG, GIF or WebP, "+strconv.Itoa(maxAttachmentBytes>>20)+" MiB each."),
+		mcpgo.WithArray("images", mcpgo.Description("Drawings or chart images to embed: at most "+strconv.Itoa(maxStrategyImages)+", PNG, JPEG, GIF, WebP or SVG, "+strconv.Itoa(maxAttachmentBytes>>20)+" MiB each. For a drawing you make yourself send an SVG: author the markup as text and base64 it (a data: URL works too), it is exact and small; the server keeps the static drawing and drops scripts, external references and anything else that is not a shape, a gradient or text. A raster image is decoded whole before it is stored: a corrupt one is refused by name, so resend only that one."),
 			mcpgo.Items(mcpImageSchema)),
 	), h.mcpCreateStrategy)
 

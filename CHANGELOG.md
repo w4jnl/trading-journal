@@ -3,6 +3,22 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- Strategy and journal images are checked before they are stored: a raster image (PNG, JPEG,
+  GIF, WebP) must decode whole, so a base64 stream that breaks halfway is refused with a message
+  naming the image instead of being stored as a broken picture; the type is read from the bytes.
+- SVG images are accepted, by the MCP tools, the REST writes and the uploads: a drawing an agent
+  authors as text arrives exact. The document is rebuilt from an allowlist (shapes, text,
+  gradients, patterns, clips, masks, markers, filters; no scripts, event handlers, external
+  references, embedded images or animation) and served with a policy that forbids scripts and
+  loads. The phone app does not render SVG attachments yet.
+- Dollar amounts in notes render as written: the markdown renderer no longer treats `$...$` as
+  an inline formula.
+- An image in a note or a playbook fills the width of its column.
+
 ## 2.22.0, 2026-10-21
 
 ### Server

@@ -265,7 +265,7 @@ and answer with the `Strategy` plus `images`, the images this write stored:
   "body": "## Opening-range fade\n\n![the setup](setup)\n\nWait for...",
   "append": "Never before 9:45.",           // a paragraph added at the end
   "checklist": [ "Range is set", "Stop above the high" ],
-  "images": [ { "name": "setup", "data": "<base64 PNG/JPEG/GIF/WebP>" } ]
+  "images": [ { "name": "setup", "data": "<base64 PNG/JPEG/GIF/WebP/SVG>" } ]
 }
 ```
 
@@ -276,8 +276,23 @@ On `PUT` every field is optional and only what is present changes: `name`,
 images per write); it is stored as your attachment and lands in the body
 where the body refers to it by name, `![caption](name)`, or at the end when
 nothing does. Image URLs you echo back from a `GET` are fine in `body`.
-Errors: `400` (no name, bad JSON or base64), `404`, `409` (the name is in
-use), `413` (an image over 8 MiB), `415` (not an image type we store).
+
+Every image is checked before it is stored. A raster image (PNG, JPEG, GIF,
+WebP) is decoded whole, not just its header, so one whose stream breaks
+halfway is refused with `400` and a message naming it (`image 2 (drawing):
+corrupt PNG (...)`): resend that one. An SVG is the exact way to send a
+drawing you author yourself (it is text, so nothing is lost in transit);
+it is parsed and rebuilt from an allowlist of shapes, paths, text,
+gradients, patterns, clips, masks, markers and filters with their
+presentation attributes. Scripts, event handlers, `foreignObject`,
+embedded or external images, animation, links and any reference that
+leaves the file (`href` other than `#id`, `url()` other than `url(#id)`,
+`@import`) are dropped; what is served is the rebuilt document, with a
+`Content-Security-Policy` that forbids scripts and loads.
+
+Errors: `400` (no name, bad JSON or base64, a corrupt or malformed image),
+`404`, `409` (the name is in use), `413` (an image over 8 MiB), `415` (not
+an image type we store).
 The MCP tools `create_strategy` and `update_strategy` are these two calls.
 
 ### Journal list
@@ -478,7 +493,9 @@ note instead, or wait.
 review; a group entry's links to its trades go with it).
 
 `POST /api/v1/journal/attachments` takes a multipart upload (field
-`file`: PNG, JPEG, GIF or WebP, up to 8 MiB) and answers `201` with the
+`file`: PNG, JPEG, GIF, WebP or SVG, up to 8 MiB; the type is read from the
+bytes, a raster image must decode whole and an SVG is sanitized as described
+under [Strategies](#strategies)) and answers `201` with the
 image's id, its API URL and the markdown line to put in a body:
 
 ```jsonc
@@ -873,7 +890,9 @@ there's nothing cached or charting is disabled.
 ### Embedded images
 
 `GET /api/v1/attachments/{id}` streams an embedded image's bytes with its
-stored content type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`).
+stored content type (`image/png`, `image/jpeg`, `image/gif`, `image/webp`,
+`image/svg+xml`), with `X-Content-Type-Options: nosniff` and a
+`Content-Security-Policy` that lets an SVG run nothing and load nothing.
 
 You don't construct these URLs yourself - they arrive already rewritten in
 strategy `body` and journal `notes`, and enumerated in each item's

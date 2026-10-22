@@ -392,7 +392,7 @@
           },
           "data": {
             "type": "string",
-            "description": "The image as base64 (a data: URL is accepted): PNG, JPEG, GIF or WebP, at most 8 MiB. The type is read from the bytes."
+            "description": "The image as base64 (a data: URL is accepted): PNG, JPEG, GIF, WebP or SVG, at most 8 MiB. The type is read from the bytes; a raster image must decode whole, an SVG is rebuilt from an allowlist (shapes, gradients, text; no scripts or external references)."
           }
         }
       },
@@ -3374,7 +3374,7 @@
             }
           },
           "415": {
-            "description": "An image that is not PNG, JPEG, GIF or WebP",
+            "description": "An image that is not PNG, JPEG, GIF, WebP or SVG",
             "content": {
               "application/json": {
                 "schema": {
@@ -3496,7 +3496,7 @@
             }
           },
           "415": {
-            "description": "An image that is not PNG, JPEG, GIF or WebP",
+            "description": "An image that is not PNG, JPEG, GIF, WebP or SVG",
             "content": {
               "application/json": {
                 "schema": {
@@ -4692,7 +4692,8 @@
               "image/png": {},
               "image/jpeg": {},
               "image/gif": {},
-              "image/webp": {}
+              "image/webp": {},
+              "image/svg+xml": {}
             }
           },
           "404": {
@@ -5204,7 +5205,7 @@
     "/journal/attachments": {
       "post": {
         "operationId": "uploadJournalAttachment",
-        "summary": "Upload an image (device key only; multipart field 'file', PNG/JPEG/GIF/WebP, 8 MiB)",
+        "summary": "Upload an image (device key only; multipart field 'file', PNG/JPEG/GIF/WebP/SVG, 8 MiB; the type is read from the bytes and the image must decode whole)",
         "requestBody": {
           "required": true,
           "content": {
@@ -5233,7 +5234,7 @@
             }
           },
           "400": {
-            "description": "Missing or malformed file",
+            "description": "Missing, too large or corrupt file (a raster image that does not decode, an SVG that is not a well-formed document); the message names the file",
             "content": {
               "application/json": {
                 "schema": {

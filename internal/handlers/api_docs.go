@@ -31,7 +31,7 @@ type mdHeading struct {
 // sanitizer - bluemonday's UGC policy keeps heading ids, tables and
 // <pre><code>, so the TOC anchors resolve without any script.
 func renderMarkdownDoc(src string) (string, []mdHeading) {
-	p := parser.NewWithExtensions(parser.CommonExtensions | parser.AutoHeadingIDs)
+	p := parser.NewWithExtensions((parser.CommonExtensions &^ parser.MathJax) | parser.AutoHeadingIDs)
 	doc := p.Parse([]byte(src))
 	var toc []mdHeading
 	ast.WalkFunc(doc, func(n ast.Node, entering bool) ast.WalkStatus {

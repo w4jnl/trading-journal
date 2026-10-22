@@ -38,14 +38,22 @@ func strategyWriteFixture(t *testing.T) (*Handlers, context.Context, int64) {
 // pngBase64 is a 2x2 PNG, the smallest image the type sniffer recognises.
 func tinyPNGBase64(t *testing.T) string {
 	t.Helper()
+	return base64.StdEncoding.EncodeToString(tinyPNGBytes(t))
+}
+
+// tinyPNGBytes is a complete 2x2 PNG.
+func tinyPNGBytes(t *testing.T) []byte {
+	t.Helper()
 	img := image.NewRGBA(image.Rect(0, 0, 2, 2))
 	img.Set(0, 0, color.RGBA{R: 255, A: 255})
 	var buf bytes.Buffer
 	if err := png.Encode(&buf, img); err != nil {
 		t.Fatal(err)
 	}
-	return base64.StdEncoding.EncodeToString(buf.Bytes())
+	return buf.Bytes()
 }
+
+const tinySVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 10"><rect width="20" height="10" fill="#eee"/><script>alert(1)</script><text x="2" y="8">ORB</text></svg>`
 
 func mcpToolText(t *testing.T, res *mcpgo.CallToolResult) string {
 	t.Helper()
@@ -108,15 +116,21 @@ func TestMCPCreateStrategy(t *testing.T) {
 		t.Error("the write did not bump live data")
 	}
 
-	// Refusals: a missing name, a taken name, a non-image, bad base64.
+	// Refusals: a missing name, a taken name, a non-image, bad base64, a
+	// PNG that breaks halfway (named, so the agent can resend that one), an
+	// SVG that is not a document.
+	brokenPNG := tinyPNGBytes(t)
+	brokenPNG = brokenPNG[:len(brokenPNG)-12]
 	for _, c := range []struct {
 		args map[string]any
 		want string
 	}{
 		{map[string]any{"body": "x"}, "name is required"},
 		{map[string]any{"name": "ORB fade"}, `"ORB fade" exists already`},
-		{map[string]any{"name": "Other", "images": []any{map[string]any{"data": base64.StdEncoding.EncodeToString([]byte("just text, not an image at all"))}}}, "only PNG, JPEG, GIF and WebP"},
+		{map[string]any{"name": "Other", "images": []any{map[string]any{"data": base64.StdEncoding.EncodeToString([]byte("just text, not an image at all"))}}}, "image 1 (image-1): not an image; only PNG, JPEG, GIF, WebP or SVG"},
 		{map[string]any{"name": "Other", "images": []any{map[string]any{"data": "%%%not base64"}}}, "not base64"},
+		{map[string]any{"name": "Other", "images": []any{map[string]any{"name": "setup", "data": tinyPNGBase64(t)}, map[string]any{"name": "drawing", "data": base64.StdEncoding.EncodeToString(brokenPNG)}}}, "image 2 (drawing): corrupt PNG"},
+		{map[string]any{"name": "Other", "images": []any{map[string]any{"name": "d", "data": base64.StdEncoding.EncodeToString([]byte(`<svg xmlns="http://www.w3.org/2000/svg"><rect/>`))}}}, "image 1 (d): not a well-formed SVG"},
 	} {
 		req.Params.Arguments = c.args
 		res, _ := h.mcpCreateStrategy(ctx, req)
@@ -156,7 +170,7 @@ func TestMCPUpdateStrategy(t *testing.T) {
 	}
 	id := float64(s.ID)
 	// Append a paragraph and an image; the body, name and rules stay.
-	res := call(map[string]any{"id": id, "append": "Never before 9:45.", "images": []any{map[string]any{"name": "drawing", "data": tinyPNGBase64(t)}}})
+	res := call(map[string]any{"id": id, "append": "Never before 9:45.", "images": []any{map[string]any{"name": "drawing", "data": base64.StdEncoding.EncodeToString([]byte(tinySVG))}}})
 	if res.IsError {
 		t.Fatalf("append: %s", mcpToolText(t, res))
 	}
@@ -164,6 +178,22 @@ func TestMCPUpdateStrategy(t *testing.T) {
 	_ = json.Unmarshal([]byte(mcpToolText(t, res)), &out)
 	if out.Name != "Pullback" || out.Body != "Buy the dip.\n\nNever before 9:45.\n\n![drawing](/api/v1/attachments/1)" || strings.Join(out.Checklist, "|") != "Trend up|Volume dries" {
 		t.Errorf("after append = %+v", out)
+	}
+	// The SVG is stored sanitized as image/svg+xml and served with a policy
+	// that lets it run nothing when opened on its own.
+	var mt, file string
+	if err := h.DB.QueryRow(`SELECT mime, file_path FROM journal_attachments WHERE id = 1`).Scan(&mt, &file); err != nil || mt != "image/svg+xml" || !strings.HasSuffix(file, ".svg") {
+		t.Errorf("svg row: %q %q %v", mt, file, err)
+	}
+	sreq := httptest.NewRequest(http.MethodGet, "/journal/attachments/1", nil).WithContext(ctx)
+	sreq.SetPathValue("id", "1")
+	rec := httptest.NewRecorder()
+	h.JournalAttachmentServe(rec, sreq)
+	if rec.Code != http.StatusOK || rec.Header().Get("Content-Type") != "image/svg+xml" || !strings.Contains(rec.Header().Get("Content-Security-Policy"), "default-src 'none'") || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("serve = %d %v", rec.Code, rec.Header())
+	}
+	if body := rec.Body.String(); strings.Contains(body, "<script") || !strings.Contains(body, `<text x="2" y="8">ORB</text>`) {
+		t.Errorf("served svg = %s", body)
 	}
 	// Rename, replace the body (echoing the API image URL back) and the rules.
 	res = call(map[string]any{"id": id, "name": "Pullback long", "body": "Rewritten.\n\n![drawing](/api/v1/attachments/1)", "checklist": []any{"Only one rule"}})

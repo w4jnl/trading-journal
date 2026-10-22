@@ -85,7 +85,8 @@ Claude apps, ChatGPT and any other MCP client can list and read trades, position
 entries, strategies, daily stats, the day plan, the coach's checks, the digest and a trade's
 chart image, and can create entries, append notes, assign strategies and tags, set the day plan
 and a position's plan, prepare a day for review, and create or change a strategy in the library
-(the playbook, its checklist rules, drawings and chart images sent inline). Values written this
+(the playbook, its checklist rules, drawings and chart images sent inline; an SVG drawing is
+stored sanitized, a raster image only when it decodes whole). Values written this
 way are marked `api` on the note until the trader saves it; a strategy write is the trader's own
 request, so `update_strategy` replaces what it is given and the client asks before it runs.
 
