@@ -95,7 +95,7 @@ func PrepareNote() string {
 func Instructions() string {
 	return strings.Join([]string{
 		"You are working with a futures day trader's journal. " + Role,
-		"The method (how to review a trade, a group, a day or a week; how to plan a session) lives on this server, versioned: read the resource trading-journal://method or call get_review_method at the start of a session and follow it; the prompts review_day, review_entry, today, review_week and plan_day carry the same steps. Call server_info first: it names the instance, the trader's review language and profile (their style, the evidence they weigh most, their markets, their standing instructions; also the resource trading-journal://profile), the marker and the method version.",
+		"The method (how to review a trade, a group, a day or a week; how to plan a session) lives on this server, versioned: read the resource trading-journal://method or call get_review_method at the start of a session and follow it; the prompts review_day, review_entry, today, review_week and plan_day carry the same steps. Call server_info first: it names the instance, the trader's review language and profile (their style, the evidence they weigh most, their markets, their standing instructions; also the resource trading-journal://profile), the marker and the method version. Your client read the tool descriptions when it connected and keeps them until it reconnects; server_info is live, so when its toolNames or imageTypes say more than the tools you have, your schema is stale: trust the server and ask the trader to reconnect the connector.",
 		"Every review you write ends with the lesson line <!-- tj-ai:lesson key=<mistake|none> | <one sentence> --> and then the marker line " + MarkerLine() + "; a note that already carries the marker is done. Write the prose in the trader's language from server_info; the machine-readable lines stay English.",
 		WriteRules,
 		"Dates: day, from and to on list_trades and get_daily_stats accept today, yesterday and last, resolved on the server in the trading timezone; never compute a date yourself.",
@@ -164,6 +164,7 @@ func Document(o DocOptions) string {
 		for _, t := range o.Tools {
 			fmt.Fprintf(&b, "- `%s`\n", t)
 		}
+		b.WriteString("\nThis list is live; the tool descriptions your client holds were read when it connected. When they differ (a tool here you do not have, an image type `server_info.imageTypes` names that a description does not), the descriptions are stale: trust the server and ask the trader to reconnect the connector.\n")
 	}
 	return b.String()
 }

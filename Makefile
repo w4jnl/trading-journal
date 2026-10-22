@@ -44,9 +44,14 @@ ios-screens: ios-project
 	cd app/ios && TEST_RUNNER_TJ_SERVER='$(SERVER)' TEST_RUNNER_TJ_KEY='$(KEY)' TEST_RUNNER_TJ_SHOTS='$(SHOTS)' TEST_RUNNER_TJ_ENTRY='$(ENTRY)' TEST_RUNNER_TJ_POSITION='$(POSITION)' TEST_RUNNER_TJ_PUSH='$(PUSH)' \
 	$(XCB) -scheme TJScreens -configuration Debug -destination '$(IOS_SCREENS_SIM)' test CODE_SIGNING_ALLOWED=NO -quiet
 # Build, install and launch on the iPhone (unlocked; cable, or Wi-Fi once paired); signs with Local.xcconfig's team.
+# The phone: IOS_DEVICE=<udid> names one; otherwise the first reachable iPhone (a paired iPad
+# lists before it and used to receive the build), falling back to any reachable device.
 ios-device: ios-project
-	@udid=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected | available \(paired\) ' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
+	@devices=$$(xcrun devicectl list devices 2>/dev/null | grep -v simulated | grep -E ' connected | available \(paired\) '); \
+	udid=$${IOS_DEVICE:-$$(printf '%s\n' "$$devices" | grep -E 'iPhone' | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1)}; \
+	[ -n "$$udid" ] || udid=$$(printf '%s\n' "$$devices" | grep -oE '[0-9A-F]{8}-[0-9A-F]{16}' | head -1); \
 	[ -n "$$udid" ] || { echo "ios-device: no iPhone reachable: unlock it, on a cable or on the same Wi-Fi"; exit 1; }; \
+	echo "ios-device: $$udid ($$(printf '%s\n' "$$devices" | grep "$$udid" | awk '{print $$1, $$2, $$3}'))"; \
 	cd app/ios && $(XCB) -scheme TradingJournal -configuration Debug -destination "id=$$udid" -allowProvisioningUpdates $(ASC_AUTH) build -quiet && \
 	xcrun devicectl device install app --device "$$udid" build/DerivedData/Build/Products/Debug-iphoneos/TradingJournal.app >/dev/null && \
 	xcrun devicectl device process launch --terminate-existing --device "$$udid" nl.w4j.tradingjournal >/dev/null && echo "ios-device: installed and launched on $$udid"

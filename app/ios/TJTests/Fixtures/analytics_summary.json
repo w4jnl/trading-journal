@@ -1,0 +1,24 @@
+{
+  "from": "2026-07-24",
+  "to": "2026-10-22",
+  "timezone": "Europe/Amsterdam",
+  "unit": "trades",
+  "trades": 31,
+  "totals": {"trades": 31, "wins": 17, "losses": 14, "winRate": 0.548, "net": 1240.5, "gross": 1402.0, "commission": 161.5, "avgWin": 210.0, "avgLoss": -166.4, "payoffRatio": 1.26, "profitFactor": 1.53, "expectancy": 40.0, "largestWin": 612.5, "largestLoss": -402.0},
+  "r": {"plannedTrades": 0},
+  "excursion": {},
+  "drawdown": {},
+  "streaks": {},
+  "compliance": [
+    {"strategy": "ORB VWAP", "trades": 14, "avgPct": 0.82, "complete": 9, "completeNet": 880.0, "incompleteNet": -120.5}
+  ],
+  "breakdowns": {
+    "byStrategy": [
+      {"key": "ORB VWAP", "trades": 14, "wins": 7, "losses": 7, "net": 759.5, "gross": 830.0, "best": 612.5, "worst": -402.0},
+      {"key": "(no strategy)", "trades": 17, "wins": 10, "losses": 7, "net": 481.0, "gross": 572.0, "best": 300.0, "worst": -210.0}
+    ],
+    "bySymbol": [
+      {"key": "MES", "trades": 31, "wins": 17, "losses": 14, "net": 1240.5, "gross": 1402.0, "best": 612.5, "worst": -402.0}
+    ]
+  }
+}

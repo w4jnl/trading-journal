@@ -717,11 +717,86 @@ struct Strategy: Codable, Sendable, Hashable, Identifiable {
     var name: String
     var body: String
     var attachments: [Attachment]
+    /// The checklist rules a trade of this strategy is held to, in order.
+    var checklist: [String]
     var createdAt: Date
     var updatedAt: Date
+    var archivedAt: Date?
+
+    init(id: Int, name: String, body: String, attachments: [Attachment] = [], checklist: [String] = [], createdAt: Date, updatedAt: Date, archivedAt: Date? = nil) {
+        self.id = id; self.name = name; self.body = body; self.attachments = attachments
+        self.checklist = checklist; self.createdAt = createdAt; self.updatedAt = updatedAt; self.archivedAt = archivedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(Int.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        body = try c.decodeIfPresent(String.self, forKey: .body) ?? ""
+        attachments = try c.decodeIfPresent([Attachment].self, forKey: .attachments) ?? []
+        checklist = try c.decodeIfPresent([String].self, forKey: .checklist) ?? []
+        createdAt = try c.decode(Date.self, forKey: .createdAt)
+        updatedAt = try c.decode(Date.self, forKey: .updatedAt)
+        archivedAt = try c.decodeIfPresent(Date.self, forKey: .archivedAt)
+    }
+
+    /// The first words of the playbook, for a list row: a heading that opens the playbook (most
+    /// repeat the name) is skipped, so the row shows what the setup is.
+    var snippet: String {
+        var lines = body.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        while let first = lines.first, first.trimmingCharacters(in: .whitespaces).isEmpty { lines.removeFirst() }
+        if let first = lines.first, first.hasPrefix("#") { lines.removeFirst() }
+        return Markdown.snippet(lines.joined(separator: "\n"))
+    }
 }
 
 struct StrategyList: Codable, Sendable { var items: [Strategy] }
+
+// MARK: analytics
+
+/// GET /api/v1/analytics/summary, the parts the phone reads: the breakdowns (by strategy among
+/// them) and the checklist compliance per strategy. The totals and the rest stay on the web.
+struct AnalyticsSummary: Codable, Sendable, Hashable {
+    var from: String
+    var to: String
+    var trades: Int
+    var compliance: [ComplianceRow]
+    var breakdowns: [String: [AnalyticsBucket]]
+
+    /// The bucket of a breakdown by its key ("byStrategy" and a strategy's name).
+    func bucket(_ breakdown: String, _ key: String) -> AnalyticsBucket? {
+        breakdowns[breakdown]?.first { $0.key == key }
+    }
+
+    func compliance(for strategy: String) -> ComplianceRow? { compliance.first { $0.strategy == strategy } }
+}
+
+struct AnalyticsBucket: Codable, Sendable, Hashable, Identifiable {
+    var key: String
+    var trades: Int
+    var wins: Int
+    var losses: Int
+    var net: Double
+    var gross: Double
+    var best: Double
+    var worst: Double
+
+    var id: String { key }
+    var winRate: Double? { trades > 0 ? Double(wins) / Double(trades) : nil }
+}
+
+/// How often a strategy's checklist was ticked whole, and what the complete and the incomplete
+/// trades made.
+struct ComplianceRow: Codable, Sendable, Hashable, Identifiable {
+    var strategy: String
+    var trades: Int
+    var avgPct: Double
+    var complete: Int
+    var completeNet: Double
+    var incompleteNet: Double
+
+    var id: String { strategy }
+}
 
 // MARK: accounts and equity
 

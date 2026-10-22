@@ -145,7 +145,7 @@ struct TodayView: View {
         Card(keyline: t.nudges.unseen > 0 ? Brand.warn : nil) {
             CardTitle("Nudges", trailing: t.nudges.unseen > 0 ? "\(t.nudges.unseen) unseen" : "")
             ForEach(t.nudges.items.prefix(3)) { n in
-                NudgeRow(nudge: n, tz: t.tz)
+                NudgeRow(nudge: n, tz: t.tz, inList: false)
             }
             if t.nudges.items.count > 3 {
                 NavigationLink("All of today's nudges", value: Route.nudges).font(Brand.text(13, relativeTo: .footnote))
@@ -224,17 +224,22 @@ struct PositionRow: View {
     }
 }
 
+/// A nudge: its title, detail and lesson, a link to the screen it points at, and while it is
+/// unseen a Seen button. In a List a trailing swipe offers Seen as well; a card in a ScrollView
+/// passes `inList: false`, since a swipe there opens and never closes (SwiftUI's swipe actions
+/// belong to List rows) and the trader saw a button that seemed to do nothing.
 struct NudgeRow: View {
     let nudge: Nudge
     let tz: TimeZone
     /// The screen showing the row; a nudge that points at it is not a link.
     var here: Route? = nil
+    var inList = true
     @Environment(Client.self) private var client
 
     var body: some View {
         let n = nudge
         let route = Route.of(n)
-        Group {
+        let row = Group {
             if route == here {
                 label
             } else {
@@ -242,10 +247,14 @@ struct NudgeRow: View {
             }
         }
         .buttonStyle(.plain)
-        .swipeActions(edge: .trailing) {
-            if n.unseen {
-                Button("Seen") { Task { try? await client.markSeen(n.id) } }.tint(Brand.accent)
+        if inList {
+            row.swipeActions(edge: .trailing) {
+                if n.unseen {
+                    Button("Seen") { Task { try? await client.markSeen(n.id) } }.tint(Brand.accent)
+                }
             }
+        } else {
+            row
         }
     }
 
@@ -261,6 +270,20 @@ struct NudgeRow: View {
             Text(n.detail).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted).lineLimit(3)
             if let l = n.lesson, !l.isEmpty {
                 Text("Your lesson: \(l)").font(Brand.text(12, relativeTo: .caption)).italic().foregroundStyle(Brand.fgMuted).lineLimit(2)
+            }
+            if n.unseen {
+                HStack {
+                    Spacer()
+                    Button { Task { try? await client.markSeen(n.id) } } label: {
+                        Label("Seen", systemImage: "checkmark")
+                            .font(Brand.text(12, weight: .semibold, relativeTo: .caption))
+                            .foregroundStyle(Brand.accentText)
+                            .padding(.horizontal, 10).padding(.vertical, 5)
+                            .background(Brand.accentSoft, in: Capsule())
+                    }
+                    .buttonStyle(.borderless)
+                    .accessibilityLabel("Mark seen")
+                }
             }
         }
         .padding(.vertical, 4)

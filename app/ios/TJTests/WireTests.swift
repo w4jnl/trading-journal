@@ -90,6 +90,11 @@ struct WireTests {
         #expect(labels.mistakes.contains { $0.key == "chased" })
         let strategies = try Fixtures.load(StrategyList.self, "strategies").items
         #expect(strategies.first?.name == "Europe Open Liquidity Scalp")
+        #expect(strategies.first?.checklist == ["Range is set", "Stop above the high"] && strategies.first?.archivedAt == nil)
+        #expect(strategies[1].checklist.isEmpty && strategies[1].snippet.hasPrefix("A playbook in three lines"))
+        let analytics = try Fixtures.load(AnalyticsSummary.self, "analytics_summary")
+        #expect(analytics.bucket("byStrategy", "ORB VWAP")?.trades == 14 && analytics.bucket("byStrategy", "ORB VWAP")?.winRate == 0.5)
+        #expect(analytics.compliance(for: "ORB VWAP")?.complete == 9 && analytics.bucket("byStrategy", "nothing") == nil)
         #expect(try Fixtures.load(DataVersion.self, "version").v == 1)
     }
 

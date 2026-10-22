@@ -35,6 +35,22 @@ final class ScreensTests: XCTestCase {
                 sleep(3)
                 shot(title)
             }
+            // the Library: the strategies, then one strategy's playbook with its drawing
+            if tab == "Journal", app.buttons["Library"].waitForExistence(timeout: 3) {
+                app.buttons["Library"].tap()
+                sleep(3)
+                shot("library")
+                // the strategy with a drawing when there is one, else the first
+                let drawn = app.cells.containing(NSPredicate(format: "label ENDSWITH 'image' OR label ENDSWITH 'images'")).firstMatch
+                let first = drawn.exists ? drawn : app.cells.firstMatch
+                if first.waitForExistence(timeout: 5) {
+                    first.tap()
+                    sleep(8) // the first web view of the run starts WebKit's content process
+                    shot("strategy")
+                    if UIDevice.current.userInterfaceIdiom == .phone, app.navigationBars.buttons["Library"].exists { app.navigationBars.buttons["Library"].tap(); sleep(1) }
+                }
+                if UIDevice.current.userInterfaceIdiom == .phone, app.navigationBars.buttons["Journal"].exists { app.navigationBars.buttons["Journal"].tap(); sleep(1) }
+            }
             // the first-note sheet: the labels the web app offers are here too
             if tab == "Journal", app.buttons["Day note"].waitForExistence(timeout: 3) {
                 app.buttons["Day note"].tap()
