@@ -3,6 +3,14 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The playbook checklist on a trade or group note shows only the selected strategy's rules
+  again. Every strategy's list was visible at once since 2.14.1: the blocks of the other
+  strategies were marked hidden, but the stylesheet's display rule beat the attribute.
+
 ## 2.23.2, 2026-10-22
 
 ### Server
