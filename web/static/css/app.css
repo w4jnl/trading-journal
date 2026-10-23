@@ -2222,6 +2222,7 @@ tfoot td {
    shows a pill with the score and the missed rules. */
 .checklist-picker { flex-basis: 100%; }
 .checklist-block { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.checklist-block[hidden] { display: none; } /* display:flex would beat the hidden attribute */
 .checklist-items { display: flex; flex-direction: column; gap: 4px; }
 .checklist-item { display: inline-flex; align-items: center; gap: 8px; font-size: var(--fs-13); cursor: pointer; }
 .checklist-item input { margin: 0; accent-color: var(--accent); }
