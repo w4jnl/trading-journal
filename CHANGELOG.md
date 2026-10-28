@@ -3,6 +3,15 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App (iOS)
+
+- The connection state on Today ("live", "connecting", "offline since 9:41") sits under the
+  date as the navigation bar's subtitle on iOS 26 and later. It used to be a leading toolbar
+  item, which iOS 26 draws in a glass circle too small for the words and which looked like a
+  button that did nothing. Settings keeps the line in its Connection row.
+
 ## 2.23.3, 2026-10-23
 
 ### Server

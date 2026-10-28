@@ -378,14 +378,16 @@ struct ConnectionLine: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Circle().fill(color).frame(width: 7, height: 7)
-            Text(text).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted)
+            Circle().fill(client.connectionColor).frame(width: 7, height: 7)
+            Text(client.connectionText).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted)
         }
         .accessibilityElement(children: .combine)
     }
+}
 
-    private var color: Color {
-        switch client.connection {
+extension Client {
+    var connectionColor: Color {
+        switch connection {
         case .live: Brand.pos
         case .connecting: Brand.fgSubtle
         case .down, .unauthorized: Brand.neg
@@ -393,17 +395,37 @@ struct ConnectionLine: View {
         }
     }
 
-    private var text: String {
-        switch client.connection {
+    var connectionText: String {
+        switch connection {
         case .live: return "live"
         case .connecting: return "connecting"
         case .off: return "not paired"
         case .unauthorized: return "key revoked: pair again"
         case .down(let since):
-            if let asOf = client.asOf { return "no news since \(Formatting.clock(asOf, tz: client.tz))" }
-            return "offline since \(Formatting.clock(since, tz: client.tz))"
+            if let asOf { return "no news since \(Formatting.clock(asOf, tz: tz))" }
+            return "offline since \(Formatting.clock(since, tz: tz))"
         }
     }
+}
+
+/// The connection under a screen's title. iOS 26 gives the navigation bar a subtitle, the place
+/// Messages and Mail put a line like this; a view in the bar would sit in a glass circle that
+/// looks like a button and is too small for the words. Earlier systems keep the line as a plain
+/// leading item, which they draw without a background.
+struct ConnectionSubtitle: ViewModifier {
+    @Environment(Client.self) private var client
+
+    func body(content: Content) -> some View {
+        if #available(iOS 26, *) {
+            content.navigationSubtitle(client.connectionText)
+        } else {
+            content.toolbar { ToolbarItem(placement: .topBarLeading) { ConnectionLine() } }
+        }
+    }
+}
+
+extension View {
+    func connectionSubtitle() -> some View { modifier(ConnectionSubtitle()) }
 }
 
 /// What a screen says over a stored answer: when the journal last gave it. Nothing when the

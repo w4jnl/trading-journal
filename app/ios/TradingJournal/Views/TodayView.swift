@@ -32,8 +32,8 @@ struct TodayView: View {
         .refreshable { await client.refreshToday(refresh: true) }
         .navigationTitle(client.today.map { Formatting.dayLabel($0.day, tz: $0.tz) } ?? "Today")
         .navigationBarTitleDisplayMode(.inline)
+        .connectionSubtitle()
         .toolbar {
-            ToolbarItem(placement: .topBarLeading) { ConnectionLine() }
             ToolbarItem(placement: .topBarTrailing) {
                 Button { Task { await client.refreshToday(refresh: true) } } label: { Label("Refresh", systemImage: "arrow.clockwise") }
                     .keyboardShortcut("r", modifiers: .command)
