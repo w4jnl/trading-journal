@@ -703,9 +703,11 @@ func (c Config) Validate() error {
 // A missing file is not an error: defaults are sensible for first boot.
 // Environment variables override the YAML for a small allowlist of
 // secret-like fields (TJ_SESSION_SECRET, TJ_AI_API_KEY, TJ_GEX_API_KEY,
-// TJ_TOPSTEPX_ENC_KEY, TJ_ENCRYPTION_KEY). Env wins over file so you can ship a checked-in
+// TJ_TOPSTEPX_ENC_KEY, TJ_ENCRYPTION_KEY, TJ_APNS_KEY, TJ_MW_EMAIL_SMTP_USERNAME,
+// TJ_MW_EMAIL_SMTP_PASSWORD). Env wins over file so you can ship a checked-in
 // config.yaml and inject the secret at run time (Docker secrets, systemd
-// EnvironmentFile, etc.).
+// EnvironmentFile, etc.). Validate runs on the result, so a rule such as
+// "smtp_username and smtp_password together" sees the overridden values.
 func Load(cfgPath string) (Config, error) {
 	cfg := defaults()
 	abs, err := filepath.Abs(cfgPath)
@@ -746,6 +748,12 @@ func Load(cfgPath string) (Config, error) {
 	}
 	if v := os.Getenv("TJ_APNS_KEY"); v != "" {
 		cfg.APNS.Key = v
+	}
+	if v := os.Getenv("TJ_MW_EMAIL_SMTP_USERNAME"); v != "" {
+		cfg.MWEmail.Username = v
+	}
+	if v := os.Getenv("TJ_MW_EMAIL_SMTP_PASSWORD"); v != "" {
+		cfg.MWEmail.Password = v
 	}
 
 	return cfg, nil

@@ -254,6 +254,8 @@ mw_email:
   # tls_key: ""
   # smtp_username: ""        # both set => AUTH (PLAIN/LOGIN) required
   # smtp_password: ""
+  # Env overrides: TJ_MW_EMAIL_SMTP_USERNAME, TJ_MW_EMAIL_SMTP_PASSWORD, so the
+  # file can be committed with the two left empty.
   archive_dir: "data/mw-raw"
   # Delete archived .eml files older than this many days (daily sweep).
   # 0 keeps them forever. The raw archive is NOT part of the backup.

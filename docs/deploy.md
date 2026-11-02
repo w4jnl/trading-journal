@@ -57,7 +57,7 @@ The MotiveWave SMTP listener and the IBKR gateway are LAN or VPN only; never pub
 
 ## Secrets
 
-Three values the config carries that should not live in a checked-in file. Each has an
+The values the config carries that should not live in a checked-in file. Each has an
 environment variable that wins over the YAML, for Docker secrets or a systemd `EnvironmentFile`:
 
 | Config key | Env | Protects |
@@ -65,6 +65,7 @@ environment variable that wins over the YAML, for Docker secrets or a systemd `E
 | `auth.session_secret` | `TJ_SESSION_SECRET` | sessions, CSRF tokens, the act-as cookie |
 | `secrets.encryption_key` | `TJ_ENCRYPTION_KEY` | users' AI provider keys and TopstepX credentials (AES-256-GCM) |
 | `ai.api_key`, `gex.api_key`, `topstepx.encryption_key`, `apns.key_file` | `TJ_AI_API_KEY`, `TJ_GEX_API_KEY`, `TJ_TOPSTEPX_ENC_KEY`, `TJ_APNS_KEY` | the server-wide AI key, the gex-engine token, the older TopstepX key, the APNs key PEM |
+| `mw_email.smtp_username`, `mw_email.smtp_password` | `TJ_MW_EMAIL_SMTP_USERNAME`, `TJ_MW_EMAIL_SMTP_PASSWORD` | the login MotiveWave's mail client presents to the embedded SMTP listener |
 
 Generate the keys with `openssl rand -hex 32` and back them up with the database: a restored
 database without its encryption key means every user re-enters their provider keys.
