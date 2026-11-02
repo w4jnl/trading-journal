@@ -5,6 +5,13 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+### Server
+
+- The MotiveWave mail listener's SMTP login can come from the environment:
+  `TJ_MW_EMAIL_SMTP_USERNAME` and `TJ_MW_EMAIL_SMTP_PASSWORD` win over `mw_email.smtp_username`
+  and `smtp_password` in the file, like the other secrets, so a committed config.yaml can
+  leave them empty. The "set together" rule judges the values after the overrides.
+
 ### App (iOS)
 
 - The connection state on Today ("live", "connecting", "offline since 9:41") sits under the

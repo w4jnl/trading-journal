@@ -63,3 +63,50 @@ func TestSyncLogRetentionConfig(t *testing.T) {
 		t.Errorf("negative must be rejected naming the key, got %v", err)
 	}
 }
+
+// The MotiveWave listener's SMTP credentials come from the environment when
+// set, so a checked-in config.yaml can leave them empty: a non-empty variable
+// wins over the file, an empty or unset one leaves the file's value alone,
+// and the "set together" rule judges the values after the overrides.
+func TestMWEmailCredentialsFromEnv(t *testing.T) {
+	const both = "mw_email:\n  enabled: true\n  smtp_username: filename\n  smtp_password: filepass\n"
+	const none = "mw_email:\n  enabled: true\n"
+	const userOnly = "mw_email:\n  enabled: true\n  smtp_username: filename\n"
+	cases := []struct {
+		name     string
+		yaml     string
+		user     string // "" leaves the variable unset
+		pass     string
+		wantUser string
+		wantPass string
+		valid    bool
+	}{
+		{"env overrides the file", both, "envname", "envpass", "envname", "envpass", true},
+		{"env alone", none, "envname", "envpass", "envname", "envpass", true},
+		{"file alone", both, "", "", "filename", "filepass", true},
+		{"only the username, from the file", userOnly, "", "", "filename", "", false},
+		{"only the password, from env", none, "", "envpass", "", "envpass", false},
+		{"only the username, from env", none, "envname", "", "envname", "", false},
+		{"empty env keeps the file", both, "", "", "filename", "filepass", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			// An empty string sets the variable to "" (present but empty), the
+			// case the override must treat as unset.
+			t.Setenv("TJ_MW_EMAIL_SMTP_USERNAME", c.user)
+			t.Setenv("TJ_MW_EMAIL_SMTP_PASSWORD", c.pass)
+			cfg := loadYAML(t, c.yaml)
+			if cfg.MWEmail.Username != c.wantUser || (cfg.MWEmail.Password != c.wantPass) {
+				// The password is reported only as "as expected" or not.
+				t.Errorf("username = %q, password as expected = %v", cfg.MWEmail.Username, cfg.MWEmail.Password == c.wantPass)
+			}
+			err := cfg.Validate()
+			if c.valid && err != nil {
+				t.Errorf("validate: %v", err)
+			}
+			if !c.valid && (err == nil || !strings.Contains(err.Error(), "must be set together")) {
+				t.Errorf("want the set-together error, got %v", err)
+			}
+		})
+	}
+}
