@@ -53,7 +53,9 @@ func TestAnalyzeRules(t *testing.T) {
 	today = append(today, w)
 	p := mk(7, 2, "NQ", "long", 1, 2100, 2150, -5, day) // past the stop: heat 150 on a 100 risk
 	p.PlannedRisk, p.MaePnl = f(100), f(150)
-	today = append(today, p)
+	p2 := mk(8, 1, "NQ", "long", 1, 2101, 2151, -5, day) // its copied leg: one finding for the set
+	p2.PlannedRisk, p2.MaePnl = f(100), f(150)
+	today = append(today, p, p2)
 	for i := 0; i < 8; i++ { // filler decisions to pass 1.5 x the median of 4
 		today = append(today, mk(100+int64(i), 1, "CL", "long", 1, 2500+i*60, 2530+i*60, 1, day))
 	}
@@ -84,7 +86,8 @@ func TestAnalyzeRules(t *testing.T) {
 				t.Errorf("size up: %+v", x)
 			}
 		case "past-stop":
-			if len(x.TradeIDs) != 1 || x.TradeIDs[0] != 7 || x.Label.Key != "moved-stop" {
+			if len(x.TradeIDs) != 2 || x.TradeIDs[0] != 7 || x.TradeIDs[1] != 8 || x.Label.Key != "moved-stop" ||
+				!strings.Contains(x.Detail, "NQ on 2 accounts: 150.00 of heat against a planned risk of 100.00") {
 				t.Errorf("past stop: %+v", x)
 			}
 		case "left-on-table":
@@ -108,6 +111,9 @@ func TestAnalyzeRules(t *testing.T) {
 	if r.Warnings() != 5 {
 		t.Errorf("warnings = %d, want 5 (two info findings)", r.Warnings())
 	}
+	if n := strings.Count(got, "past-stop"); n != 1 {
+		t.Errorf("the copied legs past the stop are one finding, got %d in %s", n, got)
+	}
 
 	// Without enough history the norm-based checks stay quiet; the rest speak.
 	thin := Analyze(day, tz, today, history[:8], nil)
@@ -123,5 +129,28 @@ func TestAnalyzeRules(t *testing.T) {
 	// An empty day reports the baseline and nothing else.
 	if e := Analyze(day, tz, nil, history, nil); e.Trades != 0 || len(e.Findings) != 0 || e.Baseline.Days != 10 {
 		t.Errorf("empty day: %+v", e)
+	}
+}
+
+func TestPastStopUnevenLegs(t *testing.T) {
+	day := time.Date(2026, 10, 9, 0, 0, 0, 0, time.UTC)
+	a := mk(1, 1, "MES", "short", 1, 0, 60, -30, day)
+	a.PlannedRisk, a.MaePnl = f(27.5), f(40)
+	b := mk(2, 2, "MES", "short", 2, 1, 61, -60, day) // two contracts: twice the heat
+	b.PlannedRisk, b.MaePnl = f(55), f(92.5)
+	c := mk(3, 3, "MES", "short", 1, 1, 61, -30, day) // the leg that stayed inside its risk
+	c.PlannedRisk, c.MaePnl = f(27.5), f(20)
+	r := Analyze(day, time.UTC, []Trade{a, b, c}, nil, nil)
+	var past []Finding
+	for _, x := range r.Findings {
+		if x.Key == "past-stop" {
+			past = append(past, x)
+		}
+	}
+	if len(past) != 1 || len(past[0].TradeIDs) != 2 || past[0].TradeIDs[0] != 1 || past[0].TradeIDs[1] != 2 {
+		t.Fatalf("past stop findings = %+v", past)
+	}
+	if want := "MES on 2 accounts, worst on acct2: 92.50 of heat against a planned risk of 55.00."; past[0].Detail != want {
+		t.Errorf("detail = %q, want %q", past[0].Detail, want)
 	}
 }
