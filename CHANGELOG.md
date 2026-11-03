@@ -3,6 +3,15 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The coach's "price went past the planned stop" check reads decisions, not trades: the copied
+  legs of a set that went through the same stop are one finding, "MES on 4 accounts: ...", and
+  so one nudge on the phone instead of one per account. Legs with different numbers name the
+  worst one.
+
 ## 2.23.4, 2026-11-02
 
 ### Server

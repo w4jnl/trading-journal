@@ -332,15 +332,44 @@ func Analyze(day time.Time, tz *time.Location, today, history []Trade, plan *day
 		r.Findings = append(r.Findings, *f)
 	}
 
-	// Past the stop: measured heat beyond the planned risk.
-	for _, t := range today {
-		if t.PlannedRisk != nil && *t.PlannedRisk > 0 && t.MaePnl != nil && *t.MaePnl > *t.PlannedRisk {
-			r.Findings = append(r.Findings, Finding{
-				Key: "past-stop", Severity: "warn", Title: "Price went past the planned stop",
-				Detail:   fmt.Sprintf("%s on %s: %.2f of heat against a planned risk of %.2f.", t.SymbolRoot, t.Account, *t.MaePnl, *t.PlannedRisk),
-				TradeIDs: []int64{t.ID}, Label: mistake("moved-stop"),
-			})
+	// Past the stop: measured heat beyond the planned risk. One finding per
+	// decision: the copied legs of a set went through the same stop together,
+	// so they are one thing to say (and one nudge), not one per account.
+	for _, d := range ds {
+		var past []Trade
+		for _, t := range d.Trades {
+			if t.PlannedRisk != nil && *t.PlannedRisk > 0 && t.MaePnl != nil && *t.MaePnl > *t.PlannedRisk {
+				past = append(past, t)
+			}
 		}
+		if len(past) == 0 {
+			continue
+		}
+		worst, same := past[0], true
+		for _, t := range past[1:] {
+			if *t.MaePnl-*t.PlannedRisk > *worst.MaePnl-*worst.PlannedRisk {
+				worst = t
+			}
+			if *t.MaePnl != *past[0].MaePnl || *t.PlannedRisk != *past[0].PlannedRisk {
+				same = false
+			}
+		}
+		where := worst.SymbolRoot + " on " + worst.Account
+		switch {
+		case len(past) > 1 && same:
+			where = fmt.Sprintf("%s on %d accounts", worst.SymbolRoot, len(past))
+		case len(past) > 1:
+			where = fmt.Sprintf("%s on %d accounts, worst on %s", worst.SymbolRoot, len(past), worst.Account)
+		}
+		ids := make([]int64, 0, len(past))
+		for _, t := range past {
+			ids = append(ids, t.ID)
+		}
+		r.Findings = append(r.Findings, Finding{
+			Key: "past-stop", Severity: "warn", Title: "Price went past the planned stop",
+			Detail:   fmt.Sprintf("%s: %.2f of heat against a planned risk of %.2f.", where, *worst.MaePnl, *worst.PlannedRisk),
+			TradeIDs: ids, Label: mistake("moved-stop"),
+		})
 	}
 
 	// Left on the table: a winner that kept under a quarter of its best move.
