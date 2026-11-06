@@ -11,6 +11,10 @@ built against it carries the same marketing version.
   legs of a set that went through the same stop are one finding, "MES on 4 accounts: ...", and
   so one nudge on the phone instead of one per account. Legs with different numbers name the
   worst one.
+- The Gamma pages flag a stale futures basis: when the engine's futures conversion was paired
+  more than four hours before the snapshot (the MotiveWave marks heartbeat stopped), the quality
+  strip shows a STALE_BASIS pill naming the pairing time and age, and the footer dates the
+  pairing. Found after two days on a Wednesday ratio with nothing on the page saying so.
 
 ## 2.23.4, 2026-11-02
 
