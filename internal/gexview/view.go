@@ -476,6 +476,9 @@ func BuildView(s *gex.Snapshot, ref time.Time) View {
 	}
 	v.PCLegs = PCLegsLine(s.PCVolumeLegs)
 	v.Quality = BuildQuality(s.DataQuality, s.Provenance)
+	if w, ok := StaleBasisWarning(s.FuturesConversion, s.AsOf); ok {
+		v.Quality.Add(w)
+	}
 	if sk := s.Skew; sk != nil {
 		if p := sk.DTE0Pct; p != nil {
 			v.SkewDTE0 = fmt.Sprintf("%+.1f%%", *p)
@@ -554,8 +557,15 @@ func BuildView(s *gex.Snapshot, ref time.Time) View {
 		}
 	}
 	if fc := s.FuturesConversion; fc != nil {
+		// The pairing time carries its day once it is not the snapshot's
+		// (a basis paired two sessions ago read as "paired 15:59 ET").
+		paired := fc.PairedAt.In(et)
+		layout := "15:04 ET"
+		if paired.Format("2006-01-02") != s.AsOf.In(et).Format("2006-01-02") {
+			layout = "Mon Jan 2 15:04 ET"
+		}
 		v.ConvLine = fmt.Sprintf("futures conversion %.4f · %s · paired %s",
-			fc.Ratio, fc.Source, fc.PairedAt.In(et).Format("15:04 ET"))
+			fc.Ratio, fc.Source, paired.Format(layout))
 	} else {
 		v.ConvLine = "futures conversion unavailable (cold basis) — showing index values only"
 	}

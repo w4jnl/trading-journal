@@ -184,6 +184,9 @@ func BuildExpo(pd *gex.ProfileDetail, s *gex.Snapshot, now time.Time, tz *time.L
 		dq, prov = s.DataQuality, s.Provenance
 	}
 	e.Quality = BuildQuality(dq, prov)
+	if w, ok := StaleBasisWarning(pd.FuturesConversion, pd.AsOf); ok {
+		e.Quality.Add(w)
+	}
 	e.ProvLine = ProvLine(prov, dq)
 	e.IndexName = "index"
 	if len(pd.Sources) > 0 && pd.Sources[0] != "" {

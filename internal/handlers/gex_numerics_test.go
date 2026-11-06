@@ -117,6 +117,39 @@ func TestGexQualityHidesRecomputedNotice(t *testing.T) {
 	}
 }
 
+// A futures conversion paired more than four hours before the row lights
+// the strip and dates the pairing in the footer; a fresh one does neither.
+func TestGexStaleBasis(t *testing.T) {
+	asOf := time.Date(2026, 11, 6, 20, 55, 0, 0, time.UTC)
+	fresh := &gex.FuturesConversion{Ratio: 1.004, Source: "mw_marks", PairedAt: asOf.Add(-20 * time.Minute)}
+	if _, ok := gexview.StaleBasisWarning(fresh, asOf); ok {
+		t.Error("a 20-minute pairing is not stale")
+	}
+	if _, ok := gexview.StaleBasisWarning(nil, asOf); ok {
+		t.Error("a cold basis is said by the conversion line, not the strip")
+	}
+	stale := &gex.FuturesConversion{Ratio: 1.004, Source: "persisted", PairedAt: time.Date(2026, 11, 4, 20, 59, 38, 0, time.UTC)}
+	w, ok := gexview.StaleBasisWarning(stale, asOf)
+	if !ok || w.Code != "STALE_BASIS" || w.Class != "warn" || !strings.Contains(w.Message, "paired Wed Nov 4 15:59 ET, 47 h before this snapshot") {
+		t.Errorf("stale basis warning = %+v, ok %v", w, ok)
+	}
+	if w, _ := gexview.StaleBasisWarning(stale, asOf.Add(72*time.Hour)); !strings.Contains(w.Message, "4 days before") {
+		t.Errorf("days wording: %s", w.Message)
+	}
+
+	v := gexview.BuildView(&gex.Snapshot{Market: "ES", AsOf: asOf, SpotIndex: 7393.75, FuturesConversion: stale}, asOf)
+	if !v.Quality.Show || len(v.Quality.Warnings) != 1 || v.Quality.Warnings[0].Code != "STALE_BASIS" {
+		t.Errorf("strip = %+v", v.Quality)
+	}
+	if !strings.Contains(v.ConvLine, "paired Wed Nov 4 15:59 ET") {
+		t.Errorf("conv line = %q", v.ConvLine)
+	}
+	v = gexview.BuildView(&gex.Snapshot{Market: "ES", AsOf: asOf, SpotIndex: 7393.75, FuturesConversion: fresh}, asOf)
+	if v.Quality.Show || !strings.Contains(v.ConvLine, "paired 15:35 ET") || strings.Contains(v.ConvLine, "Nov") {
+		t.Errorf("fresh row: strip %+v, conv line %q", v.Quality, v.ConvLine)
+	}
+}
+
 func TestGEXPageNumerics(t *testing.T) {
 	db := gexTestDB(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
