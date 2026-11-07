@@ -70,9 +70,10 @@ func (h *Handlers) AIDayStart(w http.ResponseWriter, r *http.Request) {
 		date = "" // runDayAnalysis -> prepareDayEntries defaults to the last trading day
 	}
 	force := r.URL.Query().Get("mode") == "all"
-	// Resolved here for the status line; every entry resolves its own client
-	// again, so a key changed mid-run applies to the entries after it.
-	_, model, err := h.aiFor(r.Context())
+	// Resolved here for the status line (the trade reviews are most of a
+	// run); every entry resolves its own client again, so a key changed
+	// mid-run applies to the entries after it.
+	_, model, err := h.aiFor(r.Context(), aiTaskReviewTrade)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadGateway)
 		return

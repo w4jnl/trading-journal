@@ -6847,6 +6847,14 @@
                     "language": {
                       "type": "string"
                     },
+                    "task": {
+                      "type": "string",
+                      "description": "the AI task this review is (review_trade, review_group, review_day, review_week)"
+                    },
+                    "tier": {
+                      "type": "string",
+                      "description": "the task's difficulty tier (quick, standard, deep), which picks the model and effort"
+                    },
                     "model": {
                       "type": "string",
                       "description": "the model the review would run on; empty for a user without a provider"

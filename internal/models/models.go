@@ -576,6 +576,14 @@ type UserAiSetting struct {
 	Effort         string     `json:"effort"`
 }
 
+type UserAiTier struct {
+	UserID    int64     `json:"user_id"`
+	Tier      string    `json:"tier"`
+	Model     string    `json:"model"`
+	Effort    string    `json:"effort"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type UserViewPref struct {
 	UserID    int64  `json:"user_id"`
 	Page      string `json:"page"`

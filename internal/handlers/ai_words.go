@@ -50,6 +50,8 @@ type aiModelRef struct {
 	Model    string // the model id; "" for an unnamed server default
 	Effort   string // the effort level asked for; "" = the model's default
 	Provider string // the hosted provider's label or a custom endpoint's host; "" = the server default
+	Task     aiTask // what the call is for, and
+	Tier     aiTier // the tier that chose the model and effort
 }
 
 // Label renders the reference in w's words: "claude-opus-5-5 (medium) via

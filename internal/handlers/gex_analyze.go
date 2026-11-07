@@ -399,7 +399,7 @@ func (h *Handlers) GEXAnalyze(w http.ResponseWriter, r *http.Request) {
 		body, model = h.gexAnalysisFor(ctx, market, s.AsOf)
 	}
 	if body == "" {
-		client, ref, err := h.aiFor(ctx)
+		client, ref, err := h.aiFor(ctx, aiTaskGexExplain)
 		if err != nil {
 			status := http.StatusBadGateway
 			if errors.Is(err, errNoAIProvider) {

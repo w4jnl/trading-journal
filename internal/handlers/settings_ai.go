@@ -187,6 +187,13 @@ func (h *Handlers) SettingsAISave(w http.ResponseWriter, r *http.Request) {
 	if f.Provider == ai.ProviderCustom {
 		baseURL = f.BaseURL
 	}
+	// The tier models belong to the provider they were listed from.
+	if prev, err := h.Queries.GetUserAISettings(ctx, userID(ctx)); err == nil && (prev.Provider != f.Provider || prev.BaseUrl != baseURL) {
+		if err := h.Queries.DeleteUserAITiers(ctx, userID(ctx)); err != nil {
+			h.serverError(w, fmt.Errorf("clear ai tiers: %w", err))
+			return
+		}
+	}
 	if err := h.Queries.UpsertUserAISettings(ctx, models.UpsertUserAISettingsParams{
 		UserID: userID(ctx), Provider: f.Provider, Model: f.Model, BaseUrl: baseURL, Effort: f.Effort,
 		ApiKeyEnc: enc, ApiKeyNonce: nonce, KeyHint: aiKeyHint(key),
@@ -195,6 +202,92 @@ func (h *Handlers) SettingsAISave(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/settings?flash=ai-saved#ai", http.StatusSeeOther)
+}
+
+// SettingsAITiersSave: POST /settings/ai/tiers - the model and effort each
+// difficulty tier runs at, all three tiers in one form (model_<tier>,
+// effort_<tier>). A blank field keeps the main setting; a tier left blank
+// altogether loses its row. Model ids are checked against what the key can
+// list, when it lists anything, so a typo surfaces here and not on the next
+// review.
+func (h *Handlers) SettingsAITiersSave(w http.ResponseWriter, r *http.Request) {
+	clearWriteDeadline(w) // the model listing waits on the provider
+	if !h.aiSettingsGuard(w, r) {
+		return
+	}
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	row, err := h.Queries.GetUserAISettings(ctx, userID(ctx))
+	if err != nil {
+		http.Redirect(w, r, "/settings?err="+errToQuery(errors.New("save a provider and key first; the tiers pick among that provider's models"))+"#ai", http.StatusSeeOther)
+		return
+	}
+	type choice struct{ model, effort string }
+	choices := map[aiTier]choice{}
+	var named []string
+	for _, t := range aiTiers {
+		c := choice{strings.TrimSpace(r.PostFormValue("model_" + string(t))), strings.TrimSpace(r.PostFormValue("effort_" + string(t)))}
+		if c.model != "" && !printableToken(c.model, 200) {
+			http.Redirect(w, r, "/settings?err="+errToQuery(fmt.Errorf("the %s model id looks wrong (no spaces, at most 200 characters)", t))+"#ai", http.StatusSeeOther)
+			return
+		}
+		if !ai.ValidEffort(c.effort) {
+			http.Redirect(w, r, "/settings?err="+errToQuery(fmt.Errorf("unknown %s effort %q: choose one of %s, or the main setting", t, c.effort, strings.Join(ai.Efforts, ", ")))+"#ai", http.StatusSeeOther)
+			return
+		}
+		choices[t] = c
+		if c.model != "" && c.model != row.Model {
+			named = append(named, c.model)
+		}
+	}
+	if len(named) > 0 {
+		if err := h.aiModelsKnown(ctx, row, named); err != nil {
+			http.Redirect(w, r, "/settings?err="+errToQuery(err)+"#ai", http.StatusSeeOther)
+			return
+		}
+	}
+	for _, t := range aiTiers {
+		c := choices[t]
+		if c.model == "" && c.effort == "" {
+			err = h.Queries.DeleteUserAITier(ctx, models.DeleteUserAITierParams{UserID: userID(ctx), Tier: string(t)})
+		} else {
+			err = h.Queries.UpsertUserAITier(ctx, models.UpsertUserAITierParams{UserID: userID(ctx), Tier: string(t), Model: c.model, Effort: c.effort})
+		}
+		if err != nil {
+			h.serverError(w, fmt.Errorf("store ai tier %s: %w", t, err))
+			return
+		}
+	}
+	http.Redirect(w, r, "/settings?flash=ai-tiers#ai", http.StatusSeeOther)
+}
+
+// aiModelsKnown checks the model ids against the provider's list for the
+// user's key. A provider that lists nothing, or cannot be asked, is trusted:
+// the id is then checked by the first call that uses it.
+func (h *Handlers) aiModelsKnown(ctx context.Context, row models.UserAiSetting, ids []string) error {
+	opts, err := h.aiUserOptions(ctx, row)
+	if err != nil {
+		return err
+	}
+	lctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	known, err := ai.ListModels(lctx, opts)
+	if err != nil || len(known) == 0 {
+		return nil
+	}
+	have := make(map[string]bool, len(known))
+	for _, k := range known {
+		have[k] = true
+	}
+	for _, id := range ids {
+		if !have[id] {
+			return fmt.Errorf("your key cannot see the model %q (Load models lists the ones it can); nothing was saved", id)
+		}
+	}
+	return nil
 }
 
 // SettingsAITest: POST /settings/ai/test - re-run the live test call with the
@@ -233,6 +326,10 @@ func (h *Handlers) SettingsAIDelete(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if err := h.Queries.DeleteUserAISettings(ctx, userID(ctx)); err != nil {
 		h.serverError(w, fmt.Errorf("delete ai settings: %w", err))
+		return
+	}
+	if err := h.Queries.DeleteUserAITiers(ctx, userID(ctx)); err != nil {
+		h.serverError(w, fmt.Errorf("delete ai tiers: %w", err))
 		return
 	}
 	http.Redirect(w, r, "/settings?flash=ai-removed#ai", http.StatusSeeOther)
@@ -317,8 +414,9 @@ type aiSettingsView struct {
 	OwnLabel    string                // Own's provider label
 	ServerModel string                // the server default's model, "" = no default
 	Presets     []ai.Preset
-	Efforts     []string // the effort levels the form offers, lightest first
-	IsAdmin     bool     // may choose the custom provider
+	Efforts     []string     // the effort levels the form offers, lightest first
+	Tiers       []aiTierView // the difficulty tiers with the user's choices
+	IsAdmin     bool         // may choose the custom provider
 }
 
 func (h *Handlers) aiSettings(ctx context.Context) aiSettingsView {
@@ -336,6 +434,13 @@ func (h *Handlers) aiSettings(ctx context.Context) aiSettingsView {
 			if p, ok := aiPresetFor(row.Provider, row.BaseUrl); ok {
 				v.OwnLabel = p.Label
 			}
+			chosen := map[aiTier][2]string{}
+			if rows, err := h.rq().ListUserAITiers(ctx, userID(ctx)); err == nil {
+				for _, t := range rows {
+					chosen[aiTier(t.Tier)] = [2]string{t.Model, t.Effort}
+				}
+			}
+			v.Tiers = aiTierViews(chosen)
 		}
 	}
 	return v

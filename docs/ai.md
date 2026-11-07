@@ -76,6 +76,19 @@ now. The resolved model and effort show under every review ("claude-opus-5-5 (me
 and in `GET /api/v1/ai/preview/{entryId}`; the `-d` log carries `effort=` on every usage line. Changing
 effort starts the provider's prompt cache over, so pick one and leave it.
 
+**Models by task difficulty.** Every AI call names its task, and each task has a difficulty tier:
+*quick* for the stop-and-target suggestion on an open position and the gamma explanation, where the
+trader is waiting; *standard* for trade and group reviews and the day plan draft; *deep* for day and
+week reviews, strategy drafts, finding strategies and the lab, whose output is read for weeks. Settings
+> AI (Models by task difficulty, under the provider) maps each tier to a model and an effort of the
+same provider; a blank field keeps the main model or effort, so with nothing set every task runs as
+before, and the same model may serve every tier at different efforts. A model id is checked against
+the key's model list when it is saved; a new or removed provider drops the tier rows, since the ids
+belong to it. Trade and group reviews share a tier on purpose: a day run makes those calls back to
+back and they share the cached prompt prefix, which another model or effort would start over. The
+preview endpoint names the task and tier with the model and effort. The server-wide default has one
+model for every task.
+
 **What a review costs.** The evidence is JSON; bars are one string per row ("time open high low
 close") so the session windows and the chart stay a few thousand tokens, the trader's own words
 exclude earlier AI blocks, and a day review builds on the day's recorded lessons. A trade review

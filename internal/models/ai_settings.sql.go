@@ -18,6 +18,30 @@ func (q *Queries) DeleteUserAISettings(ctx context.Context, userID int64) error 
 	return err
 }
 
+const deleteUserAITier = `-- name: DeleteUserAITier :exec
+DELETE FROM user_ai_tiers WHERE user_id = ? AND tier = ?
+`
+
+type DeleteUserAITierParams struct {
+	UserID int64  `json:"user_id"`
+	Tier   string `json:"tier"`
+}
+
+func (q *Queries) DeleteUserAITier(ctx context.Context, arg DeleteUserAITierParams) error {
+	_, err := q.db.ExecContext(ctx, deleteUserAITier, arg.UserID, arg.Tier)
+	return err
+}
+
+const deleteUserAITiers = `-- name: DeleteUserAITiers :exec
+DELETE FROM user_ai_tiers WHERE user_id = ?
+`
+
+// The tier models belong to a provider: a new provider or no provider drops them.
+func (q *Queries) DeleteUserAITiers(ctx context.Context, userID int64) error {
+	_, err := q.db.ExecContext(ctx, deleteUserAITiers, userID)
+	return err
+}
+
 const getUserAISettings = `-- name: GetUserAISettings :one
 SELECT user_id, provider, model, base_url, api_key_enc, api_key_nonce, key_hint, created_at, updated_at, last_verified_at, effort FROM user_ai_settings WHERE user_id = ?
 `
@@ -39,6 +63,61 @@ func (q *Queries) GetUserAISettings(ctx context.Context, userID int64) (UserAiSe
 		&i.Effort,
 	)
 	return i, err
+}
+
+const getUserAITier = `-- name: GetUserAITier :one
+SELECT user_id, tier, model, effort, updated_at FROM user_ai_tiers WHERE user_id = ? AND tier = ?
+`
+
+type GetUserAITierParams struct {
+	UserID int64  `json:"user_id"`
+	Tier   string `json:"tier"`
+}
+
+func (q *Queries) GetUserAITier(ctx context.Context, arg GetUserAITierParams) (UserAiTier, error) {
+	row := q.db.QueryRowContext(ctx, getUserAITier, arg.UserID, arg.Tier)
+	var i UserAiTier
+	err := row.Scan(
+		&i.UserID,
+		&i.Tier,
+		&i.Model,
+		&i.Effort,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const listUserAITiers = `-- name: ListUserAITiers :many
+SELECT user_id, tier, model, effort, updated_at FROM user_ai_tiers WHERE user_id = ? ORDER BY tier
+`
+
+func (q *Queries) ListUserAITiers(ctx context.Context, userID int64) ([]UserAiTier, error) {
+	rows, err := q.db.QueryContext(ctx, listUserAITiers, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []UserAiTier
+	for rows.Next() {
+		var i UserAiTier
+		if err := rows.Scan(
+			&i.UserID,
+			&i.Tier,
+			&i.Model,
+			&i.Effort,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const touchUserAISettingsVerified = `-- name: TouchUserAISettingsVerified :exec
@@ -88,6 +167,32 @@ func (q *Queries) UpsertUserAISettings(ctx context.Context, arg UpsertUserAISett
 		arg.ApiKeyEnc,
 		arg.ApiKeyNonce,
 		arg.KeyHint,
+	)
+	return err
+}
+
+const upsertUserAITier = `-- name: UpsertUserAITier :exec
+INSERT INTO user_ai_tiers (user_id, tier, model, effort)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(user_id, tier) DO UPDATE SET
+    model = excluded.model,
+    effort = excluded.effort,
+    updated_at = CURRENT_TIMESTAMP
+`
+
+type UpsertUserAITierParams struct {
+	UserID int64  `json:"user_id"`
+	Tier   string `json:"tier"`
+	Model  string `json:"model"`
+	Effort string `json:"effort"`
+}
+
+func (q *Queries) UpsertUserAITier(ctx context.Context, arg UpsertUserAITierParams) error {
+	_, err := q.db.ExecContext(ctx, upsertUserAITier,
+		arg.UserID,
+		arg.Tier,
+		arg.Model,
+		arg.Effort,
 	)
 	return err
 }

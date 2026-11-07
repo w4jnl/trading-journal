@@ -549,9 +549,10 @@ the client skills only point at it.
 would send right now, without calling a model and without writing anything:
 `system` and `user` as lists of blocks (`text`, `cached`, `chars`,
 `tokensEstimate` at four characters a token), `images` (whether the chart
-would ride along), `language`, `method`, `model` and `effort` (the model the
-call would run on and the effort level asked of it, `""` for the model's
-default) and `totals` (`chars`, `tokensEstimate`, `cachedTokensEstimate`). `?lang=Czech` previews the review
+would ride along), `language`, `method`, `task` and `tier` (the review's task
+and its difficulty tier), `model` and `effort` (the model the call would run
+on and the effort level asked of it, `""` for the model's default) and
+`totals` (`chars`, `tokensEstimate`, `cachedTokensEstimate`). `?lang=Czech` previews the review
 in another offered language. The cached blocks are what a provider's prompt
 cache reads back from the second call on; the last user block is the item
 itself and changes every time.

@@ -524,10 +524,6 @@ const (
 // re-analyzes even if already marked.
 func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) (aiAnalyzeResult, error) {
 	res := aiAnalyzeResult{EntryID: entryID}
-	client, model, err := h.aiFor(ctx)
-	if err != nil {
-		return res, err
-	}
 	if !force && h.entryHasMarker(ctx, entryID, aiMarkerLocal) {
 		res.Skipped = true
 		return res, nil
@@ -535,6 +531,10 @@ func (h *Handlers) analyzeEntry(ctx context.Context, entryID int64, force bool) 
 	e, err := h.Queries.GetJournalEntryByID(ctx, models.GetJournalEntryByIDParams{ID: entryID, UserID: userIDPtr(ctx)})
 	if err != nil {
 		return res, fmt.Errorf("load entry %d: %w", entryID, err)
+	}
+	client, model, err := h.aiFor(ctx, aiTaskForScope(e.Scope))
+	if err != nil {
+		return res, err
 	}
 	tz, lang := h.localTZ(), h.userAILanguage(ctx)
 	req, err := h.aiReviewRequest(ctx, e)
@@ -679,7 +679,7 @@ func firstN(keys []string, n int) []string {
 // that review.
 func (h *Handlers) runDayAnalysis(ctx context.Context, dateStr string, force bool, progress func(done, total int, current string)) error {
 	// Fail before preparing any entry when the user has no usable provider.
-	if _, _, err := h.aiFor(ctx); err != nil {
+	if _, _, err := h.aiFor(ctx, aiTaskReviewTrade); err != nil {
 		return err
 	}
 	prep, err := h.prepareDayEntries(ctx, dateStr)

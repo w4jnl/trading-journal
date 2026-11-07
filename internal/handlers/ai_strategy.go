@@ -296,7 +296,7 @@ type strategyDraftData struct {
 // draftStrategy writes the co-author's draft for the caller's strategy into
 // ai_outputs.
 func (h *Handlers) draftStrategy(ctx context.Context, strategyID int64) error {
-	client, model, err := h.aiFor(ctx)
+	client, model, err := h.aiFor(ctx, aiTaskStrategyDraft)
 	if err != nil {
 		return err
 	}
@@ -466,7 +466,7 @@ func (h *Handlers) discoverGroups(ctx context.Context) ([]discoveryGroup, error)
 // discoverStrategies groups the untagged decisions, has the model read the
 // groups and stores the result.
 func (h *Handlers) discoverStrategies(ctx context.Context) error {
-	client, model, err := h.aiFor(ctx)
+	client, model, err := h.aiFor(ctx, aiTaskStrategyDiscovery)
 	if err != nil {
 		return err
 	}

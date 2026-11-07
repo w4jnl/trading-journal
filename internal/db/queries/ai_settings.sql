@@ -26,3 +26,24 @@ UPDATE user_ai_settings SET last_verified_at = CURRENT_TIMESTAMP WHERE user_id =
 
 -- name: DeleteUserAISettings :exec
 DELETE FROM user_ai_settings WHERE user_id = ?;
+
+-- name: GetUserAITier :one
+SELECT * FROM user_ai_tiers WHERE user_id = ? AND tier = ?;
+
+-- name: ListUserAITiers :many
+SELECT * FROM user_ai_tiers WHERE user_id = ? ORDER BY tier;
+
+-- name: UpsertUserAITier :exec
+INSERT INTO user_ai_tiers (user_id, tier, model, effort)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(user_id, tier) DO UPDATE SET
+    model = excluded.model,
+    effort = excluded.effort,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- name: DeleteUserAITier :exec
+DELETE FROM user_ai_tiers WHERE user_id = ? AND tier = ?;
+
+-- name: DeleteUserAITiers :exec
+-- The tier models belong to a provider: a new provider or no provider drops them.
+DELETE FROM user_ai_tiers WHERE user_id = ?;

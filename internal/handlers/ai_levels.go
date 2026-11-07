@@ -193,7 +193,7 @@ func (h *Handlers) positionBars(ctx context.Context, pos positionView, now time.
 
 // suggestPositionLevels runs one suggestion for the position and stores it.
 func (h *Handlers) suggestPositionLevels(ctx context.Context, accountID int64, symbol string) error {
-	client, model, err := h.aiFor(ctx)
+	client, model, err := h.aiFor(ctx, aiTaskPositionLevels)
 	if err != nil {
 		return err
 	}
