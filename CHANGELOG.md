@@ -14,6 +14,13 @@ built against it carries the same marketing version.
   review and the API preview name the effort, the debug usage log carries it, and the output
   budget doubles from high up so a long think cannot cut the review off. Other providers ignore
   the setting for now.
+- Models by task difficulty: every AI call names its task, each task has a tier (quick for the
+  open-position suggestion and the gamma explanation, standard for trade and group reviews and
+  the plan draft, deep for day and week reviews, strategy work and the lab), and Settings > AI
+  maps each tier to a model and effort of the user's provider. Blank keeps the main setting, so
+  nothing changes until the trader opts in; the same model may serve every tier at different
+  efforts. Model ids are checked against the key's list on save; a provider change drops them.
+  The review's model line and the API preview show what each task ran at.
 
 - The coach's "price went past the planned stop" check reads decisions, not trades: the copied
   legs of a set that went through the same stop are one finding, "MES on 4 accounts: ...", and

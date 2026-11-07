@@ -307,7 +307,7 @@ func TestSettingsAICustomIsAdminOnly(t *testing.T) {
 	// A stored custom row stops working once its owner is not an admin (a
 	// demotion, or an admin acting as a regular user).
 	ctx := auth.WithUser(context.Background(), &auth.User{ID: 8})
-	if _, _, err := h.aiFor(ctx); err == nil || !strings.Contains(err.Error(), "admins") {
+	if _, _, err := h.aiFor(ctx, aiTaskReviewTrade); err == nil || !strings.Contains(err.Error(), "admins") {
 		t.Errorf("custom row used by a non-admin: %v", err)
 	}
 }
@@ -338,7 +338,7 @@ func TestAIForResolution(t *testing.T) {
 	h, db, q := newAIHandlers(t)
 	ctx := auth.WithUser(context.Background(), aiUser)
 
-	if _, _, err := h.aiFor(ctx); !errors.Is(err, errNoAIProvider) {
+	if _, _, err := h.aiFor(ctx, aiTaskReviewTrade); !errors.Is(err, errNoAIProvider) {
 		t.Errorf("no provider: err = %v", err)
 	}
 	if h.aiAvailable(ctx) {
@@ -347,12 +347,12 @@ func TestAIForResolution(t *testing.T) {
 
 	def := &stubAI{out: "default"}
 	h.AI, h.AIModel = def, "server-model"
-	c, model, err := h.aiFor(ctx)
+	c, model, err := h.aiFor(ctx, aiTaskReviewTrade)
 	if err != nil || c != def || model.Label(aiWordsFor("")) != "server-model via this server" || !h.aiAvailable(ctx) {
 		t.Errorf("default: c=%v model=%q err=%v", c, model, err)
 	}
 	h.AIEffort = "low"
-	if _, model, _ := h.aiFor(ctx); model.Label(aiWordsFor("")) != "server-model (low) via this server" {
+	if _, model, _ := h.aiFor(ctx, aiTaskReviewTrade); model.Label(aiWordsFor("")) != "server-model (low) via this server" {
 		t.Errorf("default with effort: %q", model)
 	}
 
@@ -362,7 +362,7 @@ func TestAIForResolution(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	c, model, err = h.aiFor(ctx)
+	c, model, err = h.aiFor(ctx, aiTaskReviewTrade)
 	if err != nil || c == def || model.Label(aiWordsFor("")) != "claude-sonnet-5-5 (medium) via Anthropic (Claude)" {
 		t.Errorf("own provider: c=%v model=%q err=%v", c, model, err)
 	}
@@ -376,8 +376,149 @@ func TestAIForResolution(t *testing.T) {
 	if _, err := db.Exec(`UPDATE user_ai_settings SET api_key_enc = X'00112233' WHERE user_id = 7`); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := h.aiFor(ctx); err == nil || !strings.Contains(err.Error(), "Settings > AI") {
+	if _, _, err := h.aiFor(ctx, aiTaskReviewTrade); err == nil || !strings.Contains(err.Error(), "Settings > AI") {
 		t.Errorf("undecryptable key: err = %v", err)
+	}
+}
+
+// A task runs at the model and effort of its tier's row; a blank field in the
+// row keeps the main setting, and a tier without a row is the main setting
+// altogether, so every task is the same call until the trader opts in.
+func TestAIForTiers(t *testing.T) {
+	h, _, q := newAIHandlers(t)
+	ctx := auth.WithUser(context.Background(), aiUser)
+	enc, nonce, _ := h.AISecrets.Seal("sk-own-key-000001")
+	if err := q.UpsertUserAISettings(ctx, models.UpsertUserAISettingsParams{
+		UserID: 7, Provider: "anthropic", Model: "claude-sonnet-5-5", Effort: "medium", ApiKeyEnc: enc, ApiKeyNonce: nonce,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for _, tier := range []models.UpsertUserAITierParams{
+		{UserID: 7, Tier: "quick", Model: "claude-haiku-5-5", Effort: "low"},
+		{UserID: 7, Tier: "deep", Model: "", Effort: "high"},
+	} {
+		if err := q.UpsertUserAITier(ctx, tier); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, c := range []struct {
+		task  aiTask
+		tier  aiTier
+		label string
+	}{
+		{aiTaskPositionLevels, aiTierQuick, "claude-haiku-5-5 (low) via Anthropic (Claude)"},
+		{aiTaskGexExplain, aiTierQuick, "claude-haiku-5-5 (low) via Anthropic (Claude)"},
+		{aiTaskReviewTrade, aiTierStandard, "claude-sonnet-5-5 (medium) via Anthropic (Claude)"},
+		{aiTaskReviewGroup, aiTierStandard, "claude-sonnet-5-5 (medium) via Anthropic (Claude)"},
+		{aiTaskPlanDraft, aiTierStandard, "claude-sonnet-5-5 (medium) via Anthropic (Claude)"},
+		{aiTaskReviewDay, aiTierDeep, "claude-sonnet-5-5 (high) via Anthropic (Claude)"},
+		{aiTaskStrategyDraft, aiTierDeep, "claude-sonnet-5-5 (high) via Anthropic (Claude)"},
+		{aiTaskLab, aiTierDeep, "claude-sonnet-5-5 (high) via Anthropic (Claude)"},
+	} {
+		_, ref, err := h.aiFor(ctx, c.task)
+		if err != nil || ref.Task != c.task || ref.Tier != c.tier || ref.Label(aiWordsFor("")) != c.label {
+			t.Errorf("%s: ref=%+v err=%v, want tier %s label %q", c.task, ref, err, c.tier, c.label)
+		}
+	}
+	if aiTaskForScope("trade") != aiTaskReviewTrade || aiTaskForScope("group") != aiTaskReviewGroup || aiTaskForScope("day") != aiTaskReviewDay || aiTaskForScope("week") != aiTaskReviewWeek {
+		t.Error("aiTaskForScope")
+	}
+	// The deep tier's options carry the effort and the budget it needs.
+	row, _ := q.GetUserAISettings(ctx, 7)
+	model, effort, err := h.aiTierChoice(ctx, row, aiTierDeep)
+	if err != nil || model != "claude-sonnet-5-5" || effort != "high" {
+		t.Fatalf("deep choice = %s %s %v", model, effort, err)
+	}
+	if opts, err := h.aiOptionsFor(ctx, row, model, effort); err != nil || opts.Model != model || opts.Effort != "high" || opts.MaxTokens != 16384 {
+		t.Errorf("deep options = %+v, %v", opts, err)
+	}
+	// Every task is classified, and the settings view names each one once.
+	views := aiTierViews(map[aiTier][2]string{aiTierQuick: {"claude-haiku-5-5", "low"}})
+	if len(views) != 3 || views[0].Model != "claude-haiku-5-5" || views[1].Model != "" || !strings.Contains(views[1].Covers, "trade reviews") || !strings.Contains(views[2].Covers, "week reviews") {
+		t.Errorf("tier views = %+v", views)
+	}
+	for _, s := range aiTaskSpecs {
+		if s.Task.Tier() != s.Tier {
+			t.Errorf("%s: Tier() = %s, want %s", s.Task, s.Task.Tier(), s.Tier)
+		}
+	}
+}
+
+// Saving the tiers checks the models against the key's list, keeps blanks as
+// the main setting, drops an all-blank tier, and the rows go when the
+// provider changes or is removed.
+func TestSettingsAITiersSave(t *testing.T) {
+	h, _, q := newAIHandlers(t)
+	ctx := context.Background()
+	const key = "sk-tiers-key-0001"
+	fp := newFakeProvider(t, key, "OK") // lists model-a and model-b
+	withPresetURL(t, "openai", fp.URL)
+	withPresetURL(t, "gemini", fp.URL)
+
+	if _, errMsg := redirectQuery(t, aiPost(h.SettingsAITiersSave, aiUser, "/settings/ai/tiers", url.Values{"model_quick": {"model-b"}})); !strings.Contains(errMsg, "provider and key first") {
+		t.Errorf("no provider: err=%q", errMsg)
+	}
+	if flash, errMsg := redirectQuery(t, aiPost(h.SettingsAISave, aiUser, "/settings/ai", url.Values{
+		"provider": {"openai"}, "model": {"model-a"}, "api_key": {key}, "effort": {"medium"},
+	})); flash != "ai-saved" {
+		t.Fatalf("save: %q", errMsg)
+	}
+	flash, errMsg := redirectQuery(t, aiPost(h.SettingsAITiersSave, aiUser, "/settings/ai/tiers", url.Values{
+		"model_quick": {"model-b"}, "effort_quick": {"low"}, "effort_deep": {"high"},
+	}))
+	if flash != "ai-tiers" {
+		t.Fatalf("tiers: flash=%q err=%q", flash, errMsg)
+	}
+	rows, err := q.ListUserAITiers(ctx, 7)
+	if err != nil || len(rows) != 2 || rows[0].Tier != "deep" || rows[0].Model != "" || rows[0].Effort != "high" || rows[1].Tier != "quick" || rows[1].Model != "model-b" || rows[1].Effort != "low" {
+		t.Fatalf("rows = %+v, %v", rows, err)
+	}
+	actx := auth.WithUser(ctx, aiUser)
+	if _, ref, err := h.aiFor(actx, aiTaskPositionLevels); err != nil || ref.Model != "model-b" || ref.Effort != "low" {
+		t.Errorf("quick task: %+v, %v", ref, err)
+	}
+	if _, ref, err := h.aiFor(actx, aiTaskReviewWeek); err != nil || ref.Model != "model-a" || ref.Effort != "high" {
+		t.Errorf("deep task: %+v, %v", ref, err)
+	}
+
+	// A model the key cannot see, or an unknown effort: refused, rows kept.
+	for form, want := range map[string]string{
+		"model_quick=gpt-nope": "cannot see the model",
+		"effort_quick=turbo":   "unknown quick effort",
+		"model_deep=has space": "model id looks wrong",
+	} {
+		v, _ := url.ParseQuery(form)
+		if _, errMsg := redirectQuery(t, aiPost(h.SettingsAITiersSave, aiUser, "/settings/ai/tiers", v)); !strings.Contains(errMsg, want) {
+			t.Errorf("%s: err=%q, want %q", form, errMsg, want)
+		}
+	}
+	if rows, _ := q.ListUserAITiers(ctx, 7); len(rows) != 2 {
+		t.Errorf("rows changed by a refused save: %+v", rows)
+	}
+	// Blanking a tier drops its row; the main model is always accepted.
+	if flash, errMsg := redirectQuery(t, aiPost(h.SettingsAITiersSave, aiUser, "/settings/ai/tiers", url.Values{"model_standard": {"model-a"}})); flash != "ai-tiers" {
+		t.Fatalf("blank tiers: %q", errMsg)
+	}
+	if rows, _ := q.ListUserAITiers(ctx, 7); len(rows) != 1 || rows[0].Tier != "standard" || rows[0].Model != "model-a" {
+		t.Errorf("rows after blanking = %+v", rows)
+	}
+	// A new provider drops the tiers (its models are not that provider's); so does removing the provider.
+	if flash, errMsg := redirectQuery(t, aiPost(h.SettingsAISave, aiUser, "/settings/ai", url.Values{
+		"provider": {"gemini"}, "model": {"model-a"}, "api_key": {key},
+	})); flash != "ai-saved" {
+		t.Fatalf("switch provider: %q", errMsg)
+	}
+	if rows, _ := q.ListUserAITiers(ctx, 7); len(rows) != 0 {
+		t.Errorf("rows survive a provider change: %+v", rows)
+	}
+	if err := q.UpsertUserAITier(ctx, models.UpsertUserAITierParams{UserID: 7, Tier: "deep", Effort: "max"}); err != nil {
+		t.Fatal(err)
+	}
+	if flash, errMsg := redirectQuery(t, aiPost(h.SettingsAIDelete, aiUser, "/settings/ai/delete", url.Values{})); flash != "ai-removed" {
+		t.Fatalf("delete: %q", errMsg)
+	}
+	if rows, _ := q.ListUserAITiers(ctx, 7); len(rows) != 0 {
+		t.Errorf("rows survive the provider's removal: %+v", rows)
 	}
 }
 

@@ -26,6 +26,7 @@
 {{if eq .Flash "levels"}}<div class="flash saved mb-16">Levels: the markets to keep are saved.</div>{{end}}
 {{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
 {{if eq .Flash "auto-plan"}}<div class="flash saved mb-16">{{if eq .AIAutoPlan "plan"}}Every new open position gets the AI's stop and target as its plan.{{else if eq .AIAutoPlan "suggest"}}Every new open position gets the AI's stop and target as a suggestion on its sheet; you decide whether to use it.{{else}}Automatic suggestions off: the suggestion is a button on the position sheet.{{end}}</div>{{end}}
+{{if eq .Flash "ai-tiers"}}<div class="flash saved mb-16">Models by task difficulty saved — the next review runs on them.</div>{{end}}
 {{if eq .Flash "ai-removed"}}<div class="flash saved mb-16">Your AI provider and key were removed.</div>{{end}}
 {{if eq .Flash "visibility"}}<div class="flash saved mb-16">Account visibility saved.</div>{{end}}
 {{if eq .Flash "topstepx"}}<div class="flash saved mb-16">TopstepX credentials verified and saved — first sync is running in the background.</div>{{end}}
@@ -245,6 +246,38 @@
     The reviewed trades, P&amp;L and notes go to the provider you choose; on free tiers some providers
     (Gemini, Mistral) may train on what you send, so prefer a key with billing enabled.
   </p>
+  {{if $own}}
+  <details class="mt-12" id="ai-tiers">
+    <summary class="field-label" style="cursor: pointer;">Models by task difficulty</summary>
+    <p class="muted" style="font-size: 12px; margin: 6px 0;">
+      Each AI task has a difficulty tier, and each tier can run on its own model and effort from your provider:
+      a small fast model where you are waiting on the answer, a careful one where the output is read for weeks.
+      A blank field keeps the main model or effort above, so the same model may serve every tier at different efforts.
+      Trade and group reviews share a tier so a day run keeps one warm prompt cache.
+    </p>
+    <form method="post" action="/settings/ai/tiers" data-busy="Checking…" style="display: grid; gap: 8px;">
+      <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+      {{range .Tiers}}
+      <div class="row-sm" style="gap: 8px; flex-wrap: wrap; align-items: flex-end;">
+        <div style="min-width: 240px; flex: 1 1 240px;">
+          <div class="field-label">{{.Label}}</div>
+          <div class="muted" style="font-size: 12px;">{{.Covers}}</div>
+        </div>
+        <label class="field"><span class="field-label">Model</span>
+          <input type="text" name="model_{{.Tier}}" list="ai-model-list" autocomplete="off" spellcheck="false" style="width: 220px;"
+                 value="{{.Model}}" placeholder="main model"></label>
+        {{$chosen := .Effort}}
+        <label class="field"><span class="field-label">Effort</span>
+          <select name="effort_{{.Tier}}">
+            <option value="" {{if not $chosen}}selected{{end}}>main setting</option>
+            {{range $.AI.Efforts}}<option value="{{.}}" {{if eq . $chosen}}selected{{end}}>{{.}}</option>{{end}}
+          </select></label>
+      </div>
+      {{end}}
+      <div><button type="submit" class="btn btn--secondary btn--sm">Save tiers</button></div>
+    </form>
+  </details>
+  {{end}}
   {{end}}
   {{end}}
 

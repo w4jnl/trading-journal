@@ -390,7 +390,7 @@ func (h *Handlers) LabExplain(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) explainLab(ctx context.Context, f labFilters) error {
-	client, model, err := h.aiFor(ctx)
+	client, model, err := h.aiFor(ctx, aiTaskLab)
 	if err != nil {
 		return err
 	}

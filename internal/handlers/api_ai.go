@@ -161,7 +161,7 @@ func (h *Handlers) APIDayRunStart(w http.ResponseWriter, r *http.Request) {
 		writeJSONError(w, http.StatusBadRequest, "date must be YYYY-MM-DD or last")
 		return
 	}
-	_, model, err := h.aiFor(ctx)
+	_, model, err := h.aiFor(ctx, aiTaskReviewTrade) // the status line names what most of the run uses
 	if err != nil {
 		writeJSONError(w, http.StatusBadGateway, err.Error())
 		return

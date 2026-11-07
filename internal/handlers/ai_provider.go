@@ -29,16 +29,22 @@ func (h *Handlers) aiUserKeys() bool { return h.AISecrets != nil }
 // client, or per-user keys. main.go creates AIJobs exactly when it is true.
 func (h *Handlers) aiPossible() bool { return h.AI != nil || h.aiUserKeys() }
 
-// aiFor returns the client the calling user's AI work runs on, and the
-// reference naming its model (shown with every review, stored with the gamma
-// reads): their own provider when they set one, else the server default,
-// else errNoAIProvider.
-func (h *Handlers) aiFor(ctx context.Context) (ai.Client, aiModelRef, error) {
+// aiFor returns the client the calling user's AI work for task runs on, and
+// the reference naming its model (shown with every review, stored with the
+// gamma reads): their own provider when they set one, at the model and
+// effort they mapped to the task's tier (else their main ones), else the
+// server default, else errNoAIProvider.
+func (h *Handlers) aiFor(ctx context.Context, task aiTask) (ai.Client, aiModelRef, error) {
 	if h.aiUserKeys() {
 		row, err := h.Queries.GetUserAISettings(ctx, userID(ctx))
 		switch {
 		case err == nil:
-			opts, err := h.aiUserOptions(ctx, row)
+			tier := task.Tier()
+			model, effort, err := h.aiTierChoice(ctx, row, tier)
+			if err != nil {
+				return nil, aiModelRef{}, err
+			}
+			opts, err := h.aiOptionsFor(ctx, row, model, effort)
 			if err != nil {
 				return nil, aiModelRef{}, err
 			}
@@ -46,7 +52,7 @@ func (h *Handlers) aiFor(ctx context.Context) (ai.Client, aiModelRef, error) {
 			if err != nil {
 				return nil, aiModelRef{}, err
 			}
-			ref := aiModelRef{Model: row.Model, Effort: row.Effort}
+			ref := aiModelRef{Model: model, Effort: effort, Task: task, Tier: tier}
 			if row.Provider == ai.ProviderCustom {
 				ref.Provider = customHost(row.BaseUrl)
 			} else if p, ok := ai.PresetByID(row.Provider); ok {
@@ -58,15 +64,40 @@ func (h *Handlers) aiFor(ctx context.Context) (ai.Client, aiModelRef, error) {
 		}
 	}
 	if h.AI != nil {
-		return h.AI, aiModelRef{Model: h.AIModel, Effort: h.AIEffort}, nil
+		return h.AI, aiModelRef{Model: h.AIModel, Effort: h.AIEffort, Task: task, Tier: task.Tier()}, nil
 	}
 	return nil, aiModelRef{}, errNoAIProvider
 }
 
-// aiUserOptions builds the client options for a stored provider row,
-// decrypting its key. A custom endpoint is admin-only, checked at use as well
-// as at save, so a demoted admin's stored URL stops working.
+// aiTierChoice is the model and effort the user's tier runs at: the tier's
+// row where it names one, else the main setting from row.
+func (h *Handlers) aiTierChoice(ctx context.Context, row models.UserAiSetting, tier aiTier) (model, effort string, err error) {
+	model, effort = row.Model, row.Effort
+	t, err := h.Queries.GetUserAITier(ctx, models.GetUserAITierParams{UserID: row.UserID, Tier: string(tier)})
+	switch {
+	case err == nil:
+		if t.Model != "" {
+			model = t.Model
+		}
+		if t.Effort != "" {
+			effort = t.Effort
+		}
+	case !errors.Is(err, sql.ErrNoRows):
+		return "", "", fmt.Errorf("load AI tier: %w", err)
+	}
+	return model, effort, nil
+}
+
+// aiUserOptions builds the client options for a stored provider row at its
+// main model and effort, decrypting its key.
 func (h *Handlers) aiUserOptions(ctx context.Context, row models.UserAiSetting) (ai.Options, error) {
+	return h.aiOptionsFor(ctx, row, row.Model, row.Effort)
+}
+
+// aiOptionsFor builds the client options for a stored provider row at the
+// given model and effort. A custom endpoint is admin-only, checked at use as
+// well as at save, so a demoted admin's stored URL stops working.
+func (h *Handlers) aiOptionsFor(ctx context.Context, row models.UserAiSetting, model, effort string) (ai.Options, error) {
 	p, ok := aiPresetFor(row.Provider, row.BaseUrl)
 	if !ok {
 		return ai.Options{}, fmt.Errorf("unknown AI provider %q; choose one again in Settings > AI", row.Provider)
@@ -80,7 +111,7 @@ func (h *Handlers) aiUserOptions(ctx context.Context, row models.UserAiSetting) 
 	if err != nil {
 		return ai.Options{}, err
 	}
-	return p.Options(row.Model, key).WithEffort(row.Effort), nil
+	return p.Options(model, key).WithEffort(effort), nil
 }
 
 // aiStoredKey decrypts a row's key ("" for a keyless custom endpoint).

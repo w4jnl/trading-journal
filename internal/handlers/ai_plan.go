@@ -279,7 +279,7 @@ type planDraftData struct {
 
 // draftPlan writes the draft of the caller's plan for day into ai_outputs.
 func (h *Handlers) draftPlan(ctx context.Context, day string) error {
-	client, model, err := h.aiFor(ctx)
+	client, model, err := h.aiFor(ctx, aiTaskPlanDraft)
 	if err != nil {
 		return err
 	}
