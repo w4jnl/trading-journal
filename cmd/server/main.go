@@ -449,12 +449,13 @@ func run() error {
 			MaxTokens:   cfg.AI.MaxTokens,
 			Temperature: cfg.AI.Temperature,
 			Headers:     cfg.AI.Headers,
+			Effort:      cfg.AI.Effort,
 		})
 		if err != nil {
 			return fmt.Errorf("ai: %w", err)
 		}
 		aiClient = c
-		slog.Info("AI analysis enabled", "provider", cfg.AI.Provider, "base_url", cfg.AI.BaseURL, "model", cfg.AI.Model)
+		slog.Info("AI analysis enabled", "provider", cfg.AI.Provider, "base_url", cfg.AI.BaseURL, "model", cfg.AI.Model, "effort", cfg.AI.Effort)
 	}
 	var aiSecrets *secretbox.Box
 	if cfg.AIUserKeys() {
@@ -770,6 +771,7 @@ func run() error {
 		AITasks:          aiTasks,
 		AISecrets:        aiSecrets,
 		AIModel:          cfg.AI.Model,
+		AIEffort:         cfg.AI.Effort,
 		GEX:              gexClient,
 		TopstepxSync:     topstepxSync,
 		IbkrSync:         ibkrSync,

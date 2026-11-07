@@ -7,6 +7,14 @@ built against it carries the same marketing version.
 
 ### Server
 
+- AI reviews can be told how hard to think: Settings > AI gains an effort level (low to max, or
+  the model's default) next to the model, sent to Anthropic models as `output_config.effort`;
+  `ai.effort` does the same for the server default. Lower is faster and cheaper, which is the
+  fix for reviews that take minutes on a model whose default is high. The model line under a
+  review and the API preview name the effort, the debug usage log carries it, and the output
+  budget doubles from high up so a long think cannot cut the review off. Other providers ignore
+  the setting for now.
+
 - The coach's "price went past the planned stop" check reads decisions, not trades: the copied
   legs of a set that went through the same stop are one finding, "MES on 4 accounts: ...", and
   so one nudge on the phone instead of one per account. Legs with different numbers name the

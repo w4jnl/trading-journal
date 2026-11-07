@@ -573,6 +573,7 @@ type UserAiSetting struct {
 	CreatedAt      time.Time  `json:"created_at"`
 	UpdatedAt      time.Time  `json:"updated_at"`
 	LastVerifiedAt *time.Time `json:"last_verified_at"`
+	Effort         string     `json:"effort"`
 }
 
 type UserViewPref struct {

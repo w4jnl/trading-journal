@@ -35,9 +35,10 @@ func (h *Handlers) aiSettingsGuard(w http.ResponseWriter, r *http.Request) bool 
 }
 
 // aiProviderForm is the Settings > AI form. Key blank = keep the stored key,
-// as long as the provider (and, for custom, the URL) is unchanged.
+// as long as the provider (and, for custom, the URL) is unchanged. Effort
+// blank = the model's default.
 type aiProviderForm struct {
-	Provider, Model, Key, BaseURL string
+	Provider, Model, Key, BaseURL, Effort string
 }
 
 func parseAIProviderForm(r *http.Request) aiProviderForm {
@@ -46,6 +47,7 @@ func parseAIProviderForm(r *http.Request) aiProviderForm {
 		Model:    strings.TrimSpace(r.PostFormValue("model")),
 		Key:      strings.TrimSpace(r.PostFormValue("api_key")),
 		BaseURL:  strings.TrimSpace(r.PostFormValue("base_url")),
+		Effort:   strings.TrimSpace(r.PostFormValue("effort")),
 	}
 }
 
@@ -76,6 +78,9 @@ func (h *Handlers) aiResolveForm(ctx context.Context, f aiProviderForm, needMode
 		}
 		if !printableToken(f.Model, 200) {
 			return p, "", errors.New("the model id looks wrong (no spaces, at most 200 characters)")
+		}
+		if !ai.ValidEffort(f.Effort) {
+			return p, "", fmt.Errorf("unknown effort %q: choose one of %s, or the model's default", f.Effort, strings.Join(ai.Efforts, ", "))
 		}
 	}
 	key := f.Key
@@ -167,7 +172,7 @@ func (h *Handlers) SettingsAISave(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/settings?err="+errToQuery(err)+"#ai", http.StatusSeeOther)
 		return
 	}
-	if err := aiTestCall(ctx, p.Options(f.Model, key)); err != nil {
+	if err := aiTestCall(ctx, p.Options(f.Model, key).WithEffort(f.Effort)); err != nil {
 		http.Redirect(w, r, "/settings?err="+errToQuery(fmt.Errorf("the test call to %s failed, nothing was saved: %w", p.Label, err))+"#ai", http.StatusSeeOther)
 		return
 	}
@@ -183,7 +188,7 @@ func (h *Handlers) SettingsAISave(w http.ResponseWriter, r *http.Request) {
 		baseURL = f.BaseURL
 	}
 	if err := h.Queries.UpsertUserAISettings(ctx, models.UpsertUserAISettingsParams{
-		UserID: userID(ctx), Provider: f.Provider, Model: f.Model, BaseUrl: baseURL,
+		UserID: userID(ctx), Provider: f.Provider, Model: f.Model, BaseUrl: baseURL, Effort: f.Effort,
 		ApiKeyEnc: enc, ApiKeyNonce: nonce, KeyHint: aiKeyHint(key),
 	}); err != nil {
 		h.serverError(w, fmt.Errorf("store ai settings: %w", err))
@@ -312,11 +317,12 @@ type aiSettingsView struct {
 	OwnLabel    string                // Own's provider label
 	ServerModel string                // the server default's model, "" = no default
 	Presets     []ai.Preset
-	IsAdmin     bool // may choose the custom provider
+	Efforts     []string // the effort levels the form offers, lightest first
+	IsAdmin     bool     // may choose the custom provider
 }
 
 func (h *Handlers) aiSettings(ctx context.Context) aiSettingsView {
-	v := aiSettingsView{UserKeys: h.aiUserKeys(), Presets: ai.Presets}
+	v := aiSettingsView{UserKeys: h.aiUserKeys(), Presets: ai.Presets, Efforts: ai.Efforts}
 	if h.AI != nil {
 		v.ServerModel = h.AIModel
 	}

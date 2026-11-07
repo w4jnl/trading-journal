@@ -41,6 +41,26 @@ type Options struct {
 	// CompletionTokens sends the output budget as max_completion_tokens, the
 	// only name OpenAI's reasoning models accept.
 	CompletionTokens bool
+	// Effort is how hard the model thinks before it writes, one of Efforts;
+	// "" leaves the model's default. The Anthropic dialect sends it as
+	// output_config.effort; the OpenAI dialect ignores it for now.
+	Effort string
+}
+
+// Efforts are the effort levels a request may ask for, lightest first.
+var Efforts = []string{"low", "medium", "high", "xhigh", "max"}
+
+// ValidEffort reports whether e is "" (the model's default) or one of Efforts.
+func ValidEffort(e string) bool {
+	if e == "" {
+		return true
+	}
+	for _, x := range Efforts {
+		if x == e {
+			return true
+		}
+	}
+	return false
 }
 
 // Client turns a system+user prompt into a single completion.
@@ -95,6 +115,9 @@ func newClient(opts Options) (Client, error) {
 	if opts.BaseURL == "" {
 		return nil, fmt.Errorf("ai: base_url is required")
 	}
+	if !ValidEffort(opts.Effort) {
+		return nil, fmt.Errorf("ai: unknown effort %q (want one of %s)", opts.Effort, strings.Join(Efforts, ", "))
+	}
 	timeout := opts.Timeout
 	if timeout <= 0 {
 		timeout = 120 * time.Second
@@ -111,6 +134,7 @@ func newClient(opts Options) (Client, error) {
 	base := baseClient{
 		baseURL:     strings.TrimRight(opts.BaseURL, "/"),
 		model:       opts.Model,
+		effort:      opts.Effort,
 		apiKey:      opts.APIKey,
 		maxTokens:   maxTokens,
 		temperature: temperature,
@@ -131,6 +155,7 @@ func newClient(opts Options) (Client, error) {
 type baseClient struct {
 	baseURL     string
 	model       string
+	effort      string // "" = the model's default
 	apiKey      string
 	maxTokens   int
 	temperature *float64 // nil = the provider's default
@@ -333,7 +358,7 @@ func (c *openAIClient) Complete(ctx context.Context, req Request) (Response, err
 		return Response{}, fmt.Errorf("ai: empty response (no choices)")
 	}
 	usage := Usage{Input: resp.Usage.Prompt, Output: resp.Usage.Completion, CacheRead: resp.Usage.Details.Cached}
-	logUsage(c.model, usage)
+	logUsage(c.model, "", usage) // effort is not sent on this dialect
 	ch := resp.Choices[0]
 	out, err := answer(stripReasoning(contentText(ch.Message.Content)), ch.FinishReason == "length")
 	return Response{Text: out, Usage: usage}, err

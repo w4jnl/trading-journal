@@ -157,6 +157,9 @@ func TestAnthropicGenerate(t *testing.T) {
 	if _, ok := srv.body["temperature"]; ok {
 		t.Error("temperature sent")
 	}
+	if _, ok := srv.body["output_config"]; ok {
+		t.Error("output_config sent with no effort asked for")
+	}
 	msgs, _ := srv.body["messages"].([]any)
 	content, _ := msgs[0].(map[string]any)["content"].([]any)
 	if len(msgs) != 1 || msgs[0].(map[string]any)["role"] != "user" || len(content) != 1 || content[0].(map[string]any)["text"] != "USR" {
@@ -221,6 +224,53 @@ func TestOpenAICompleteConcatenates(t *testing.T) {
 	parts := msgs[1].(map[string]any)["content"].([]any)
 	if len(parts) != 2 || parts[0].(map[string]any)["text"] != "C\n\nD" || parts[1].(map[string]any)["type"] != "image_url" {
 		t.Errorf("user = %v", parts)
+	}
+}
+
+// Effort rides as output_config.effort on the Anthropic dialect, exactly when
+// one is asked for, with the output budget doubled from high up; the OpenAI
+// dialect never sends it; an unknown level fails at New, naming it.
+func TestEffort(t *testing.T) {
+	srv := newJSONServer(t, 200, `{"content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn"}`)
+	p, _ := PresetByID("anthropic")
+	p.BaseURL = srv.URL
+	for _, c := range []struct {
+		effort    string
+		maxTokens float64
+	}{{"low", userMaxTokens}, {"medium", userMaxTokens}, {"high", userMaxTokensDeep}, {"xhigh", userMaxTokensDeep}, {"max", userMaxTokensDeep}} {
+		c2, err := New(p.Options("claude-opus-5-5", "sk").WithEffort(c.effort))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := c2.Generate(context.Background(), "s", "u"); err != nil {
+			t.Fatal(err)
+		}
+		oc, _ := srv.body["output_config"].(map[string]any)
+		if oc["effort"] != c.effort || srv.body["max_tokens"] != c.maxTokens {
+			t.Errorf("%s: output_config=%v max_tokens=%v", c.effort, srv.body["output_config"], srv.body["max_tokens"])
+		}
+	}
+	if o := p.Options("m", "k").WithEffort(""); o.Effort != "" || o.MaxTokens != userMaxTokens {
+		t.Errorf("default effort options = %+v", o)
+	}
+	if _, err := New(Options{Provider: "anthropic", BaseURL: "http://x", Model: "m", Effort: "turbo"}); err == nil || !strings.Contains(err.Error(), `"turbo"`) || !strings.Contains(err.Error(), "xhigh") {
+		t.Errorf("unknown effort: err = %v", err)
+	}
+	if !ValidEffort("") || !ValidEffort("max") || ValidEffort("High") {
+		t.Error("ValidEffort")
+	}
+
+	oa := newJSONServer(t, 200, `{"choices":[{"message":{"content":"ok"}}]}`)
+	op, _ := PresetByID("openai")
+	op.BaseURL = oa.URL
+	c, _ := New(op.Options("gpt-x", "sk").WithEffort("high"))
+	if _, err := c.Generate(context.Background(), "s", "u"); err != nil {
+		t.Fatal(err)
+	}
+	for _, k := range []string{"output_config", "effort", "reasoning_effort"} {
+		if _, ok := oa.body[k]; ok {
+			t.Errorf("OpenAI dialect sent %s", k)
+		}
 	}
 }
 

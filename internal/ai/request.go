@@ -99,6 +99,6 @@ func splitCached(bs []Block) (cached, rest []Block) {
 	return bs[:last+1], bs[last+1:]
 }
 
-func logUsage(model string, u Usage) {
-	slog.Debug("ai usage", "model", model, "input", u.Input, "output", u.Output, "cacheRead", u.CacheRead, "cacheWrite", u.CacheWrite)
+func logUsage(model, effort string, u Usage) {
+	slog.Debug("ai usage", "model", model, "effort", effort, "input", u.Input, "output", u.Output, "cacheRead", u.CacheRead, "cacheWrite", u.CacheWrite)
 }

@@ -68,8 +68,12 @@ func (h *Handlers) APIAIPreview(w http.ResponseWriter, r *http.Request) {
 			cached += len(b.Text)
 		}
 	}
+	// The model and effort the call would run at; "" when the user has no
+	// provider (the preview still shows what would be sent).
+	_, ref, _ := h.aiFor(ctx)
 	writeJSON(w, http.StatusOK, map[string]any{
 		"entryId": id, "scope": e.Scope, "method": aimethod.Version, "language": h.userAILanguage(ctx),
+		"model": ref.Model, "effort": ref.Effort,
 		"images": len(req.Images), "system": system, "user": user,
 		"totals": map[string]any{"chars": chars, "tokensEstimate": tokensEstimate(chars), "cachedTokensEstimate": tokensEstimate(cached)},
 	})

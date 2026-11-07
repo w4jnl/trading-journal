@@ -129,6 +129,10 @@ ai:
   timeout_sec: 120
   max_tokens: 1024
   temperature: 0.4
+  # How hard the model thinks before it writes: low, medium, high, xhigh or max;
+  # blank keeps the model's default. Anthropic models only (output_config.effort);
+  # an OpenAI-compatible endpoint ignores it. Lower is faster and cheaper.
+  effort: ""
   # Optional extra request headers (e.g. OpenRouter's HTTP-Referer / X-Title).
   headers: {}
 

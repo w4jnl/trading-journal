@@ -6847,6 +6847,14 @@
                     "language": {
                       "type": "string"
                     },
+                    "model": {
+                      "type": "string",
+                      "description": "the model the review would run on; empty for a user without a provider"
+                    },
+                    "effort": {
+                      "type": "string",
+                      "description": "the effort level asked for (low, medium, high, xhigh, max); empty = the model's default"
+                    },
                     "images": {
                       "type": "integer",
                       "description": "chart images the request would carry"

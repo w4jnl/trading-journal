@@ -48,10 +48,12 @@ func aiWordsFor(language string) aiWords {
 // "claude-sonnet-5-5 přes Anthropic (Claude)".
 type aiModelRef struct {
 	Model    string // the model id; "" for an unnamed server default
+	Effort   string // the effort level asked for; "" = the model's default
 	Provider string // the hosted provider's label or a custom endpoint's host; "" = the server default
 }
 
-// Label renders the reference in w's words.
+// Label renders the reference in w's words: "claude-opus-5-5 (medium) via
+// Anthropic (Claude)", the effort only when one was asked for.
 func (m aiModelRef) Label(w aiWords) string {
 	where := m.Provider
 	if where == "" {
@@ -60,7 +62,11 @@ func (m aiModelRef) Label(w aiWords) string {
 	if m.Model == "" {
 		return where
 	}
-	return m.Model + " " + w.Via + " " + where
+	model := m.Model
+	if m.Effort != "" {
+		model += " (" + m.Effort + ")"
+	}
+	return model + " " + w.Via + " " + where
 }
 
 // customHost is what a custom endpoint is called in the model line: its

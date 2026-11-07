@@ -18,11 +18,19 @@ type anthropicClient struct {
 }
 
 type anthropicRequest struct {
-	Model       string             `json:"model"`
-	MaxTokens   int                `json:"max_tokens"`
-	System      []anthropicBlock   `json:"system,omitempty"`
-	Messages    []anthropicMessage `json:"messages"`
-	Temperature *float64           `json:"temperature,omitempty"`
+	Model        string             `json:"model"`
+	MaxTokens    int                `json:"max_tokens"`
+	System       []anthropicBlock   `json:"system,omitempty"`
+	Messages     []anthropicMessage `json:"messages"`
+	Temperature  *float64           `json:"temperature,omitempty"`
+	OutputConfig *anthropicOutput   `json:"output_config,omitempty"`
+}
+
+// anthropicOutput carries the effort level: how much the model thinks
+// before it writes, which with adaptive thinking is what sets the latency
+// and the cost of a call. Absent, the model runs at its own default.
+type anthropicOutput struct {
+	Effort string `json:"effort"`
 }
 
 // anthropicMessage's Content is a string, or []anthropicBlock with images.
@@ -125,13 +133,17 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (Response, 
 	if len(content) == 0 {
 		content = []anthropicBlock{{Type: "text", Text: ""}}
 	}
-	payload, err := json.Marshal(anthropicRequest{
+	areq := anthropicRequest{
 		Model:       c.model,
 		MaxTokens:   c.maxTokens,
 		System:      system,
 		Messages:    []anthropicMessage{{Role: "user", Content: content}},
 		Temperature: c.temperature,
-	})
+	}
+	if c.effort != "" {
+		areq.OutputConfig = &anthropicOutput{Effort: c.effort}
+	}
+	payload, err := json.Marshal(areq)
 	if err != nil {
 		return Response{}, err
 	}
@@ -156,7 +168,7 @@ func (c *anthropicClient) Complete(ctx context.Context, req Request) (Response, 
 		}
 	}
 	usage := Usage{Input: resp.Usage.Input, Output: resp.Usage.Output, CacheRead: resp.Usage.CacheRead, CacheWrite: resp.Usage.CacheWrite}
-	logUsage(c.model, usage)
+	logUsage(c.model, c.effort, usage)
 	out, err := answer(stripReasoning(text), resp.StopReason == "max_tokens")
 	return Response{Text: out, Usage: usage}, err
 }

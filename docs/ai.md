@@ -65,6 +65,17 @@ the method plus the vocabulary clears that). OpenAI, xAI and the other OpenAI-co
 cache prefixes on their own, which the stable-first order serves. The `-d` log shows per call
 `ai usage model=… input=… output=… cacheRead=… cacheWrite=…`.
 
+**Effort.** How long a Claude model thinks before it writes is what sets a review's latency and
+most of its cost, and it is a setting: Settings > AI has an effort dropdown next to the model
+(`low`, `medium`, `high`, `xhigh`, `max`, or the model's default), sent to Anthropic as
+`output_config.effort`; the server default takes `ai.effort` in config.yaml. The model's default is
+the provider's own (Fable 5.1 and Sonnet 5.5 run at `high`, Opus 5.5 and Haiku 5.5 at `medium`), so a
+trader who finds the reviews slow turns effort down before changing models. At `high` and above the
+output budget doubles, since the thinking counts toward it. The other providers ignore the setting for
+now. The resolved model and effort show under every review ("claude-opus-5-5 (medium) via Anthropic")
+and in `GET /api/v1/ai/preview/{entryId}`; the `-d` log carries `effort=` on every usage line. Changing
+effort starts the provider's prompt cache over, so pick one and leave it.
+
 **What a review costs.** The evidence is JSON; bars are one string per row ("time open high low
 close") so the session windows and the chart stay a few thousand tokens, the trader's own words
 exclude earlier AI blocks, and a day review builds on the day's recorded lessons. A trade review
