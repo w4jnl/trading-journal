@@ -179,6 +179,7 @@
   <div class="row-sm" style="gap: 16px; flex-wrap: wrap; align-items: center; margin: 6px 0 10px;">
     <span>Provider: <strong>{{.OwnLabel}}</strong></span>
     <span>Model: <code>{{$own.Model}}</code></span>
+    {{if $own.Effort}}<span>Effort: <code>{{$own.Effort}}</code></span>{{end}}
     {{if $own.BaseUrl}}<span class="muted">{{$own.BaseUrl}}</span>{{end}}
     <span class="muted">API key: {{if $own.KeyHint}}…{{$own.KeyHint}}{{else if $own.ApiKeyEnc}}••••••••{{else}}none{{end}}{{if $own.ApiKeyEnc}} (stored encrypted){{end}}</span>
     {{if $own.LastVerifiedAt}}<span class="muted" style="font-size: 12px;">verified {{ltimep $own.LastVerifiedAt "datetime"}}</span>{{end}}
@@ -218,6 +219,11 @@
     <label class="field"><span class="field-label">Model</span>
       <input type="text" name="model" list="ai-model-list" required autocomplete="off" spellcheck="false" style="width: 240px;"
              value="{{with $own}}{{.Model}}{{end}}" placeholder="Load models, or type an id"></label>
+    <label class="field"><span class="field-label">Effort (Anthropic)</span>
+      <select name="effort">
+        <option value="" {{if or (not $own) (not $own.Effort)}}selected{{end}}>Model default</option>
+        {{range .Efforts}}<option value="{{.}}" {{if and $own (eq . $own.Effort)}}selected{{end}}>{{.}}</option>{{end}}
+      </select></label>
     {{if .IsAdmin}}
     <label class="field"><span class="field-label">Base URL (custom only)</span>
       <input type="url" name="base_url" spellcheck="false" style="width: 220px;"
@@ -232,6 +238,8 @@
   </div>
   <p class="muted" style="font-size: 12px;">
     Get a key: {{range $i, $p := .Presets}}{{if $i}} · {{end}}<a href="{{$p.KeyURL}}" target="_blank" rel="noopener noreferrer">{{$p.Label}}</a>{{end}}.
+    Effort is how long a Claude model thinks before it writes: lower is faster and cheaper, higher reads
+    the evidence more carefully; the model default is the provider's own setting. Other providers ignore it for now.
     A ChatGPT or Claude subscription does not include API access: the provider bills API use separately,
     typically a few cents per review. Saving checks the key with a one-word test call, then stores it encrypted.
     The reviewed trades, P&amp;L and notes go to the provider you choose; on free tiers some providers

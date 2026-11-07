@@ -342,6 +342,10 @@ type AI struct {
 	MaxTokens   int               `yaml:"max_tokens"`
 	Temperature float64           `yaml:"temperature"`
 	Headers     map[string]string `yaml:"headers"`
+	// Effort is how hard the model thinks before it writes (low, medium,
+	// high, xhigh, max); "" leaves the model's default. Sent to Anthropic
+	// models as output_config.effort; OpenAI-compatible endpoints ignore it.
+	Effort string `yaml:"effort"`
 }
 
 // GEX configures the gamma-exposure context annotations (design §8 / P4): during

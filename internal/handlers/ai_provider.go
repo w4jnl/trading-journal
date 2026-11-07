@@ -46,7 +46,7 @@ func (h *Handlers) aiFor(ctx context.Context) (ai.Client, aiModelRef, error) {
 			if err != nil {
 				return nil, aiModelRef{}, err
 			}
-			ref := aiModelRef{Model: row.Model}
+			ref := aiModelRef{Model: row.Model, Effort: row.Effort}
 			if row.Provider == ai.ProviderCustom {
 				ref.Provider = customHost(row.BaseUrl)
 			} else if p, ok := ai.PresetByID(row.Provider); ok {
@@ -58,7 +58,7 @@ func (h *Handlers) aiFor(ctx context.Context) (ai.Client, aiModelRef, error) {
 		}
 	}
 	if h.AI != nil {
-		return h.AI, aiModelRef{Model: h.AIModel}, nil
+		return h.AI, aiModelRef{Model: h.AIModel, Effort: h.AIEffort}, nil
 	}
 	return nil, aiModelRef{}, errNoAIProvider
 }
@@ -80,7 +80,7 @@ func (h *Handlers) aiUserOptions(ctx context.Context, row models.UserAiSetting) 
 	if err != nil {
 		return ai.Options{}, err
 	}
-	return p.Options(row.Model, key), nil
+	return p.Options(row.Model, key).WithEffort(row.Effort), nil
 }
 
 // aiStoredKey decrypts a row's key ("" for a keyless custom endpoint).

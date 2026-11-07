@@ -55,10 +55,13 @@ func CustomPreset(baseURL string) Preset {
 
 // Per-user client limits. A hosted reasoning model spends part of the output
 // budget thinking before it writes, and only the tokens actually produced are
-// billed, so the budget is generous; the timeout allows for that thinking.
+// billed, so the budget is generous; the timeout allows for that thinking. At
+// effort high and above the thinking alone can approach the usual budget, so
+// those calls get twice the room (a review cut off mid-sentence is an error).
 const (
-	userMaxTokens = 8192
-	userTimeout   = 180 * time.Second
+	userMaxTokens     = 8192
+	userMaxTokensDeep = 16384
+	userTimeout       = 180 * time.Second
 )
 
 // Options builds the client options for this provider with the user's model
@@ -76,4 +79,19 @@ func (p Preset) Options(model, apiKey string) Options {
 		OmitTemperature:  true,
 		CompletionTokens: p.CompletionTokens,
 	}
+}
+
+// WithEffort is o asking for that effort level ("" = the model's default),
+// with the output budget sized for it: high, xhigh and max think at length
+// inside max_tokens, so they get userMaxTokensDeep. The value is validated
+// where the client is built (New).
+func (o Options) WithEffort(effort string) Options {
+	o.Effort = effort
+	switch effort {
+	case "high", "xhigh", "max":
+		if o.MaxTokens < userMaxTokensDeep {
+			o.MaxTokens = userMaxTokensDeep
+		}
+	}
+	return o
 }

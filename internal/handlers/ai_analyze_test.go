@@ -157,6 +157,7 @@ func TestAIWordsCoverEveryLanguage(t *testing.T) {
 	}{
 		{aiModelRef{Model: "claude-sonnet-5-5", Provider: "Anthropic (Claude)"}, "", "claude-sonnet-5-5 via Anthropic (Claude)"},
 		{aiModelRef{Model: "claude-sonnet-5-5", Provider: "Anthropic (Claude)"}, "Czech", "claude-sonnet-5-5 přes Anthropic (Claude)"},
+		{aiModelRef{Model: "claude-opus-5-5", Effort: "medium", Provider: "Anthropic (Claude)"}, "", "claude-opus-5-5 (medium) via Anthropic (Claude)"},
 		{aiModelRef{Model: "qwen3"}, "German", "qwen3 über diesen Server"},
 		{aiModelRef{}, "", "this server"},
 	} {

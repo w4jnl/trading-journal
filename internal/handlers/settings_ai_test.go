@@ -192,7 +192,7 @@ func TestSettingsAISaveTestsThenEncrypts(t *testing.T) {
 	withPresetURL(t, "mistral", fp.URL)
 
 	rec := aiPost(h.SettingsAISave, aiUser, "/settings/ai", url.Values{
-		"provider": {"mistral"}, "model": {"mistral-large-latest"}, "api_key": {key},
+		"provider": {"mistral"}, "model": {"mistral-large-latest"}, "api_key": {key}, "effort": {"medium"},
 	})
 	if flash, errMsg := redirectQuery(t, rec); flash != "ai-saved" {
 		t.Fatalf("flash=%q err=%q", flash, errMsg)
@@ -204,7 +204,7 @@ func TestSettingsAISaveTestsThenEncrypts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if row.Provider != "mistral" || row.Model != "mistral-large-latest" || row.BaseUrl != "" || row.KeyHint != "6789" || row.LastVerifiedAt == nil {
+	if row.Provider != "mistral" || row.Model != "mistral-large-latest" || row.BaseUrl != "" || row.Effort != "medium" || row.KeyHint != "6789" || row.LastVerifiedAt == nil {
 		t.Errorf("row = %+v", row)
 	}
 	if bytes.Contains(row.ApiKeyEnc, []byte(key)) {
@@ -243,6 +243,7 @@ func TestSettingsAISaveValidation(t *testing.T) {
 		{url.Values{"provider": {"openai"}, "api_key": {key}}, "enter a model"},
 		{url.Values{"provider": {"bogus"}, "model": {"m1"}, "api_key": {key}}, "choose a provider"},
 		{url.Values{"provider": {"openai"}, "model": {"m 1"}, "api_key": {key}}, "model id looks wrong"},
+		{url.Values{"provider": {"openai"}, "model": {"m1"}, "api_key": {key}, "effort": {"turbo"}}, "unknown effort"},
 	} {
 		_, errMsg := redirectQuery(t, aiPost(h.SettingsAISave, aiUser, "/settings/ai", c.form))
 		if !strings.Contains(errMsg, c.want) {
@@ -350,16 +351,26 @@ func TestAIForResolution(t *testing.T) {
 	if err != nil || c != def || model.Label(aiWordsFor("")) != "server-model via this server" || !h.aiAvailable(ctx) {
 		t.Errorf("default: c=%v model=%q err=%v", c, model, err)
 	}
+	h.AIEffort = "low"
+	if _, model, _ := h.aiFor(ctx); model.Label(aiWordsFor("")) != "server-model (low) via this server" {
+		t.Errorf("default with effort: %q", model)
+	}
 
 	enc, nonce, _ := h.AISecrets.Seal("sk-own-key-000001")
 	if err := q.UpsertUserAISettings(ctx, models.UpsertUserAISettingsParams{
-		UserID: 7, Provider: "anthropic", Model: "claude-sonnet-5-5", ApiKeyEnc: enc, ApiKeyNonce: nonce,
+		UserID: 7, Provider: "anthropic", Model: "claude-sonnet-5-5", Effort: "medium", ApiKeyEnc: enc, ApiKeyNonce: nonce,
 	}); err != nil {
 		t.Fatal(err)
 	}
 	c, model, err = h.aiFor(ctx)
-	if err != nil || c == def || model.Label(aiWordsFor("")) != "claude-sonnet-5-5 via Anthropic (Claude)" {
+	if err != nil || c == def || model.Label(aiWordsFor("")) != "claude-sonnet-5-5 (medium) via Anthropic (Claude)" {
 		t.Errorf("own provider: c=%v model=%q err=%v", c, model, err)
+	}
+	// The stored effort reaches the client options, with the budget it needs.
+	if row, _ := q.GetUserAISettings(ctx, 7); row.Effort != "medium" {
+		t.Errorf("row effort = %q", row.Effort)
+	} else if opts, err := h.aiUserOptions(ctx, row); err != nil || opts.Effort != "medium" || opts.MaxTokens != 8192 {
+		t.Errorf("options = %+v, %v", opts, err)
 	}
 
 	if _, err := db.Exec(`UPDATE user_ai_settings SET api_key_enc = X'00112233' WHERE user_id = 7`); err != nil {

@@ -123,6 +123,7 @@ func TestReviewCarriesTheProfile(t *testing.T) {
 	}
 	var pv struct {
 		Scope, Language string
+		Model, Effort   string
 		Images          int
 		System, User    []struct {
 			Cached         bool
@@ -137,6 +138,9 @@ func TestReviewCarriesTheProfile(t *testing.T) {
 	}
 	if pv.Scope != "trade" || pv.Language != "Czech" || pv.Images != 0 || len(pv.System) < 2 || len(pv.User) < 3 || fp.calls != calls {
 		t.Errorf("preview = scope %s lang %s images %d system %d user %d calls %d", pv.Scope, pv.Language, pv.Images, len(pv.System), len(pv.User), fp.calls-calls)
+	}
+	if pv.Model == "" || pv.Effort != "" {
+		t.Errorf("preview names model %q effort %q, want the user's model and no effort", pv.Model, pv.Effort)
 	}
 	if !pv.User[0].Cached || !strings.Contains(pv.User[0].Text, "labelVocabulary") || !pv.User[1].Cached || !strings.Contains(pv.User[1].Text, "THE TRADER") ||
 		pv.User[len(pv.User)-1].Cached || !strings.HasPrefix(pv.User[len(pv.User)-1].Text, "Reply in Czech") {

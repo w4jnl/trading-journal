@@ -19,7 +19,7 @@ func (q *Queries) DeleteUserAISettings(ctx context.Context, userID int64) error 
 }
 
 const getUserAISettings = `-- name: GetUserAISettings :one
-SELECT user_id, provider, model, base_url, api_key_enc, api_key_nonce, key_hint, created_at, updated_at, last_verified_at FROM user_ai_settings WHERE user_id = ?
+SELECT user_id, provider, model, base_url, api_key_enc, api_key_nonce, key_hint, created_at, updated_at, last_verified_at, effort FROM user_ai_settings WHERE user_id = ?
 `
 
 func (q *Queries) GetUserAISettings(ctx context.Context, userID int64) (UserAiSetting, error) {
@@ -36,6 +36,7 @@ func (q *Queries) GetUserAISettings(ctx context.Context, userID int64) (UserAiSe
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.LastVerifiedAt,
+		&i.Effort,
 	)
 	return i, err
 }
@@ -50,12 +51,13 @@ func (q *Queries) TouchUserAISettingsVerified(ctx context.Context, userID int64)
 }
 
 const upsertUserAISettings = `-- name: UpsertUserAISettings :exec
-INSERT INTO user_ai_settings (user_id, provider, model, base_url, api_key_enc, api_key_nonce, key_hint, last_verified_at)
-VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+INSERT INTO user_ai_settings (user_id, provider, model, base_url, effort, api_key_enc, api_key_nonce, key_hint, last_verified_at)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
 ON CONFLICT(user_id) DO UPDATE SET
     provider = excluded.provider,
     model = excluded.model,
     base_url = excluded.base_url,
+    effort = excluded.effort,
     api_key_enc = excluded.api_key_enc,
     api_key_nonce = excluded.api_key_nonce,
     key_hint = excluded.key_hint,
@@ -68,19 +70,21 @@ type UpsertUserAISettingsParams struct {
 	Provider    string `json:"provider"`
 	Model       string `json:"model"`
 	BaseUrl     string `json:"base_url"`
+	Effort      string `json:"effort"`
 	ApiKeyEnc   []byte `json:"api_key_enc"`
 	ApiKeyNonce []byte `json:"api_key_nonce"`
 	KeyHint     string `json:"key_hint"`
 }
 
-// Save (or replace) the user's provider, model and key. Saving implies a live
-// test call just succeeded, so last_verified_at is refreshed too.
+// Save (or replace) the user's provider, model, effort and key. Saving implies
+// a live test call just succeeded, so last_verified_at is refreshed too.
 func (q *Queries) UpsertUserAISettings(ctx context.Context, arg UpsertUserAISettingsParams) error {
 	_, err := q.db.ExecContext(ctx, upsertUserAISettings,
 		arg.UserID,
 		arg.Provider,
 		arg.Model,
 		arg.BaseUrl,
+		arg.Effort,
 		arg.ApiKeyEnc,
 		arg.ApiKeyNonce,
 		arg.KeyHint,
