@@ -217,7 +217,7 @@ struct PositionRow: View {
                     Text("no stop").font(Brand.text(11, weight: .medium, relativeTo: .caption2)).foregroundStyle(Brand.warnText)
                 }
             }
-            Text(p.account).font(Brand.text(11, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle).lineLimit(1)
+            Text(p.accountLabel).font(Brand.text(11, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle).lineLimit(1)
         }
         .padding(.vertical, 4)
         .contentShape(Rectangle())

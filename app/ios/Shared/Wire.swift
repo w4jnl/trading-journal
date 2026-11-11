@@ -338,6 +338,10 @@ struct Position: Codable, Sendable, Hashable, Identifiable {
     var thesisText: String { thesis ?? "" }
     var planSourceName: String { planSource ?? "" }
     var priceSourceName: String { priceSource ?? "" }
+    /// The account with its firm, as the web's open-positions card prints it ("229042 · amp"):
+    /// an account the trader never renamed carries only the broker's reference, which for AMP
+    /// is a bare number, so the firm is what makes it readable.
+    var accountLabel: String { firm.map { "\(account) · \($0)" } ?? account }
 }
 
 struct PositionList: Codable, Sendable { var items: [Position] }

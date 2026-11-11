@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App
+
+- Open positions name the account's firm beside the account, as the web does ("229042 · amp"): an account that was never renamed carries only the broker's reference, which for AMP is a bare number. The position row on Today, the position header and the legs of a copied decision all show it.
+
 ## 2.24.0, 2026-11-07
 
 ### Server
