@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- Silver is priced: SI and micro silver SIL get a live quote on open positions (TopstepX contract SIE and SIL, Yahoo SI=F), so an open SIZ6 shows last, unrealized P&L and ticks to stop like gold does, and gets a chart. The MotiveWave mail parser also knows the two roots.
+
 ## 2.24.0, 2026-11-07
 
 ### Server

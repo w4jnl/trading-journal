@@ -86,7 +86,7 @@ var (
 	reFillTime = regexp.MustCompile(`(?i)\b(?:time|filled\s+at|at)[:\s]+([0-9][0-9:/\- .APMapm]{4,30})`)
 
 	// Known roots for the fallback when no dated contract code appears.
-	knownRoots = []string{"MES", "MNQ", "MCL", "MGC", "MYM", "M2K", "ES", "NQ", "CL", "GC", "YM", "RTY", "ZB", "ZN", "6E"}
+	knownRoots = []string{"MES", "MNQ", "MCL", "MGC", "MYM", "M2K", "SIL", "ES", "NQ", "CL", "GC", "SI", "YM", "RTY", "ZB", "ZN", "6E"}
 )
 
 // Parse runs the provisional extractor on a raw RFC-5322 message.

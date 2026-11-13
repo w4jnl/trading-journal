@@ -70,6 +70,7 @@ var projectxRoots = map[string]string{
 	"NQ": "ENQ", "ENQ": "ENQ", "MNQ": "MNQ",
 	"CL": "CLE", "CLE": "CLE", "MCL": "MCL",
 	"GC": "GCE", "GCE": "GCE", "MGC": "MGC",
+	"SI": "SIE", "SIE": "SIE", "SIL": "SIL", // CQG names full silver SIE; micro silver is SIL
 	"YM": "YM", "MYM": "MYM",
 	"RTY": "RTY", "M2K": "M2K",
 }
