@@ -200,7 +200,7 @@ func (h *Handlers) openLessons(ctx context.Context, since string) []lessonGroup 
 
 // topOpenLessons is the few open lessons a plan or a digest leads with.
 func (h *Handlers) topOpenLessons(ctx context.Context, n int) []lessonGroup {
-	since := time.Now().In(h.localTZ()).AddDate(0, 0, -openLessonDays).Format("2006-01-02")
+	since := h.now().In(h.localTZ()).AddDate(0, 0, -openLessonDays).Format("2006-01-02")
 	all := h.openLessons(ctx, since)
 	if len(all) > n {
 		all = all[:n]
@@ -219,7 +219,7 @@ type lessonRow struct {
 // and the last 90 days of lessons.
 func (h *Handlers) LessonsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	now := time.Now().In(h.localTZ())
+	now := h.now().In(h.localTZ())
 	rows, err := h.Queries.ListLessonsBetween(ctx, models.ListLessonsBetweenParams{
 		UserID: userID(ctx), Day: now.AddDate(0, 0, -90).Format("2006-01-02"), Day_2: now.Format("2006-01-02"),
 	})

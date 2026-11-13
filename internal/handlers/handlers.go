@@ -162,6 +162,9 @@ type Handlers struct {
 	AIModel string
 	// AIEffort is the server default's effort level, "" for the model's own.
 	AIEffort string
+	// Now is the clock the date-windowed pages read; nil means time.Now.
+	// Tests pin it so a fixture dated in the past stays inside the windows.
+	Now func() time.Time
 
 	// GEX fetches gamma-exposure snapshots for review-time trade annotations.
 	// Nil = gex.enabled false; prepare-day then skips annotation entirely.
@@ -1019,4 +1022,12 @@ func (h *Handlers) publicBaseURL(r *http.Request) string {
 // client's own timeout (120 s by default) for a local model.
 func clearWriteDeadline(w http.ResponseWriter) {
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
+}
+
+// now is h.Now when set, else the wall clock.
+func (h *Handlers) now() time.Time {
+	if h.Now != nil {
+		return h.Now()
+	}
+	return time.Now()
 }
