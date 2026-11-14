@@ -103,6 +103,8 @@ func TestSymbolMap(t *testing.T) {
 		"MES":  {"ES=F", true},
 		"mnq":  {"NQ=F", true},
 		" CL ": {"CL=F", true},
+		"SI":   {"SI=F", true},
+		"SIL":  {"SI=F", true},
 		"ZZ":   {"", false},
 	}
 	for in, exp := range cases {

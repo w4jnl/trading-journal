@@ -62,6 +62,9 @@ func TestParseAILesson(t *testing.T) {
 // ledger page marks them learned; the week's digest lists them.
 func TestReviewLessonsLedger(t *testing.T) {
 	h, ctx, uid := setsFixture(t)
+	// The fixture trades on 2026-10-09; the ledger windows (30 days open, 90
+	// days recent) are read from the clock, so pin it near the fixture.
+	h.Now = func() time.Time { return time.Date(2026, 10, 12, 12, 0, 0, 0, time.UTC) }
 	fp := useOwnProvider(t, h, uid, "- **Entry:** chased the break.\n\n<!-- tj-ai:lesson key=chased | Wait for the retest. -->\n<!-- tj-ai:verdict tag=bad -->")
 	mux := aiButtonMux(h)
 	reply := func(s string) {

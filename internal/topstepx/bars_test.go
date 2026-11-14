@@ -55,6 +55,8 @@ func TestContractIDForSymbol(t *testing.T) {
 		{"MESU6", "MES"}: "CON.F.US.MES.U26",
 		{"GCZ6", "GC"}:   "CON.F.US.GCE.Z26",
 		{"MGCZ6", "MGC"}: "CON.F.US.MGC.Z26",
+		{"SIZ6", "SI"}:   "CON.F.US.SIE.Z26",
+		{"SILZ6", "SIL"}: "CON.F.US.SIL.Z26",
 		{"NQZ6", "NQ"}:   "CON.F.US.ENQ.Z26",
 		{"CLX6", "CL"}:   "CON.F.US.CLE.X26",
 		{"RTYZ6", "RTY"}: "CON.F.US.RTY.Z26",

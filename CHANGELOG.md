@@ -5,6 +5,10 @@ built against it carries the same marketing version.
 
 ## Unreleased
 
+### Server
+
+- Silver is priced: SI and micro silver SIL get a live quote on open positions (TopstepX contract SIE and SIL, Yahoo SI=F), so an open SIZ6 shows last, unrealized P&L and ticks to stop like gold does, and gets a chart. The MotiveWave mail parser also knows the two roots.
+
 ### App
 
 - Open positions name the account's firm beside the account, as the web does ("229042 · amp"): an account that was never renamed carries only the broker's reference, which for AMP is a bare number. The position row on Today, the position header and the legs of a copied decision all show it.
