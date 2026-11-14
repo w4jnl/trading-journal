@@ -89,7 +89,7 @@ struct PositionDetailView: View {
                             .init(label: "last", value: Formatting.price(p.lastPrice, tickSize: p.tickSize)),
                             .init(label: "opened", value: Formatting.clock(p.openedAt, tz: t.tz)),
                         ])
-                        Text("\(p.account) · prices from \(p.priceSourceName)\(p.stale ? " (stale)" : "")").font(Brand.text(11, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle)
+                        Text("\(p.accountLabel) · prices from \(p.priceSourceName)\(p.stale ? " (stale)" : "")").font(Brand.text(11, relativeTo: .caption2)).foregroundStyle(Brand.fgSubtle)
                     }
                     Card(keyline: p.hasPlan ? nil : Brand.warn) {
                         CardTitle("Plan", trailing: p.hasPlan ? (p.isSuggestion ? "suggested by \(p.planSourceName)" : "yours") : "")
@@ -136,7 +136,7 @@ struct PositionDetailView: View {
                             ForEach(t.positions.filter { $0.symbol == p.symbol && p.setLegs.contains($0.accountId) }) { leg in
                                 NavigationLink(value: Route.position(account: leg.accountId, symbol: leg.symbol)) {
                                     HStack {
-                                        Text(leg.account).font(Brand.text(13, relativeTo: .footnote)).lineLimit(1)
+                                        Text(leg.accountLabel).font(Brand.text(13, relativeTo: .footnote)).lineLimit(1)
                                         Spacer()
                                         Text("\(Formatting.qty(leg.qty)) @ \(Formatting.price(leg.avgEntry, tickSize: leg.tickSize))").font(Brand.mono(12)).foregroundStyle(Brand.fgMuted)
                                         PnlChip(leg.unrealized, size: .sm)
