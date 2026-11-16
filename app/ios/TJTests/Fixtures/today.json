@@ -21,6 +21,7 @@
     "dayChange": 0.0,
     "known": true,
     "now": 23476.65,
+    "peakAt": null,
     "underwater": false
   },
   "lastFillAt": "2026-10-15T14:14:21Z",

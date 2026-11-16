@@ -478,6 +478,8 @@ struct TodayEquity: Codable, Sendable, Hashable {
     var dayChange: Double
     var currentDrawdown: Double
     var underwater: Bool
+    /// When the all-time high the drawdown is measured from was set; nil on servers before 2.26.
+    var peakAt: Date?
 }
 
 struct Today: Codable, Sendable, Hashable {

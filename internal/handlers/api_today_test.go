@@ -68,7 +68,7 @@ func TestAPIToday(t *testing.T) {
 		t.Errorf("budgets = %v", plan)
 	}
 	eq := out["equity"].(map[string]any)
-	if eq["known"] != true || eq["now"].(float64) >= 50000 || eq["underwater"] != true || eq["dayChange"].(float64) >= 0 {
+	if eq["known"] != true || eq["now"].(float64) >= 50000 || eq["underwater"] != true || eq["dayChange"].(float64) >= 0 || eq["peakAt"] == nil {
 		t.Errorf("equity = %v", eq)
 	}
 }

@@ -3,6 +3,16 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The Today API dates the drawdown: `equity.peakAt` says when the all-time high the gap is measured from was set.
+
+### App
+
+- The Equity card on Today reads "619 below the Mon 9 Nov peak" instead of a bare "drawdown -619", which read like a today figure. The gap is the combined closed P&L of every included account against its all-time high, as the Accounts and Analytics screens show it.
+
 ## 2.25.0, 2026-11-14
 
 ### Server

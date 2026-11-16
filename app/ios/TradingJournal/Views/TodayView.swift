@@ -181,7 +181,10 @@ struct TodayView: View {
                     Text(t.equity.byType.map { "\($0.label) \(Formatting.balance($0.total))" }.joined(separator: " · ")).font(Brand.text(12, relativeTo: .caption)).foregroundStyle(Brand.fgMuted).lineLimit(2)
                 }
                 if t.equity.underwater {
-                    Text("drawdown \(Formatting.moneyShort(-t.equity.currentDrawdown))").font(Brand.mono(12)).foregroundStyle(Brand.negText)
+                    // The gap is all-time, not today's: name the high it is measured from.
+                    let gap = Formatting.moneyShort(-t.equity.currentDrawdown)
+                    let line = t.equity.peakAt.map { "\(gap) below the \(Formatting.dayLabel(Formatting.day($0, tz: client.tz), tz: client.tz)) peak" } ?? "drawdown \(gap)"
+                    Text(line).font(Brand.mono(12)).foregroundStyle(Brand.negText)
                 }
             }
         }
