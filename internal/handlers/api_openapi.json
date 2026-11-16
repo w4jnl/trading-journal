@@ -2473,6 +2473,11 @@
               },
               "underwater": {
                 "type": "boolean"
+              },
+              "peakAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
               }
             }
           }

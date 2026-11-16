@@ -254,7 +254,9 @@ func (h *Handlers) todayJSON(r *http.Request) (map[string]any, error) {
 	}
 
 	// Equity: the total now by type, today's change, the drawdown now.
-	equity := map[string]any{"now": 0.0, "byType": []any{}, "dayChange": 0.0, "currentDrawdown": 0.0, "underwater": false, "known": false}
+	// peakAt dates the all-time high the drawdown is measured from, so the phone can say
+	// "619 below the 9 Nov peak" instead of a bare number that reads like a today figure.
+	equity := map[string]any{"now": 0.0, "byType": []any{}, "dayChange": 0.0, "currentDrawdown": 0.0, "underwater": false, "peakAt": nil, "known": false}
 	if _, _, equityNow, byType, included, _, err := h.balanceSeriesForFilter(ctx, accountFilter{}, nil, nil, tz); err == nil && included > 0 {
 		types := make([]map[string]any, 0, len(byType))
 		for _, t := range byType {
@@ -274,6 +276,9 @@ func (h *Handlers) todayJSON(r *http.Request) (map[string]any, error) {
 	if all, err := h.fetchAnalyticsTrades(ctx, accountFilter{}, nil, nil); err == nil {
 		dd := computeDrawdown(all)
 		equity["currentDrawdown"], equity["underwater"] = dd.CurrentDD, dd.Underwater
+		if dd.PeakAt != nil {
+			equity["peakAt"] = *dd.PeakAt
+		}
 	}
 
 	// The last fill: the newest fill of what is open, or the last close.

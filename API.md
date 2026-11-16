@@ -1278,7 +1278,7 @@ pulls the latest broker fills first):
   "lastTrade": {"id": 4412, "symbolRoot": "MES", "direction": "short", "netPnl": 33.3, "exitTime": "2026-10-15T14:28:04Z", "account": "APEX-1"},
   "curve": [{"t": "2026-10-15T13:52:10Z", "net": 71.0}, {"t": "2026-10-15T14:28:04Z", "net": 120.5}],
   "equity": {"known": true, "now": 83410.25, "byType": [{"type": "live", "label": "Live", "total": 32180.0, "accounts": 1}],
-             "dayChange": 120.5, "currentDrawdown": 320.0, "underwater": true}
+             "dayChange": 120.5, "currentDrawdown": 320.0, "underwater": true, "peakAt": "2026-10-09T19:58:00Z"}
 }
 ```
 
