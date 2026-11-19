@@ -227,12 +227,28 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
 	}
-	// Active accounts first, retired (active=0) at the bottom. The base
-	// query orders by name; this is a stable secondary sort, so within
-	// each group names stay alphabetical.
+	// Accounts awaiting confirmation first (an import or a MotiveWave fill
+	// mail created them), then the rest of the active ones, retired
+	// (active=0) at the bottom. The base query orders by name; this is a
+	// stable secondary sort, so within each group names stay alphabetical.
+	rank := func(a models.Account) int {
+		switch {
+		case a.Active == 0:
+			return 2
+		case a.NeedsSetup == 1:
+			return 0
+		}
+		return 1
+	}
 	sort.SliceStable(accounts, func(i, j int) bool {
-		return accounts[i].Active > accounts[j].Active
+		return rank(accounts[i]) < rank(accounts[j])
 	})
+	needsConfirm := 0
+	for _, a := range accounts {
+		if rank(a) == 0 {
+			needsConfirm++
+		}
+	}
 	balances, err := h.loadBalances(ctx, time.Now())
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load balances: %w", err))
@@ -293,6 +309,7 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"NavActive":          "accounts",
 		"BackHref":           validBackHref(r),
 		"Accounts":           accounts,
+		"NeedsConfirm":       needsConfirm,
 		"EmailAlerts":        emailAlerts,
 		"CanRetryEmailFills": canRetry && h.MWEmailArchiveDir != "" && h.ImportSvc != nil,
 		"TopstepxSync":       h.TopstepxSync != nil,

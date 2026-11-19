@@ -43,6 +43,7 @@ type Fill struct {
 	Commission   *float64  // broker-reported total for the fill (TopstepX API sync); nil for CSV sources
 	ExecTime     time.Time // UTC
 	RawData      string    // JSON-encoded original row, optional
+	Recipient    string    // the fill mail's To address (MW email only); names the owner of an account the mail creates
 }
 
 // Format identifies a CSV import source.

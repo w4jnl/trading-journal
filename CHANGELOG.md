@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- A MotiveWave fill mail for an account the journal does not know creates the account, as a CSV import does, instead of leaving the fill in the archive until the first export: the owner is the user whose e-mail address the mail was sent to, or the only user. The new account is flagged for confirmation and Accounts lists it first with a "confirm" pill and a banner; Save confirms it.
+
 ## 2.26.0, 2026-11-16
 
 ### Server

@@ -90,9 +90,12 @@ forces a full re-pass (useful after an upgrade whose parser recovers messages an
 could not read).
 
 An e-mail carries no user identity, only the broker account ref, so a fill is booked under
-whichever user already owns that account. Refs no user owns are not created from e-mail: the
+whichever user already owns that account. A ref no user owns yet becomes a new account the way
+a CSV import creates one, owned by the active user whose e-mail address is the message's
+recipient, or by the only active user when there is just one; it is flagged for confirmation
+and listed first on `/accounts` until the trader saves it. When neither rule names a user the
 fill stays archive-only, with a warning in the log and a card on `/accounts` for admins, until
-the account's first CSV import creates it. The CQG connection reports its internal account id in
+a CSV import or a manual account creates it. The CQG connection reports its internal account id in
 e-mails while the CSV carries the AMP account number; set the account's **acct id in emails** on
 `/accounts` and fills addressed to it resolve.
 

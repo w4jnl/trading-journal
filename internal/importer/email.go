@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/mail"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -91,9 +93,16 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 	}
 	switch {
 	case len(owners) == 0:
-		s.logger().Warn("mw email ingest: unknown account ref, fill stays archive-only until its first CSV import",
-			"ref", f.AccountRef, "order_id", f.OrderID)
-		return EmailSkippedUnknownAcct, nil
+		created, ok, err := s.createAccountFromEmail(ctx, q, f)
+		if err != nil {
+			return "", fmt.Errorf("create account %s: %w", f.AccountRef, err)
+		}
+		if !ok {
+			s.logger().Warn("mw email ingest: unknown account ref and no user to own it, fill stays archive-only until a CSV import or a manual account creates it",
+				"ref", f.AccountRef, "order_id", f.OrderID, "to", f.Recipient)
+			return EmailSkippedUnknownAcct, nil
+		}
+		owners = []models.Account{created}
 	case len(owners) > 1:
 		s.logger().Warn("mw email ingest: account ref owned by multiple users, cannot attribute",
 			"ref", f.AccountRef, "owners", len(owners))
@@ -209,6 +218,70 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 	// Attributed to the resolved account OWNER, same as the builder above.
 	s.bumpVersion(acct.UserID)
 	return action, nil
+}
+
+// createAccountFromEmail books a fill mail's unknown account ref as a new
+// account, the way a CSV import creates one, so the fills land without an
+// export. The mail names no journal user, so the owner is the active user
+// whose e-mail address is the message's recipient, else the only active
+// user; with neither there is no owner and the fill stays archive-only
+// (ok=false). The row is created with needs_setup so the trader confirms
+// it on /accounts, which lists such accounts first; the import source is
+// the CSV's so the account's first export matches the same row.
+func (s *ImportService) createAccountFromEmail(ctx context.Context, q *models.Queries, f Fill) (models.Account, bool, error) {
+	users, err := q.ListUsers(ctx)
+	if err != nil {
+		return models.Account{}, false, fmt.Errorf("list users: %w", err)
+	}
+	owner := ownerForRecipient(users, f.Recipient)
+	if owner == 0 {
+		return models.Account{}, false, nil
+	}
+	firm := GuessFirm(FormatMotiveWave, f.AccountRef, f.Source)
+	defaultType := "prop_eval"
+	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
+		UserID:           owner,
+		Name:             f.AccountRef,
+		Firm:             strPtrOrNil(firm),
+		ImportSource:     string(FormatMotiveWave),
+		AccountRef:       f.AccountRef,
+		Type:             &defaultType,
+		Currency:         "USD",
+		NeedsSetup:       1,
+		CommissionSource: "rate",
+	})
+	if err != nil {
+		return models.Account{}, false, err
+	}
+	s.logger().Info("mw email ingest: created an account from a fill mail; confirm it on /accounts",
+		"ref", f.AccountRef, "user_id", owner, "firm", firm, "to", f.Recipient)
+	return created, true, nil
+}
+
+// ownerForRecipient picks the user a fill mail belongs to: the active user
+// whose e-mail address is the recipient, else the only active user, else 0.
+func ownerForRecipient(users []models.User, recipient string) int64 {
+	addr := strings.TrimSpace(recipient)
+	if a, err := mail.ParseAddress(addr); err == nil {
+		addr = a.Address
+	}
+	var active []models.User
+	for _, u := range users {
+		if u.IsActive == 1 {
+			active = append(active, u)
+		}
+	}
+	if addr != "" {
+		for _, u := range active {
+			if u.Email != nil && strings.EqualFold(strings.TrimSpace(*u.Email), addr) {
+				return u.ID
+			}
+		}
+	}
+	if len(active) == 1 {
+		return active[0].ID
+	}
+	return 0
 }
 
 // manualRowMatchWindow absorbs the precision mismatch between MW's email time

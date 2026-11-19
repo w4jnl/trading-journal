@@ -72,9 +72,10 @@ func (s *Server) replayArchive(ctx context.Context) {
 
 // ImporterIngest adapts importer.ImportService.IngestEmailFill to the
 // IngestFunc hook. User attribution happens inside IngestEmailFill: the fill
-// is booked under whichever user already owns the account ref; unknown refs
-// are never auto-created from email (no owner signal) and stay archive-only
-// until their first CSV import.
+// is booked under whichever user already owns the account ref; an unknown ref
+// becomes a new account, flagged for confirmation, owned by the user whose
+// e-mail is the message's recipient (or the only user); with no owner signal
+// the fill stays archive-only.
 //
 // The broker_exec_id is minted as "MWEMAIL-<order id>": it can never collide
 // with a CSV ticket, and the real join key for supersede/dedup is the
@@ -105,6 +106,7 @@ func ImporterIngest(svc *importer.ImportService) IngestFunc {
 			Price:        res.Price,
 			ExecTime:     res.ExecTime,
 			RawData:      string(raw),
+			Recipient:    res.To,
 		})
 	}
 }

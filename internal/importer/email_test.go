@@ -53,6 +53,66 @@ func createUser(t *testing.T, conn *sql.DB, username string) int64 {
 	return id
 }
 
+// TestIngestEmailFill_UnknownRefCreatesAccount: a fill mail for a ref nobody owns creates the
+// account under the only user, flagged for confirmation, with the CSV's import source so the
+// first export matches it; the fill books on it.
+func TestIngestEmailFill_UnknownRefCreatesAccount(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+
+	f := emailFill("500100", 1, 7516.25, time.Date(2026, 7, 27, 7, 19, 31, 0, time.UTC))
+	f.AccountRef = "APEX-200002-11"
+	action, err := svc.IngestEmailFill(ctx, f)
+	if err != nil || action != EmailInserted {
+		t.Fatalf("unknown ref = %q err %v, want inserted", action, err)
+	}
+	acct, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{UserID: svc.UserID, ImportSource: "motivewave_csv", AccountRef: "APEX-200002-11"})
+	if err != nil {
+		t.Fatalf("account not created: %v", err)
+	}
+	if acct.NeedsSetup != 1 || acct.Firm == nil || *acct.Firm != "apex" || acct.Name != "APEX-200002-11" {
+		t.Errorf("account = needs_setup %d firm %v name %q, want 1 apex APEX-200002-11", acct.NeedsSetup, acct.Firm, acct.Name)
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM executions WHERE account_id = ?`, acct.ID).Scan(&n); err != nil || n != 1 {
+		t.Errorf("executions on the new account = %d err %v, want 1", n, err)
+	}
+}
+
+// TestIngestEmailFill_UnknownRefOwner: with several users the mail's recipient names the owner;
+// a recipient nobody has stays unattributed and creates nothing.
+func TestIngestEmailFill_UnknownRefOwner(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+	second := createUser(t, conn, "second")
+	if _, err := conn.Exec(`UPDATE users SET email = ? WHERE id = ?`, "Second@Example.com", second); err != nil {
+		t.Fatal(err)
+	}
+
+	f := emailFill("500200", 1, 7516.25, time.Date(2026, 7, 27, 7, 19, 31, 0, time.UTC))
+	f.AccountRef = "APEX-200002-12"
+	f.Recipient = "Second Trader <second@example.com>"
+	if action, err := svc.IngestEmailFill(ctx, f); err != nil || action != EmailInserted {
+		t.Fatalf("matched recipient = %q err %v, want inserted", action, err)
+	}
+	if _, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{UserID: second, ImportSource: "motivewave_csv", AccountRef: "APEX-200002-12"}); err != nil {
+		t.Errorf("account not created under the recipient's user: %v", err)
+	}
+
+	g := emailFill("500300", 1, 7516.25, time.Date(2026, 7, 27, 7, 20, 31, 0, time.UTC))
+	g.AccountRef = "APEX-200002-13"
+	g.Recipient = "nobody@example.com"
+	if action, err := svc.IngestEmailFill(ctx, g); err != nil || action != EmailSkippedUnknownAcct {
+		t.Fatalf("unmatched recipient with two users = %q err %v, want skipped_unknown_account", action, err)
+	}
+	var n int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM accounts WHERE account_ref = ?`, "APEX-200002-13").Scan(&n); err != nil || n != 0 {
+		t.Errorf("accounts for the unattributed ref = %d err %v, want 0", n, err)
+	}
+}
+
 // TestIngestEmailFill_Lifecycle walks the full provisional flow against the
 // verified real-world semantics: MW emails CUMULATIVE order snapshots, the
 // CSV import supersedes them via (account, order id), and a re-import stays
@@ -319,15 +379,18 @@ func TestIngestEmailFill_EmailRefAlias(t *testing.T) {
 }
 
 // TestIngestEmailFill_UnknownAccountSkipped: an email has no user identity,
-// so a ref no user owns must NOT auto-create an account - the fill stays
-// archive-only until the first authoritative CSV import creates it under
-// the right user.
+// so a ref no user owns is created only when the recipient or a lone user
+// names the owner. With several users and a recipient none of them has,
+// nothing may be guessed: no account, and the fill stays archive-only until
+// a CSV import or a manual account creates it under the right user.
 func TestIngestEmailFill_UnknownAccountSkipped(t *testing.T) {
 	svc, conn, _, _, _ := setupTestService(t)
 	ctx := context.Background()
+	createUser(t, conn, "second")
 
 	f := emailFill("800001", 1, 7500, time.Date(2026, 7, 27, 8, 0, 0, 0, time.UTC))
 	f.AccountRef = "APEX-999999-01"
+	f.Recipient = "fills@example.com"
 	action, err := svc.IngestEmailFill(ctx, f)
 	if err != nil || action != EmailSkippedUnknownAcct {
 		t.Fatalf("unknown ref = %q err %v, want skipped_unknown_account", action, err)
