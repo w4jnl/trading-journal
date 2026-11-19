@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- MotiveWave imports survive a short row: the Executions export drops the Order ID cell outright for a fill from a connection without order ids, which shifted every later column and failed the whole file ("unknown action" with a price in it), taking the other accounts' fills down with it. The parser puts the empty cell back; a row short by more than one field is still refused, with the field count named.
+
 ## 2.26.0, 2026-11-16
 
 ### Server

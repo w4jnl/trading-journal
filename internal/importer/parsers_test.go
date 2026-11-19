@@ -6,6 +6,42 @@ import (
 	"testing"
 )
 
+// TestParseMotiveWaveShortRow: the Executions-panel export drops the "Order ID" cell outright
+// for a fill with no order id, so the row is one field short and every later column shifts.
+// The parser puts the empty cell back; a row short by more than one is an error, not a panic.
+func TestParseMotiveWaveShortRow(t *testing.T) {
+	const csv = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection
+APEX-100001-28,2,MES,MESZ6,BOT,7560.5,11/16/2026 10:03:00.000+0100,1,1411725730,CME,1411725730,Rithmic,ApexBV
+1234567890,MES,MESZ6,BOT,7367.75,11/17/2026 17:09:28.085+0100,2,,CME,2970400317,,
+`
+	fills, err := ParseMotiveWave(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("ParseMotiveWave: %v", err)
+	}
+	if len(fills) != 2 {
+		t.Fatalf("got %d fills, want 2", len(fills))
+	}
+	if f := fills[0]; f.OrderID != "2" || f.BrokerExecID != "1411725730" || f.Source != "Rithmic" {
+		t.Errorf("full row = %+v", f)
+	}
+	f := fills[1]
+	if f.AccountRef != "1234567890" || f.OrderID != "" || f.SymbolRoot != "MES" || f.Symbol != "MESZ6" ||
+		f.Side != "buy" || f.Price != 7367.75 || f.Qty != 2 || f.Exchange != "CME" ||
+		f.BrokerExecID != "2970400317" || f.Source != "" {
+		t.Errorf("short row = %+v", f)
+	}
+	if f.ExecTime.UTC().Format("2006-01-02 15:04:05") != "2026-11-17 16:09:28" {
+		t.Errorf("short row time = %v", f.ExecTime)
+	}
+
+	const tooShort = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection
+1234567890,MES,MESZ6,BOT,7367.75,11/17/2026 17:09:28.085+0100,2,,CME,2970400317
+`
+	if _, err := ParseMotiveWave(strings.NewReader(tooShort)); err == nil || !strings.Contains(err.Error(), "fields") {
+		t.Errorf("two fields short: err = %v, want a field-count error", err)
+	}
+}
+
 // TestParseMotiveWaveCoTicketFills covers the multi-lot dedup fix: when one order fills in
 // several lots, MotiveWave emits a row per lot sharing the Ticket. The parser must keep them
 // all by suffixing the 2nd+ occurrence's BrokerExecID, so the (account_id, broker_exec_id)
