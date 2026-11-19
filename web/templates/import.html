@@ -120,6 +120,7 @@
         <td><code>{{.SyncType}}</code></td>
         <td>
           {{if eq .Status "success"}}<span class="pill success">success</span>
+          {{else if eq .Status "partial"}}<span class="pill warn">partial</span>
           {{else}}<span class="pill error">{{.Status}}</span>{{end}}
         </td>
         <td class="tabular num">{{.ExecsAdded}}</td>

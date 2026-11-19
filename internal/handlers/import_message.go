@@ -17,6 +17,8 @@ type importNote struct {
 var (
 	reImportRow  = regexp.MustCompile(`^row (\d+): (.*)$`)
 	reMissingCol = regexp.MustCompile(`missing column "([^"]+)"`)
+	// reSkippedRows matches the summary tail written when a parser left rows out on purpose.
+	reSkippedRows = regexp.MustCompile(`skipped_rows=(\d+) \((.+)\)$`)
 )
 
 // humanizeImportMessage turns the importer's error chain ("parse: row 12:
@@ -50,6 +52,9 @@ func humanizeImportMessage(msg *string) importNote {
 	case reImportRow.MatchString(body):
 		m := reImportRow.FindStringSubmatch(body)
 		n.Summary = fmt.Sprintf("Row %s could not be read: %s. Nothing from this file was imported.", m[1], importRowProblem(m[2]))
+	case reSkippedRows.MatchString(body):
+		m := reSkippedRows.FindStringSubmatch(body)
+		n.Summary = fmt.Sprintf("Imported, but %s rows were left out: %s.", m[1], m[2])
 	case strings.Contains(body, "already orders-imported"), strings.Contains(body, "already trades-imported"):
 		n.Summary = body // written for people already
 	case phase == "ingest":

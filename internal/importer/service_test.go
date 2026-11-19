@@ -61,6 +61,51 @@ func copyFixtureTo(t *testing.T, fixturePath, destDir string) string {
 	return dest
 }
 
+// TestImportFile_MotiveWaveAccountlessRows: a file holding rows without an Account cell
+// still imports the rest; the outcome counts the rows, the sync_log row says partial and
+// carries the reason, and the file lands in processed/.
+func TestImportFile_MotiveWaveAccountlessRows(t *testing.T) {
+	svc, conn, tmp, processed, _ := setupTestService(t)
+	const csv = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection
+APEX-100001-28,2,MES,MESZ6,BOT,7560.5,11/16/2026 10:03:00.000+0100,1,1411725730,CME,1411725730,Rithmic,ApexBV
+APEX-100001-28,3,MES,MESZ6,SLD,7561.5,11/16/2026 10:05:00.000+0100,1,1411725731,CME,1411725731,Rithmic,ApexBV
+2970400317,MES,MESZ6,BOT,7367.75,11/17/2026 17:09:28.085+0100,2,,CME,2970400317,,
+`
+	inbox := filepath.Join(tmp, "inbox")
+	if err := os.MkdirAll(inbox, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	src := filepath.Join(inbox, "Executions.csv")
+	if err := os.WriteFile(src, []byte(csv), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := svc.ImportFile(context.Background(), src)
+	if err != nil {
+		t.Fatalf("ImportFile: %v (outcome %+v)", err, out)
+	}
+	if out.ErrorMessage != "" || out.FillsParsed != 2 || out.ExecsInserted != 2 || out.AccountsCreated != 1 {
+		t.Errorf("outcome = %+v, want 2 fills on one new account and no error", out)
+	}
+	if out.RowsSkipped != 1 || !strings.Contains(out.SkipReason, "no Account cell from row 4") {
+		t.Errorf("skip = %d %q, want 1 row from line 4", out.RowsSkipped, out.SkipReason)
+	}
+	if !strings.HasPrefix(out.DestinationPath, processed) {
+		t.Errorf("destination = %q, want under processed/", out.DestinationPath)
+	}
+	var status, message string
+	if err := conn.QueryRow(`SELECT status, message FROM sync_log WHERE id = ?`, out.SyncLogID).Scan(&status, &message); err != nil {
+		t.Fatal(err)
+	}
+	if status != "partial" || !strings.Contains(message, "skipped_rows=1 (no Account cell") {
+		t.Errorf("sync_log = %q %q, want partial with the skip in the message", status, message)
+	}
+	var accounts int
+	if err := conn.QueryRow(`SELECT COUNT(*) FROM accounts`).Scan(&accounts); err != nil || accounts != 1 {
+		t.Errorf("accounts = %d err %v, want 1 (no account invented for the row)", accounts, err)
+	}
+}
+
 func TestImportFile_MotiveWaveFixture(t *testing.T) {
 	svc, conn, tmp, processed, _ := setupTestService(t)
 	src := copyFixtureTo(t, motivewaveFixture, filepath.Join(tmp, "inbox"))

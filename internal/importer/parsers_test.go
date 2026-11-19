@@ -8,22 +8,32 @@ import (
 
 // TestParseMotiveWaveShortRow: the Executions export writes a fill it cannot attribute with
 // no Account cell at all, so the row is one field short and starts with the order number.
-// The journal cannot place it: the file is refused, the error counts such rows and names the
-// first one. A row short by more than one field is an error too, never a panic.
+// The journal cannot place it: the row is left out, the rest of the file parses, and the
+// report counts the rows and names the first. A row short by more than one field is an
+// error, never a panic.
 func TestParseMotiveWaveShortRow(t *testing.T) {
 	const csv = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection
 APEX-100001-28,2,MES,MESZ6,BOT,7560.5,11/16/2026 10:03:00.000+0100,1,1411725730,CME,1411725730,Rithmic,ApexBV
 2970400317,MES,MESZ6,BOT,7367.75,11/17/2026 17:09:28.085+0100,2,,CME,2970400317,,
 2970400078,MES,MESZ6,BOT,7366.25,11/17/2026 17:10:06.134+0100,2,,CME,2970400078,,
 `
-	_, err := ParseMotiveWave(strings.NewReader(csv))
-	if err == nil {
-		t.Fatal("account-less rows parsed; want a refusal")
+	fills, report, err := ParseMotiveWaveReport(strings.NewReader(csv))
+	if err != nil {
+		t.Fatalf("ParseMotiveWaveReport: %v", err)
 	}
-	for _, want := range []string{"row 3 has no Account cell", "12 fields for 13 columns", "2 fill(s) without an account"} {
-		if !strings.Contains(err.Error(), want) {
-			t.Errorf("err = %q, want it to contain %q", err, want)
+	if len(fills) != 1 || fills[0].AccountRef != "APEX-100001-28" || fills[0].OrderID != "2" {
+		t.Errorf("fills = %+v, want the one full row", fills)
+	}
+	if report.RowsSkipped != 2 || report.FirstSkipped != 3 {
+		t.Errorf("report = %+v, want 2 rows skipped from line 3", report)
+	}
+	for _, want := range []string{"no Account cell from row 3", "12 fields for 13 columns", "re-export"} {
+		if !strings.Contains(report.SkipReason, want) {
+			t.Errorf("reason = %q, want it to contain %q", report.SkipReason, want)
 		}
+	}
+	if _, err := ParseMotiveWave(strings.NewReader(csv)); err != nil {
+		t.Errorf("ParseMotiveWave without the report: %v", err)
 	}
 
 	const tooShort = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection
