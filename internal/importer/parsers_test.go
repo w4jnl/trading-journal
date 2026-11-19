@@ -6,32 +6,24 @@ import (
 	"testing"
 )
 
-// TestParseMotiveWaveShortRow: the Executions-panel export drops the "Order ID" cell outright
-// for a fill with no order id, so the row is one field short and every later column shifts.
-// The parser puts the empty cell back; a row short by more than one is an error, not a panic.
+// TestParseMotiveWaveShortRow: the Executions export writes a fill it cannot attribute with
+// no Account cell at all, so the row is one field short and starts with the order number.
+// The journal cannot place it: the file is refused, the error counts such rows and names the
+// first one. A row short by more than one field is an error too, never a panic.
 func TestParseMotiveWaveShortRow(t *testing.T) {
 	const csv = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection
 APEX-100001-28,2,MES,MESZ6,BOT,7560.5,11/16/2026 10:03:00.000+0100,1,1411725730,CME,1411725730,Rithmic,ApexBV
-1234567890,MES,MESZ6,BOT,7367.75,11/17/2026 17:09:28.085+0100,2,,CME,2970400317,,
+2970400317,MES,MESZ6,BOT,7367.75,11/17/2026 17:09:28.085+0100,2,,CME,2970400317,,
+2970400078,MES,MESZ6,BOT,7366.25,11/17/2026 17:10:06.134+0100,2,,CME,2970400078,,
 `
-	fills, err := ParseMotiveWave(strings.NewReader(csv))
-	if err != nil {
-		t.Fatalf("ParseMotiveWave: %v", err)
+	_, err := ParseMotiveWave(strings.NewReader(csv))
+	if err == nil {
+		t.Fatal("account-less rows parsed; want a refusal")
 	}
-	if len(fills) != 2 {
-		t.Fatalf("got %d fills, want 2", len(fills))
-	}
-	if f := fills[0]; f.OrderID != "2" || f.BrokerExecID != "1411725730" || f.Source != "Rithmic" {
-		t.Errorf("full row = %+v", f)
-	}
-	f := fills[1]
-	if f.AccountRef != "1234567890" || f.OrderID != "" || f.SymbolRoot != "MES" || f.Symbol != "MESZ6" ||
-		f.Side != "buy" || f.Price != 7367.75 || f.Qty != 2 || f.Exchange != "CME" ||
-		f.BrokerExecID != "2970400317" || f.Source != "" {
-		t.Errorf("short row = %+v", f)
-	}
-	if f.ExecTime.UTC().Format("2006-01-02 15:04:05") != "2026-11-17 16:09:28" {
-		t.Errorf("short row time = %v", f.ExecTime)
+	for _, want := range []string{"row 3 has no Account cell", "12 fields for 13 columns", "2 fill(s) without an account"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("err = %q, want it to contain %q", err, want)
+		}
 	}
 
 	const tooShort = `Account,"Order ID",Underlying,Symbol,Action,Price,Time,Quantity,"Fill Id",Exchange,Ticket,Source,Connection

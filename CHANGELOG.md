@@ -7,7 +7,7 @@ built against it carries the same marketing version.
 
 ### Server
 
-- MotiveWave imports survive a short row: the Executions export drops the Order ID cell outright for a fill from a connection without order ids, which shifted every later column and failed the whole file ("unknown action" with a price in it), taking the other accounts' fills down with it. The parser puts the empty cell back; a row short by more than one field is still refused, with the field count named.
+- A MotiveWave Executions export that holds fills without an account is refused with a message that says so: MotiveWave writes such a fill with no Account cell at all, which shifted every column and failed the file with "unknown action" and a price in it. The error now names the first such row and counts them, and a row short by more than one field is refused with the field count instead of a crash.
 
 ## 2.26.0, 2026-11-16
 

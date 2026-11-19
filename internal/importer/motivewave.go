@@ -42,6 +42,7 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 
 	var fills []Fill
 	line := 1
+	accountless, firstAccountless := 0, 0
 	for {
 		line++
 		row, err := reader.Read()
@@ -51,7 +52,20 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 		if err != nil {
 			return nil, fmt.Errorf("row %d: %w", line, err)
 		}
-		row = alignShortRow(cols, header, row)
+		if _, ok := cols["Order ID"]; ok && len(row) == len(header)-1 {
+			// The Executions export writes a fill it cannot attribute to an account
+			// with no Account cell at all (seen 2026-11-19: the row starts with the
+			// order number, equal to its Ticket, and has no Fill Id, Source or
+			// Connection either), so every column is one place early. The journal
+			// cannot place such a fill, and reading the row as if the optional
+			// Order ID were the missing cell invented one account per fill, so
+			// the file is refused with the count; the trader fixes the export.
+			if accountless == 0 {
+				firstAccountless = line
+			}
+			accountless++
+			continue
+		}
 		if len(row) < width {
 			return nil, fmt.Errorf("row %d: %d fields, the header has %d", line, len(row), len(header))
 		}
@@ -100,26 +114,12 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 			RawData:      encodeRow(header, row),
 		})
 	}
+	if accountless > 0 {
+		return nil, fmt.Errorf("row %d has no Account cell (%d fields for %d columns): MotiveWave exported %d fill(s) without an account, which the journal cannot place; fix the export or drop those rows",
+			firstAccountless, len(header)-1, len(header), accountless)
+	}
 	disambiguateCoTicketFills(fills)
 	return fills, nil
-}
-
-// alignShortRow repairs a row that is one field short of the header. The Executions-panel
-// export drops the "Order ID" cell outright, instead of leaving it empty, for fills from a
-// connection that reports no order id (seen 2026-11-19 on a CQG account: no Order ID, Fill
-// Id, Source or Connection), so every later column lands one place early and the Action
-// column reads a price. Such a row gets an empty Order ID put back; the field checks that
-// follow still catch a row whose missing cell was some other column. One bad row used to
-// fail the whole file, which took the other accounts' fills down with it.
-func alignShortRow(cols map[string]int, header, row []string) []string {
-	oi, ok := cols["Order ID"]
-	if !ok || len(row) != len(header)-1 {
-		return row
-	}
-	fixed := make([]string, 0, len(header))
-	fixed = append(fixed, row[:oi]...)
-	fixed = append(fixed, "")
-	return append(fixed, row[oi:]...)
 }
 
 // disambiguateCoTicketFills makes BrokerExecID unique per (account, ticket) when one order
