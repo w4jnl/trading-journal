@@ -7,7 +7,29 @@ package models
 
 import (
 	"context"
+	"time"
 )
+
+const confirmAccount = `-- name: ConfirmAccount :execrows
+UPDATE accounts SET needs_setup = 0
+WHERE id = ? AND user_id = ? AND needs_setup = 1 AND firm IS NOT NULL AND type IS NOT NULL
+`
+
+type ConfirmAccountParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// The Confirm button on an auto-created row: acknowledges the account the
+// import or fill mail made. Only when firm and type are set, so a row that
+// still needs them keeps its flag.
+func (q *Queries) ConfirmAccount(ctx context.Context, arg ConfirmAccountParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, confirmAccount, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
 
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
@@ -168,6 +190,47 @@ func (q *Queries) GetAccountImportClaim(ctx context.Context, arg GetAccountImpor
 	var claim string
 	err := row.Scan(&claim)
 	return claim, err
+}
+
+const listAccountLastFills = `-- name: ListAccountLastFills :many
+SELECT e.account_id, e.exec_time AS last_fill
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE a.user_id = ?
+GROUP BY e.account_id
+HAVING e.exec_time = MAX(e.exec_time)
+`
+
+type ListAccountLastFillsRow struct {
+	AccountID int64     `json:"account_id"`
+	LastFill  time.Time `json:"last_fill"`
+}
+
+// The newest fill per account of the user, for the "last fill" column on
+// /accounts and its sort. Accounts without fills are absent. SQLite's bare
+// column with MAX() yields that row's exec_time; the HAVING keeps the intent
+// explicit and the column typed as a time.
+func (q *Queries) ListAccountLastFills(ctx context.Context, userID int64) ([]ListAccountLastFillsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAccountLastFills, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountLastFillsRow
+	for rows.Next() {
+		var i ListAccountLastFillsRow
+		if err := rows.Scan(&i.AccountID, &i.LastFill); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAccounts = `-- name: ListAccounts :many

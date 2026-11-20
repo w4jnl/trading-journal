@@ -23,7 +23,7 @@ func (q *Queries) CountAdmins(ctx context.Context) (int64, error) {
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (username, email, password_hash, is_admin, display_name)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile
+RETURNING id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile, mw_fill_address
 `
 
 type CreateUserParams struct {
@@ -60,6 +60,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.Guardrail,
 		&i.AutoPlan,
 		&i.AiProfile,
+		&i.MwFillAddress,
 	)
 	return i, err
 }
@@ -78,7 +79,7 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) error {
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile FROM users WHERE id = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile, mw_fill_address FROM users WHERE id = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
@@ -99,12 +100,13 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.Guardrail,
 		&i.AutoPlan,
 		&i.AiProfile,
+		&i.MwFillAddress,
 	)
 	return i, err
 }
 
 const getUserByUsername = `-- name: GetUserByUsername :one
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile FROM users WHERE username = ? LIMIT 1
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile, mw_fill_address FROM users WHERE username = ? LIMIT 1
 `
 
 func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User, error) {
@@ -125,6 +127,7 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (User,
 		&i.Guardrail,
 		&i.AutoPlan,
 		&i.AiProfile,
+		&i.MwFillAddress,
 	)
 	return i, err
 }
@@ -187,7 +190,7 @@ func (q *Queries) ListGuardrailUserIDs(ctx context.Context) ([]int64, error) {
 }
 
 const listUsers = `-- name: ListUsers :many
-SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile FROM users ORDER BY username
+SELECT id, username, email, password_hash, is_admin, is_active, display_name, created_at, last_login_at, ai_language, ai_send_chart, guardrail, auto_plan, ai_profile, mw_fill_address FROM users ORDER BY username
 `
 
 func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
@@ -214,6 +217,7 @@ func (q *Queries) ListUsers(ctx context.Context) ([]User, error) {
 			&i.Guardrail,
 			&i.AutoPlan,
 			&i.AiProfile,
+			&i.MwFillAddress,
 		); err != nil {
 			return nil, err
 		}
@@ -326,6 +330,21 @@ type SetUserGuardrailParams struct {
 
 func (q *Queries) SetUserGuardrail(ctx context.Context, arg SetUserGuardrailParams) error {
 	_, err := q.db.ExecContext(ctx, setUserGuardrail, arg.Guardrail, arg.ID)
+	return err
+}
+
+const setUserMWFillAddress = `-- name: SetUserMWFillAddress :exec
+UPDATE users SET mw_fill_address = ? WHERE id = ?
+`
+
+type SetUserMWFillAddressParams struct {
+	MwFillAddress *string `json:"mw_fill_address"`
+	ID            int64   `json:"id"`
+}
+
+// The user's generated MotiveWave fill address; NULL clears it.
+func (q *Queries) SetUserMWFillAddress(ctx context.Context, arg SetUserMWFillAddressParams) error {
+	_, err := q.db.ExecContext(ctx, setUserMWFillAddress, arg.MwFillAddress, arg.ID)
 	return err
 }
 

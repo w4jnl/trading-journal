@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,6 +45,13 @@ type ImportService struct {
 	// user (the stub authenticator's bootstrap user). Phase 1c will thread
 	// per-request / per-inbox-subdir ownership through Import* methods.
 	UserID int64
+
+	// MWStrictAddresses refuses a fill mail sent to one user's fill address
+	// for an account another user owns (mw_email.strict_addresses). Off, the
+	// owner keeps the fill and the mismatch is noted in mismatches.
+	MWStrictAddresses bool
+	mismatchMu        sync.Mutex
+	mismatches        map[string]*EmailAddressMismatch
 
 	// Prefetch warms the market-data bar cache for accounts touched by an
 	// import, so trade-replay charts render instantly on first view. Nil
@@ -341,6 +349,12 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 	cutovers := map[int64]*time.Time{} // accounts.live_sync_since -> CSV rows at/after it are API-owned
 	instruments := map[string]bool{}
 	rebuildKeys := map[positions.Key]bool{}
+	firstFill := map[string]time.Time{} // ref -> earliest exec time in this file, for a new account's opening balance
+	for _, f := range fills {
+		if t, ok := firstFill[f.AccountRef]; !ok || f.ExecTime.Before(t) {
+			firstFill[f.AccountRef] = f.ExecTime
+		}
+	}
 
 	for _, f := range fills {
 		if _, seen := instruments[f.SymbolRoot]; !seen {
@@ -362,6 +376,9 @@ func (s *ImportService) ingest(ctx context.Context, fills []Fill, format Format,
 			}
 			if created {
 				out.AccountsCreated++
+				if err := SeedOpeningBalance(ctx, q, s.Timezone, acct.ID, firstFill[f.AccountRef]); err != nil {
+					return fmt.Errorf("opening balance %s: %w", f.AccountRef, err)
+				}
 			}
 			if err := ensureClaimCompatible(ctx, q, s.effectiveUserID(ctx), acct.ID, acct.Name, format); err != nil {
 				return err
@@ -1000,6 +1017,28 @@ func (s *ImportService) findOrCreateAccount(ctx context.Context, q *models.Queri
 		return models.Account{}, false, fmt.Errorf("create: %w", err)
 	}
 	return created, true, nil
+}
+
+// SeedOpeningBalance gives a newly created account a balance of 0 on the day
+// before its first known fill (or before today, for an account created by
+// hand), so the running balance reads as the account's P&L from its start
+// instead of "unset" until the trader anchors it. The anchor is a normal
+// anchor: the trader adjusts or deletes it on /accounts. A later import that
+// backfills trades older than that day leaves them before the anchor, where
+// they do not count; move the anchor back if that happens.
+func SeedOpeningBalance(ctx context.Context, q *models.Queries, tz *time.Location, accountID int64, firstFill time.Time) error {
+	if tz == nil {
+		tz = time.UTC
+	}
+	y, m, d := firstFill.In(tz).Date()
+	anchor := time.Date(y, m, d-1, 0, 0, 0, 0, tz)
+	note := "opening balance, set when the account was created"
+	return q.UpsertBalanceAnchor(ctx, models.UpsertBalanceAnchorParams{
+		AccountID:  accountID,
+		AnchorDate: anchor,
+		Balance:    0,
+		Note:       &note,
+	})
 }
 
 func strPtrOrNil(s string) *string {

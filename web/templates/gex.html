@@ -84,7 +84,7 @@
 {{end}}
 
 {{if .EngineError}}
-<div class="flash error mb-16" role="alert">
+<div class="flash error mb-16" role="alert" data-persist>
   gex-engine unreachable — {{.EngineError}}{{if .EngineNotes}} · engine reports: {{range $i, $n := .EngineNotes}}{{if $i}}; {{end}}{{$n}}{{end}}{{end}}
 </div>
 {{end}}
@@ -98,7 +98,7 @@
 
 {{if .View}}
 {{if .SessionClosed}}
-<div class="flash info mb-16" role="status">
+<div class="flash info mb-16" role="status" data-persist>
   Options session closed — showing the last snapshot, as of {{.View.AsOfET}}.
   {{- /* Engine v0.11.0 /health reasons: during a feed outage the live row
         goes stale mid-session, and the engine's own explanation belongs

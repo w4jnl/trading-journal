@@ -5,6 +5,9 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"net/mail"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/w4jnl/trading-journal/internal/models"
@@ -25,6 +28,7 @@ const (
 	EmailSkippedStale       = "skipped_stale"             // older cumulative snapshot than the row we hold (archive replay)
 	EmailSkippedUnknownAcct = "skipped_unknown_account"   // no user owns this account ref yet; first CSV import creates it
 	EmailSkippedAmbiguous   = "skipped_ambiguous_account" // more than one user owns the ref; cannot attribute
+	EmailSkippedAddress     = "skipped_address_mismatch"  // strict addresses: sent to one user's fill address, account owned by another
 )
 
 // IngestEmailFill upserts one PROVISIONAL execution from a MotiveWave
@@ -91,15 +95,38 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 	}
 	switch {
 	case len(owners) == 0:
-		s.logger().Warn("mw email ingest: unknown account ref, fill stays archive-only until its first CSV import",
-			"ref", f.AccountRef, "order_id", f.OrderID)
-		return EmailSkippedUnknownAcct, nil
+		created, ok, err := s.createAccountFromEmail(ctx, q, f)
+		if err != nil {
+			return "", fmt.Errorf("create account %s: %w", f.AccountRef, err)
+		}
+		if !ok {
+			s.logger().Warn("mw email ingest: unknown account ref and no user to own it, fill stays archive-only until a CSV import or a manual account creates it",
+				"ref", f.AccountRef, "order_id", f.OrderID, "to", f.Recipient)
+			return EmailSkippedUnknownAcct, nil
+		}
+		owners = []models.Account{created}
 	case len(owners) > 1:
 		s.logger().Warn("mw email ingest: account ref owned by multiple users, cannot attribute",
 			"ref", f.AccountRef, "owners", len(owners))
 		return EmailSkippedAmbiguous, nil
 	}
 	acct := owners[0]
+	// The address only decides NEW accounts; a ref someone owns stays theirs
+	// whoever the mail was addressed to, so a mis-set MotiveWave can never
+	// move fills between traders. The mismatch is noted for the Accounts
+	// card, and with strict addresses on the fill is refused instead.
+	if f.Recipient != "" {
+		if users, err := q.ListUsers(ctx); err == nil {
+			if to := UserForFillAddress(users, f.Recipient); to != 0 && to != acct.UserID {
+				if s.MWStrictAddresses {
+					s.logger().Warn("mw email ingest: fill addressed to one user's fill address for an account another user owns; strict addresses on, not booked",
+						"ref", f.AccountRef, "order_id", f.OrderID, "addressed_user_id", to, "owner_user_id", acct.UserID)
+					return EmailSkippedAddress, nil
+				}
+				s.noteAddressMismatch(f, to, acct.UserID)
+			}
+		}
+	}
 	if acct.CommissionSource == "inline" {
 		return EmailSkippedInline, tx.Commit()
 	}
@@ -209,6 +236,154 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 	// Attributed to the resolved account OWNER, same as the builder above.
 	s.bumpVersion(acct.UserID)
 	return action, nil
+}
+
+// createAccountFromEmail books a fill mail's unknown account ref as a new
+// account, the way a CSV import creates one, so the fills land without an
+// export. The mail names no journal user, so the owner is the active user
+// whose e-mail address is the message's recipient, else the only active
+// user; with neither there is no owner and the fill stays archive-only
+// (ok=false). The row is created with needs_setup so the trader confirms
+// it on /accounts, which lists such accounts first; the import source is
+// the CSV's so the account's first export matches the same row.
+func (s *ImportService) createAccountFromEmail(ctx context.Context, q *models.Queries, f Fill) (models.Account, bool, error) {
+	users, err := q.ListUsers(ctx)
+	if err != nil {
+		return models.Account{}, false, fmt.Errorf("list users: %w", err)
+	}
+	owner := ownerForRecipient(users, f.Recipient)
+	if owner == 0 {
+		return models.Account{}, false, nil
+	}
+	p := EmailAccountParams(owner, f.AccountRef, f.Source)
+	created, err := q.CreateAccount(ctx, p)
+	if err != nil {
+		return models.Account{}, false, err
+	}
+	if err := SeedOpeningBalance(ctx, q, s.Timezone, created.ID, f.ExecTime); err != nil {
+		return models.Account{}, false, fmt.Errorf("opening balance: %w", err)
+	}
+	s.logger().Info("mw email ingest: created an account from a fill mail; confirm it on /accounts",
+		"ref", f.AccountRef, "user_id", owner, "firm", p.Firm, "to", f.Recipient)
+	return created, true, nil
+}
+
+// EmailAccountParams is the account a MotiveWave fill mail creates for an
+// unknown ref: named after the ref, firm guessed from the ref and the mail's
+// Broker label, type Prop Eval, flagged needs_setup so the trader confirms it
+// on /accounts, and the CSV's import source so the first export matches the
+// same row. Shared by the mail path and the "Create as mine" button on the
+// admin card, so both make the identical account.
+func EmailAccountParams(userID int64, ref, source string) models.CreateAccountParams {
+	defaultType := "prop_eval"
+	return models.CreateAccountParams{
+		UserID:           userID,
+		Name:             ref,
+		Firm:             strPtrOrNil(GuessFirm(FormatMotiveWave, ref, source)),
+		ImportSource:     string(FormatMotiveWave),
+		AccountRef:       ref,
+		Type:             &defaultType,
+		Currency:         "USD",
+		NeedsSetup:       1,
+		CommissionSource: "rate",
+	}
+}
+
+// ownerForRecipient picks the user a fill mail belongs to: the active user
+// whose e-mail address is the recipient, else the only active user, else 0.
+func ownerForRecipient(users []models.User, recipient string) int64 {
+	addr := strings.TrimSpace(recipient)
+	if a, err := mail.ParseAddress(addr); err == nil {
+		addr = a.Address
+	}
+	var active []models.User
+	for _, u := range users {
+		if u.IsActive == 1 {
+			active = append(active, u)
+		}
+	}
+	if addr != "" {
+		// The generated fill address is the deliberate signal; the user's own
+		// e-mail is the older convention and still honoured.
+		for _, u := range active {
+			if u.MwFillAddress != nil && strings.EqualFold(strings.TrimSpace(*u.MwFillAddress), addr) {
+				return u.ID
+			}
+		}
+		for _, u := range active {
+			if u.Email != nil && strings.EqualFold(strings.TrimSpace(*u.Email), addr) {
+				return u.ID
+			}
+		}
+	}
+	if len(active) == 1 {
+		return active[0].ID
+	}
+	return 0
+}
+
+// EmailAddressMismatch is a fill mail that arrived at one user's fill
+// address for an account another user owns, and was booked on that account
+// (strict addresses off). Kept in memory since the process started, one per
+// account ref, for the Accounts card: it is a note about the current
+// wiring, and the next fill raises it again after a restart.
+type EmailAddressMismatch struct {
+	AccountRef      string
+	AddressedUserID int64 // whose fill address the mail went to
+	OwnerUserID     int64 // who owns the account the fill was booked on
+	Count           int
+	LastSeen        time.Time
+}
+
+func (s *ImportService) noteAddressMismatch(f Fill, addressed, owner int64) {
+	s.mismatchMu.Lock()
+	defer s.mismatchMu.Unlock()
+	if s.mismatches == nil {
+		s.mismatches = map[string]*EmailAddressMismatch{}
+	}
+	m := s.mismatches[f.AccountRef]
+	if m == nil {
+		m = &EmailAddressMismatch{AccountRef: f.AccountRef}
+		s.mismatches[f.AccountRef] = m
+	}
+	m.AddressedUserID, m.OwnerUserID = addressed, owner
+	m.Count++
+	if f.ExecTime.After(m.LastSeen) {
+		m.LastSeen = f.ExecTime
+	}
+	s.logger().Warn("mw email ingest: fill addressed to one user's fill address for an account another user owns; the account's owner keeps it",
+		"ref", f.AccountRef, "order_id", f.OrderID, "addressed_user_id", addressed, "owner_user_id", owner)
+}
+
+// EmailAddressMismatches lists the mismatches noted since start, by ref.
+func (s *ImportService) EmailAddressMismatches() []EmailAddressMismatch {
+	s.mismatchMu.Lock()
+	defer s.mismatchMu.Unlock()
+	out := make([]EmailAddressMismatch, 0, len(s.mismatches))
+	for _, m := range s.mismatches {
+		out = append(out, *m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].AccountRef < out[j].AccountRef })
+	return out
+}
+
+// UserForFillAddress is the active user whose generated fill address is the
+// recipient, or 0: the strict form of ownerForRecipient, used to notice a
+// fill addressed to one trader for an account another trader owns.
+func UserForFillAddress(users []models.User, recipient string) int64 {
+	addr := strings.TrimSpace(recipient)
+	if a, err := mail.ParseAddress(addr); err == nil {
+		addr = a.Address
+	}
+	if addr == "" {
+		return 0
+	}
+	for _, u := range users {
+		if u.IsActive == 1 && u.MwFillAddress != nil && strings.EqualFold(strings.TrimSpace(*u.MwFillAddress), addr) {
+			return u.ID
+		}
+	}
+	return 0
 }
 
 // manualRowMatchWindow absorbs the precision mismatch between MW's email time

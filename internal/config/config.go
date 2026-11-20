@@ -64,7 +64,18 @@ type MWEmail struct {
 	Username   string `yaml:"smtp_username"` // both set => AUTH (PLAIN/LOGIN) required
 	Password   string `yaml:"smtp_password"`
 	ArchiveDir string `yaml:"archive_dir"` // default "data/mw-raw"; verbatim .eml audit trail
-	Ingest     *bool  `yaml:"ingest"`      // nil = true; false = capture/archive only, no DB writes
+	// AddressDomain is the domain of the per-user fill addresses Settings
+	// generates (fills-<token>@<domain>). Nothing resolves it: the journal is
+	// the SMTP endpoint and the address only tells a fill mail its owner. Set
+	// it to a domain you own for tidiness.
+	AddressDomain string `yaml:"address_domain"` // default "journal.local"
+	// StrictAddresses refuses a fill mail addressed to one user's fill
+	// address for an account another user owns (the fill stays in the
+	// archive and the Accounts card says so). Off, the account's owner keeps
+	// the fill and the card only notes the mismatch: right when traders
+	// share one MotiveWave, whose mails all carry one address.
+	StrictAddresses bool  `yaml:"strict_addresses"` // default false
+	Ingest          *bool `yaml:"ingest"`           // nil = true; false = capture/archive only, no DB writes
 	// ArchiveRetentionDays deletes archived .eml files older than this many
 	// days once a day. 0 (default) keeps them forever; the archive is not
 	// part of the backup, so set this only if you do not need the raw trail.
@@ -508,7 +519,7 @@ func defaults() Config {
 			TickleSec: 60, SyncThrottleMin: 15, APISyncThrottleSec: 60,
 			SessionSyncMin: 60, RTHSyncMin: 15, RTHWindow: "07:30-16:00",
 		},
-		MWEmail:  MWEmail{ListenAddr: ":2525", TLSMode: "off", ArchiveDir: "data/mw-raw"},
+		MWEmail:  MWEmail{ListenAddr: ":2525", TLSMode: "off", ArchiveDir: "data/mw-raw", AddressDomain: "journal.local"},
 		MCP:      MCP{OAuth: MCPOAuth{AccessTokenTTLSec: 3600, RefreshTokenTTLSec: 2592000, CodeTTLSec: 60}},
 		Timezone: "America/Chicago",
 
@@ -698,6 +709,9 @@ func (c Config) Validate() error {
 		}
 		if c.MWEmail.ArchiveDir == "" {
 			return fmt.Errorf("mw_email.archive_dir is required when mw_email is enabled")
+		}
+		if d := c.MWEmail.AddressDomain; d == "" || strings.ContainsAny(d, "@ \t<>") {
+			return fmt.Errorf("mw_email.address_domain must be a bare domain such as journal.local, got %q", d)
 		}
 	}
 	return nil

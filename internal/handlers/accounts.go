@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -68,19 +70,38 @@ func accountTypeOptions() []accountTypeOption {
 	}
 }
 
-// emailFillAlert is one admin warning line on /accounts: MW email fills were
-// captured for this account ref but never booked. Status tells the fix:
-// "unknown" - no account matches the ref (set "acct id in emails" on the
-// owning account, or import that account's CSV); "ambiguous" - several users
-// own the ref; "unimported" - the ref resolves NOW but some captured orders
-// never made it into executions (the alias was set after the fills, and no
-// CSV import covered them yet).
+// emailFillAlert is one warning line on /accounts about MW email fills for
+// this account ref. Status tells the fix: "unknown" - no account matches the
+// ref (claim it, set "acct id in emails" on the owning account, or import
+// that account's CSV); "ambiguous" - several users own the ref;
+// "unimported" - the ref resolves NOW but some captured orders never made it
+// into executions (the alias was set after the fills, and no CSV import
+// covered them yet); "mismatch" - strict addresses refused fills sent to one
+// user's fill address for another user's account; "mismatch-accepted" - such
+// fills were booked on the owner's account since start, the wiring is worth
+// a look.
 type emailFillAlert struct {
-	Ref       string
-	Status    string // unknown | ambiguous | unimported
-	OwnerName string // set for unimported
-	Count     int
-	LastSeen  time.Time
+	Ref           string
+	Status        string // unknown | ambiguous | unimported | mismatch | mismatch-accepted
+	OwnerName     string // account name; set when the ref resolves
+	OwnerUser     string // the account's user; set for the mismatch statuses
+	AddressedUser string // whose fill address the mails went to; mismatch statuses
+	Count         int
+	LastSeen      time.Time
+}
+
+// userLabel names a user for a card line.
+func userLabel(users []models.User, id int64) string {
+	for _, u := range users {
+		if u.ID != id {
+			continue
+		}
+		if u.DisplayName != nil && strings.TrimSpace(*u.DisplayName) != "" {
+			return *u.DisplayName
+		}
+		return u.Username
+	}
+	return "user " + strconv.FormatInt(id, 10)
 }
 
 // retryEmailFillsFor re-ingests archived MotiveWave email captures whose
@@ -147,6 +168,88 @@ func (h *Handlers) AccountsRetryEmailFills(w http.ResponseWriter, r *http.Reques
 // orders are imported disappear on their own. Empty when the email listener
 // is disabled. Best-effort: errors log and hide the card rather than break
 // the page.
+// AccountsClaimEmailRef handles POST /accounts/email-fills/claim, the
+// "Create as mine" button on an "unknown" row of the admin alert card. A
+// fill mail names no journal user, so when the mail's recipient is not a
+// user's address and there are several users, nothing can create the account
+// on its own; the admin who knows the account is theirs creates it here with
+// one click. The account is the one the mail path would have made
+// (importer.EmailAccountParams: needs_setup, listed first on /accounts with
+// a "confirm" pill), owned by the signed-in user, and the archived fills for
+// the ref are booked right away.
+func (h *Handlers) AccountsClaimEmailRef(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	ref := strings.TrimSpace(r.FormValue("ref"))
+	if ref == "" {
+		http.Error(w, "ref is required", http.StatusBadRequest)
+		return
+	}
+	// Only a ref the card lists as unknown is claimable: anything else either
+	// has an owner already or is not in the archive, and the manual form
+	// covers inventing accounts.
+	known := false
+	for _, a := range h.emailFillAlerts(ctx) {
+		if a.Ref == ref && a.Status == "unknown" {
+			known = true
+			break
+		}
+	}
+	if !known {
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape("no unattributed email fills for "+ref), http.StatusSeeOther)
+		return
+	}
+	source, first := h.emailFillSource(ref)
+	created, err := h.Queries.CreateAccount(ctx, importer.EmailAccountParams(auth.MustUser(ctx).ID, ref, source))
+	if err != nil {
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if err := importer.SeedOpeningBalance(ctx, h.Queries, h.localTZ(), created.ID, first); err != nil {
+		h.serverError(w, fmt.Errorf("opening balance: %w", err))
+		return
+	}
+	dest := "/accounts?flash=created"
+	if n := h.retryEmailFillsFor(ctx, ref); n > 0 {
+		dest += "&mwfills=" + strconv.Itoa(n)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// emailFillSource returns the Broker label of one archived capture for the
+// ref, the hint firm guessing needs for refs without a telling prefix (an AMP
+// account is a bare number; its mails say "AMP Global Clearing - CQG"), and
+// the earliest archived fill time for the ref, which dates the opening
+// balance. Source is empty when nothing readable is archived (the prefix
+// rule still applies); the time falls back to now.
+func (h *Handlers) emailFillSource(ref string) (source string, first time.Time) {
+	first = time.Now()
+	fills, err := mwmail.UnprocessedFills(h.MWEmailArchiveDir)
+	if err != nil {
+		return "", first
+	}
+	for _, f := range fills {
+		if f.Account != ref {
+			continue
+		}
+		if !f.ExecTime.IsZero() && f.ExecTime.Before(first) {
+			first = f.ExecTime
+		}
+		if source != "" {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(h.MWEmailArchiveDir, f.File))
+		if err != nil {
+			continue
+		}
+		source = mwmail.Parse(raw).Broker
+	}
+	return source, first
+}
+
 func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 	if h.MWEmailArchiveDir == "" {
 		return nil
@@ -167,9 +270,16 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 		}
 		byRef[f.Account] = append(byRef[f.Account], f)
 	}
+	users, err := h.Queries.ListUsers(ctx)
+	if err != nil {
+		h.logger().Warn("unprocessed email fills: list users", "err", err)
+		return nil
+	}
 	var out []emailFillAlert
+	listed := map[string]bool{}
 	for _, ref := range order {
 		group := byRef[ref]
+		listed[ref] = true
 		a := emailFillAlert{Ref: ref}
 		owners, err := h.Queries.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
 			ImportSource: "motivewave_csv",
@@ -193,6 +303,7 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 		default:
 			// Resolves today - only orders still absent from executions count.
 			acct := owners[0]
+			mismatched, addressed := 0, int64(0)
 			for _, f := range group {
 				if f.OrderID == "" {
 					continue
@@ -201,21 +312,94 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 				if _, err := h.Queries.GetExecutionByOrderID(ctx, models.GetExecutionByOrderIDParams{
 					AccountID: acct.ID, OrderID: &oid,
 				}); errors.Is(err, sql.ErrNoRows) {
-					a.Count++
+					if f.Action == importer.EmailSkippedAddress {
+						mismatched++
+						addressed = importer.UserForFillAddress(users, f.To)
+					} else {
+						a.Count++
+					}
 					if f.ExecTime.After(a.LastSeen) {
 						a.LastSeen = f.ExecTime
 					}
 				}
 			}
-			if a.Count == 0 {
+			if a.Count == 0 && mismatched == 0 {
 				continue // fully covered by later imports - stale journal history
 			}
 			a.Status = "unimported"
 			a.OwnerName = acct.Name
+			if mismatched > 0 {
+				// Strict addresses refused these; the owner moves the account
+				// or fixes the recipient in that MotiveWave.
+				a.Status = "mismatch"
+				a.Count = mismatched
+				a.OwnerUser = userLabel(users, acct.UserID)
+				a.AddressedUser = userLabel(users, addressed)
+			}
 		}
 		out = append(out, a)
 	}
+	// Mismatches the owner kept (strict addresses off): nothing to book, but
+	// the wiring deserves a look.
+	if h.ImportSvc != nil {
+		for _, m := range h.ImportSvc.EmailAddressMismatches() {
+			if listed[m.AccountRef] {
+				continue
+			}
+			a := emailFillAlert{Ref: m.AccountRef, Status: "mismatch-accepted", Count: m.Count, LastSeen: m.LastSeen,
+				OwnerUser: userLabel(users, m.OwnerUserID), AddressedUser: userLabel(users, m.AddressedUserID)}
+			if owners, err := h.Queries.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
+				ImportSource: "motivewave_csv", Ref: m.AccountRef,
+			}); err == nil && len(owners) > 0 {
+				a.OwnerName = owners[0].Name
+			}
+			out = append(out, a)
+		}
+	}
 	return out
+}
+
+// accountsSort reads ?sort= (name | last | balance) and ?dir= (asc | desc)
+// for the accounts list; name ascending when absent, and each key's natural
+// direction when only the key is given (newest fill and largest balance
+// first).
+func accountsSort(r *http.Request) (key, dir string) {
+	key = r.URL.Query().Get("sort")
+	switch key {
+	case "last", "balance":
+	default:
+		key = "name"
+	}
+	dir = r.URL.Query().Get("dir")
+	if dir != "asc" && dir != "desc" {
+		if key == "name" {
+			dir = "asc"
+		} else {
+			dir = "desc"
+		}
+	}
+	return key, dir
+}
+
+// accountsSortRefs builds the header links: clicking the active column flips
+// its direction, another column starts in its natural direction.
+func accountsSortRefs(active, dir string) map[string]string {
+	refs := map[string]string{}
+	for _, k := range []string{"name", "last", "balance"} {
+		d := "desc"
+		if k == "name" {
+			d = "asc"
+		}
+		if k == active {
+			if dir == "asc" {
+				d = "desc"
+			} else {
+				d = "asc"
+			}
+		}
+		refs[k] = "/accounts?sort=" + k + "&dir=" + d + "#accts"
+	}
+	return refs
 }
 
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
@@ -227,16 +411,78 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
 	}
-	// Active accounts first, retired (active=0) at the bottom. The base
-	// query orders by name; this is a stable secondary sort, so within
-	// each group names stay alphabetical.
-	sort.SliceStable(accounts, func(i, j int) bool {
-		return accounts[i].Active > accounts[j].Active
-	})
 	balances, err := h.loadBalances(ctx, time.Now())
 	if err != nil {
 		h.serverError(w, fmt.Errorf("load balances: %w", err))
 		return
+	}
+	lastRows, err := h.Queries.ListAccountLastFills(ctx, auth.MustUser(ctx).ID)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("last fills: %w", err))
+		return
+	}
+	lastFill := make(map[int64]time.Time, len(lastRows))
+	for _, lr := range lastRows {
+		lastFill[lr.AccountID] = lr.LastFill
+	}
+
+	// Accounts awaiting confirmation first (an import or a MotiveWave fill
+	// mail created them), then the rest of the active ones, retired
+	// (active=0) at the bottom. Within each group the trader's sort applies:
+	// name (the base query's order), last fill or balance, either way round;
+	// the sort is stable, so ties keep the name order.
+	sortKey, dir := accountsSort(r)
+	rank := func(a models.Account) int {
+		switch {
+		case a.Active == 0:
+			return 2
+		case a.NeedsSetup == 1:
+			return 0
+		}
+		return 1
+	}
+	less := func(a, b models.Account) bool {
+		switch sortKey {
+		case "last":
+			ta, tb := lastFill[a.ID], lastFill[b.ID]
+			if ta.Equal(tb) {
+				return false
+			}
+			if dir == "asc" {
+				return ta.Before(tb)
+			}
+			return ta.After(tb)
+		case "balance":
+			ba, bb := balances[a.ID], balances[b.ID]
+			// Unknown balances sort last whichever way round.
+			if ba.Known != bb.Known {
+				return ba.Known
+			}
+			if ba.Balance == bb.Balance {
+				return false
+			}
+			if dir == "asc" {
+				return ba.Balance < bb.Balance
+			}
+			return ba.Balance > bb.Balance
+		}
+		if dir == "desc" {
+			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
+		}
+		return false // name asc is the base order
+	}
+	sort.SliceStable(accounts, func(i, j int) bool {
+		ri, rj := rank(accounts[i]), rank(accounts[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return less(accounts[i], accounts[j])
+	})
+	needsConfirm := 0
+	for _, a := range accounts {
+		if rank(a) == 0 {
+			needsConfirm++
+		}
 	}
 	flashRaw := r.URL.Query().Get("flash")
 	flashErr := r.URL.Query().Get("err")
@@ -277,9 +523,13 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	// Unattributable email-fill warnings are operator material: the email
 	// names no journal user, so only admins see the card.
 	var emailAlerts []emailFillAlert
+	// Every user sees the card: an unattributed fill belongs to nobody yet,
+	// and the person who recognises the account is the one to claim it.
+	// Booking fills into existing accounts ("Import them now") stays with
+	// admins, since those accounts may be other users'.
 	canRetry := false
+	emailAlerts = h.emailFillAlerts(ctx)
 	if auth.MustUser(ctx).IsAdmin {
-		emailAlerts = h.emailFillAlerts(ctx)
 		for _, a := range emailAlerts {
 			// Only a ref that resolves today can be booked from the archive;
 			// unknown/ambiguous ones need the operator to act first.
@@ -293,8 +543,10 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"NavActive":          "accounts",
 		"BackHref":           validBackHref(r),
 		"Accounts":           accounts,
+		"NeedsConfirm":       needsConfirm,
 		"EmailAlerts":        emailAlerts,
 		"CanRetryEmailFills": canRetry && h.MWEmailArchiveDir != "" && h.ImportSvc != nil,
+		"CanClaimEmailFills": h.MWEmailArchiveDir != "" && h.ImportSvc != nil,
 		"TopstepxSync":       h.TopstepxSync != nil,
 		"FirmOptions":        []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
 		"TypeOptions":        accountTypeOptions(),
@@ -306,6 +558,10 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"RecomputedOK":       recomputedOK,
 		"RecomputedFail":     recomputedFail,
 		"Balances":           balances,
+		"LastFill":           lastFill,
+		"Sort":               sortKey,
+		"Dir":                dir,
+		"SortRefs":           accountsSortRefs(sortKey, dir),
 		"Today":              time.Now().In(h.localTZ()).Format("2006-01-02"),
 		"ClonedID":           clonedID,
 	})
@@ -514,7 +770,7 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 	if firm == "" || typ == "" {
 		needsSetup = 1
 	}
-	if _, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
 		UserID:           auth.MustUser(ctx).ID,
 		Name:             name,
 		Firm:             strPtrOrNil(firm),
@@ -524,10 +780,17 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		Currency:         currency,
 		NeedsSetup:       needsSetup,
 		CommissionSource: "rate",
-	}); err != nil {
+	})
+	if err != nil {
 		// Most likely a unique-key collision on (import_source, account_ref).
 		// Surface it inline so the user sees the message.
 		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	// A balance of 0 from the day before today, so the row shows the
+	// account's P&L at once; the trader anchors the real balance when known.
+	if err := importer.SeedOpeningBalance(ctx, h.Queries, h.localTZ(), created.ID, time.Now()); err != nil {
+		h.serverError(w, fmt.Errorf("opening balance: %w", err))
 		return
 	}
 	// The new account may be exactly what a pile of captured-but-unattributed
@@ -537,6 +800,31 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		dest += "&mwfills=" + strconv.Itoa(n)
 	}
 	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// AccountsConfirm handles POST /accounts/{id}/confirm, the Confirm button on
+// a row an import or a fill mail created: one click acknowledges the account
+// as the trader's, which is what Save in Edit mode also does. Firm and type
+// must already be set; otherwise the row keeps its flag and the trader is
+// sent to fill them in.
+func (h *Handlers) AccountsConfirm(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad account id", http.StatusBadRequest)
+		return
+	}
+	n, err := h.Queries.ConfirmAccount(ctx, models.ConfirmAccountParams{ID: id, UserID: userID(ctx)})
+	if err != nil {
+		h.serverError(w, fmt.Errorf("confirm account: %w", err))
+		return
+	}
+	if n == 0 {
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape("set the firm and type first, then Save")+"#row-"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+		return
+	}
+	h.LiveData.Bump(userID(ctx))
+	http.Redirect(w, r, "/accounts?flash=confirmed#row-"+strconv.FormatInt(id, 10), http.StatusSeeOther)
 }
 
 // AccountsClone handles POST /accounts/{id}/clone — creates a new account

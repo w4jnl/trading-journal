@@ -54,6 +54,10 @@
 
   var TRANSIENT = ["flash", "err", "mwfills"];
 
+  // Banners that describe the page's state rather than the last action
+  // (an alert card, an empty-state note) carry data-persist and stay put;
+  // only the one-shot flashes become toasts.
+
   function flashKind(el) {
     var c = el.classList;
     if (c.contains("error") || c.contains("gex-failed")) return "error";
@@ -67,7 +71,7 @@
     var params = new URLSearchParams(location.search);
     if (!TRANSIENT.some(function (k) { return params.has(k); })) return;
     var root = document.querySelector("main") || document.body;
-    root.querySelectorAll(".flash").forEach(function (el) {
+    root.querySelectorAll(".flash:not([data-persist])").forEach(function (el) {
       // A link inside the banner becomes the toast's action ("Open").
       var link = el.querySelector("a[href]");
       var action = null;

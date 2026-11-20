@@ -8,6 +8,7 @@
 
 {{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
 {{if eq .Flash "created"}}<div class="flash created">Account created.</div>{{end}}
+{{if eq .Flash "confirmed"}}<div class="flash saved">Account confirmed.</div>{{end}}
 {{if eq .Flash "createfail"}}<div class="flash error">Could not create account: {{.FlashErr}}</div>{{end}}
 {{if .MWFills}}<div class="flash created">Imported <span class="num">{{.MWFills}}</span> captured MotiveWave email fill{{if ne .MWFills 1}}s{{end}} from the archive — no CSV export needed.</div>{{end}}
 {{if eq .Flash "reassignsame"}}<div class="flash error">Source and target are the same account.</div>{{end}}
@@ -16,6 +17,7 @@
 {{if .RecomputedOK}}<div class="flash saved">Recomputed trades and daily stats for <span class="num">{{.RecomputedOK}}</span> account{{if ne .RecomputedOK 1}}s{{end}}{{if .RecomputedFail}} · <span class="num">{{.RecomputedFail}}</span> failed (see server log){{end}}.</div>{{end}}
 {{if eq .Flash "balanced"}}<div class="flash saved">Balance saved.</div>{{end}}
 {{if eq .Flash "cloned"}}<div class="flash created">Account cloned.</div>{{end}}
+{{if .NeedsConfirm}}<div class="flash created" data-persist><strong><span class="num">{{.NeedsConfirm}}</span> account{{if ne .NeedsConfirm 1}}s{{end}} to confirm</strong> — created by an import or a MotiveWave fill mail and listed first below. Check the name, firm and type, then Save.</div>{{end}}
 {{if eq .Flash "refetch-queued"}}<div class="flash saved">Full history re-fetch queued — trades update in the background (existing fills are deduplicated).</div>{{end}}
 {{if eq .Flash "cutover-reset"}}<div class="flash saved">Live-sync cutover moved to now — import a fresh MotiveWave export to backfill the gap; rows after the new cutover stay API-owned.</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
@@ -72,7 +74,7 @@
 {{/* Admin-only: MW email fills captured for account ids nothing matches.
      Recomputed from the capture archive on every load, so fixing the cause
      (alias set + fills imported) clears the card by itself. */}}
-<div class="flash error mt-16">
+<div class="flash error mt-16" data-persist>
   <strong>MotiveWave email fills without a matching account</strong>
   <ul style="margin: 6px 0 2px 18px; padding: 0;">
     {{range .EmailAlerts}}
@@ -80,7 +82,23 @@
       <code class="num">{{.Ref}}</code> —
       {{if eq .Status "unknown"}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: no account carries this id.
         Set <em>acct id in emails</em> on the owning account (Edit mode below), or import that account's CSV export.
+        {{if $.CanClaimEmailFills}}
+        {{/* The mail cannot tell whose account this is; the admin can. One
+             click creates it under them, flagged to confirm, and books the
+             archived fills. */}}
+        <form method="post" action="/accounts/email-fills/claim" style="display:inline; margin-left:6px;">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="ref" value="{{.Ref}}">
+          <button type="submit" class="btn btn--sm" title="Create this account under your user, flagged to confirm, and import its archived fills">Create as mine</button>
+        </form>
+        {{end}}
       {{else if eq .Status "ambiguous"}}{{.Count}} fill(s): this id matches accounts of several users — cannot attribute.
+      {{else if eq .Status "mismatch"}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: sent to <strong>{{.AddressedUser}}</strong>'s fill address,
+        but the account <strong>{{.OwnerName}}</strong> belongs to <strong>{{.OwnerUser}}</strong>. Strict addresses are on, so they were not booked:
+        move the account, or fix the recipient in that MotiveWave; then Import them now.
+      {{else if eq .Status "mismatch-accepted"}}{{.Count}} fill(s) since the server started, last {{ltime .LastSeen "datetime"}}: sent to
+        <strong>{{.AddressedUser}}</strong>'s fill address but booked on <strong>{{.OwnerName}}</strong>, which belongs to <strong>{{.OwnerUser}}</strong>.
+        If that is not intended, check the recipient in that MotiveWave.
       {{else}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: id now resolves to <strong>{{.OwnerName}}</strong>,
         but these orders were never imported.
       {{end}}
@@ -109,13 +127,17 @@
 <div id="accts" class="table-scroll mt-8">
   <table class="accounts">
     <thead>
+      {{/* Name, Balance and Last fill sort the list (?sort=&dir=); the
+           active one shows its direction and flips on click. Accounts to
+           confirm stay first and retired ones last whatever the sort. */}}
       <tr>
         <th>Source / Ref</th>
-        <th>Name</th>
+        {{template "accounts_sort_th" (dict "Label" "Name" "Col" "name" "Sort" .Sort "Dir" .Dir "Refs" .SortRefs)}}
         <th>Firm</th>
         <th>Type</th>
         <th>Curr</th>
-        <th>Balance</th>
+        {{template "accounts_sort_th" (dict "Label" "Balance" "Col" "balance" "Sort" .Sort "Dir" .Dir "Refs" .SortRefs)}}
+        {{template "accounts_sort_th" (dict "Label" "Last fill" "Col" "last" "Sort" .Sort "Dir" .Dir "Refs" .SortRefs)}}
         <th>Active</th>
         <th>Status</th>
       </tr>
@@ -132,11 +154,11 @@
         {{$a := .}}
         {{if and (eq $a.Active 0) (not $sepShown)}}
           <tr class="retired-divider">
-            <td colspan="8">Retired accounts</td>
+            <td colspan="9">Retired accounts</td>
           </tr>
           {{$sepShown = true}}
         {{end}}
-        <tr id="row-{{$a.ID}}" data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{end}}>
+        <tr id="row-{{$a.ID}}" data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{else if eq $a.NeedsSetup 1}} class="account-row--confirm"{{end}}>
           <td>
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
@@ -272,14 +294,21 @@
             <input class="te" form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;">
           </td>
           {{template "balance_cell" (dict "Account" $a "Balance" (index $.Balances $a.ID) "Today" $.Today "Currency" $a.Currency)}}
+          <td>{{with index $.LastFill $a.ID}}{{ltime . "date"}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td style="text-align: center;">
             <span class="tv">{{if eq $a.Active 1}}✓{{else}}<span class="muted">—</span>{{end}}</span>
             <input class="te" form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}>
           </td>
-          <td>{{if eq $a.NeedsSetup 1}}<span class="pill error">setup</span>{{else}}<span class="pill success">ok</span>{{end}}</td>
+          <td>{{if eq $a.NeedsSetup 1}}{{if and $a.Firm $a.Type}}
+            {{/* One click acknowledges the auto-created account; Save in Edit mode does the same. */}}
+            <form method="post" action="/accounts/{{$a.ID}}/confirm" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn--sm account-confirm" title="Created by an import or a fill mail. Confirm it is yours; check the name, firm and type first.">Confirm</button>
+            </form>
+            {{else}}<span class="pill error" title="Set the firm and type in Edit mode, then Save">setup</span>{{end}}{{else}}<span class="pill success">ok</span>{{end}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="8" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
+        <tr><td colspan="9" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -316,6 +345,12 @@
   details.reassign.needs-anchor > summary:hover { text-decoration: underline; }
 
   /* "+ New account" disclosure */
+
+  /* An account an import or a fill mail created and nobody confirmed yet:
+     tinted and edged so it reads as "new, look at me" until Confirm or Save. */
+  tr.account-row--confirm td { background: var(--warn-soft); }
+  tr.account-row--confirm td:first-child { box-shadow: inset 3px 0 var(--warn); }
+  tr.account-row--confirm .account-confirm { background: var(--warn); border-color: var(--warn); color: #fff; }
 
   /* Retired rows are slightly dimmed so a retired account is visually
      distinct without disappearing (.pill.retired-pill itself lives in app.css). */
@@ -420,4 +455,13 @@
     });
   })();
 </script>
+{{end}}
+
+{{/* accounts_sort_th is one sortable header cell: Label, Col (sort key),
+     plus the page's Sort / Dir / Refs. */}}
+{{define "accounts_sort_th"}}
+{{- $active := eq .Sort .Col -}}
+<th{{if $active}} class="sorted" aria-sort="{{if eq .Dir "asc"}}ascending{{else}}descending{{end}}"{{end}}>
+  <a class="sort-link" href="{{index .Refs .Col}}" title="Sort by {{.Label}}">{{.Label}}{{if $active}}<span class="sort-arrow" aria-hidden="true">{{if eq .Dir "asc"}}▲{{else}}▼{{end}}</span>{{end}}</a>
+</th>
 {{end}}
