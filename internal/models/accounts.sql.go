@@ -9,6 +9,27 @@ import (
 	"context"
 )
 
+const confirmAccount = `-- name: ConfirmAccount :execrows
+UPDATE accounts SET needs_setup = 0
+WHERE id = ? AND user_id = ? AND needs_setup = 1 AND firm IS NOT NULL AND type IS NOT NULL
+`
+
+type ConfirmAccountParams struct {
+	ID     int64 `json:"id"`
+	UserID int64 `json:"user_id"`
+}
+
+// The Confirm button on an auto-created row: acknowledges the account the
+// import or fill mail made. Only when firm and type are set, so a row that
+// still needs them keeps its flag.
+func (q *Queries) ConfirmAccount(ctx context.Context, arg ConfirmAccountParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, confirmAccount, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const createAccount = `-- name: CreateAccount :one
 INSERT INTO accounts (
     user_id, name, firm, import_source, account_ref, type, currency, needs_setup, commission_source

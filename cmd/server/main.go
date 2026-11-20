@@ -842,6 +842,7 @@ func run() error {
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)
 	mux.HandleFunc("POST /accounts/{id}/balances", h.AccountsAddBalance)
 	mux.HandleFunc("POST /accounts/{id}/clone", h.AccountsClone)
+	mux.HandleFunc("POST /accounts/{id}/confirm", h.AccountsConfirm)
 	mux.HandleFunc("POST /accounts/{id}/refetch", h.AccountsRefetch)
 	mux.HandleFunc("POST /accounts/{id}/livesync-reset", h.AccountsLivesyncReset)
 	mux.HandleFunc("POST /balances/{anchor_id}/delete", h.BalanceDelete)

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -130,5 +131,49 @@ func TestEmailFillAlertsMismatch(t *testing.T) {
 	alerts = fx.h.emailFillAlerts(fx.ctx)
 	if len(alerts) != 2 || alerts[1].Status != "mismatch-accepted" || alerts[1].AddressedUser != "second" || alerts[1].OwnerUser != "test" {
 		t.Errorf("alerts = %+v", alerts)
+	}
+}
+
+// Confirm on an auto-created row clears its flag in one click, only for the
+// owner and only once firm and type are set.
+func TestAccountsConfirm(t *testing.T) {
+	fx := newPositionFixture(t)
+	post := func(id int64) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/accounts/x/confirm", nil).WithContext(fx.ctx)
+		req.SetPathValue("id", strconv.FormatInt(id, 10))
+		rec := httptest.NewRecorder()
+		fx.h.AccountsConfirm(rec, req)
+		return rec
+	}
+	created, err := fx.q.CreateAccount(fx.ctx, importer.EmailAccountParams(fx.uid, "APEX-777-1", "Rithmic WS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(created.ID); rec.Header().Get("Location") != "/accounts?flash=confirmed#row-"+strconv.FormatInt(created.ID, 10) {
+		t.Fatalf("confirm = %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	if a, err := fx.q.GetAccountByID(fx.ctx, models.GetAccountByIDParams{ID: created.ID, UserID: fx.uid}); err != nil || a.NeedsSetup != 0 {
+		t.Errorf("after confirm: %+v %v", a, err)
+	}
+	// No firm: refused, flag kept.
+	bare, err := fx.q.CreateAccount(fx.ctx, models.CreateAccountParams{UserID: fx.uid, Name: "120099", ImportSource: "motivewave_csv", AccountRef: "120099", Currency: "USD", NeedsSetup: 1, CommissionSource: "rate"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if rec := post(bare.ID); !strings.Contains(rec.Header().Get("Location"), "createfail") {
+		t.Errorf("bare confirm = %s", rec.Header().Get("Location"))
+	}
+	// Another user's account: not found, nothing changes.
+	other, err := fx.q.CreateUser(fx.ctx, models.CreateUserParams{Username: "other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs, err := fx.q.CreateAccount(fx.ctx, importer.EmailAccountParams(other.ID, "APEX-777-2", "Rithmic WS"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	post(theirs.ID)
+	if a, err := fx.q.GetAccountByID(fx.ctx, models.GetAccountByIDParams{ID: theirs.ID, UserID: other.ID}); err != nil || a.NeedsSetup != 1 {
+		t.Errorf("other user's account touched: %+v %v", a, err)
 	}
 }

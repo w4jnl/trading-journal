@@ -689,6 +689,31 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, dest, http.StatusSeeOther)
 }
 
+// AccountsConfirm handles POST /accounts/{id}/confirm, the Confirm button on
+// a row an import or a fill mail created: one click acknowledges the account
+// as the trader's, which is what Save in Edit mode also does. Firm and type
+// must already be set; otherwise the row keeps its flag and the trader is
+// sent to fill them in.
+func (h *Handlers) AccountsConfirm(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.Error(w, "bad account id", http.StatusBadRequest)
+		return
+	}
+	n, err := h.Queries.ConfirmAccount(ctx, models.ConfirmAccountParams{ID: id, UserID: userID(ctx)})
+	if err != nil {
+		h.serverError(w, fmt.Errorf("confirm account: %w", err))
+		return
+	}
+	if n == 0 {
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape("set the firm and type first, then Save")+"#row-"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+		return
+	}
+	h.LiveData.Bump(userID(ctx))
+	http.Redirect(w, r, "/accounts?flash=confirmed#row-"+strconv.FormatInt(id, 10), http.StatusSeeOther)
+}
+
 // AccountsClone handles POST /accounts/{id}/clone — creates a new account
 // that inherits firm/type/currency/import_source from the source account
 // and optionally upserts a balance anchor for today. The only required

@@ -8,6 +8,7 @@
 
 {{if eq .Flash "saved"}}<div class="flash saved">All changes saved.</div>{{end}}
 {{if eq .Flash "created"}}<div class="flash created">Account created.</div>{{end}}
+{{if eq .Flash "confirmed"}}<div class="flash saved">Account confirmed.</div>{{end}}
 {{if eq .Flash "createfail"}}<div class="flash error">Could not create account: {{.FlashErr}}</div>{{end}}
 {{if .MWFills}}<div class="flash created">Imported <span class="num">{{.MWFills}}</span> captured MotiveWave email fill{{if ne .MWFills 1}}s{{end}} from the archive — no CSV export needed.</div>{{end}}
 {{if eq .Flash "reassignsame"}}<div class="flash error">Source and target are the same account.</div>{{end}}
@@ -153,7 +154,7 @@
           </tr>
           {{$sepShown = true}}
         {{end}}
-        <tr id="row-{{$a.ID}}" data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{end}}>
+        <tr id="row-{{$a.ID}}" data-account-id="{{$a.ID}}"{{if eq $a.Active 0}} class="account-row--retired"{{else if eq $a.NeedsSetup 1}} class="account-row--confirm"{{end}}>
           <td>
             <code class="num">{{$a.AccountRef}}</code>{{if eq $a.Active 0}} <span class="pill retired-pill" title="Retired — trades hidden from dashboard, calendar, and analytics.">retired</span>{{end}}<br>
             <span class="subtle">{{$a.ImportSource}}</span>
@@ -293,7 +294,13 @@
             <span class="tv">{{if eq $a.Active 1}}✓{{else}}<span class="muted">—</span>{{end}}</span>
             <input class="te" form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}>
           </td>
-          <td>{{if eq $a.NeedsSetup 1}}{{if and $a.Firm $a.Type}}<span class="pill warn" title="Created by an import or a fill mail; Save to confirm">confirm</span>{{else}}<span class="pill error">setup</span>{{end}}{{else}}<span class="pill success">ok</span>{{end}}</td>
+          <td>{{if eq $a.NeedsSetup 1}}{{if and $a.Firm $a.Type}}
+            {{/* One click acknowledges the auto-created account; Save in Edit mode does the same. */}}
+            <form method="post" action="/accounts/{{$a.ID}}/confirm" style="display: inline;">
+              <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+              <button type="submit" class="btn btn--sm account-confirm" title="Created by an import or a fill mail. Confirm it is yours; check the name, firm and type first.">Confirm</button>
+            </form>
+            {{else}}<span class="pill error" title="Set the firm and type in Edit mode, then Save">setup</span>{{end}}{{else}}<span class="pill success">ok</span>{{end}}</td>
         </tr>
       {{else}}
         <tr><td colspan="8" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
@@ -333,6 +340,12 @@
   details.reassign.needs-anchor > summary:hover { text-decoration: underline; }
 
   /* "+ New account" disclosure */
+
+  /* An account an import or a fill mail created and nobody confirmed yet:
+     tinted and edged so it reads as "new, look at me" until Confirm or Save. */
+  tr.account-row--confirm td { background: var(--warn-soft); }
+  tr.account-row--confirm td:first-child { box-shadow: inset 3px 0 var(--warn); }
+  tr.account-row--confirm .account-confirm { background: var(--warn); border-color: var(--warn); color: #fff; }
 
   /* Retired rows are slightly dimmed so a retired account is visually
      distinct without disappearing (.pill.retired-pill itself lives in app.css). */

@@ -81,3 +81,10 @@ UPDATE accounts SET api_backfill_done = ? WHERE id = ? AND user_id = ?;
 SELECT * FROM accounts
 WHERE import_source = sqlc.arg(import_source)
   AND (account_ref = sqlc.arg(ref) OR email_ref = sqlc.arg(ref));
+
+-- name: ConfirmAccount :execrows
+-- The Confirm button on an auto-created row: acknowledges the account the
+-- import or fill mail made. Only when firm and type are set, so a row that
+-- still needs them keeps its flag.
+UPDATE accounts SET needs_setup = 0
+WHERE id = ? AND user_id = ? AND needs_setup = 1 AND firm IS NOT NULL AND type IS NOT NULL;
