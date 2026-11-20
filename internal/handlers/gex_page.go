@@ -205,7 +205,7 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		h.logger().Warn("gex page: snapshot fetch failed", "market", market, "err", err)
 		data["EngineError"] = err.Error()
-		data["EngineNotes"] = h.gexHealthNotes(r.Context())
+		data["EngineNotes"], data["EngineNotesRaw"] = h.gexHealthNotes(r.Context())
 	default:
 		ref := at
 		if latest {
@@ -225,7 +225,7 @@ func (h *Handlers) GEXPage(w http.ResponseWriter, r *http.Request) {
 			// - but during a feed outage it is the engine falling behind,
 			// and its /health says so (v0.11.0 reasons). Ask, so the
 			// banner does not call an outage "session closed".
-			data["EngineNotes"] = h.gexHealthNotes(r.Context())
+			data["EngineNotes"], data["EngineNotesRaw"] = h.gexHealthNotes(r.Context())
 		}
 		data["AIEnabled"] = h.aiAvailable(r.Context())
 		if b, err := json.Marshal(view); err == nil {

@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The GEX banner condenses the engine's health report instead of relaying it word for word: exception wrappers and vendor URLs go, markets with the same fact are grouped ("fetch failed (403 Forbidden): NDX, QQQ, SPX, SPY"), ages read as hours or minutes. The engine's own words stay on the banner's hover title and in the debug log.
+
 ## 2.27.0, 2026-11-20
 
 ### Server
