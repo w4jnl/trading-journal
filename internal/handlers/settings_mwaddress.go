@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/base32"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -33,11 +34,34 @@ func newMWFillAddress(domain string) (string, error) {
 	return "fills-" + tok + "@" + domain, nil
 }
 
+// parseMWFillAddress checks an address the trader typed: one local part, one
+// domain, nothing a mail header would choke on. The result is lower-cased;
+// the owner match is case-insensitive anyway, this only keeps the stored
+// value tidy. Any domain is accepted: a trader who runs two instances off one
+// MotiveWave (prod and dev both fed by the relay) needs the same address on
+// both, and the second instance may well be configured with another domain.
+func parseMWFillAddress(raw string) (string, error) {
+	addr := strings.ToLower(strings.TrimSpace(raw))
+	if addr == "" {
+		return "", errors.New("type the address first")
+	}
+	if len(addr) > 254 || strings.ContainsAny(addr, " \t\r\n<>\"',;()") {
+		return "", errors.New("that is not a plain e-mail address")
+	}
+	local, domain, ok := strings.Cut(addr, "@")
+	if !ok || local == "" || domain == "" || strings.Contains(domain, "@") || !strings.Contains(domain, ".") {
+		return "", errors.New("the address needs a local part, an @ and a domain")
+	}
+	return addr, nil
+}
+
 // SettingsMWAddressSave handles POST /settings/mw-address. action=generate
 // makes a new address (replacing the old one, whose mails then fall back to
-// the other owner rules); action=clear removes it. The address is what the
-// trader puts in MotiveWave's mail "To", so a fill mail for an unknown
-// account names its owner without guessing.
+// the other owner rules); action=set stores the one typed in the address
+// field, so two instances fed by the same MotiveWave can carry the same
+// address; action=clear removes it. The address is what the trader puts in
+// MotiveWave's mail "To", so a fill mail for an unknown account names its
+// owner without guessing.
 func (h *Handlers) SettingsMWAddressSave(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	if h.MWFillDomain == "" {
@@ -57,6 +81,16 @@ func (h *Handlers) SettingsMWAddressSave(w http.ResponseWriter, r *http.Request)
 			return
 		}
 		addr = &a
+	case "set":
+		a, err := parseMWFillAddress(r.PostFormValue("address"))
+		if err == nil {
+			err = h.mwFillAddressFree(ctx, a)
+		}
+		if err != nil {
+			http.Redirect(w, r, "/settings?err="+errToQuery(err)+"#mw-address", http.StatusSeeOther)
+			return
+		}
+		addr = &a
 	case "clear":
 	default:
 		http.Error(w, "unknown action", http.StatusBadRequest)
@@ -67,4 +101,21 @@ func (h *Handlers) SettingsMWAddressSave(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	http.Redirect(w, r, "/settings?flash=mw-address#mw-address", http.StatusSeeOther)
+}
+
+// mwFillAddressFree reports whether no other user carries addr. The unique
+// index on the column catches a race; this gives the trader a readable
+// answer in the common case.
+func (h *Handlers) mwFillAddressFree(ctx context.Context, addr string) error {
+	users, err := h.rq().ListUsers(ctx)
+	if err != nil {
+		return err
+	}
+	me := userID(ctx)
+	for _, u := range users {
+		if u.ID != me && u.MwFillAddress != nil && strings.EqualFold(strings.TrimSpace(*u.MwFillAddress), addr) {
+			return errors.New("another user already has that fill address")
+		}
+	}
+	return nil
 }
