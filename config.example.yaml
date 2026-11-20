@@ -265,6 +265,11 @@ mw_email:
   # (fills-<token>@<domain>): the "To" a trader puts in MotiveWave so their
   # fill mails name them. Nothing resolves it; any domain you like.
   address_domain: "journal.local"
+  # Refuse a fill mail sent to one user's fill address for an account another
+  # user owns (it stays in the archive, listed on Accounts). Leave off when
+  # traders share one MotiveWave: its mails all carry one address, and the
+  # account's owner keeps the fill either way.
+  strict_addresses: false
   # Delete archived .eml files older than this many days (daily sweep).
   # 0 keeps them forever. The raw archive is NOT part of the backup.
   archive_retention_days: 0 # verbatim .eml audit trail + parser corpus

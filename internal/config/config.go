@@ -69,7 +69,13 @@ type MWEmail struct {
 	// the SMTP endpoint and the address only tells a fill mail its owner. Set
 	// it to a domain you own for tidiness.
 	AddressDomain string `yaml:"address_domain"` // default "journal.local"
-	Ingest        *bool  `yaml:"ingest"`         // nil = true; false = capture/archive only, no DB writes
+	// StrictAddresses refuses a fill mail addressed to one user's fill
+	// address for an account another user owns (the fill stays in the
+	// archive and the Accounts card says so). Off, the account's owner keeps
+	// the fill and the card only notes the mismatch: right when traders
+	// share one MotiveWave, whose mails all carry one address.
+	StrictAddresses bool  `yaml:"strict_addresses"` // default false
+	Ingest          *bool `yaml:"ingest"`           // nil = true; false = capture/archive only, no DB writes
 	// ArchiveRetentionDays deletes archived .eml files older than this many
 	// days once a day. 0 (default) keeps them forever; the archive is not
 	// part of the backup, so set this only if you do not need the raw trail.

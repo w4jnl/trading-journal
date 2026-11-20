@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -44,6 +45,13 @@ type ImportService struct {
 	// user (the stub authenticator's bootstrap user). Phase 1c will thread
 	// per-request / per-inbox-subdir ownership through Import* methods.
 	UserID int64
+
+	// MWStrictAddresses refuses a fill mail sent to one user's fill address
+	// for an account another user owns (mw_email.strict_addresses). Off, the
+	// owner keeps the fill and the mismatch is noted in mismatches.
+	MWStrictAddresses bool
+	mismatchMu        sync.Mutex
+	mismatches        map[string]*EmailAddressMismatch
 
 	// Prefetch warms the market-data bar cache for accounts touched by an
 	// import, so trade-replay charts render instantly on first view. Nil

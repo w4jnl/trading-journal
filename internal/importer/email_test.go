@@ -483,3 +483,40 @@ func TestIngestEmailFill_FillAddressOwner(t *testing.T) {
 		t.Errorf("owner's executions = %d err %v, want 1", len(execs), err)
 	}
 }
+
+// A fill sent to one user's fill address for an account another user owns:
+// the owner keeps it and the mismatch is noted for the card; with strict
+// addresses on it is refused and nothing is booked.
+func TestIngestEmailFill_AddressMismatch(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+	second := createUser(t, conn, "second")
+	if _, err := conn.Exec(`UPDATE users SET mw_fill_address = ? WHERE id = ?`, "fills-second@w4j.example", second); err != nil {
+		t.Fatal(err)
+	}
+	acct := createMWAccount(t, q, svc.UserID, "APEX-400004-12")
+
+	f := emailFill("700100", 1, 7516.25, time.Date(2026, 7, 27, 7, 19, 31, 0, time.UTC))
+	f.AccountRef = "APEX-400004-12"
+	f.Recipient = "fills-second@w4j.example"
+	if action, err := svc.IngestEmailFill(ctx, f); err != nil || action != EmailInserted {
+		t.Fatalf("accept mode = %q err %v, want inserted", action, err)
+	}
+	got := svc.EmailAddressMismatches()
+	if len(got) != 1 || got[0].AccountRef != "APEX-400004-12" || got[0].AddressedUserID != second || got[0].OwnerUserID != svc.UserID || got[0].Count != 1 {
+		t.Errorf("mismatches = %+v", got)
+	}
+
+	svc.MWStrictAddresses = true
+	g := emailFill("700200", 1, 7516.25, time.Date(2026, 7, 27, 7, 20, 31, 0, time.UTC))
+	g.AccountRef = "APEX-400004-12"
+	g.Recipient = "fills-second@w4j.example"
+	if action, err := svc.IngestEmailFill(ctx, g); err != nil || action != EmailSkippedAddress {
+		t.Fatalf("strict mode = %q err %v, want skipped_address_mismatch", action, err)
+	}
+	execs, err := q.ListExecutionsByAccount(ctx, acct.ID)
+	if err != nil || len(execs) != 1 {
+		t.Errorf("executions = %d err %v, want only the accepted one", len(execs), err)
+	}
+}

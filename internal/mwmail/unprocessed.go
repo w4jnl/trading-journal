@@ -17,6 +17,7 @@ type UnprocessedFill struct {
 	File     string // archive filename
 	Action   string // the journaled skip action
 	Account  string // account ref as the email reported it
+	To       string // the mail's recipient, the fill address it was sent to
 	OrderID  string
 	Symbol   string
 	Side     string
@@ -31,6 +32,7 @@ type UnprocessedFill struct {
 var unattributedActions = map[string]bool{
 	"skipped_unknown_account":   true,
 	"skipped_ambiguous_account": true,
+	"skipped_address_mismatch":  true, // strict addresses: bookable once the account moves or strict is off
 }
 
 // UnprocessedFills reads the replay journal in archiveDir and returns the
@@ -91,6 +93,7 @@ func UnprocessedFills(archiveDir string) ([]UnprocessedFill, error) {
 			File:     e.Name(),
 			Action:   action,
 			Account:  res.Account,
+			To:       res.To,
 			OrderID:  res.OrderID,
 			Symbol:   res.Symbol,
 			Side:     res.Side,

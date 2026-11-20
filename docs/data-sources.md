@@ -98,7 +98,13 @@ the user whose **fill address** it is (Settings > MotiveWave fill address genera
 recipient), else the user whose e-mail address it is, else the only active user. When no rule
 names a user the fill stays archive-only, with a warning in the log and a card on `/accounts`
 where **Create as mine** on the row creates that same account under whoever clicks and books
-the archived fills; a CSV import or a manual account resolves it too. The CQG connection reports its internal account id in
+the archived fills; a CSV import or a manual account resolves it too.
+
+A fill sent to one user's fill address for an account another user owns is booked on that
+account all the same, and the `/accounts` card notes it (traders who share one MotiveWave send
+every fill from one address, so the owner is the stronger fact). `mw_email.strict_addresses:
+true` refuses such fills instead: they stay in the archive, the card lists them, and moving the
+account or fixing the recipient lets **Import them now** book them. The CQG connection reports its internal account id in
 e-mails while the CSV carries the AMP account number; set the account's **acct id in emails** on
 `/accounts` and fills addressed to it resolve.
 

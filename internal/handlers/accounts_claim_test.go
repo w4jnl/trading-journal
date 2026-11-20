@@ -9,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/w4jnl/trading-journal/internal/importer"
 	"github.com/w4jnl/trading-journal/internal/models"
+	"github.com/w4jnl/trading-journal/internal/mwmail"
 )
 
 // A fill mail for a ref nobody owns, sent to a mailbox that is no user's
@@ -71,5 +73,62 @@ func TestAccountsClaimEmailRef(t *testing.T) {
 	}
 	if rec := post("NOPE-1"); !strings.Contains(rec.Header().Get("Location"), "createfail") {
 		t.Errorf("unlisted claim = %d %s, want createfail", rec.Code, rec.Header().Get("Location"))
+	}
+}
+
+// Strict addresses refused a capture sent to the second user's fill address
+// for the fixture user's account: the card names both and lists the fills
+// as "mismatch"; an accepted mismatch noted by the importer shows too.
+func TestEmailFillAlertsMismatch(t *testing.T) {
+	fx := newPositionFixture(t)
+	raw, err := os.ReadFile(filepath.Join("..", "mwmail", "testdata", "fill_real_mw.eml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	to := mwmail.Parse(raw).To
+	second, err := fx.q.CreateUser(fx.ctx, models.CreateUserParams{Username: "second", Email: nil, PasswordHash: nil, IsAdmin: 0, DisplayName: nil})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := fx.q.SetUserMWFillAddress(fx.ctx, models.SetUserMWFillAddressParams{MwFillAddress: &to, ID: second.ID}); err != nil {
+		t.Fatal(err)
+	}
+	firm := "lucid"
+	if _, err := fx.q.CreateAccount(fx.ctx, models.CreateAccountParams{UserID: fx.uid, Name: "lucid-18", Firm: &firm, ImportSource: "motivewave_csv",
+		AccountRef: "LFE050-EXAMPLE1-TEST018", Currency: "USD", CommissionSource: "rate"}); err != nil {
+		t.Fatal(err)
+	}
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "20260727T071933.000000000Z_aaaaaaaaaaaa.eml"), raw, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "replay-state.log"), []byte("aaaaaaaaaaaa skipped_address_mismatch\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fx.h.MWEmailArchiveDir = dir
+
+	alerts := fx.h.emailFillAlerts(fx.ctx)
+	if len(alerts) != 1 {
+		t.Fatalf("alerts = %+v", alerts)
+	}
+	a := alerts[0]
+	if a.Status != "mismatch" || a.Count != 1 || a.OwnerName != "lucid-18" || a.OwnerUser != "test" || a.AddressedUser != "second" {
+		t.Errorf("alert = %+v", a)
+	}
+
+	// An accepted mismatch for another ref the fixture user owns, booked by
+	// the importer with strict addresses off and noted since start.
+	if _, err := fx.q.CreateAccount(fx.ctx, models.CreateAccountParams{UserID: fx.uid, Name: "apex-1", Firm: &firm, ImportSource: "motivewave_csv",
+		AccountRef: "APEX-999-1", Currency: "USD", CommissionSource: "rate"}); err != nil {
+		t.Fatal(err)
+	}
+	f := importer.Fill{AccountRef: "APEX-999-1", BrokerExecID: "MWEMAIL-1", OrderID: "1", Symbol: "ESM6", SymbolRoot: "ES",
+		Side: "buy", Qty: 1, Price: 7000, ExecTime: fx.t0, Recipient: to}
+	if action, err := fx.svc.IngestEmailFill(fx.ctx, f); err != nil || action != importer.EmailInserted {
+		t.Fatalf("ingest = %q %v", action, err)
+	}
+	alerts = fx.h.emailFillAlerts(fx.ctx)
+	if len(alerts) != 2 || alerts[1].Status != "mismatch-accepted" || alerts[1].AddressedUser != "second" || alerts[1].OwnerUser != "test" {
+		t.Errorf("alerts = %+v", alerts)
 	}
 }

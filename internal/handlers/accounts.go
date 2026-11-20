@@ -70,19 +70,38 @@ func accountTypeOptions() []accountTypeOption {
 	}
 }
 
-// emailFillAlert is one admin warning line on /accounts: MW email fills were
-// captured for this account ref but never booked. Status tells the fix:
-// "unknown" - no account matches the ref (set "acct id in emails" on the
-// owning account, or import that account's CSV); "ambiguous" - several users
-// own the ref; "unimported" - the ref resolves NOW but some captured orders
-// never made it into executions (the alias was set after the fills, and no
-// CSV import covered them yet).
+// emailFillAlert is one warning line on /accounts about MW email fills for
+// this account ref. Status tells the fix: "unknown" - no account matches the
+// ref (claim it, set "acct id in emails" on the owning account, or import
+// that account's CSV); "ambiguous" - several users own the ref;
+// "unimported" - the ref resolves NOW but some captured orders never made it
+// into executions (the alias was set after the fills, and no CSV import
+// covered them yet); "mismatch" - strict addresses refused fills sent to one
+// user's fill address for another user's account; "mismatch-accepted" - such
+// fills were booked on the owner's account since start, the wiring is worth
+// a look.
 type emailFillAlert struct {
-	Ref       string
-	Status    string // unknown | ambiguous | unimported
-	OwnerName string // set for unimported
-	Count     int
-	LastSeen  time.Time
+	Ref           string
+	Status        string // unknown | ambiguous | unimported | mismatch | mismatch-accepted
+	OwnerName     string // account name; set when the ref resolves
+	OwnerUser     string // the account's user; set for the mismatch statuses
+	AddressedUser string // whose fill address the mails went to; mismatch statuses
+	Count         int
+	LastSeen      time.Time
+}
+
+// userLabel names a user for a card line.
+func userLabel(users []models.User, id int64) string {
+	for _, u := range users {
+		if u.ID != id {
+			continue
+		}
+		if u.DisplayName != nil && strings.TrimSpace(*u.DisplayName) != "" {
+			return *u.DisplayName
+		}
+		return u.Username
+	}
+	return "user " + strconv.FormatInt(id, 10)
 }
 
 // retryEmailFillsFor re-ingests archived MotiveWave email captures whose
@@ -238,9 +257,16 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 		}
 		byRef[f.Account] = append(byRef[f.Account], f)
 	}
+	users, err := h.Queries.ListUsers(ctx)
+	if err != nil {
+		h.logger().Warn("unprocessed email fills: list users", "err", err)
+		return nil
+	}
 	var out []emailFillAlert
+	listed := map[string]bool{}
 	for _, ref := range order {
 		group := byRef[ref]
+		listed[ref] = true
 		a := emailFillAlert{Ref: ref}
 		owners, err := h.Queries.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
 			ImportSource: "motivewave_csv",
@@ -264,6 +290,7 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 		default:
 			// Resolves today - only orders still absent from executions count.
 			acct := owners[0]
+			mismatched, addressed := 0, int64(0)
 			for _, f := range group {
 				if f.OrderID == "" {
 					continue
@@ -272,19 +299,49 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 				if _, err := h.Queries.GetExecutionByOrderID(ctx, models.GetExecutionByOrderIDParams{
 					AccountID: acct.ID, OrderID: &oid,
 				}); errors.Is(err, sql.ErrNoRows) {
-					a.Count++
+					if f.Action == importer.EmailSkippedAddress {
+						mismatched++
+						addressed = importer.UserForFillAddress(users, f.To)
+					} else {
+						a.Count++
+					}
 					if f.ExecTime.After(a.LastSeen) {
 						a.LastSeen = f.ExecTime
 					}
 				}
 			}
-			if a.Count == 0 {
+			if a.Count == 0 && mismatched == 0 {
 				continue // fully covered by later imports - stale journal history
 			}
 			a.Status = "unimported"
 			a.OwnerName = acct.Name
+			if mismatched > 0 {
+				// Strict addresses refused these; the owner moves the account
+				// or fixes the recipient in that MotiveWave.
+				a.Status = "mismatch"
+				a.Count = mismatched
+				a.OwnerUser = userLabel(users, acct.UserID)
+				a.AddressedUser = userLabel(users, addressed)
+			}
 		}
 		out = append(out, a)
+	}
+	// Mismatches the owner kept (strict addresses off): nothing to book, but
+	// the wiring deserves a look.
+	if h.ImportSvc != nil {
+		for _, m := range h.ImportSvc.EmailAddressMismatches() {
+			if listed[m.AccountRef] {
+				continue
+			}
+			a := emailFillAlert{Ref: m.AccountRef, Status: "mismatch-accepted", Count: m.Count, LastSeen: m.LastSeen,
+				OwnerUser: userLabel(users, m.OwnerUserID), AddressedUser: userLabel(users, m.AddressedUserID)}
+			if owners, err := h.Queries.ListAccountsByRefAnyUser(ctx, models.ListAccountsByRefAnyUserParams{
+				ImportSource: "motivewave_csv", Ref: m.AccountRef,
+			}); err == nil && len(owners) > 0 {
+				a.OwnerName = owners[0].Name
+			}
+			out = append(out, a)
+		}
 	}
 	return out
 }

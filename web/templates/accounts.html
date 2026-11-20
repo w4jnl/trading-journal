@@ -92,6 +92,12 @@
         </form>
         {{end}}
       {{else if eq .Status "ambiguous"}}{{.Count}} fill(s): this id matches accounts of several users — cannot attribute.
+      {{else if eq .Status "mismatch"}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: sent to <strong>{{.AddressedUser}}</strong>'s fill address,
+        but the account <strong>{{.OwnerName}}</strong> belongs to <strong>{{.OwnerUser}}</strong>. Strict addresses are on, so they were not booked:
+        move the account, or fix the recipient in that MotiveWave; then Import them now.
+      {{else if eq .Status "mismatch-accepted"}}{{.Count}} fill(s) since the server started, last {{ltime .LastSeen "datetime"}}: sent to
+        <strong>{{.AddressedUser}}</strong>'s fill address but booked on <strong>{{.OwnerName}}</strong>, which belongs to <strong>{{.OwnerUser}}</strong>.
+        If that is not intended, check the recipient in that MotiveWave.
       {{else}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: id now resolves to <strong>{{.OwnerName}}</strong>,
         but these orders were never imported.
       {{end}}

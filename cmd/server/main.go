@@ -1168,6 +1168,7 @@ func run() error {
 	if cfg.MWEmail.Enabled {
 		h.MWEmailArchiveDir = cfg.MWEmail.ArchiveDir // alert card on /accounts
 		h.MWFillDomain = cfg.MWEmail.AddressDomain   // per-user fill addresses on /settings
+		importSvc.MWStrictAddresses = cfg.MWEmail.StrictAddresses
 		mwSrv := &mwmail.Server{Cfg: cfg.MWEmail}
 		if cfg.MWEmail.IngestEnabled() {
 			mwSrv.Ingest = mwmail.ImporterIngest(importSvc)
