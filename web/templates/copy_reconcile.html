@@ -39,11 +39,11 @@
 
 {{if .Compared}}
 {{if eq .DivergedCount 0}}
-<div class="flash saved mb-16">
+<div class="flash saved mb-16" data-persist>
   {{.FollowerName}} matches {{.Factor}}× {{.LeaderName}} on every symbol and side in this range.
 </div>
 {{else}}
-<div class="flash error mb-16">
+<div class="flash error mb-16" data-persist>
   {{.DivergedCount}} symbol/side line(s) diverge from {{.Factor}}× {{.LeaderName}}.
 </div>
 {{end}}

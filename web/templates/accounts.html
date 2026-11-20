@@ -16,7 +16,7 @@
 {{if .RecomputedOK}}<div class="flash saved">Recomputed trades and daily stats for <span class="num">{{.RecomputedOK}}</span> account{{if ne .RecomputedOK 1}}s{{end}}{{if .RecomputedFail}} · <span class="num">{{.RecomputedFail}}</span> failed (see server log){{end}}.</div>{{end}}
 {{if eq .Flash "balanced"}}<div class="flash saved">Balance saved.</div>{{end}}
 {{if eq .Flash "cloned"}}<div class="flash created">Account cloned.</div>{{end}}
-{{if .NeedsConfirm}}<div class="flash created"><strong><span class="num">{{.NeedsConfirm}}</span> account{{if ne .NeedsConfirm 1}}s{{end}} to confirm</strong> — created by an import or a MotiveWave fill mail and listed first below. Check the name, firm and type, then Save.</div>{{end}}
+{{if .NeedsConfirm}}<div class="flash created" data-persist><strong><span class="num">{{.NeedsConfirm}}</span> account{{if ne .NeedsConfirm 1}}s{{end}} to confirm</strong> — created by an import or a MotiveWave fill mail and listed first below. Check the name, firm and type, then Save.</div>{{end}}
 {{if eq .Flash "refetch-queued"}}<div class="flash saved">Full history re-fetch queued — trades update in the background (existing fills are deduplicated).</div>{{end}}
 {{if eq .Flash "cutover-reset"}}<div class="flash saved">Live-sync cutover moved to now — import a fresh MotiveWave export to backfill the gap; rows after the new cutover stay API-owned.</div>{{end}}
 {{if .FlashErr}}<div class="flash error">{{.FlashErr}}</div>{{end}}
@@ -73,7 +73,7 @@
 {{/* Admin-only: MW email fills captured for account ids nothing matches.
      Recomputed from the capture archive on every load, so fixing the cause
      (alias set + fills imported) clears the card by itself. */}}
-<div class="flash error mt-16">
+<div class="flash error mt-16" data-persist>
   <strong>MotiveWave email fills without a matching account</strong>
   <ul style="margin: 6px 0 2px 18px; padding: 0;">
     {{range .EmailAlerts}}

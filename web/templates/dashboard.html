@@ -74,7 +74,7 @@
 <h1>Dashboard <span class="muted" style="font-weight:400;">· {{.DateLabel}}</span></h1>
 
 {{if .IsStale}}
-<div class="flash warn">No trades today yet. Showing the most recent day with activity.</div>
+<div class="flash warn" data-persist>No trades today yet. Showing the most recent day with activity.</div>
 {{end}}
 
 {{template "open_positions" .OpenPositions}}
