@@ -834,6 +834,7 @@ func run() error {
 	// Admin-only: the alert card's catch-up for captured email fills whose
 	// account exists but whose orders were never booked.
 	mux.Handle("POST /accounts/email-fills/retry", auth.RequireAdmin(http.HandlerFunc(h.AccountsRetryEmailFills)))
+	mux.Handle("POST /accounts/email-fills/claim", auth.RequireAdmin(http.HandlerFunc(h.AccountsClaimEmailRef)))
 	mux.HandleFunc("POST /accounts/recompute", h.AccountsRecomputeAll)
 	mux.HandleFunc("POST /accounts/{id}/reassign", h.AccountsReassign)
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)

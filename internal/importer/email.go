@@ -237,25 +237,35 @@ func (s *ImportService) createAccountFromEmail(ctx context.Context, q *models.Qu
 	if owner == 0 {
 		return models.Account{}, false, nil
 	}
-	firm := GuessFirm(FormatMotiveWave, f.AccountRef, f.Source)
-	defaultType := "prop_eval"
-	created, err := q.CreateAccount(ctx, models.CreateAccountParams{
-		UserID:           owner,
-		Name:             f.AccountRef,
-		Firm:             strPtrOrNil(firm),
-		ImportSource:     string(FormatMotiveWave),
-		AccountRef:       f.AccountRef,
-		Type:             &defaultType,
-		Currency:         "USD",
-		NeedsSetup:       1,
-		CommissionSource: "rate",
-	})
+	p := EmailAccountParams(owner, f.AccountRef, f.Source)
+	created, err := q.CreateAccount(ctx, p)
 	if err != nil {
 		return models.Account{}, false, err
 	}
 	s.logger().Info("mw email ingest: created an account from a fill mail; confirm it on /accounts",
-		"ref", f.AccountRef, "user_id", owner, "firm", firm, "to", f.Recipient)
+		"ref", f.AccountRef, "user_id", owner, "firm", p.Firm, "to", f.Recipient)
 	return created, true, nil
+}
+
+// EmailAccountParams is the account a MotiveWave fill mail creates for an
+// unknown ref: named after the ref, firm guessed from the ref and the mail's
+// Broker label, type Prop Eval, flagged needs_setup so the trader confirms it
+// on /accounts, and the CSV's import source so the first export matches the
+// same row. Shared by the mail path and the "Create as mine" button on the
+// admin card, so both make the identical account.
+func EmailAccountParams(userID int64, ref, source string) models.CreateAccountParams {
+	defaultType := "prop_eval"
+	return models.CreateAccountParams{
+		UserID:           userID,
+		Name:             ref,
+		Firm:             strPtrOrNil(GuessFirm(FormatMotiveWave, ref, source)),
+		ImportSource:     string(FormatMotiveWave),
+		AccountRef:       ref,
+		Type:             &defaultType,
+		Currency:         "USD",
+		NeedsSetup:       1,
+		CommissionSource: "rate",
+	}
 }
 
 // ownerForRecipient picks the user a fill mail belongs to: the active user

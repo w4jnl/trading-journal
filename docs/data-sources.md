@@ -94,8 +94,9 @@ whichever user already owns that account. A ref no user owns yet becomes a new a
 a CSV import creates one, owned by the active user whose e-mail address is the message's
 recipient, or by the only active user when there is just one; it is flagged for confirmation
 and listed first on `/accounts` until the trader saves it. When neither rule names a user the
-fill stays archive-only, with a warning in the log and a card on `/accounts` for admins, until
-a CSV import or a manual account creates it. The CQG connection reports its internal account id in
+fill stays archive-only, with a warning in the log and a card on `/accounts` for admins, where
+**Create as mine** on the row creates that same account under the admin who clicks and books
+the archived fills; a CSV import or a manual account resolves it too. The CQG connection reports its internal account id in
 e-mails while the CSV carries the AMP account number; set the account's **acct id in emails** on
 `/accounts` and fills addressed to it resolve.
 

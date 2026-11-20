@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"strings"
@@ -147,6 +149,75 @@ func (h *Handlers) AccountsRetryEmailFills(w http.ResponseWriter, r *http.Reques
 // orders are imported disappear on their own. Empty when the email listener
 // is disabled. Best-effort: errors log and hide the card rather than break
 // the page.
+// AccountsClaimEmailRef handles POST /accounts/email-fills/claim, the
+// "Create as mine" button on an "unknown" row of the admin alert card. A
+// fill mail names no journal user, so when the mail's recipient is not a
+// user's address and there are several users, nothing can create the account
+// on its own; the admin who knows the account is theirs creates it here with
+// one click. The account is the one the mail path would have made
+// (importer.EmailAccountParams: needs_setup, listed first on /accounts with
+// a "confirm" pill), owned by the signed-in user, and the archived fills for
+// the ref are booked right away.
+func (h *Handlers) AccountsClaimEmailRef(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	if err := r.ParseForm(); err != nil {
+		http.Error(w, "bad form", http.StatusBadRequest)
+		return
+	}
+	ref := strings.TrimSpace(r.FormValue("ref"))
+	if ref == "" {
+		http.Error(w, "ref is required", http.StatusBadRequest)
+		return
+	}
+	// Only a ref the card lists as unknown is claimable: anything else either
+	// has an owner already or is not in the archive, and the manual form
+	// covers inventing accounts.
+	known := false
+	for _, a := range h.emailFillAlerts(ctx) {
+		if a.Ref == ref && a.Status == "unknown" {
+			known = true
+			break
+		}
+	}
+	if !known {
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape("no unattributed email fills for "+ref), http.StatusSeeOther)
+		return
+	}
+	if _, err := h.Queries.CreateAccount(ctx, importer.EmailAccountParams(auth.MustUser(ctx).ID, ref, h.emailFillSource(ref))); err != nil {
+		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	dest := "/accounts?flash=created"
+	if n := h.retryEmailFillsFor(ctx, ref); n > 0 {
+		dest += "&mwfills=" + strconv.Itoa(n)
+	}
+	http.Redirect(w, r, dest, http.StatusSeeOther)
+}
+
+// emailFillSource returns the Broker label of one archived capture for the
+// ref, the hint firm guessing needs for refs without a telling prefix (an AMP
+// account is a bare number; its mails say "AMP Global Clearing - CQG").
+// Empty when nothing readable is archived; the prefix rule still applies.
+func (h *Handlers) emailFillSource(ref string) string {
+	fills, err := mwmail.UnprocessedFills(h.MWEmailArchiveDir)
+	if err != nil {
+		return ""
+	}
+	for _, f := range fills {
+		if f.Account != ref {
+			continue
+		}
+		raw, err := os.ReadFile(filepath.Join(h.MWEmailArchiveDir, f.File))
+		if err != nil {
+			continue
+		}
+		if b := mwmail.Parse(raw).Broker; b != "" {
+			return b
+		}
+	}
+	return ""
+}
+
 func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 	if h.MWEmailArchiveDir == "" {
 		return nil
@@ -312,6 +383,7 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"NeedsConfirm":       needsConfirm,
 		"EmailAlerts":        emailAlerts,
 		"CanRetryEmailFills": canRetry && h.MWEmailArchiveDir != "" && h.ImportSvc != nil,
+		"CanClaimEmailFills": h.MWEmailArchiveDir != "" && h.ImportSvc != nil,
 		"TopstepxSync":       h.TopstepxSync != nil,
 		"FirmOptions":        []string{"", "apex", "lucid", "topstep", "amp", "ibkr"},
 		"TypeOptions":        accountTypeOptions(),

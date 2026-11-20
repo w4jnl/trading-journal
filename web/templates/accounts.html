@@ -81,6 +81,16 @@
       <code class="num">{{.Ref}}</code> —
       {{if eq .Status "unknown"}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: no account carries this id.
         Set <em>acct id in emails</em> on the owning account (Edit mode below), or import that account's CSV export.
+        {{if $.CanClaimEmailFills}}
+        {{/* The mail cannot tell whose account this is; the admin can. One
+             click creates it under them, flagged to confirm, and books the
+             archived fills. */}}
+        <form method="post" action="/accounts/email-fills/claim" style="display:inline; margin-left:6px;">
+          <input type="hidden" name="csrf_token" value="{{$.CSRFToken}}">
+          <input type="hidden" name="ref" value="{{.Ref}}">
+          <button type="submit" class="btn btn--sm" title="Create this account under your user, flagged to confirm, and import its archived fills">Create as mine</button>
+        </form>
+        {{end}}
       {{else if eq .Status "ambiguous"}}{{.Count}} fill(s): this id matches accounts of several users — cannot attribute.
       {{else}}{{.Count}} fill(s), last {{ltime .LastSeen "datetime"}}: id now resolves to <strong>{{.OwnerName}}</strong>,
         but these orders were never imported.

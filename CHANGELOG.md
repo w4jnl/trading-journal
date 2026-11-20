@@ -7,7 +7,7 @@ built against it carries the same marketing version.
 
 ### Server
 
-- A MotiveWave fill mail for an account the journal does not know creates the account, as a CSV import does, instead of leaving the fill in the archive until the first export: the owner is the user whose e-mail address the mail was sent to, or the only user. The new account is flagged for confirmation and Accounts lists it first with a "confirm" pill and a banner; Save confirms it.
+- A MotiveWave fill mail for an account the journal does not know creates the account, as a CSV import does, instead of leaving the fill in the archive until the first export: the owner is the user whose e-mail address the mail was sent to, or the only user. The new account is flagged for confirmation and Accounts lists it first with a "confirm" pill and a banner; Save confirms it. When the mail cannot name an owner (its recipient is no user's address and there are several users), the admin card on Accounts gets a "Create as mine" button on the row: one click creates the same account under the admin and imports the archived fills.
 
 ## 2.26.0, 2026-11-16
 
