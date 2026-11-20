@@ -11,6 +11,7 @@ built against it carries the same marketing version.
 - Each user can generate their own MotiveWave fill address on Settings (`fills-<token>@<mw_email.address_domain>`, the domain from the config). Sent there, a fill mail for an unknown account names its owner without guessing. The "fills without a matching account" card on Accounts is now shown to every user, so the one who recognises an account can claim it; "Import them now" stays with admins. A fill sent to one user's address for another user's account stays with the account's owner and is noted on the card; `mw_email.strict_addresses` refuses such fills instead, listed on the card until the account moves or the recipient is fixed.
 - A banner that describes the page (the email-fills card and the accounts-to-confirm banner on Accounts, the no-trades note on the Dashboard, the GEX and copy-reconcile notes) no longer turns into a toast and vanishes when the page is opened with a flash in the URL, as it did after "Create as mine".
 - An account an import or a fill mail created is tinted on Accounts and its status cell is a Confirm button: one click acknowledges it (Save in Edit mode still does the same).
+- A new account starts with a balance of 0 on the day before its first fill (the day before today for one created by hand) instead of no balance, so the row shows its P&L at once; adjust or delete the anchor on Accounts when the real balance is known.
 
 ## 2.26.0, 2026-11-16
 

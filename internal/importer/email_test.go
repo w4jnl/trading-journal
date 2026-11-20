@@ -466,8 +466,15 @@ func TestIngestEmailFill_FillAddressOwner(t *testing.T) {
 	if action, err := svc.IngestEmailFill(ctx, f); err != nil || action != EmailInserted {
 		t.Fatalf("fill address recipient = %q err %v, want inserted", action, err)
 	}
-	if _, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{UserID: second, ImportSource: "motivewave_csv", AccountRef: "APEX-300003-12"}); err != nil {
-		t.Errorf("account not created under the fill address's user: %v", err)
+	acct2, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{UserID: second, ImportSource: "motivewave_csv", AccountRef: "APEX-300003-12"})
+	if err != nil {
+		t.Fatalf("account not created under the fill address's user: %v", err)
+	}
+	// Opening balance 0, dated the day before the first fill.
+	anchors, err := q.ListBalanceAnchors(ctx, second)
+	if err != nil || len(anchors) != 1 || anchors[0].AccountID != acct2.ID || anchors[0].Balance != 0 ||
+		!anchors[0].AnchorDate.Before(f.ExecTime) || anchors[0].AnchorDate.Format("2006-01-02") != "2026-07-26" {
+		t.Errorf("opening balance anchors = %+v err %v", anchors, err)
 	}
 
 	// The same ref addressed to another user's address: the owner keeps it.

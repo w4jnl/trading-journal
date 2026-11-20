@@ -61,6 +61,18 @@ func TestAccountsClaimEmailRef(t *testing.T) {
 	if err != nil || len(execs) != 1 {
 		t.Errorf("executions = %d %v, want the archived fill booked", len(execs), err)
 	}
+	// Opening balance 0 dated before the archived fill, so the row shows a
+	// balance at once and the booked fill counts toward it.
+	anchors, err := fx.q.ListBalanceAnchors(fx.ctx, fx.uid)
+	var seeded bool
+	for _, an := range anchors {
+		if an.AccountID == a.ID && an.Balance == 0 && an.AnchorDate.Before(execs[0].ExecTime) {
+			seeded = true
+		}
+	}
+	if err != nil || !seeded {
+		t.Errorf("opening balance not seeded: %+v %v", anchors, err)
+	}
 	// The other ref stays on the card, and a claimed ref cannot be claimed twice.
 	var left []string
 	for _, al := range fx.h.emailFillAlerts(fx.ctx) {

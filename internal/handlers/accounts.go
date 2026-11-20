@@ -202,8 +202,14 @@ func (h *Handlers) AccountsClaimEmailRef(w http.ResponseWriter, r *http.Request)
 		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape("no unattributed email fills for "+ref), http.StatusSeeOther)
 		return
 	}
-	if _, err := h.Queries.CreateAccount(ctx, importer.EmailAccountParams(auth.MustUser(ctx).ID, ref, h.emailFillSource(ref))); err != nil {
+	source, first := h.emailFillSource(ref)
+	created, err := h.Queries.CreateAccount(ctx, importer.EmailAccountParams(auth.MustUser(ctx).ID, ref, source))
+	if err != nil {
 		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	if err := importer.SeedOpeningBalance(ctx, h.Queries, h.localTZ(), created.ID, first); err != nil {
+		h.serverError(w, fmt.Errorf("opening balance: %w", err))
 		return
 	}
 	dest := "/accounts?flash=created"
@@ -215,26 +221,33 @@ func (h *Handlers) AccountsClaimEmailRef(w http.ResponseWriter, r *http.Request)
 
 // emailFillSource returns the Broker label of one archived capture for the
 // ref, the hint firm guessing needs for refs without a telling prefix (an AMP
-// account is a bare number; its mails say "AMP Global Clearing - CQG").
-// Empty when nothing readable is archived; the prefix rule still applies.
-func (h *Handlers) emailFillSource(ref string) string {
+// account is a bare number; its mails say "AMP Global Clearing - CQG"), and
+// the earliest archived fill time for the ref, which dates the opening
+// balance. Source is empty when nothing readable is archived (the prefix
+// rule still applies); the time falls back to now.
+func (h *Handlers) emailFillSource(ref string) (source string, first time.Time) {
+	first = time.Now()
 	fills, err := mwmail.UnprocessedFills(h.MWEmailArchiveDir)
 	if err != nil {
-		return ""
+		return "", first
 	}
 	for _, f := range fills {
 		if f.Account != ref {
+			continue
+		}
+		if !f.ExecTime.IsZero() && f.ExecTime.Before(first) {
+			first = f.ExecTime
+		}
+		if source != "" {
 			continue
 		}
 		raw, err := os.ReadFile(filepath.Join(h.MWEmailArchiveDir, f.File))
 		if err != nil {
 			continue
 		}
-		if b := mwmail.Parse(raw).Broker; b != "" {
-			return b
-		}
+		source = mwmail.Parse(raw).Broker
 	}
-	return ""
+	return source, first
 }
 
 func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
@@ -664,7 +677,7 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 	if firm == "" || typ == "" {
 		needsSetup = 1
 	}
-	if _, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
+	created, err := h.Queries.CreateAccount(ctx, models.CreateAccountParams{
 		UserID:           auth.MustUser(ctx).ID,
 		Name:             name,
 		Firm:             strPtrOrNil(firm),
@@ -674,10 +687,17 @@ func (h *Handlers) AccountsCreate(w http.ResponseWriter, r *http.Request) {
 		Currency:         currency,
 		NeedsSetup:       needsSetup,
 		CommissionSource: "rate",
-	}); err != nil {
+	})
+	if err != nil {
 		// Most likely a unique-key collision on (import_source, account_ref).
 		// Surface it inline so the user sees the message.
 		http.Redirect(w, r, "/accounts?flash=createfail&err="+url.QueryEscape(err.Error()), http.StatusSeeOther)
+		return
+	}
+	// A balance of 0 from the day before today, so the row shows the
+	// account's P&L at once; the trader anchors the real balance when known.
+	if err := importer.SeedOpeningBalance(ctx, h.Queries, h.localTZ(), created.ID, time.Now()); err != nil {
+		h.serverError(w, fmt.Errorf("opening balance: %w", err))
 		return
 	}
 	// The new account may be exactly what a pile of captured-but-unattributed

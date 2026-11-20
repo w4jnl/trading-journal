@@ -260,6 +260,9 @@ func (s *ImportService) createAccountFromEmail(ctx context.Context, q *models.Qu
 	if err != nil {
 		return models.Account{}, false, err
 	}
+	if err := SeedOpeningBalance(ctx, q, s.Timezone, created.ID, f.ExecTime); err != nil {
+		return models.Account{}, false, fmt.Errorf("opening balance: %w", err)
+	}
 	s.logger().Info("mw email ingest: created an account from a fill mail; confirm it on /accounts",
 		"ref", f.AccountRef, "user_id", owner, "firm", p.Firm, "to", f.Recipient)
 	return created, true, nil
