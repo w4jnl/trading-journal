@@ -109,6 +109,17 @@ func (s *ImportService) IngestEmailFill(ctx context.Context, f Fill) (string, er
 		return EmailSkippedAmbiguous, nil
 	}
 	acct := owners[0]
+	// The address only decides NEW accounts; a ref someone owns stays theirs
+	// whoever the mail was addressed to, so a mis-set MotiveWave can never
+	// move fills between traders. It is still worth a line in the log.
+	if f.Recipient != "" {
+		if users, err := q.ListUsers(ctx); err == nil {
+			if to := userForFillAddress(users, f.Recipient); to != 0 && to != acct.UserID {
+				s.logger().Warn("mw email ingest: fill addressed to one user's fill address for an account another user owns; the account's owner keeps it",
+					"ref", f.AccountRef, "order_id", f.OrderID, "addressed_user_id", to, "owner_user_id", acct.UserID)
+			}
+		}
+	}
 	if acct.CommissionSource == "inline" {
 		return EmailSkippedInline, tx.Commit()
 	}
@@ -282,6 +293,13 @@ func ownerForRecipient(users []models.User, recipient string) int64 {
 		}
 	}
 	if addr != "" {
+		// The generated fill address is the deliberate signal; the user's own
+		// e-mail is the older convention and still honoured.
+		for _, u := range active {
+			if u.MwFillAddress != nil && strings.EqualFold(strings.TrimSpace(*u.MwFillAddress), addr) {
+				return u.ID
+			}
+		}
 		for _, u := range active {
 			if u.Email != nil && strings.EqualFold(strings.TrimSpace(*u.Email), addr) {
 				return u.ID
@@ -290,6 +308,25 @@ func ownerForRecipient(users []models.User, recipient string) int64 {
 	}
 	if len(active) == 1 {
 		return active[0].ID
+	}
+	return 0
+}
+
+// userForFillAddress is the user whose generated fill address is the
+// recipient, or 0: the strict form of ownerForRecipient, used only to notice
+// a fill addressed to one trader for an account another trader owns.
+func userForFillAddress(users []models.User, recipient string) int64 {
+	addr := strings.TrimSpace(recipient)
+	if a, err := mail.ParseAddress(addr); err == nil {
+		addr = a.Address
+	}
+	if addr == "" {
+		return 0
+	}
+	for _, u := range users {
+		if u.IsActive == 1 && u.MwFillAddress != nil && strings.EqualFold(strings.TrimSpace(*u.MwFillAddress), addr) {
+			return u.ID
+		}
 	}
 	return 0
 }

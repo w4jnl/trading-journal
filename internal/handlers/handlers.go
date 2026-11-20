@@ -185,6 +185,11 @@ type Handlers struct {
 	// be attributed to any account.
 	MWEmailArchiveDir string
 
+	// MWFillDomain is mw_email.address_domain when the listener is enabled:
+	// the domain of the per-user fill addresses Settings generates. "" hides
+	// the card.
+	MWFillDomain string
+
 	// LiveData is the per-user data-version notifier behind the pages' live
 	// refresh: mutation paths bump it post-commit, GET /data/version serves
 	// it, and renderPage stamps the current version into pages that opt in.

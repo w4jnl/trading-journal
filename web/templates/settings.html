@@ -24,6 +24,7 @@
 {{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
 {{if eq .Flash "ai-profile"}}<div class="flash saved mb-16">Trader profile saved — every review, plan and connected agent reads it from now on.</div>{{end}}
 {{if eq .Flash "levels"}}<div class="flash saved mb-16">Levels: the markets to keep are saved.</div>{{end}}
+{{if eq .Flash "mw-address"}}<div class="flash saved mb-16">{{if .MWFillAddress}}Fill address ready — put it in MotiveWave's mail settings as the recipient.{{else}}Fill address removed.{{end}}</div>{{end}}
 {{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
 {{if eq .Flash "auto-plan"}}<div class="flash saved mb-16">{{if eq .AIAutoPlan "plan"}}Every new open position gets the AI's stop and target as its plan.{{else if eq .AIAutoPlan "suggest"}}Every new open position gets the AI's stop and target as a suggestion on its sheet; you decide whether to use it.{{else}}Automatic suggestions off: the suggestion is a button on the position sheet.{{end}}</div>{{end}}
 {{if eq .Flash "ai-tiers"}}<div class="flash saved mb-16">Models by task difficulty saved — the next review runs on them.</div>{{end}}
@@ -426,6 +427,28 @@
     {{end}}
   </form>
 </div>
+
+{{if .MWFillEnabled}}
+<div class="card mb-16" id="mw-address">
+  <div class="card-title">MotiveWave fill address</div>
+  <p class="muted" style="font-size: 12px; margin: 0 0 10px;">
+    MotiveWave's fill e-mails carry the broker account, not who you are. Send them to your own address and a fill for
+    an account the journal does not know yet is created under you. Put it in MotiveWave under Preferences › Email
+    as the recipient (the journal is the mail server, nothing is delivered), then restart MotiveWave.
+  </p>
+  <form method="post" action="/settings/mw-address" class="row-sm" style="gap: 10px; align-items: center; flex-wrap: wrap;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    {{if .MWFillAddress}}
+    <code class="num" style="font-size: 13px; user-select: all;">{{.MWFillAddress}}</code>
+    <button type="submit" name="action" value="generate" class="btn btn--secondary btn--sm" data-confirm="Generate a new address? Mails to the old one will no longer name you.">Regenerate</button>
+    <button type="submit" name="action" value="clear" class="btn btn--ghost btn--sm" data-confirm="Remove your fill address?">Remove</button>
+    {{else}}
+    <span class="muted" style="font-size: 13px;">No address yet.</span>
+    <button type="submit" name="action" value="generate" class="btn btn--sm">Generate my address</button>
+    {{end}}
+  </form>
+</div>
+{{end}}
 
 {{if .TopstepxEnabled}}
 <div class="card mb-16">

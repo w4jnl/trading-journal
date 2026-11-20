@@ -364,9 +364,13 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 	// Unattributable email-fill warnings are operator material: the email
 	// names no journal user, so only admins see the card.
 	var emailAlerts []emailFillAlert
+	// Every user sees the card: an unattributed fill belongs to nobody yet,
+	// and the person who recognises the account is the one to claim it.
+	// Booking fills into existing accounts ("Import them now") stays with
+	// admins, since those accounts may be other users'.
 	canRetry := false
+	emailAlerts = h.emailFillAlerts(ctx)
 	if auth.MustUser(ctx).IsAdmin {
-		emailAlerts = h.emailFillAlerts(ctx)
 		for _, a := range emailAlerts {
 			// Only a ref that resolves today can be booked from the archive;
 			// unknown/ambiguous ones need the operator to act first.

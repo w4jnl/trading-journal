@@ -832,9 +832,11 @@ func run() error {
 	mux.HandleFunc("POST /accounts/save", h.AccountsBulkSave)
 	mux.HandleFunc("POST /accounts/new", h.AccountsCreate)
 	// Admin-only: the alert card's catch-up for captured email fills whose
-	// account exists but whose orders were never booked.
+	// account exists but whose orders were never booked (it writes into other
+	// users' accounts). Claiming an unowned ref creates the claimant's own
+	// account, so every user may.
 	mux.Handle("POST /accounts/email-fills/retry", auth.RequireAdmin(http.HandlerFunc(h.AccountsRetryEmailFills)))
-	mux.Handle("POST /accounts/email-fills/claim", auth.RequireAdmin(http.HandlerFunc(h.AccountsClaimEmailRef)))
+	mux.HandleFunc("POST /accounts/email-fills/claim", h.AccountsClaimEmailRef)
 	mux.HandleFunc("POST /accounts/recompute", h.AccountsRecomputeAll)
 	mux.HandleFunc("POST /accounts/{id}/reassign", h.AccountsReassign)
 	mux.HandleFunc("POST /accounts/{id}/delete", h.AccountsDelete)
@@ -898,6 +900,7 @@ func run() error {
 	mux.HandleFunc("POST /settings/ai/autoplan", h.SettingsAIAutoPlanSave)
 	mux.HandleFunc("POST /settings/ai/profile", h.SettingsAIProfileSave)
 	mux.HandleFunc("POST /settings/guardrail", h.SettingsGuardrailSave)
+	mux.HandleFunc("POST /settings/mw-address", h.SettingsMWAddressSave)
 	mux.HandleFunc("POST /settings/levels", h.SettingsLevelsSave)
 	mux.HandleFunc("POST /settings/account-visibility", h.SettingsAccountVisibilitySave)
 	mux.HandleFunc("POST /settings/topstepx", h.SettingsTopstepxSave)
@@ -1163,7 +1166,8 @@ func run() error {
 	// its own "listening" line; a startup failure (bad TLS files, port in
 	// use) is fatal only to the module, not the app.
 	if cfg.MWEmail.Enabled {
-		h.MWEmailArchiveDir = cfg.MWEmail.ArchiveDir // admin alert card on /accounts
+		h.MWEmailArchiveDir = cfg.MWEmail.ArchiveDir // alert card on /accounts
+		h.MWFillDomain = cfg.MWEmail.AddressDomain   // per-user fill addresses on /settings
 		mwSrv := &mwmail.Server{Cfg: cfg.MWEmail}
 		if cfg.MWEmail.IngestEnabled() {
 			mwSrv.Ingest = mwmail.ImporterIngest(importSvc)

@@ -172,6 +172,8 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"VisGroups":       visGroups,
 		"VisTotal":        len(visAccounts),
 		"TopstepxEnabled": h.TopstepxSync != nil,
+		"MWFillEnabled":   h.MWFillDomain != "",
+		"MWFillAddress":   h.userMWFillAddress(ctx),
 		"TopstepxCreds":   tsxCreds,
 		"TopstepxSyncs":   tsxSyncs,
 		"IbkrEnabled":     h.IbkrSync != nil,

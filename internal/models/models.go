@@ -546,20 +546,21 @@ type TradeSetMember struct {
 }
 
 type User struct {
-	ID           int64      `json:"id"`
-	Username     string     `json:"username"`
-	Email        *string    `json:"email"`
-	PasswordHash *string    `json:"password_hash"`
-	IsAdmin      int64      `json:"is_admin"`
-	IsActive     int64      `json:"is_active"`
-	DisplayName  *string    `json:"display_name"`
-	CreatedAt    time.Time  `json:"created_at"`
-	LastLoginAt  *time.Time `json:"last_login_at"`
-	AiLanguage   string     `json:"ai_language"`
-	AiSendChart  int64      `json:"ai_send_chart"`
-	Guardrail    int64      `json:"guardrail"`
-	AutoPlan     int64      `json:"auto_plan"`
-	AiProfile    string     `json:"ai_profile"`
+	ID            int64      `json:"id"`
+	Username      string     `json:"username"`
+	Email         *string    `json:"email"`
+	PasswordHash  *string    `json:"password_hash"`
+	IsAdmin       int64      `json:"is_admin"`
+	IsActive      int64      `json:"is_active"`
+	DisplayName   *string    `json:"display_name"`
+	CreatedAt     time.Time  `json:"created_at"`
+	LastLoginAt   *time.Time `json:"last_login_at"`
+	AiLanguage    string     `json:"ai_language"`
+	AiSendChart   int64      `json:"ai_send_chart"`
+	Guardrail     int64      `json:"guardrail"`
+	AutoPlan      int64      `json:"auto_plan"`
+	AiProfile     string     `json:"ai_profile"`
+	MwFillAddress *string    `json:"mw_fill_address"`
 }
 
 type UserAiSetting struct {

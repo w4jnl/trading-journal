@@ -443,3 +443,43 @@ func TestIngestEmailFill_CrossUserAttribution(t *testing.T) {
 		t.Fatalf("ambiguous ref = %q err %v, want skipped_ambiguous_account", action, err)
 	}
 }
+
+// A fill mail sent to a user's generated fill address names that user, ahead
+// of the e-mail rule and however many users exist; a known ref stays with
+// its owner whoever the mail was addressed to.
+func TestIngestEmailFill_FillAddressOwner(t *testing.T) {
+	svc, conn, _, _, _ := setupTestService(t)
+	ctx := context.Background()
+	q := models.New(conn)
+	second := createUser(t, conn, "second")
+	third := createUser(t, conn, "third")
+	if _, err := conn.Exec(`UPDATE users SET mw_fill_address = ? WHERE id = ?`, "fills-abc123@w4j.example", second); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := conn.Exec(`UPDATE users SET email = ? WHERE id = ?`, "fills-abc123@w4j.example", third); err != nil {
+		t.Fatal(err)
+	}
+
+	f := emailFill("600100", 1, 7516.25, time.Date(2026, 7, 27, 7, 19, 31, 0, time.UTC))
+	f.AccountRef = "APEX-300003-12"
+	f.Recipient = "Fills-ABC123@w4j.example"
+	if action, err := svc.IngestEmailFill(ctx, f); err != nil || action != EmailInserted {
+		t.Fatalf("fill address recipient = %q err %v, want inserted", action, err)
+	}
+	if _, err := q.GetAccountByRef(ctx, models.GetAccountByRefParams{UserID: second, ImportSource: "motivewave_csv", AccountRef: "APEX-300003-12"}); err != nil {
+		t.Errorf("account not created under the fill address's user: %v", err)
+	}
+
+	// The same ref addressed to another user's address: the owner keeps it.
+	acct := createMWAccount(t, q, svc.UserID, "APEX-300003-13")
+	g := emailFill("600200", 1, 7516.25, time.Date(2026, 7, 27, 7, 20, 31, 0, time.UTC))
+	g.AccountRef = "APEX-300003-13"
+	g.Recipient = "fills-abc123@w4j.example"
+	if action, err := svc.IngestEmailFill(ctx, g); err != nil || action != EmailInserted {
+		t.Fatalf("known ref = %q err %v, want inserted", action, err)
+	}
+	execs, err := q.ListExecutionsByAccount(ctx, acct.ID)
+	if err != nil || len(execs) != 1 {
+		t.Errorf("owner's executions = %d err %v, want 1", len(execs), err)
+	}
+}

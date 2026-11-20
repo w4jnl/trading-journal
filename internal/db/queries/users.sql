@@ -67,3 +67,7 @@ SELECT id FROM users WHERE auto_plan > 0 AND is_active = 1 ORDER BY id;
 -- name: SetUserAIProfile :exec
 -- The trader's profile for the AI method, as JSON (internal/aimethod.Profile).
 UPDATE users SET ai_profile = ? WHERE id = ?;
+
+-- name: SetUserMWFillAddress :exec
+-- The user's generated MotiveWave fill address; NULL clears it.
+UPDATE users SET mw_fill_address = ? WHERE id = ?;
