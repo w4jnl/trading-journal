@@ -11,6 +11,7 @@ func TestHumanizeImportMessage(t *testing.T) {
 		{nil, ""},
 		{str("  "), ""},
 		{str("unrecognized CSV header (neither MotiveWave nor TopstepX orders/trades)"), "Not a MotiveWave or TopstepX export: the header row was not recognised."},
+		{str("parsed=2 inserted=2 new_accounts=1 new_instruments=0 skipped_rows=1 (no Account cell from row 4 on (12 fields for 13 columns): fix it)"), "Imported, but 1 rows were left out: no Account cell from row 4 on (12 fields for 13 columns): fix it."},
 		{str(`parse: missing column "Id"`), `The export is missing the "Id" column. Re-export with the default columns.`},
 		{str("parse: read header: EOF"), "The file is empty, or cut off before the header row."},
 		{str("parse: row 12: parse price: strconv.ParseFloat: parsing \"abc\": invalid syntax"), "Row 12 could not be read: the price is not a number. Nothing from this file was imported."},

@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- A MotiveWave Executions export that holds fills without an account imports the rest: MotiveWave writes such a fill with no Account cell at all, which shifted every column and failed the whole file with "unknown action" and a price in it. Those rows are now left out and counted, the import result and the sync log say how many and why (status "partial"), and a row short by more than one field is refused with the field count instead of a crash.
+
 ## 2.26.0, 2026-11-16
 
 ### Server
