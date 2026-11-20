@@ -359,6 +359,49 @@ func (h *Handlers) emailFillAlerts(ctx context.Context) []emailFillAlert {
 	return out
 }
 
+// accountsSort reads ?sort= (name | last | balance) and ?dir= (asc | desc)
+// for the accounts list; name ascending when absent, and each key's natural
+// direction when only the key is given (newest fill and largest balance
+// first).
+func accountsSort(r *http.Request) (key, dir string) {
+	key = r.URL.Query().Get("sort")
+	switch key {
+	case "last", "balance":
+	default:
+		key = "name"
+	}
+	dir = r.URL.Query().Get("dir")
+	if dir != "asc" && dir != "desc" {
+		if key == "name" {
+			dir = "asc"
+		} else {
+			dir = "desc"
+		}
+	}
+	return key, dir
+}
+
+// accountsSortRefs builds the header links: clicking the active column flips
+// its direction, another column starts in its natural direction.
+func accountsSortRefs(active, dir string) map[string]string {
+	refs := map[string]string{}
+	for _, k := range []string{"name", "last", "balance"} {
+		d := "desc"
+		if k == "name" {
+			d = "asc"
+		}
+		if k == active {
+			if dir == "asc" {
+				d = "desc"
+			} else {
+				d = "asc"
+			}
+		}
+		refs[k] = "/accounts?sort=" + k + "&dir=" + d + "#accts"
+	}
+	return refs
+}
+
 // AccountsPage renders the /accounts list. Each row is a small form that POSTs
 // back to /accounts/{id} to update the row in place via HTMX.
 func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
@@ -368,10 +411,27 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, fmt.Errorf("list accounts: %w", err))
 		return
 	}
+	balances, err := h.loadBalances(ctx, time.Now())
+	if err != nil {
+		h.serverError(w, fmt.Errorf("load balances: %w", err))
+		return
+	}
+	lastRows, err := h.Queries.ListAccountLastFills(ctx, auth.MustUser(ctx).ID)
+	if err != nil {
+		h.serverError(w, fmt.Errorf("last fills: %w", err))
+		return
+	}
+	lastFill := make(map[int64]time.Time, len(lastRows))
+	for _, lr := range lastRows {
+		lastFill[lr.AccountID] = lr.LastFill
+	}
+
 	// Accounts awaiting confirmation first (an import or a MotiveWave fill
 	// mail created them), then the rest of the active ones, retired
-	// (active=0) at the bottom. The base query orders by name; this is a
-	// stable secondary sort, so within each group names stay alphabetical.
+	// (active=0) at the bottom. Within each group the trader's sort applies:
+	// name (the base query's order), last fill or balance, either way round;
+	// the sort is stable, so ties keep the name order.
+	sortKey, dir := accountsSort(r)
 	rank := func(a models.Account) int {
 		switch {
 		case a.Active == 0:
@@ -381,19 +441,48 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		}
 		return 1
 	}
+	less := func(a, b models.Account) bool {
+		switch sortKey {
+		case "last":
+			ta, tb := lastFill[a.ID], lastFill[b.ID]
+			if ta.Equal(tb) {
+				return false
+			}
+			if dir == "asc" {
+				return ta.Before(tb)
+			}
+			return ta.After(tb)
+		case "balance":
+			ba, bb := balances[a.ID], balances[b.ID]
+			// Unknown balances sort last whichever way round.
+			if ba.Known != bb.Known {
+				return ba.Known
+			}
+			if ba.Balance == bb.Balance {
+				return false
+			}
+			if dir == "asc" {
+				return ba.Balance < bb.Balance
+			}
+			return ba.Balance > bb.Balance
+		}
+		if dir == "desc" {
+			return strings.ToLower(a.Name) > strings.ToLower(b.Name)
+		}
+		return false // name asc is the base order
+	}
 	sort.SliceStable(accounts, func(i, j int) bool {
-		return rank(accounts[i]) < rank(accounts[j])
+		ri, rj := rank(accounts[i]), rank(accounts[j])
+		if ri != rj {
+			return ri < rj
+		}
+		return less(accounts[i], accounts[j])
 	})
 	needsConfirm := 0
 	for _, a := range accounts {
 		if rank(a) == 0 {
 			needsConfirm++
 		}
-	}
-	balances, err := h.loadBalances(ctx, time.Now())
-	if err != nil {
-		h.serverError(w, fmt.Errorf("load balances: %w", err))
-		return
 	}
 	flashRaw := r.URL.Query().Get("flash")
 	flashErr := r.URL.Query().Get("err")
@@ -469,6 +558,10 @@ func (h *Handlers) AccountsPage(w http.ResponseWriter, r *http.Request) {
 		"RecomputedOK":       recomputedOK,
 		"RecomputedFail":     recomputedFail,
 		"Balances":           balances,
+		"LastFill":           lastFill,
+		"Sort":               sortKey,
+		"Dir":                dir,
+		"SortRefs":           accountsSortRefs(sortKey, dir),
 		"Today":              time.Now().In(h.localTZ()).Format("2006-01-02"),
 		"ClonedID":           clonedID,
 	})

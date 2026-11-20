@@ -7,6 +7,7 @@ package models
 
 import (
 	"context"
+	"time"
 )
 
 const confirmAccount = `-- name: ConfirmAccount :execrows
@@ -189,6 +190,47 @@ func (q *Queries) GetAccountImportClaim(ctx context.Context, arg GetAccountImpor
 	var claim string
 	err := row.Scan(&claim)
 	return claim, err
+}
+
+const listAccountLastFills = `-- name: ListAccountLastFills :many
+SELECT e.account_id, e.exec_time AS last_fill
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE a.user_id = ?
+GROUP BY e.account_id
+HAVING e.exec_time = MAX(e.exec_time)
+`
+
+type ListAccountLastFillsRow struct {
+	AccountID int64     `json:"account_id"`
+	LastFill  time.Time `json:"last_fill"`
+}
+
+// The newest fill per account of the user, for the "last fill" column on
+// /accounts and its sort. Accounts without fills are absent. SQLite's bare
+// column with MAX() yields that row's exec_time; the HAVING keeps the intent
+// explicit and the column typed as a time.
+func (q *Queries) ListAccountLastFills(ctx context.Context, userID int64) ([]ListAccountLastFillsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listAccountLastFills, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListAccountLastFillsRow
+	for rows.Next() {
+		var i ListAccountLastFillsRow
+		if err := rows.Scan(&i.AccountID, &i.LastFill); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listAccounts = `-- name: ListAccounts :many

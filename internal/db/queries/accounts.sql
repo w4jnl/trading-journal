@@ -88,3 +88,15 @@ WHERE import_source = sqlc.arg(import_source)
 -- still needs them keeps its flag.
 UPDATE accounts SET needs_setup = 0
 WHERE id = ? AND user_id = ? AND needs_setup = 1 AND firm IS NOT NULL AND type IS NOT NULL;
+
+-- name: ListAccountLastFills :many
+-- The newest fill per account of the user, for the "last fill" column on
+-- /accounts and its sort. Accounts without fills are absent. SQLite's bare
+-- column with MAX() yields that row's exec_time; the HAVING keeps the intent
+-- explicit and the column typed as a time.
+SELECT e.account_id, e.exec_time AS last_fill
+FROM executions e
+JOIN accounts a ON a.id = e.account_id
+WHERE a.user_id = ?
+GROUP BY e.account_id
+HAVING e.exec_time = MAX(e.exec_time);

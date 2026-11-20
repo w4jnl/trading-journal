@@ -127,13 +127,17 @@
 <div id="accts" class="table-scroll mt-8">
   <table class="accounts">
     <thead>
+      {{/* Name, Balance and Last fill sort the list (?sort=&dir=); the
+           active one shows its direction and flips on click. Accounts to
+           confirm stay first and retired ones last whatever the sort. */}}
       <tr>
         <th>Source / Ref</th>
-        <th>Name</th>
+        {{template "accounts_sort_th" (dict "Label" "Name" "Col" "name" "Sort" .Sort "Dir" .Dir "Refs" .SortRefs)}}
         <th>Firm</th>
         <th>Type</th>
         <th>Curr</th>
-        <th>Balance</th>
+        {{template "accounts_sort_th" (dict "Label" "Balance" "Col" "balance" "Sort" .Sort "Dir" .Dir "Refs" .SortRefs)}}
+        {{template "accounts_sort_th" (dict "Label" "Last fill" "Col" "last" "Sort" .Sort "Dir" .Dir "Refs" .SortRefs)}}
         <th>Active</th>
         <th>Status</th>
       </tr>
@@ -150,7 +154,7 @@
         {{$a := .}}
         {{if and (eq $a.Active 0) (not $sepShown)}}
           <tr class="retired-divider">
-            <td colspan="8">Retired accounts</td>
+            <td colspan="9">Retired accounts</td>
           </tr>
           {{$sepShown = true}}
         {{end}}
@@ -290,6 +294,7 @@
             <input class="te" form="accounts-form" type="text" name="accounts.{{$a.ID}}.currency" value="{{$a.Currency}}" style="width: 64px;">
           </td>
           {{template "balance_cell" (dict "Account" $a "Balance" (index $.Balances $a.ID) "Today" $.Today "Currency" $a.Currency)}}
+          <td>{{with index $.LastFill $a.ID}}{{ltime . "date"}}{{else}}<span class="muted">—</span>{{end}}</td>
           <td style="text-align: center;">
             <span class="tv">{{if eq $a.Active 1}}✓{{else}}<span class="muted">—</span>{{end}}</span>
             <input class="te" form="accounts-form" type="checkbox" name="accounts.{{$a.ID}}.active" {{if eq $a.Active 1}}checked{{end}}>
@@ -303,7 +308,7 @@
             {{else}}<span class="pill error" title="Set the firm and type in Edit mode, then Save">setup</span>{{end}}{{else}}<span class="pill success">ok</span>{{end}}</td>
         </tr>
       {{else}}
-        <tr><td colspan="8" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
+        <tr><td colspan="9" class="muted" style="text-align: center; padding: 24px;">No accounts yet — drop a CSV at <a href="/import">/import</a>.</td></tr>
       {{end}}
     </tbody>
   </table>
@@ -450,4 +455,13 @@
     });
   })();
 </script>
+{{end}}
+
+{{/* accounts_sort_th is one sortable header cell: Label, Col (sort key),
+     plus the page's Sort / Dir / Refs. */}}
+{{define "accounts_sort_th"}}
+{{- $active := eq .Sort .Col -}}
+<th{{if $active}} class="sorted" aria-sort="{{if eq .Dir "asc"}}ascending{{else}}descending{{end}}"{{end}}>
+  <a class="sort-link" href="{{index .Refs .Col}}" title="Sort by {{.Label}}">{{.Label}}{{if $active}}<span class="sort-arrow" aria-hidden="true">{{if eq .Dir "asc"}}▲{{else}}▼{{end}}</span>{{end}}</a>
+</th>
 {{end}}

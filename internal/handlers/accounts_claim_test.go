@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
@@ -187,5 +188,52 @@ func TestAccountsConfirm(t *testing.T) {
 	post(theirs.ID)
 	if a, err := fx.q.GetAccountByID(fx.ctx, models.GetAccountByIDParams{ID: theirs.ID, UserID: other.ID}); err != nil || a.NeedsSetup != 1 {
 		t.Errorf("other user's account touched: %+v %v", a, err)
+	}
+}
+
+// The accounts list shows each account's last fill and sorts by it, by
+// balance or by name; accounts to confirm stay first whatever the sort.
+func TestAccountsPageSort(t *testing.T) {
+	fx := newPositionFixture(t)
+	firm := "apex"
+	if _, err := fx.q.CreateAccount(fx.ctx, models.CreateAccountParams{UserID: fx.uid, Name: "aaa-idle", Firm: &firm, ImportSource: "motivewave_csv",
+		AccountRef: "APEX-1-1", Currency: "USD", CommissionSource: "rate"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fx.q.CreateAccount(fx.ctx, importer.EmailAccountParams(fx.uid, "ZZZ-NEW", "Rithmic WS")); err != nil {
+		t.Fatal(err)
+	}
+	page := func(query string) string {
+		req := httptest.NewRequest(http.MethodGet, "/accounts"+query, nil).WithContext(WithNonce(fx.ctx, "n"))
+		rec := httptest.NewRecorder()
+		fx.h.AccountsPage(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: %d", query, rec.Code)
+		}
+		return rec.Body.String()
+	}
+	order := func(body string) []string {
+		var out []string
+		for _, n := range []string{"ZZZ-NEW", "aaa-idle", "pos-a"} {
+			out = append(out, n)
+		}
+		sort.Slice(out, func(i, j int) bool { return strings.Index(body, ">"+out[i]+"<") < strings.Index(body, ">"+out[j]+"<") })
+		return out
+	}
+	body := page("")
+	if !strings.Contains(body, fx.t0.In(fx.h.localTZ()).Format("2006-01-02")) {
+		t.Errorf("last fill date missing from the page")
+	}
+	if got := order(body); strings.Join(got, ",") != "ZZZ-NEW,aaa-idle,pos-a" {
+		t.Errorf("name asc = %v", got)
+	}
+	if got := order(page("?sort=last&dir=desc")); strings.Join(got, ",") != "ZZZ-NEW,pos-a,aaa-idle" {
+		t.Errorf("last desc = %v", got)
+	}
+	if got := order(page("?sort=name&dir=desc")); strings.Join(got, ",") != "ZZZ-NEW,pos-a,aaa-idle" {
+		t.Errorf("name desc = %v", got)
+	}
+	if !strings.Contains(page("?sort=last"), `aria-sort="descending"`) {
+		t.Errorf("active sort header not marked")
 	}
 }

@@ -12,6 +12,7 @@ built against it carries the same marketing version.
 - A banner that describes the page (the email-fills card and the accounts-to-confirm banner on Accounts, the no-trades note on the Dashboard, the GEX and copy-reconcile notes) no longer turns into a toast and vanishes when the page is opened with a flash in the URL, as it did after "Create as mine".
 - An account an import or a fill mail created is tinted on Accounts and its status cell is a Confirm button: one click acknowledges it (Save in Edit mode still does the same).
 - A new account starts with a balance of 0 on the day before its first fill (the day before today for one created by hand) instead of no balance, so the row shows its P&L at once; adjust or delete the anchor on Accounts when the real balance is known.
+- Accounts shows each account's last fill, and the Name, Balance and Last fill headers sort the list either way; accounts to confirm stay first and retired ones last.
 
 ## 2.26.0, 2026-11-16
 
