@@ -19,19 +19,40 @@ var motivewaveRequired = []string{
 	"Time", "Action", "Quantity", "Price", "Source",
 }
 
+// ParseReport says what a parser left out of a file on purpose, so the import
+// result can tell the trader instead of the rows vanishing.
+type ParseReport struct {
+	RowsSkipped  int    // rows the parser could not use and left out
+	FirstSkipped int    // line number of the first such row
+	SkipReason   string // why, in one phrase for people
+}
+
 // ParseMotiveWave reads a MotiveWave fill export. Each row is a single fill;
 // one file may contain rows for many accounts.
 func ParseMotiveWave(r io.Reader) ([]Fill, error) {
+	fills, _, err := ParseMotiveWaveReport(r)
+	return fills, err
+}
+
+// ParseMotiveWaveReport is ParseMotiveWave plus a report of the rows it left out.
+func ParseMotiveWaveReport(r io.Reader) ([]Fill, ParseReport, error) {
+	var report ParseReport
 	reader := csv.NewReader(stripBOMReader(r))
 	reader.FieldsPerRecord = -1
 
 	header, err := reader.Read()
 	if err != nil {
-		return nil, fmt.Errorf("read header: %w", err)
+		return nil, report, fmt.Errorf("read header: %w", err)
 	}
 	cols, err := indexHeaders(header, motivewaveRequired)
 	if err != nil {
-		return nil, err
+		return nil, report, err
+	}
+	width := 0 // the fields a row must have for every required column to be in range
+	for _, name := range motivewaveRequired {
+		if cols[name] >= width {
+			width = cols[name] + 1
+		}
 	}
 
 	var fills []Fill
@@ -43,27 +64,44 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 			break
 		}
 		if err != nil {
-			return nil, fmt.Errorf("row %d: %w", line, err)
+			return nil, report, fmt.Errorf("row %d: %w", line, err)
+		}
+		if _, ok := cols["Order ID"]; ok && len(row) == len(header)-1 {
+			// The Executions export writes a fill it cannot attribute to an account
+			// with no Account cell at all (seen 2026-11-19: the row starts with the
+			// order number, equal to its Ticket, and has no Fill Id, Source or
+			// Connection either), so every column is one place early. The journal
+			// cannot place such a fill, and reading the row as if the optional
+			// Order ID were the missing cell invented one account per fill. The
+			// row is left out and counted; the rest of the file still imports.
+			if report.RowsSkipped == 0 {
+				report.FirstSkipped = line
+			}
+			report.RowsSkipped++
+			continue
+		}
+		if len(row) < width {
+			return nil, report, fmt.Errorf("row %d: %d fields, the header has %d", line, len(row), len(header))
 		}
 
 		side, err := motivewaveSide(row[cols["Action"]])
 		if err != nil {
-			return nil, fmt.Errorf("row %d: %w", line, err)
+			return nil, report, fmt.Errorf("row %d: %w", line, err)
 		}
 		qty, err := strconv.ParseFloat(strings.TrimSpace(row[cols["Quantity"]]), 64)
 		if err != nil {
-			return nil, fmt.Errorf("row %d: parse quantity: %w", line, err)
+			return nil, report, fmt.Errorf("row %d: parse quantity: %w", line, err)
 		}
 		if qty <= 0 {
-			return nil, fmt.Errorf("row %d: quantity must be positive, got %v", line, qty)
+			return nil, report, fmt.Errorf("row %d: quantity must be positive, got %v", line, qty)
 		}
 		price, err := strconv.ParseFloat(strings.TrimSpace(row[cols["Price"]]), 64)
 		if err != nil {
-			return nil, fmt.Errorf("row %d: parse price: %w", line, err)
+			return nil, report, fmt.Errorf("row %d: parse price: %w", line, err)
 		}
 		execTime, err := time.Parse(motivewaveTimeLayout, strings.TrimSpace(row[cols["Time"]]))
 		if err != nil {
-			return nil, fmt.Errorf("row %d: parse time %q: %w", line, row[cols["Time"]], err)
+			return nil, report, fmt.Errorf("row %d: parse time %q: %w", line, row[cols["Time"]], err)
 		}
 
 		source := strings.TrimSpace(row[cols["Source"]])
@@ -90,8 +128,12 @@ func ParseMotiveWave(r io.Reader) ([]Fill, error) {
 			RawData:      encodeRow(header, row),
 		})
 	}
+	if report.RowsSkipped > 0 {
+		report.SkipReason = fmt.Sprintf("no Account cell from row %d on (%d fields for %d columns): MotiveWave could not attribute these fills to an account; fix the account or connection in MotiveWave and re-export",
+			report.FirstSkipped, len(header)-1, len(header))
+	}
 	disambiguateCoTicketFills(fills)
-	return fills, nil
+	return fills, report, nil
 }
 
 // disambiguateCoTicketFills makes BrokerExecID unique per (account, ticket) when one order

@@ -116,6 +116,8 @@ type Outcome struct {
 	TradesCreated      int    // closed trades materialized by the position builder
 	SyncLogID          int64  // id of the sync_log row written
 	DestinationPath    string // post-move location of the file
+	RowsSkipped        int    // rows the parser left out on purpose (see SkipReason)
+	SkipReason         string // why those rows were left out, for people
 	ErrorMessage       string // empty on success
 }
 
@@ -222,12 +224,13 @@ func (s *ImportService) importFile(ctx context.Context, path string, forceAccoun
 	// write trades directly because the source already aggregated them.
 	switch out.Format {
 	case FormatMotiveWave, FormatTopstepX:
-		fills, err := dispatchParse(out.Format, bytes.NewReader(content))
+		fills, report, err := dispatchParse(out.Format, bytes.NewReader(content))
 		if err != nil {
 			out.ErrorMessage = fmt.Sprintf("parse: %v", err)
 			return s.finalizeFailure(ctx, path, out)
 		}
 		out.FillsParsed = len(fills)
+		out.RowsSkipped, out.SkipReason = report.RowsSkipped, report.SkipReason
 		if err := s.ingest(ctx, fills, out.Format, &out, false); err != nil {
 			out.ErrorMessage = fmt.Sprintf("ingest: %v", err)
 			return s.finalizeFailure(ctx, path, out)
@@ -248,14 +251,15 @@ func (s *ImportService) importFile(ctx context.Context, path string, forceAccoun
 	return s.finalizeSuccess(ctx, path, out)
 }
 
-func dispatchParse(format Format, r io.Reader) ([]Fill, error) {
+func dispatchParse(format Format, r io.Reader) ([]Fill, ParseReport, error) {
 	switch format {
 	case FormatMotiveWave:
-		return ParseMotiveWave(r)
+		return ParseMotiveWaveReport(r)
 	case FormatTopstepX:
-		return ParseTopstepX(r)
+		fills, err := ParseTopstepX(r)
+		return fills, ParseReport{}, err
 	default:
-		return nil, fmt.Errorf("no parser for format %q", format)
+		return nil, ParseReport{}, fmt.Errorf("no parser for format %q", format)
 	}
 }
 
@@ -1052,7 +1056,13 @@ func (s *ImportService) finalizeSuccess(ctx context.Context, srcPath string, out
 	}
 	out.DestinationPath = dest
 
-	id, err := s.writeSyncLog(ctx, out, "success", out.errorOrSummary())
+	// A file with rows left out is "partial": imported, but the trader has
+	// something to fix, and the import page keeps the row in view.
+	status := "success"
+	if out.RowsSkipped > 0 {
+		status = "partial"
+	}
+	id, err := s.writeSyncLog(ctx, out, status, out.errorOrSummary())
 	if err != nil {
 		s.logger().Error("write sync_log failed", "err", err)
 	}
@@ -1062,6 +1072,7 @@ func (s *ImportService) finalizeSuccess(ctx context.Context, srcPath string, out
 		"source", srcPath,
 		"format", string(out.Format),
 		"fills_parsed", out.FillsParsed,
+		"rows_skipped", out.RowsSkipped,
 		"execs_inserted", out.ExecsInserted,
 		"accounts_created", out.AccountsCreated,
 		"instruments_stubbed", out.InstrumentsStubbed,
@@ -1378,6 +1389,9 @@ func (o Outcome) errorOrSummary() string {
 	}
 	if o.Superseded > 0 {
 		msg += fmt.Sprintf(" superseded_email=%d", o.Superseded)
+	}
+	if o.RowsSkipped > 0 {
+		msg += fmt.Sprintf(" skipped_rows=%d (%s)", o.RowsSkipped, o.SkipReason)
 	}
 	return msg
 }
