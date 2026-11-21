@@ -24,7 +24,7 @@
 {{if eq .Flash "ai-chart"}}<div class="flash saved mb-16">Chart setting saved.</div>{{end}}
 {{if eq .Flash "ai-profile"}}<div class="flash saved mb-16">Trader profile saved — every review, plan and connected agent reads it from now on.</div>{{end}}
 {{if eq .Flash "levels"}}<div class="flash saved mb-16">Levels: the markets to keep are saved.</div>{{end}}
-{{if eq .Flash "mw-address"}}<div class="flash saved mb-16">{{if .MWFillAddress}}Fill address ready — put it in MotiveWave's mail settings as the recipient.{{else}}Fill address removed.{{end}}</div>{{end}}
+{{if eq .Flash "mw-address"}}<div class="flash saved mb-16">{{if .MWFillAddress}}Fill address saved — put it in MotiveWave's mail settings as the recipient.{{else}}Fill address removed.{{end}}</div>{{end}}
 {{if eq .Flash "guardrail"}}<div class="flash saved mb-16">Guardrail {{if .Guardrail}}on: you will be nudged during the session{{else}}off{{end}}.</div>{{end}}
 {{if eq .Flash "auto-plan"}}<div class="flash saved mb-16">{{if eq .AIAutoPlan "plan"}}Every new open position gets the AI's stop and target as its plan.{{else if eq .AIAutoPlan "suggest"}}Every new open position gets the AI's stop and target as a suggestion on its sheet; you decide whether to use it.{{else}}Automatic suggestions off: the suggestion is a button on the position sheet.{{end}}</div>{{end}}
 {{if eq .Flash "ai-tiers"}}<div class="flash saved mb-16">Models by task difficulty saved — the next review runs on them.</div>{{end}}
@@ -446,6 +446,13 @@
     <span class="muted" style="font-size: 13px;">No address yet.</span>
     <button type="submit" name="action" value="generate" class="btn btn--sm">Generate my address</button>
     {{end}}
+  </form>
+  <form method="post" action="/settings/mw-address" class="row-sm" style="gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px;">
+    <input type="hidden" name="csrf_token" value="{{.CSRFToken}}">
+    <label for="mw-address-input" class="muted" style="font-size: 12px;">Or set it yourself</label>
+    <input type="email" id="mw-address-input" name="address" value="{{.MWFillAddress}}" placeholder="fills-yourname@{{.MWFillDomain}}" autocomplete="off" spellcheck="false" style="min-width: 28ch; font-size: 13px;">
+    <button type="submit" name="action" value="set" class="btn btn--secondary btn--sm">Set</button>
+    <span class="muted" style="font-size: 12px;">The same address on two instances fed by one MotiveWave (one relay, prod and dev) names you on both.</span>
   </form>
 </div>
 {{end}}

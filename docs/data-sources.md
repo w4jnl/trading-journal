@@ -94,7 +94,8 @@ whichever user already owns that account, whoever it was addressed to. A ref no 
 becomes a new account the way a CSV import creates one, flagged for confirmation and listed
 first on `/accounts` until the trader saves it. Its owner is found from the message's recipient:
 the user whose **fill address** it is (Settings > MotiveWave fill address generates
-`fills-<token>@<mw_email.address_domain>`; put it in MotiveWave's mail settings as the
+`fills-<token>@<mw_email.address_domain>`, or takes any address you type, so two instances
+fed by one MotiveWave can carry the same one; put it in MotiveWave's mail settings as the
 recipient), else the user whose e-mail address it is, else the only active user. When no rule
 names a user the fill stays archive-only, with a warning in the log and a card on `/accounts`
 where **Create as mine** on the row creates that same account under whoever clicks and books
