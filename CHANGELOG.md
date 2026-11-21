@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### Server
+
+- The MotiveWave fill address on Settings can be typed as well as generated: any plain address is accepted (lower-cased, refused when another user has it), so a trader whose relay feeds two instances, say production and a dev copy, gives both the same address and is named on both.
+
 ## 2.27.0, 2026-11-20
 
 ### Server

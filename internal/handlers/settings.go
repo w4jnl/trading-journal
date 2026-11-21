@@ -174,6 +174,7 @@ func (h *Handlers) renderSettings(w http.ResponseWriter, r *http.Request, newKey
 		"TopstepxEnabled": h.TopstepxSync != nil,
 		"MWFillEnabled":   h.MWFillDomain != "",
 		"MWFillAddress":   h.userMWFillAddress(ctx),
+		"MWFillDomain":    h.MWFillDomain,
 		"TopstepxCreds":   tsxCreds,
 		"TopstepxSyncs":   tsxSyncs,
 		"IbkrEnabled":     h.IbkrSync != nil,
