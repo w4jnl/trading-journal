@@ -58,28 +58,44 @@ struct SessionLiveActivity: Widget {
 struct TodayEntry: TimelineEntry {
     let date: Date
     let today: TodayCache?
+    /// The cache is from before this calendar day (the widget holds it until the rollover hour).
+    var behind = false
 }
 
 struct TodayProvider: TimelineProvider {
     func placeholder(in context: Context) -> TodayEntry { TodayEntry(date: .now, today: .preview) }
 
     func getSnapshot(in context: Context, completion: @escaping (TodayEntry) -> Void) {
-        completion(TodayEntry(date: .now, today: context.isPreview ? .preview : TodayCache.read()?.display(bySet: Grouping.bySet())))
+        completion(context.isPreview ? TodayEntry(date: .now, today: .preview) : Self.entries(at: .now).first!)
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<TodayEntry>) -> Void) {
-        let t = TodayCache.read()?.display(bySet: Grouping.bySet()) // counts per decision when the trader groups by set
+        let now = Date.now
+        let entries = Self.entries(at: now)
         // The app and the silent sync reload the timeline on every change; this is the fallback
-        // cadence: a quarter hour in the session, an hour outside it.
-        let next = Date.now.addingTimeInterval(t?.inGlobex == true ? 15 * 60 : 60 * 60)
-        completion(Timeline(entries: [TodayEntry(date: .now, today: t)], policy: .after(next)))
+        // cadence: a quarter hour in the session, an hour outside it, and never past the day's
+        // rollover, so a reload after it starts from the blank day.
+        var next = now.addingTimeInterval(entries[0].today?.inGlobex == true ? 15 * 60 : 60 * 60)
+        if entries.count > 1 { next = min(next, entries[1].date.addingTimeInterval(60)) }
+        completion(Timeline(entries: entries, policy: .after(next)))
+    }
+
+    /// What the cache says for now, and the blank day dated at the next rollover when it is
+    /// still ahead (Shared/WidgetDay.swift). Counts per decision when the trader groups by set.
+    static func entries(at now: Date) -> [TodayEntry] {
+        guard let cache = TodayCache.read() else { return [TodayEntry(date: now, today: nil)] }
+        let bySet = Grouping.bySet()
+        let plan = cache.timeline(at: now, rolloverHour: WidgetDay.rolloverHour())
+        var entries = [TodayEntry(date: now, today: plan.current.display(bySet: bySet), behind: plan.current.isBehind(at: now))]
+        if let next = plan.next { entries.append(TodayEntry(date: next.at, today: next.day.display(bySet: bySet))) }
+        return entries
     }
 }
 
 struct TodayPnlWidget: Widget {
     var body: some WidgetConfiguration {
         StaticConfiguration(kind: "nl.w4j.tradingjournal.today", provider: TodayProvider()) { entry in
-            TodayWidgetView(today: entry.today)
+            TodayWidgetView(today: entry.today, behind: entry.behind)
                 .containerBackground(for: .widget) { Brand.dark.bg }
                 .widgetURL(Route.today.url)
         }
@@ -91,6 +107,8 @@ struct TodayPnlWidget: Widget {
 
 struct TodayWidgetView: View {
     let today: TodayCache?
+    /// The figure is the last day's, held until the rollover: the faces name its weekday.
+    var behind = false
     @Environment(\.widgetFamily) private var family
 
     var body: some View {
@@ -99,7 +117,7 @@ struct TodayWidgetView: View {
                 switch family {
                 case .accessoryCircular: circular(t)
                 case .accessoryRectangular: rectangular(t)
-                case .accessoryInline: Text("Journal \(Formatting.moneyShort(t.total))").amount()
+                case .accessoryInline: Text("Journal \(Formatting.moneyShort(t.total))\(behind ? " · \(t.weekday)" : "")").amount()
                 case .systemMedium: medium(t)
                 default: small(t)
                 }
@@ -126,7 +144,7 @@ struct TodayWidgetView: View {
     private func rectangular(_ t: TodayCache) -> some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 4) {
-                Text("Trade Log").font(.system(size: 12, weight: .semibold))
+                Text(behind ? "Trade Log · \(t.weekday)" : "Trade Log").font(.system(size: 12, weight: .semibold))
                 Text(Formatting.moneyShort(t.total)).font(.system(size: 14, weight: .bold, design: .monospaced)).amount()
             }
             Text("\(t.trades) trades · \(t.openCount) open\(t.unseen > 0 ? " · \(t.unseen) nudge\(t.unseen == 1 ? "" : "s")" : "")").font(.system(size: 11))
@@ -137,7 +155,7 @@ struct TodayWidgetView: View {
     private func small(_ t: TodayCache) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text("TODAY").font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
+                Text(title(t)).font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
                 Spacer()
                 if t.unseen > 0 { Text("⚠ \(t.unseen)").font(Brand.mono(10, bold: true)).foregroundStyle(Brand.dark.warn) }
             }
@@ -159,7 +177,7 @@ struct TodayWidgetView: View {
     private func medium(_ t: TodayCache) -> some View {
         HStack(alignment: .top, spacing: 14) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("TODAY").font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
+                Text(title(t)).font(Brand.text(10, weight: .medium)).tracking(0.6).foregroundStyle(Brand.dark.fgMuted)
                 Text(Formatting.money(t.net)).font(Brand.mono(24, bold: true)).foregroundStyle(SessionStyle.pnl(t.net)).minimumScaleFactor(0.6).lineLimit(1).amount()
                 Text("\(t.trades) trades · \(t.openCount) open").font(Brand.text(11)).foregroundStyle(Brand.dark.fgMuted)
                 Spacer(minLength: 0)
@@ -187,6 +205,11 @@ struct TodayWidgetView: View {
                 }
             }
         }
+    }
+
+    /// "TODAY", or the held day's "FRI 20 NOV".
+    private func title(_ t: TodayCache) -> String {
+        behind ? Formatting.dayLabel(t.day, tz: t.timeZone).uppercased() : "TODAY"
     }
 
     private func stat(_ label: String, _ value: String) -> some View {

@@ -3,6 +3,12 @@
 The server and the phone app share one version: a release tag names the server, and the app
 built against it carries the same marketing version.
 
+## Unreleased
+
+### App
+
+- The Today widgets no longer show yesterday's P&L as today's until the app runs: on a quiet night the widget holds the last day's figure named by its weekday ("FRI 20 NOV", "Trade Log · Fri") until the hour picked in Settings → This phone → "Widgets start the new day at" (05:00 by default, in the journal's timezone), then shows a blank day with the open positions carried over and yesterday moved into the week strip. The flip is a timeline entry dated in advance, so it needs no app, push or network; a fill after midnight shows the real new day at once, as before.
+
 ## 2.27.0, 2026-11-20
 
 ### Server

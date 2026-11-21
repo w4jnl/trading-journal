@@ -34,6 +34,9 @@ final class Settings {
     /// Money in the widgets, the activity and the notification card redacted until the phone is
     /// unlocked. In the App Group, because the extensions read it.
     var hideAmountsLocked: Bool { didSet { UserDefaults(suiteName: TodayCache.suite)?.set(hideAmountsLocked, forKey: Privacy.key) } }
+    /// The hour, in the journal's timezone, at which the Today widgets show a blank day
+    /// (Shared/WidgetDay.swift). Mirrored into the App Group, where the widgets read it.
+    var widgetRolloverHour: Int { didSet { defaults.set(widgetRolloverHour, forKey: WidgetDay.key); WidgetDay.save(widgetRolloverHour) } }
 
     private let defaults = UserDefaults.standard
 
@@ -51,11 +54,13 @@ final class Settings {
         lockGraceSeconds = defaults.object(forKey: "lockGraceSeconds") as? Double ?? LockPolicy.defaultGrace
         lockOnLaunch = defaults.object(forKey: "lockOnLaunch") as? Bool ?? true
         hideAmountsLocked = Privacy.hideAmounts()
+        widgetRolloverHour = defaults.object(forKey: WidgetDay.key) as? Int ?? WidgetDay.defaultHour
         // Saved again at every start: an item from a build before the shared keychain group moves
         // into it, and an extension finds the server even when only the key was in the keychain.
         Keychain.set(apiKey, for: "apiKey")
         Keychain.set(serverURL, for: "serverURL")
         Grouping.save(tradesBySet) // a build before the mirror
+        WidgetDay.save(widgetRolloverHour)
     }
 
     var isPaired: Bool { api != nil }
