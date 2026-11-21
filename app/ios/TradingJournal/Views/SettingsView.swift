@@ -79,14 +79,18 @@ struct SettingsView: View {
             }
             Section {
                 Toggle("Trades grouped by set", isOn: $settings.tradesBySet)
+                Picker("Widgets start the new day at", selection: $settings.widgetRolloverHour) {
+                    ForEach(WidgetDay.hours, id: \.self) { Text(WidgetDay.label($0)).tag($0) }
+                }
                 LabeledContent("Kept for offline", value: stored.map { ByteCountFormatter.string(fromByteCount: Int64($0), countStyle: .file) } ?? "…")
                 Button("Clear what is kept") { Task { await client.clearStore(); stored = await client.storedBytes() } }
                     .disabled((stored ?? 0) == 0)
             } header: {
                 Text("This phone")
             } footer: {
-                Text("The journal's answers, kept so the screens show the last known state when it is out of reach, and the images. At most 150 MB; answers older than a month leave.")
+                Text("The widgets keep the last day's result, named by its weekday, until that hour in the journal's timezone, then show a blank day; a fill after midnight shows the new day at once. The journal's answers are kept so the screens show the last known state when it is out of reach, and the images. At most 150 MB; answers older than a month leave.")
             }
+            .onChange(of: settings.widgetRolloverHour) { _, _ in WidgetCenter.shared.reloadAllTimelines() }
             Section {
                 Toggle("Require \(biometry)", isOn: Binding(get: { settings.lockEnabled }, set: { on in Task { await setLock(on) } }))
                     .tint(Brand.accent)

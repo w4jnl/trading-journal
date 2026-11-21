@@ -97,7 +97,13 @@ closed trade lights it up with its sound instead of a separate notification (Set
 Notifications → "Closed trades as notifications too" turns that off). The Today widgets
 (`accessoryCircular`, `accessoryRectangular`, `accessoryInline`, `systemSmall`, `systemMedium`)
 read `Shared/TodayCache.swift`, which the app writes to the App Group after every fetch, and
-reload then and on the silent sync. An unsigned simulator build has no APS environment: the
+reload then and on the silent sync. On a quiet night nothing rewrites the cache, so the widgets
+roll the day themselves (`Shared/WidgetDay.swift`): the last day's figure is held, named by its
+weekday, until the hour Settings → This phone → "Widgets start the new day at" picks (05:00 by
+default, in the journal's timezone; the server itself flips at midnight), and the blank day is
+a timeline entry dated at that minute, so the flip needs no app, push or network. Open
+positions carry over; a fill after midnight brings the real new day through the sync. An
+unsigned simulator build has no APS environment: the
 activity still starts locally and follows the app, but no push reaches it.
 
 ## Privacy

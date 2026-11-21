@@ -10,6 +10,10 @@ built against it carries the same marketing version.
 - The MotiveWave fill address on Settings can be typed as well as generated: any plain address is accepted (lower-cased, refused when another user has it), so a trader whose relay feeds two instances, say production and a dev copy, gives both the same address and is named on both.
 - The GEX banner condenses the engine's health report instead of relaying it word for word: exception wrappers and vendor URLs go, markets with the same fact are grouped ("fetch failed (403 Forbidden): NDX, QQQ, SPX, SPY"), ages read as hours or minutes. The engine's own words stay on the banner's hover title and in the debug log.
 
+### App
+
+- The Today widgets no longer show yesterday's P&L as today's until the app runs: on a quiet night the widget holds the last day's figure named by its weekday ("FRI 20 NOV", "Trade Log · Fri") until the hour picked in Settings → This phone → "Widgets start the new day at" (05:00 by default, in the journal's timezone), then shows a blank day with the open positions carried over and yesterday moved into the week strip. The flip is a timeline entry dated in advance, so it needs no app, push or network; a fill after midnight shows the real new day at once, as before.
+
 ## 2.27.0, 2026-11-20
 
 ### Server
