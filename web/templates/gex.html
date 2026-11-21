@@ -85,7 +85,8 @@
 
 {{if .EngineError}}
 <div class="flash error mb-16" role="alert" data-persist>
-  gex-engine unreachable — {{.EngineError}}{{if .EngineNotes}} · engine reports: {{range $i, $n := .EngineNotes}}{{if $i}}; {{end}}{{$n}}{{end}}{{end}}
+  <span{{if .EngineNotesRaw}} title="{{range $i, $n := .EngineNotesRaw}}{{if $i}}
+{{end}}{{$n}}{{end}}"{{end}}>gex-engine unreachable — {{.EngineError}}{{if .EngineNotes}} · engine reports: {{range $i, $n := .EngineNotes}}{{if $i}}; {{end}}{{$n}}{{end}}{{end}}
 </div>
 {{end}}
 
@@ -98,11 +99,14 @@
 
 {{if .View}}
 {{if .SessionClosed}}
-<div class="flash info mb-16" role="status" data-persist>
+<div class="flash info mb-16" role="status" data-persist{{if .EngineNotesRaw}} title="{{range $i, $n := .EngineNotesRaw}}{{if $i}}
+{{end}}{{$n}}{{end}}"{{end}}>
   Options session closed — showing the last snapshot, as of {{.View.AsOfET}}.
   {{- /* Engine v0.11.0 /health reasons: during a feed outage the live row
         goes stale mid-session, and the engine's own explanation belongs
-        next to the claim that the session is closed. */ -}}
+        next to the claim that the session is closed. The lines are the
+        condensed form (condenseEngineNotes); the title holds the engine's
+        own words. */ -}}
   {{if .EngineNotes}} Engine reports: {{range $i, $n := .EngineNotes}}{{if $i}}; {{end}}{{$n}}{{end}}.{{end}}
 </div>
 {{end}}
