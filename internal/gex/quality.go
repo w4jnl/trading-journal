@@ -29,8 +29,10 @@ type DataQuality struct {
 	Degraded bool             `json:"degraded"`
 	Warnings []QualityWarning `json:"warnings"`
 	// SnapshotAgeSeconds is how old the underlying payload was when the row
-	// was computed; QuoteEffectiveAt the moment the quotes describe (payload
-	// timestamp minus the vendor's 15-minute delay). Both informational.
+	// was computed; QuoteEffectiveAt the moment the quotes describe (the
+	// payload timestamp minus the vendor's 15-minute delay on rows from the
+	// delayed Cboe feed; equal to the payload timestamp on real-time rows,
+	// update 011). Both informational.
 	SnapshotAgeSeconds *float64 `json:"snapshot_age_seconds"`
 	QuoteEffectiveAt   ISOTime  `json:"quote_effective_at"`
 	// Straddle (v0.12.1, update 010) is the engine's clock health check:
@@ -83,6 +85,12 @@ type Provenance struct {
 	ChainAsOf  ISOTime `json:"chain_as_of"`
 	SpotSource string  `json:"spot_source"`
 	SpotAsOf   ISOTime `json:"spot_as_of"`
+	// SpotSource names where the spot came from: "delayed_payload" (the
+	// Cboe feed, every row up to 2026-11-19), "live_payload" (the real-time
+	// feed from v0.13.0 on; SpotAsOf is then the chain's collection moment)
+	// or "mw_marks_derived". The journal displays nothing from it and never
+	// switches on it, so a further value costs nothing here.
+	//
 	// Reason says why a row is not a plain measurement; since v0.12.0 a
 	// repaired row (recomputed in place with corrected numerics) carries
 	// "v0.12.0 numerics" plus the engine version and settings hash that

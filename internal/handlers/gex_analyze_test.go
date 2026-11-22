@@ -12,6 +12,7 @@ import (
 
 	"github.com/w4jnl/trading-journal/internal/auth"
 	"github.com/w4jnl/trading-journal/internal/gex"
+	"github.com/w4jnl/trading-journal/internal/gexview"
 	"github.com/w4jnl/trading-journal/internal/models"
 	"github.com/w4jnl/trading-journal/web"
 )
@@ -220,5 +221,26 @@ func TestGexAnalysisFacts(t *testing.T) {
 	if !strings.Contains(facts, "all prices below are index-denominated") ||
 		!strings.Contains(facts, "spot: 7494.55") {
 		t.Errorf("cold-basis facts not index-denominated:\n%s", facts)
+	}
+
+	// The engine's first real-time session (update 011) gets the feed-switch
+	// caveat, and only when the row itself says it came from the live feed.
+	if strings.Contains(facts, "FEED SWITCH") {
+		t.Errorf("feed-switch caveat on a pre-switch row:\n%s", facts)
+	}
+	et := gexview.Eastern()
+	ly, lm, ld := gexview.LiveFeedStart.Date()
+	s.AsOf = time.Date(ly, lm, ld, 10, 15, 2, 0, et)
+	s.Provenance = &gex.Provenance{Kind: "measured", SpotSource: "delayed_payload"}
+	if facts = gexAnalysisFacts(s, "ES"); strings.Contains(facts, "FEED SWITCH") {
+		t.Errorf("feed-switch caveat on a delayed-feed row dated the switch day:\n%s", facts)
+	}
+	s.Provenance.SpotSource = "live_payload"
+	if facts = gexAnalysisFacts(s, "ES"); !strings.Contains(facts, "FEED SWITCH: this is the first session computed from the engine's real-time options feed") {
+		t.Errorf("feed-switch caveat missing on the first live session:\n%s", facts)
+	}
+	s.AsOf = s.AsOf.AddDate(0, 0, 1)
+	if facts = gexAnalysisFacts(s, "ES"); strings.Contains(facts, "FEED SWITCH") {
+		t.Errorf("feed-switch caveat on the second live session:\n%s", facts)
 	}
 }

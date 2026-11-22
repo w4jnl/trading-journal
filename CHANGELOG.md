@@ -9,6 +9,7 @@ built against it carries the same marketing version.
 
 - The MotiveWave fill address on Settings can be typed as well as generated: any plain address is accepted (lower-cased, refused when another user has it), so a trader whose relay feeds two instances, say production and a dev copy, gives both the same address and is named on both.
 - The GEX banner condenses the engine's health report instead of relaying it word for word: exception wrappers and vendor URLs go, markets with the same fact are grouped ("fetch failed (403 Forbidden): NDX, QQQ, SPX, SPY"), ages read as hours or minutes. The engine's own words stay on the banner's hover title and in the debug log.
+- The GEX scrub slider follows the engine's real-time grid (engine update 011, v0.13.0): sessions from the feed switch on start at 09:40 ET and every session now ends on the 16:05 closing row, so the first rows of a live session and its close can be scrubbed to. The AI analysis of the first real-time session says that the flip's 1d change compares across a change of volatility source. Nothing else in the update needed a change: the new spot source and warning codes pass through as they are.
 
 ### App
 

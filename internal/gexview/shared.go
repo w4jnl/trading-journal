@@ -8,8 +8,9 @@ import (
 )
 
 // StaleAfter is how far as_of may lag the trade moment before the context
-// is labeled stale. Snapshots land on a 5-minute grid during 09:50-16:00 ET,
-// so anything beyond ~15m means the trade sat outside the options session and
+// is labeled stale. Snapshots land on a 5-minute grid during the options
+// session (09:40-16:05 ET since LiveFeedStart, 09:50-16:30 before), so
+// anything beyond ~15m means the trade sat outside the options session and
 // got the prior close's levels (correct at-or-before behavior, but the block
 // must be honest about it).
 const StaleAfter = 15 * time.Minute

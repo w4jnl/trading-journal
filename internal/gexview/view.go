@@ -21,8 +21,17 @@ import (
 // before any earlier moment, per the P4 handoff).
 var HistoryStart = time.Date(2026, 7, 30, 0, 0, 0, 0, time.UTC)
 
-// GridSessions caps the scrub slider's window. 60 sessions x 75 slots is
-// a ~50KB inline array; the "as of" picker covers anything older.
+// LiveFeedStart is the first session the engine computed from its real-time
+// options feed (update 011, engine v0.13.0): from this day on the snapshot
+// grid runs 09:40-16:05 ET and the closing row is the 16:05 one. Sessions
+// before it came from the delayed Cboe feed on a 09:50-16:30 grid. A plain
+// DATE like HistoryStart, read in ET. The engine does not publish its grid,
+// so the day is pinned here; it must name the engine's actual first live
+// session.
+var LiveFeedStart = time.Date(2026, 11, 23, 0, 0, 0, 0, time.UTC)
+
+// GridSessions caps the scrub slider's window. 60 sessions x up to 78 slots
+// is a ~50KB inline array; the "as of" picker covers anything older.
 const GridSessions = 60
 
 // PageLevel is one row of the levels table, pre-formatted.
@@ -364,17 +373,23 @@ func Grid(now, at time.Time) (grid []int64, pos int, ok bool) {
 	return grid, pos, true
 }
 
-// SessionGrid returns the scrub slider's time slots: 09:50-16:00 ET in
-// five-minute steps (the engine's snapshot grid) for the most recent
-// GridSessions weekdays, ascending, bounded by the engine history start
-// and now. Holidays are left in - their slots resolve to the prior session's
-// close via at-or-before, which the stale flag surfaces honestly.
+// SessionGrid returns the scrub slider's time slots in five-minute steps
+// for the most recent GridSessions weekdays, ascending, bounded by the
+// engine history start and now: 09:40-16:05 ET from LiveFeedStart on (the
+// real-time grid, closing row 16:05), 09:50-16:05 ET before it (the delayed
+// feed's grid also had a 16:05 row; its later rows up to 16:30 are reached
+// through the live view's at-or-before, never scrubbed). Holidays are left
+// in - their slots resolve to the prior session's close via at-or-before,
+// which the stale flag surfaces honestly.
 func SessionGrid(now time.Time) []int64 {
 	et := Eastern()
-	// HistoryStart is a plain DATE; take its components rather than
-	// converting the instant (which would slide it into the prior ET day).
+	// HistoryStart and LiveFeedStart are plain DATEs; take their components
+	// rather than converting the instant (which would slide it into the
+	// prior ET day).
 	sy, sm, sd := HistoryStart.Date()
 	startDay := time.Date(sy, sm, sd, 0, 0, 0, 0, et)
+	ly, lm, ld := LiveFeedStart.Date()
+	liveDay := time.Date(ly, lm, ld, 0, 0, 0, 0, et)
 
 	n := now.In(et)
 	day := time.Date(n.Year(), n.Month(), n.Day(), 0, 0, 0, 0, et)
@@ -388,7 +403,11 @@ func SessionGrid(now time.Time) []int64 {
 
 	var out []int64
 	for i := len(days) - 1; i >= 0; i-- {
-		for m := 9*60 + 50; m <= 16*60; m += 5 {
+		first := 9*60 + 50
+		if !days[i].Before(liveDay) {
+			first = 9*60 + 40
+		}
+		for m := first; m <= 16*60+5; m += 5 {
 			t := days[i].Add(time.Duration(m) * time.Minute)
 			if t.After(now) {
 				break
