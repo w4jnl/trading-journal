@@ -48,6 +48,20 @@ Rules that make the read useful:
 - Distinguish structure from prediction. "If it breaks, hedging stops braking" is structure. "It will go there" is not - never predict direction.
 - No preamble, no restating the input as a list, no headings. Interpret; do not summarize.`
 
+// gexFirstLiveSession reports whether the snapshot belongs to the engine's
+// first real-time session (gexview.LiveFeedStart, in ET) and says so itself
+// through its spot source - a row on that date still carrying the delayed
+// feed's provenance (a backfill, a reconstruction) gets no caveat.
+func gexFirstLiveSession(s *gex.Snapshot) bool {
+	if s == nil || s.Provenance == nil || s.Provenance.SpotSource != "live_payload" {
+		return false
+	}
+	et := gexview.Eastern()
+	ly, lm, ld := gexview.LiveFeedStart.Date()
+	y, m, d := s.AsOf.In(et).Date()
+	return y == ly && m == lm && d == ld
+}
+
 // gexAnalysisPromptFor assembles the system prompt, honoring the user's
 // configured review language the same way the journal analyst does.
 func gexAnalysisPromptFor(language string) string {
@@ -139,6 +153,13 @@ func gexAnalysisFacts(s *gex.Snapshot, market string) string {
 			reason = " (" + p.Reason + ")"
 		}
 		line("provenance: recomputed from this slot's archived payloads%s - as trustworthy as a live measurement", reason)
+	}
+	// The first session on the real-time feed (update 011): its implied
+	// vols come from a different source than the prior session's, so the
+	// flip and anything derived from it can step without the market moving.
+	// The engine's 1d changes on that one session compare across the switch.
+	if gexFirstLiveSession(s) {
+		line("FEED SWITCH: this is the first session computed from the engine's real-time options feed; the previous session came from the delayed feed with a different implied-volatility source. The flip levels and the 1d changes of the flip and the regime can step across that switch without any real move - do not read a 1d flip change on this session as positioning")
 	}
 	line("all prices below are %s-denominated", denom)
 	line("regime: %s", s.Regime.State)

@@ -216,7 +216,7 @@ published in turn:
 - **mwrelay**, a store-and-forward SMTP relay on the trading machine for MotiveWave's fill
   e-mails, forwarding to one or more journals directly or over SSH, with a macOS menu bar item
   that shows the day's P&L from the journal's API.
-- **gex-engine**, dealer gamma-exposure analytics for ES and NQ from CBOE option chains, serving
+- **gex-engine**, dealer gamma-exposure analytics for ES and NQ from the index option chains (real-time through an IB Gateway), serving
   levels, profiles and as-of snapshots; the journal's Gamma page and the gamma block on reviewed
   trades read from it.
 - **oi-dashboard**, a daily open-interest report for ES, NQ and CL from Databento, IBKR and CFTC

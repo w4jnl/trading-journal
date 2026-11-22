@@ -677,15 +677,15 @@ func TestGexSessionGrid(t *testing.T) {
 	// Saturday noon: window covers Fri Jul 31 + Thu Jul 30 (history start),
 	// nothing older, no weekend slots.
 	grid := gexview.SessionGrid(time.Date(2026, 8, 1, 12, 0, 0, 0, et))
-	if len(grid) != 150 { // 2 sessions x 75 slots (09:50..16:00 step 5m)
-		t.Fatalf("grid len = %d, want 150", len(grid))
+	if len(grid) != 152 { // 2 sessions x 76 slots (09:50..16:05 step 5m, delayed-feed grid)
+		t.Fatalf("grid len = %d, want 152", len(grid))
 	}
 	first := time.Unix(grid[0], 0).In(et)
 	last := time.Unix(grid[len(grid)-1], 0).In(et)
 	if first.Format("Mon 2006-01-02 15:04") != "Thu 2026-07-30 09:50" {
 		t.Errorf("first slot = %v", first)
 	}
-	if last.Format("Mon 2006-01-02 15:04") != "Fri 2026-07-31 16:00" {
+	if last.Format("Mon 2006-01-02 15:04") != "Fri 2026-07-31 16:05" {
 		t.Errorf("last slot = %v", last)
 	}
 	for i := 1; i < len(grid); i++ {
@@ -699,6 +699,50 @@ func TestGexSessionGrid(t *testing.T) {
 	last = time.Unix(grid[len(grid)-1], 0).In(et)
 	if last.Format("2006-01-02 15:04") != "2026-07-31 12:00" {
 		t.Errorf("mid-session last slot = %v", last)
+	}
+
+	// Across the feed switch (update 011): the day before LiveFeedStart
+	// keeps the 09:50 start and closes at 16:05; from LiveFeedStart on the
+	// first slot is 09:40.
+	ly, lm, ld := gexview.LiveFeedStart.Date()
+	liveDay := time.Date(ly, lm, ld, 0, 0, 0, 0, et)
+	for liveDay.Weekday() == time.Saturday || liveDay.Weekday() == time.Sunday {
+		liveDay = liveDay.AddDate(0, 0, 1)
+	}
+	grid = gexview.SessionGrid(liveDay.Add(9*time.Hour + 46*time.Minute))
+	n := len(grid)
+	if n < 3 {
+		t.Fatalf("switch grid too short: %d", n)
+	}
+	got := []string{
+		time.Unix(grid[n-3], 0).In(et).Format("2006-01-02 15:04"),
+		time.Unix(grid[n-2], 0).In(et).Format("2006-01-02 15:04"),
+		time.Unix(grid[n-1], 0).In(et).Format("2006-01-02 15:04"),
+	}
+	prevDay := liveDay.AddDate(0, 0, -1)
+	for prevDay.Weekday() == time.Saturday || prevDay.Weekday() == time.Sunday {
+		prevDay = prevDay.AddDate(0, 0, -1)
+	}
+	want := []string{
+		prevDay.Format("2006-01-02") + " 16:05",
+		liveDay.Format("2006-01-02") + " 09:40",
+		liveDay.Format("2006-01-02") + " 09:45",
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("switch grid[%d] = %s, want %s", i, got[i], want[i])
+		}
+	}
+	for i := n - 3; i < n-1; i++ {
+		if grid[i] >= grid[i+1] {
+			t.Fatalf("switch grid not ascending at %d", i)
+		}
+	}
+	// Before the switch nothing starts at 09:40.
+	for _, ts := range grid[:n-2] {
+		if tm := time.Unix(ts, 0).In(et); tm.Before(liveDay) && tm.Format("15:04") == "09:40" {
+			t.Fatalf("pre-switch 09:40 slot at %v", tm)
+		}
 	}
 }
 
